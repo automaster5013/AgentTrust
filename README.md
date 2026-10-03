@@ -2,7 +2,7 @@
 
 AI 에이전트의 품질과 보안을 평가하고, 검증 증거를 바탕으로 배포 결정을 지원하는 플랫폼.
 
-현재 단계: v0.2 로컬 DB·인증·조직 격리·독립 워커·감사 기록 구현 완료. 모의 평가, 취소, 시간·사례 예산, 재시도 복구를 제공한다. 상용 배포와 실제 모델 연동은 아직 수행하지 않았다.
+현재 단계: v0.3 제한된 HTTPS 어댑터, 버전 결과 비교, 로컬 CI 릴리스 게이트 구현 완료. 외부 연결은 기본 차단한다. DB·인증·조직 격리·독립 워커·감사 기록과 모의 평가를 제공한다. 상용 배포와 실제 고객 모델 연동은 아직 수행하지 않았다.
 작업 루트: `C:\AgentTrust`; 독립 Git 저장소의 `main` 브랜치.
 
 ## 설계 문서
@@ -22,3 +22,5 @@ AI 에이전트의 품질과 보안을 평가하고, 검증 증거를 바탕으�
 ## 로컬 실행
 
 [개발 안내와 API 계약](docs/development.md)을 참고한다. Node.js 24와 Docker Desktop에서 npm.cmd ci --cache .cache/npm → npm.cmd run setup → npm.cmd run docker:up을 실행하고 http://127.0.0.1:4310을 연다. 접근 키는 .local/credentials.json에 있다. 기존 LogiTrack은 [정지·보존](docs/logitrack-preservation.md) 상태다.
+
+[HTTPS 연결과 CI 게이트 사용법](docs/release-integration.md)을 참고한다. 비교 화면은 같은 데이터셋·정책의 완료 결과를 사용한다.

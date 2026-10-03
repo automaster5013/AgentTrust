@@ -15,6 +15,7 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+    networks: [backend, host-access]
     restart: unless-stopped
   api:
     build: .
@@ -29,6 +30,7 @@ services:
       db:
         condition: service_healthy
     init: true
+    networks: [backend, host-access]
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
@@ -43,14 +45,22 @@ services:
     image: agenttrust-app:local
     command: ["node", "apps/worker/main.js"]
     environment:
+      AGENTTRUST_HTTPS_TARGETS: ${AGENTTRUST_HTTPS_TARGETS:-{}}
       WORKER_DATABASE_URL: postgres://agenttrust_worker:${DB_WORKER_PASSWORD:?Missing worker password}@db:5432/agenttrust
     depends_on:
       db:
         condition: service_healthy
     init: true
+    networks: [backend]
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
 volumes:
   postgres-data:
+
+networks:
+  backend:
+    internal: true
+  host-access:
+    internal: false

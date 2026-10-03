@@ -16,7 +16,7 @@ const rule = {
 };
 const schemas = {
   agent: { type: 'object', additionalProperties: false, required: ['name', 'mode'], properties: {
-    name: { ...text, maxLength: 100 }, mode: { enum: ['compliant', 'regression', 'forbidden_tool', 'error', 'missing_evidence', 'unsafe_output', 'slow'] }
+    endpointHash: { type: 'string', pattern: '^[a-f0-9]{64}$' }, connectorId: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,80}$' }, name: { ...text, maxLength: 100 }, mode: { enum: ['compliant', 'regression', 'forbidden_tool', 'error', 'missing_evidence', 'unsafe_output', 'slow', 'https'] }
   } },
   dataset: { type: 'object', additionalProperties: false, required: ['name', 'cases'], properties: {
     name: { ...text, maxLength: 100 }, cases: { type: 'array', minItems: 1, maxItems: 100, items: {
@@ -71,6 +71,8 @@ export function validate(kind, value) {
     if (item && typeof item === 'object') for (const child of Object.values(item)) pending.push([child, depth + 1]);
   }
   if (!validators[kind]?.(value)) throw new InputError(`Invalid ${kind}: ${ajv.errorsText(validators[kind]?.errors)}`);
+  if (kind === 'agent' && (value.mode === 'https') !== (value.connectorId !== undefined && value.endpointHash !== undefined)) throw new InputError('HTTPS agents require a connectorId and endpointHash; mock agents cannot use connection fields.');
+  if (kind === 'agent' && value.mode !== 'https' && (value.connectorId !== undefined || value.endpointHash !== undefined)) throw new InputError('Mock agents cannot use connection fields.');
   if (kind === 'dataset') {
     const caseIds = new Set();
     for (const c of value.cases) {

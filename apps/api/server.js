@@ -1,3 +1,4 @@
+import { compareRuns, releaseGate } from '../../packages/evaluator/comparison.js';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
@@ -49,6 +50,14 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       if(req.method==='GET'&&path==='/v1/runs') return send(200,await store.listRuns(context));
       if(req.method==='GET'&&path==='/v1/audit-events') return send(200,await store.auditEvents(context));
       if(req.method==='GET'&&path==='/v1/usage') return send(200,await store.usage(context));
+      if(req.method==='POST'&&['/v1/compare','/v1/release-gate'].includes(path)){
+        const input=await body(req);
+        if(!input||typeof input!=='object'||Array.isArray(input)||typeof input.candidateRunId!=='string')throw new InputError('candidateRunId is required.');
+        const candidate=await store.getRun(context,input.candidateRunId);
+        const baseline=input.baselineRunId?await store.getRun(context,input.baselineRunId):undefined;
+        if(path==='/v1/compare'&&!baseline) throw new InputError('baselineRunId is required.');
+        return send(200,path==='/v1/compare'?compareRuns(baseline,candidate):releaseGate(candidate,input,baseline));
+      }
       const kind={'/v1/agent-versions':'agent','/v1/dataset-versions':'dataset','/v1/policy-versions':'policy'}[path];
       if(req.method==='POST'&&kind) return send(201,await store.createVersion(context,kind,await body(req)));
       if(req.method==='POST'&&path==='/v1/runs'){const result=await store.createRun(context,await body(req),req.headers['idempotency-key']);return send(result.replay?200:202,result.run);}

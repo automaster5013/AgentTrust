@@ -46,7 +46,7 @@ export class WorkerEngine {
     if(row.snapshot.dataset.cases.length>row.case_budget) return this.complete(row,incomplete('failed','Evaluation exceeded its case budget.'));
     let timer, busy=false, settled=false, settle;
     const completion=new Promise(resolve=>{settle=outcome=>{if(!settled){settled=true;resolve(outcome);}};});
-    const thread=new Worker(new URL('./evaluate-thread.js',import.meta.url),{workerData:{snapshot:row.snapshot},resourceLimits:{maxOldGenerationSizeMb:96,stackSizeMb:4}});
+    const thread=new Worker(new URL('./evaluate-thread.js',import.meta.url),{workerData:{snapshot:row.snapshot,organizationId:row.organization_id},resourceLimits:{maxOldGenerationSizeMb:96,stackSizeMb:4}});
     this.thread=thread;
     thread.once('message',outcome=>settle(outcome));
     thread.once('error',()=>settle(incomplete('failed','Evaluation worker failed.')));

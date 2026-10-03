@@ -1,3 +1,4 @@
+import { checkRelease } from '../scripts/release-gate.mjs';
 import test from 'node:test';
 import { request as httpRequest } from 'node:http';
 import assert from 'node:assert/strict';
@@ -176,4 +177,19 @@ test('concurrent logins enforce the active-session limit without exposing access
   assert.equal(outcomes.filter(o=>o.status==='fulfilled').length,19);
   assert.ok(outcomes.filter(o=>o.status==='rejected').every(o=>o.reason.status===429));
   const count=await f.owner.query('SELECT count(*) FROM agenttrust.sessions WHERE credential_id=$1',[key.id]);assert.equal(Number(count.rows[0].count),20);
+});
+
+test('release API and CI bridge enforce versions, baseline coverage, tenant boundaries and read-only access',async t=>{
+  const f=await fixture(t);const baseline=(await f.create()).run;await f.engine.tick();
+  const candidate=(await f.create()).run;await f.engine.tick();
+  const expected=f.input();
+  const request={candidateRunId:candidate.id,baselineRunId:baseline.id,...expected};
+  const response=await f.request('/v1/release-gate',{role:'viewer',method:'POST',json:request});assert.equal(response.status,200);assert.equal((await response.json()).deploymentAllowed,true);
+  const compare=await f.request('/v1/compare',{role:'viewer',method:'POST',json:request});assert.equal((await compare.json()).comparable,true);
+  assert.equal((await f.request('/v1/compare',{role:'other_admin',method:'POST',json:request})).status,404);
+  const denied=await f.request('/v1/release-gate',{method:'POST',json:{...request,agentVersionId:'incorrect'}});assert.equal((await denied.json()).deploymentAllowed,false);
+  const cli=await checkRelease({base:f.base+'/',accessKey:f.first.credentials.find(c=>c.role==='viewer').token,...request});assert.equal(cli.deploymentAllowed,true);
+  const https=await f.store.createVersion(f.contexts.admin,'agent',{name:'Disabled external',mode:'https',connectorId:'unconfigured',endpointHash:'a'.repeat(64)});
+  const external=(await f.store.createRun(f.contexts.admin,{...expected,agentVersionId:https.id},randomUUID())).run;await f.engine.tick();
+  const failed=await f.store.getRun(f.contexts.admin,external.id);assert.equal(failed.state,'failed');assert.equal(failed.gate.decision,'inconclusive');
 });

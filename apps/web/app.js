@@ -34,6 +34,7 @@ async function catalog(selectedDataset) {
 }
 function render(run) {
   currentRun = run;
+  $('comparison-result').textContent='후보 실행을 조회한 뒤 기준 실행을 선택하세요.';
   const decision = run.gate.decision;
   $('gate-badge').textContent = decision.toUpperCase(); $('gate-badge').className = `gate ${decision}`;
   $('gate-title').textContent = { pass: '정의된 배포 기준을 통과했습니다', block: '배포를 차단해야 합니다', inconclusive: '추가 검증이 필요합니다' }[decision];
@@ -60,6 +61,9 @@ function render(run) {
 }
 async function history() {
   const runs = await api('/v1/runs');
+  const previous=$('baseline-run').value;
+  $('baseline-run').replaceChildren(...runs.map(r=>{const option=node('option',`${r.agentName} · ${stateLabels[r.state]} · ${r.id.slice(0,8)}`);option.value=r.id;return option;}));
+  if(runs.some(r=>r.id===previous))$('baseline-run').value=previous;
   $('history-body').replaceChildren(...runs.map(r => {
     const row = node('tr');
     row.append(node('td', r.agentName), node('td', r.datasetName), node('td', stateLabels[r.state] || r.state));
@@ -105,6 +109,7 @@ $('download').addEventListener('click', () => {
 });
 function showLogin() {
   actor=null;currentRun=null;selectedRunId=null;message('');
+  $('baseline-run').replaceChildren();$('comparison-result').textContent='';
   $('workspace-ui').hidden=true;$('login-panel').hidden=false;
   $('access-key').value='';$('results').replaceChildren();$('history-body').replaceChildren();$('audit-list').replaceChildren();
   $('gate-badge').textContent='실행 대기';$('gate-badge').className='gate idle';$('gate-title').textContent='배포 판단을 기다립니다';
@@ -144,3 +149,10 @@ $('cancel-button').addEventListener('click',async()=>{
 });
 $('audit-refresh').addEventListener('click',()=>auditHistory().catch(e=>message(e.message,true)));
 try{await initialize();}catch(e){showLogin();$('login-status').textContent=e.message==='Authentication required.'?'접근 키를 입력해 주세요.':e.message;}
+
+$('compare-form').addEventListener('submit',async event=>{
+  event.preventDefault();if(!currentRun){message('먼저 후보 실행을 조회하세요.',true);return;}
+  try{const result=await api('/v1/compare',{method:'POST',body:JSON.stringify({candidateRunId:currentRun.id,baselineRunId:$('baseline-run').value})});
+    $('comparison-result').textContent=`${result.comparable?'비교 완료':'비교 불가: 불완전한 평가'} · 회귀 ${result.regressions.length}개 · 배포 ${result.deploymentAllowed?'허용':'차단'}\n통과율 변화 ${(result.passRateDelta*100).toFixed(1)}%p\n`+result.changes.map(c=>`${c.caseId} / ${c.ruleId}: ${c.before} → ${c.after}`).join('\n');
+  }catch(e){$('comparison-result').textContent=e.message;}
+});

@@ -1,6 +1,7 @@
 import { compileEvidenceSchema } from '../contracts/index.js';
 
 export function mockAdapter(agent, testCase) {
+  if (agent.mode === 'https') throw new Error('HTTPS agents require the external adapter.');
   if (agent.mode === 'error') throw new Error('Synthetic adapter failure.');
   if (agent.mode === 'missing_evidence') return {};
   const evidence = structuredClone(testCase.mock);
@@ -35,13 +36,13 @@ export function evaluateRule(rule, evidence) {
   return finish('inconclusive', 'Unsupported rule.');
 }
 
-export function evaluate(snapshot) {
+export function evaluate(snapshot, adapter = mockAdapter) {
   const results = snapshot.dataset.cases.map(c => {
     try {
-      const evidence = mockAdapter(snapshot.agent, c);
+      const evidence = adapter(snapshot.agent, c);
       return { caseId: c.id, input: c.input, evidence, rules: c.rules.map(r => evaluateRule(r, evidence)) };
     } catch {
-      return { caseId: c.id, input: c.input, error: 'Synthetic adapter failure.', evidence: {},
+      return { caseId: c.id, input: c.input, error: 'Adapter execution failed.', evidence: {},
         rules: c.rules.map(r => ({ ruleId: r.id, type: r.type, required: r.required !== false, status: 'inconclusive', reason: 'Adapter execution failed.' })) };
     }
   });
@@ -55,4 +56,17 @@ export function evaluate(snapshot) {
   else if (passRate < snapshot.policy.minimumPassRate) gate = { decision: 'block', reason: 'The policy pass rate threshold was not met.' };
   else gate = { decision: 'pass', reason: 'All required rules passed and the policy threshold was met.' };
   return { results, summary: { cases: results.length, rules: rules.length, ...counts, passRate }, gate: { ...gate, deploymentAllowed: gate.decision === 'pass' }, state: results.some(r => r.error) ? 'failed' : 'succeeded' };
+}
+
+export async function evaluateAsync(snapshot, adapter) {
+  const evidence = new Map();
+  for (const c of snapshot.dataset.cases) {
+    try { evidence.set(c.id, { value: await adapter(snapshot,c) }); }
+    catch { evidence.set(c.id, { error: true }); }
+  }
+  return evaluate(snapshot, (_agent,c) => {
+    const item=evidence.get(c.id);
+    if(item.error) throw new Error('Adapter failure.');
+    return item.value;
+  });
 }

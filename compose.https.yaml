@@ -1,0 +1,7 @@
+# Explicit operator opt-in; application allowlists still apply.
+services:
+  worker:
+    networks: [backend, egress]
+networks:
+  egress:
+    internal: false
