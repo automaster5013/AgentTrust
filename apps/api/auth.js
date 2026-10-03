@@ -46,7 +46,7 @@ export class Auth {
       WHERE s.token_hash=$1 AND s.expires_at>now() AND c.revoked_at IS NULL AND m.active=true`,[tokenHash(token)]);
     if (!result.rowCount) throw new InputError('Session expired or revoked.',401);
     const row = result.rows[0];
-    const projects = await transaction(this.database, async client => (await client.query('SELECT id,name FROM agenttrust.projects WHERE organization_id=$1 ORDER BY id',[row.organization_id])).rows,row.organization_id);
+    const projects = await transaction(this.database, async client => (await client.query('SELECT id,name FROM agenttrust.projects WHERE organization_id=$1 ORDER BY created_at,id',[row.organization_id])).rows,row.organization_id);
     if (!projects.length) throw new InputError('No accessible project.',403);
     return { membershipId:row.id, organizationId:row.organization_id, organizationName:row.organization_name, name:row.name, role:row.role, projectId:projects[0].id, projects };
   }

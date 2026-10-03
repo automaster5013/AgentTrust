@@ -1,6 +1,8 @@
 const $ = id => document.getElementById(id);
 let currentRun = null;
 let actor = null;
+let activeProjectId = null;
+let scopeEpoch = 0;
 let loading = false;
 let selectedRunId = null;
 const terminal = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
@@ -8,8 +10,10 @@ const decisionLabels = { pass: '통과', block: '차단', inconclusive: '판정 
 const stateLabels = { queued: '대기 중', running: '실행 중', succeeded: '평가 완료', failed: '실행 실패', cancelled: '취소됨', timed_out: '시간 초과' };
 function message(text, error = false) { $('status').textContent = text; $('status').className = error ? 'error' : ''; }
 async function api(path, options = {}) {
-  const response = await fetch(path, { ...options, headers: { 'Content-Type': 'application/json', 'X-AgentTrust-Request': 'local-ui', ...options.headers } });
+  const epoch=scopeEpoch;
+  const response = await fetch(path, { ...options, headers: { 'Content-Type': 'application/json', 'X-AgentTrust-Request': 'local-ui', ...(activeProjectId?{'X-AgentTrust-Project':activeProjectId}:{}), ...options.headers } });
   const data = await response.json();
+  if(epoch!==scopeEpoch)throw new Error('워크스페이스가 변경되어 이전 요청의 결과를 표시하지 않습니다.');
   if (response.status === 401) showLogin();
   if (!response.ok) throw new Error(data.error || '요청을 완료하지 못했습니다.');
   return data;
@@ -107,32 +111,37 @@ $('download').addEventListener('click', () => {
   const url = URL.createObjectURL(new Blob([JSON.stringify(currentRun, null, 2)], { type: 'application/json' }));
   const link = node('a'); link.href = url; link.download = `agenttrust-${currentRun.id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
-function showLogin() {
-  actor=null;currentRun=null;selectedRunId=null;message('');
+function clearProjectData(){
+  currentRun=null;selectedRunId=null;message('');$('run-button').disabled=true;$('dataset-button').disabled=true;
   $('ci-issued-key').value='';$('ci-key-box').hidden=true;$('ci-key-list').replaceChildren();$('receipt-list').replaceChildren();$('ci-project').replaceChildren();$('ci-name').value='';$('ci-status').textContent='';
   $('baseline-run').replaceChildren();$('comparison-result').textContent='';
-  $('workspace-ui').hidden=true;$('login-panel').hidden=false;
-  $('access-key').value='';$('results').replaceChildren();$('history-body').replaceChildren();$('audit-list').replaceChildren();
+$('results').replaceChildren();$('history-body').replaceChildren();$('audit-list').replaceChildren();
   $('gate-badge').textContent='실행 대기';$('gate-badge').className='gate idle';$('gate-title').textContent='배포 판단을 기다립니다';
   $('gate-reason').textContent='평가를 실행하면 정책을 기준으로 결과를 표시합니다.';$('allowed').textContent='—';$('run-state').textContent='대기';
   $('snapshot').textContent='아직 선택한 실행이 없습니다.';$('dataset-json').value='';$('usage-summary').textContent='';
   for(const id of ['case-count','pass-count','fail-count','unknown-count'])$(id).textContent='—';
   $('download').disabled=true;$('cancel-button').disabled=true;
 }
+function showLogin(){
+  scopeEpoch++;activeProjectId=null;actor=null;clearProjectData();
+  $('workspace-project').replaceChildren();$('access-key').value='';$('workspace-ui').hidden=true;$('login-panel').hidden=false;
+}
 async function auditHistory() {
   if(actor?.role!=='admin') return;
   const [events,usage]=await Promise.all([api('/v1/audit-events'),api('/v1/usage')]);
-  $('usage-summary').textContent=`완료 실행 ${usage.completed_runs}개 · 결과 사례 ${usage.evaluated_cases}개 · 시도 ${usage.attempts}회 (모의 사용량)`;
+  $('usage-summary').textContent=`조직 전체 완료 실행 ${usage.completed_runs}개 · 결과 사례 ${usage.evaluated_cases}개 · 시도 ${usage.attempts}회 (모의 사용량)`;
   $('audit-list').replaceChildren(...events.map(e=>{
     const row=node('div',undefined,'audit-entry');row.append(node('strong',e.action+' '),node('span',`${new Date(e.created_at).toLocaleString('ko-KR')} · ${e.resource_id || '—'}`));return row;
   }));
 }
 async function initialize() {
-  actor=await api('/v1/me');
+  actor=await api('/v1/me');activeProjectId=actor.projectId;
+  $('workspace-project').replaceChildren(...actor.projects.map(p=>{const option=node('option',p.name);option.value=p.id;return option;}));$('workspace-project').value=activeProjectId;
   $('identity-label').textContent=`${actor.organizationName} · ${actor.name} · ${actor.role}`;
   $('workspace-ui').hidden=false;$('login-panel').hidden=true;$('audit-panel').hidden=actor.role!=='admin';
   $('ci-panel').hidden=actor.role!=='admin';
   $('ci-project').replaceChildren(...actor.projects.map(p=>{const option=node('option',p.name);option.value=p.id;return option;}));
+  $('ci-project').value=activeProjectId;
   await ciHistory();await receiptHistory();
   await catalog();$('dataset-json').value=JSON.stringify(await api('/v1/sample-dataset'),null,2);await history();await auditHistory();
   $('run-button').disabled=actor.role==='viewer';$('dataset-button').disabled=actor.role==='viewer';
@@ -180,10 +189,17 @@ async function receiptHistory(){
   if(!receipts.length)$('receipt-list').textContent='아직 CI 검증 기록이 없습니다.';
 }
 $('ci-key-form').addEventListener('submit',async event=>{
-  event.preventDefault();$('ci-create').disabled=true;$('ci-status').textContent='';$('ci-issued-key').value='';$('ci-key-box').hidden=true;
-  try{const key=await api('/v1/ci-credentials',{method:'POST',body:JSON.stringify({name:$('ci-name').value,projectId:$('ci-project').value,ttlSeconds:Number($('ci-ttl').value)})});$('ci-issued-key').value=key.token;$('ci-key-box').hidden=false;await ciHistory();$('ci-status').textContent='CI 키를 발급했습니다. 안전하게 보관한 뒤 키 창을 닫으세요.';}catch(e){$('ci-status').textContent=e.message;}finally{$('ci-create').disabled=false;}
+  event.preventDefault();$('workspace-project').disabled=true;$('logout-button').disabled=true;$('ci-create').disabled=true;$('ci-status').textContent='';$('ci-issued-key').value='';$('ci-key-box').hidden=true;
+  try{const key=await api('/v1/ci-credentials',{method:'POST',body:JSON.stringify({name:$('ci-name').value,projectId:$('ci-project').value,ttlSeconds:Number($('ci-ttl').value)})});$('ci-issued-key').value=key.token;$('ci-key-box').hidden=false;await ciHistory();$('ci-status').textContent='CI 키를 발급했습니다. 안전하게 보관한 뒤 키 창을 닫으세요.';}catch(e){$('ci-status').textContent=e.message;}finally{$('ci-create').disabled=false;$('workspace-project').disabled=false;$('logout-button').disabled=false;}
 });
 $('ci-key-hide').addEventListener('click',()=>{$('ci-issued-key').value='';$('ci-key-box').hidden=true;});
 $('ci-key-copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('ci-issued-key').value);$('ci-status').textContent='키를 복사했습니다. CI 비밀 저장소에 보관하세요.';}catch{$('ci-status').textContent='클립보드에 접근할 수 없습니다.';}});
 $('ci-refresh').addEventListener('click',()=>ciHistory().catch(e=>{$('ci-status').textContent=e.message;}));
 $('receipts-refresh').addEventListener('click',()=>receiptHistory().catch(e=>message(e.message,true)));
+
+$('workspace-project').addEventListener('change',async()=>{
+  const previous=activeProjectId;scopeEpoch++;activeProjectId=$('workspace-project').value;clearProjectData();$('workspace-project').disabled=true;
+  try{await initialize();message('프로젝트를 전환했습니다.');}
+  catch(e){if(actor){scopeEpoch++;activeProjectId=previous;try{await initialize();}catch{showLogin();}}message(e.message,true);}
+  finally{$('workspace-project').disabled=false;}
+});

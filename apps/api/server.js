@@ -46,6 +46,13 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       const token=cookieToken(req);
       const context=req.headers.authorization?await ci.authenticate(/^Bearer (.+)$/.exec(req.headers.authorization)?.[1]):await auth.authenticate(token);
       if(context.role==='ci' && !(req.method==='POST'&&path==='/v1/release-gate'))throw new InputError('CI credentials can only check release gates.',403);
+      if(req.method==='POST'&&path==='/v1/auth/logout'){await body(req);await auth.logout(token,context);return send(200,{authenticated:false},{'Set-Cookie':sessionCookie('',true)});}
+      const selectedProject=req.headers['x-agenttrust-project'];
+      if(selectedProject!==undefined){
+        if(typeof selectedProject!=='string'||!/^[-a-f0-9]{36}$/i.test(selectedProject))throw new InputError('Invalid project id.');
+        if(context.role==='ci'?selectedProject!==context.projectId:!context.projects.some(p=>p.id===selectedProject))throw new InputError('Unknown project.',404);
+        context.projectId=selectedProject;
+      }
       if(req.method==='GET'&&path==='/v1/release-receipts')return send(200,await ci.receipts(context));
       const receiptMatch=/^\/v1\/release-receipts\/([a-zA-Z0-9-]+)$/.exec(path);
       if(req.method==='GET'&&receiptMatch)return send(200,await ci.receipt(context,receiptMatch[1]));
@@ -53,8 +60,7 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       if(req.method==='POST'&&path==='/v1/ci-credentials')return send(201,await ci.create(context,await body(req)));
       const ciRevoke=/^\/v1\/ci-credentials\/([a-zA-Z0-9-]+)\/revoke$/.exec(path);
       if(req.method==='POST'&&ciRevoke){await body(req);return send(200,await ci.revoke(context,ciRevoke[1]));}
-      if(req.method==='POST'&&path==='/v1/release-gate')return send(200,await ci.check(context,await body(req)));
-      if(req.method==='POST'&&path==='/v1/auth/logout'){await body(req);await auth.logout(token,context);return send(200,{authenticated:false},{'Set-Cookie':sessionCookie('',true)});}
+      if(req.method==='POST'&&path==='/v1/release-gate')return send(200,await ci.check(context,await body(req),req.headers['idempotency-key']));
       if(req.method==='GET'&&path==='/v1/me') return send(200,context);
       if(req.method==='GET'&&path==='/v1/catalog') return send(200,await store.catalog(context));
       if(req.method==='GET'&&path==='/v1/sample-dataset') return send(200,sampleDataset);

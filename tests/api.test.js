@@ -1,3 +1,4 @@
+import { CI } from '../apps/api/ci.js';
 import { checkRelease } from '../scripts/release-gate.mjs';
 import test from 'node:test';
 import { request as httpRequest } from 'node:http';
@@ -12,12 +13,12 @@ import { seedOrganization } from '../scripts/setup.mjs';
 import { tokenHash } from '../packages/contracts/hash.js';
 
 const headers={'Content-Type':'application/json','X-AgentTrust-Request':'local-ui'};
-async function fixture(t) {
+async function fixture(t,{ciOptions}={}) {
   if(!process.env.TEST_DATABASE_URL||new URL(process.env.TEST_DATABASE_URL).pathname!=='/agenttrust_test') throw new Error('Run npm run setup; integration tests require the isolated agenttrust_test database.');
   const owner=pool(process.env.TEST_OWNER_DATABASE_URL), database=pool(process.env.TEST_DATABASE_URL), workerDb=pool(process.env.TEST_WORKER_DATABASE_URL);
   const first=await seedOrganization(owner,`Test ${randomUUID()}`),other=await seedOrganization(owner,`Other ${randomUUID()}`);
   const store=new PgStore(database),auth=new Auth(database),engine=new WorkerEngine(workerDb,{leaseMs:1500,pollMs:20});
-  const server=createApp({database,store,auth});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const server=createApp({database,store,auth,ci:new CI(database,ciOptions)});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const base=`http://127.0.0.1:${server.address().port}`;
   const cookies={}; const contexts={};
   for(const source of [first,other]) for(const credential of source.credentials) {
@@ -222,4 +223,53 @@ test('project CI keys are one-time, scoped, expiring and revocable; receipts are
   await assert.rejects(()=>f.owner.query('DELETE FROM agenttrust.release_receipts WHERE id=$1',[receipt.artifact.receiptId]),/immutable/);
   const events=await f.store.auditEvents(f.contexts.admin);assert.equal(events.filter(e=>e.action==='ci.credential.revoked').length,1);assert.ok(events.some(e=>e.action==='ci.release.checked'));assert.ok(!JSON.stringify(events).includes(credential.token));
   const isolated=await transaction(f.database,c=>c.query('SELECT id FROM agenttrust.release_receipts WHERE id=$1',[receipt.artifact.receiptId]),f.other.organizationId);assert.equal(isolated.rowCount,0);
+});
+
+test('release checks deduplicate concurrent delivery, reject conflicts and enforce organization rate and storage limits',async t=>{
+  const f=await fixture(t,{ciOptions:{checkLimitPerMinute:2,receiptQuota:3}});const {run}=await f.create();await f.engine.tick();
+  const request={candidateRunId:run.id,...f.input()};const key=randomUUID();
+  const responses=await Promise.all(Array.from({length:8},()=>f.request('/v1/release-gate',{method:'POST',json:request,extra:{'Idempotency-Key':key}})));
+  const receipts=await Promise.all(responses.map(async response=>{assert.equal(response.status,200);return response.json();}));assert.equal(new Set(receipts.map(r=>r.artifactHash)).size,1);
+  const audit=await f.store.auditEvents(f.contexts.admin);assert.equal(audit.filter(e=>e.action==='ci.release.checked').length,1);
+  const conflict=await f.request('/v1/release-gate',{method:'POST',json:{...request,agentVersionId:'different'},extra:{'Idempotency-Key':key}});assert.equal(conflict.status,409);
+  const second=await f.request('/v1/release-gate',{method:'POST',json:request,extra:{'Idempotency-Key':randomUUID()}});assert.equal(second.status,200);
+  const throttled=await f.request('/v1/release-gate',{method:'POST',json:request,extra:{'Idempotency-Key':randomUUID()}});assert.equal(throttled.status,429);
+  const secondCI=new CI(f.database,{checkLimitPerMinute:120,receiptQuota:2});await assert.rejects(()=>secondCI.check(f.contexts.admin,request,randomUUID()),e=>e.status===429&&e.message.includes('quota'));
+});
+
+test('replayed release approval is denied when evaluation state changes',async t=>{
+  const f=await fixture(t);const {run}=await f.create();const request={candidateRunId:run.id,...f.input()};const key=randomUUID();
+  const queued=await f.request('/v1/release-gate',{method:'POST',json:request,extra:{'Idempotency-Key':key}});assert.equal((await queued.json()).deploymentAllowed,false);
+  await f.engine.tick();const replay=await f.request('/v1/release-gate',{method:'POST',json:request,extra:{'Idempotency-Key':key}});assert.equal(replay.status,409);
+  const current=await f.request('/v1/release-gate',{method:'POST',json:request,extra:{'Idempotency-Key':randomUUID()}});assert.equal((await current.json()).deploymentAllowed,true);
+});
+test('project selection scopes versions, runs, receipts and CI checks without rebinding project credentials',async t=>{
+  const f=await fixture(t);const original=(await f.create()).run;await f.engine.tick();
+  const projectId=randomUUID();await f.owner.query('INSERT INTO agenttrust.projects(id,organization_id,name) VALUES($1,$2,$3)',[projectId,f.first.organizationId,'Other release project']);
+  const projectHeader={'X-AgentTrust-Project':projectId};
+  const sample=await(await f.request('/v1/sample-dataset')).json();
+  const version=async(path,json)=>{const response=await f.request(path,{method:'POST',json,extra:projectHeader});assert.equal(response.status,201);return response.json();};
+  const agent=await version('/v1/agent-versions',{name:'Project normal',mode:'compliant'}),dataset=await version('/v1/dataset-versions',sample),policy=await version('/v1/policy-versions',{name:'Project policy',minimumPassRate:1});
+  const input={agentVersionId:agent.id,datasetVersionId:dataset.id,policyVersionId:policy.id};
+  const created=await f.request('/v1/runs',{method:'POST',json:input,extra:{...projectHeader,'Idempotency-Key':randomUUID()}});assert.equal(created.status,202);const run=await created.json();await f.engine.tick();
+  assert.equal((await f.request(`/v1/runs/${run.id}`)).status,404);assert.equal((await f.request(`/v1/runs/${run.id}`,{extra:projectHeader})).status,200);
+  assert.equal((await f.request(`/v1/runs/${original.id}`,{extra:projectHeader})).status,404);
+  const scoped=await(await f.request('/v1/runs',{extra:projectHeader})).json();assert.deepEqual(scoped.map(r=>r.id),[run.id]);
+  assert.equal((await f.request('/v1/catalog',{role:'other_admin',extra:projectHeader})).status,404);
+  assert.equal((await f.request('/v1/catalog',{extra:{'X-AgentTrust-Project':'invalid'}})).status,400);
+  const me=await(await f.request('/v1/me',{extra:projectHeader})).json();assert.equal(me.projectId,projectId);
+  const receipt=await(await f.request('/v1/release-gate',{method:'POST',json:{candidateRunId:run.id,...input},extra:projectHeader})).json();assert.equal(receipt.deploymentAllowed,true);
+  assert.equal((await f.request(`/v1/release-receipts/${receipt.artifact.receiptId}`)).status,404);
+  const cli=await checkRelease({base:f.base+'/',accessKey:f.first.credentials.find(c=>c.role==='viewer').token,projectId,candidateRunId:run.id,...input});assert.equal(cli.deploymentAllowed,true);
+  const key=await(await f.request('/v1/ci-credentials',{method:'POST',json:{name:'Scoped',projectId,ttlSeconds:60}})).json();
+  const rebinding=await f.request('/v1/release-gate',{method:'POST',json:{candidateRunId:original.id,...f.input()},extra:{Authorization:`Bearer ${key.token}`,'X-AgentTrust-Project':f.contexts.admin.projectId}});assert.equal(rebinding.status,404);
+});
+
+test('idempotent release approval is not reused after its result validity window expires',async t=>{
+  const f=await fixture(t);const {run}=await f.create();await f.engine.tick();const key=randomUUID();
+  const input={candidateRunId:run.id,...f.input(),maxAgeSeconds:2};
+  const first=await f.request('/v1/release-gate',{method:'POST',json:input,extra:{'Idempotency-Key':key}});assert.equal((await first.json()).deploymentAllowed,true);
+  await new Promise(resolve=>setTimeout(resolve,2100));
+  const stale=await f.request('/v1/release-gate',{method:'POST',json:input,extra:{'Idempotency-Key':key}});assert.equal(stale.status,409);
+  const current=await f.request('/v1/release-gate',{method:'POST',json:input,extra:{'Idempotency-Key':randomUUID()}});assert.equal((await current.json()).deploymentAllowed,false);
 });

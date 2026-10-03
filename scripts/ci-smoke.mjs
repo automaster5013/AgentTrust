@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { readFile,writeFile } from 'node:fs/promises';
 import { checkRelease } from './release-gate.mjs';
@@ -16,11 +17,13 @@ await call('/v1/auth/login',{method:'POST',data:{accessKey}});
 try{
   const run=await call(`/v1/runs/${checkpoint.id}`),me=await call('/v1/me');
   credential=await call('/v1/ci-credentials',{method:'POST',data:{name:'Temporary Docker CI smoke',projectId:me.projectId,ttlSeconds:60}});
-  const result=await checkRelease({base,accessKey:credential.token,candidateRunId:run.id,agentVersionId:run.agentVersionId,datasetVersionId:run.datasetVersionId,policyVersionId:run.policyVersionId});
+  const options={base,accessKey:credential.token,checkKey:randomUUID(),candidateRunId:run.id,agentVersionId:run.agentVersionId,datasetVersionId:run.datasetVersionId,policyVersionId:run.policyVersionId};
+  const result=await checkRelease(options);
+  const replay=await checkRelease(options);assert.equal(replay.artifactHash,result.artifactHash);
   assert.equal(result.deploymentAllowed,true);
   const receipt=await call(`/v1/release-receipts/${result.artifact.receiptId}`);assert.equal(receipt.artifactHash,result.artifactHash);
   await writeFile('.local/ci-smoke-receipt.json',JSON.stringify(receipt,null,2)+'\n',{mode:0o600});
-  console.log('Docker CI smoke: project key -> release approval -> verified immutable receipt.');
+  console.log('Docker CI smoke: project key -> idempotent release approval -> verified immutable receipt.');
 }finally{
   try{if(credential)await call(`/v1/ci-credentials/${credential.id}/revoke`,{method:'POST',data:{}});}
   finally{await call('/v1/auth/logout',{method:'POST',data:{}});}
