@@ -1,0 +1,17 @@
+{
+  "name": "agenttrust",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env apps/api/server.js",
+    "test": "node --test",
+    "check": "node scripts/check.mjs"
+  },
+  "dependencies": {
+    "ajv": "8.20.0"
+  }
+}

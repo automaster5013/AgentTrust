@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>AgentTrust · Release gates</title><link rel="stylesheet" href="/styles.css"><script type="module" src="/app.js"></script></head>
+<body>
+<div class="layout">
+  <aside><a class="brand" href="/">A<span>AgentTrust</span></a><div class="workspace">개발 워크스페이스 <span>LOCAL</span></div><nav><a class="active" href="#evaluation">평가 실행 <span>↗</span></a><a href="#history">실행 기록</a><a href="#dataset">데이터셋 등록</a></nav><div class="side-note"><span class="dot"></span> 합성 데이터 환경<p>모의 에이전트로 릴리스 판단 흐름을 검증합니다.</p></div></aside>
+  <main>
+    <header><span>Workspace / <strong>Release evaluation</strong></span><span class="local-tag">로컬 데모 · v0.1</span></header>
+    <section class="intro" id="evaluation"><div class="eyebrow">EVALUATE BEFORE YOU RELEASE</div><h1>변경을 검증하고,<br>근거로 배포를 결정하세요.</h1><p>업무 품질과 도구 권한을 함께 평가합니다. 모든 판정은 고정된 버전과 연결됩니다.</p></section>
+    <div class="notice">현재 세션은 메모리에 저장됩니다. 서버 재시작 시 기록이 초기화됩니다. 실제 모델 호출·배포 승인은 수행하지 않습니다.</div>
+    <div class="top-grid">
+      <section class="panel setup"><div class="section-title"><div><span class="eyebrow">01 / CONFIGURE</span><h2>새 평가 실행</h2></div><span class="chip">Mock adapter</span></div>
+        <form id="run-form"><label for="agent">에이전트 버전</label><select id="agent" required></select><div class="two"><div><label for="dataset-select">데이터셋 버전</label><select id="dataset-select" required></select></div><div><label for="policy">릴리스 정책</label><select id="policy" required></select></div></div><p class="hint">정상 응답, 업무 회귀, 금지 도구 호출, 실행 오류를 비교해 보세요.</p><button id="run-button" type="submit">평가 실행 <span>→</span></button></form>
+      </section>
+      <section class="panel gate-panel" aria-live="polite"><span class="eyebrow">02 / RELEASE GATE</span><div id="gate-badge" class="gate idle">실행 대기</div><h2 id="gate-title">배포 판단을 기다립니다</h2><p id="gate-reason">평가를 실행하면 필수 규칙과 정책을 기준으로 결과를 표시합니다.</p><div class="gate-meta"><span>배포 허용</span><strong id="allowed">—</strong></div><div class="gate-meta"><span>실행 상태</span><strong id="run-state">대기</strong></div></section>
+    </div>
+    <p id="status" role="status"></p>
+    <section class="metrics" aria-label="평가 요약"><div><span>평가 사례</span><strong id="case-count">—</strong></div><div><span>통과 규칙</span><strong id="pass-count">—</strong></div><div><span>실패 규칙</span><strong id="fail-count">—</strong></div><div><span>판정 불가</span><strong id="unknown-count">—</strong></div></section>
+    <section class="panel evidence"><div class="section-title"><div><span class="eyebrow">03 / EVIDENCE</span><h2>사례별 평가 근거</h2></div><button id="download" class="secondary" disabled>결과 JSON 저장</button></div><div id="snapshot" class="snapshot">아직 선택한 실행이 없습니다.</div><div id="results"><div class="empty">첫 평가를 실행해 규칙별 판정과 에이전트 출력을 확인하세요.</div></div></section>
+    <section class="panel" id="history"><div class="section-title"><div><span class="eyebrow">SESSION HISTORY</span><h2>실행 기록</h2></div></div><div class="table-wrap"><table><thead><tr><th>에이전트</th><th>데이터셋</th><th>실행 상태</th><th>게이트</th><th>시간</th><th>근거</th></tr></thead><tbody id="history-body"></tbody></table></div></section>
+    <section class="panel" id="dataset"><div class="section-title"><div><span class="eyebrow">VERSIONED DATASETS</span><h2>합성 데이터셋 등록</h2></div><span class="chip">JSON · 최대 256 KiB</span></div><p class="hint">아래 샘플을 수정하고 새 버전으로 저장하세요. 기존 실행의 스냅샷은 바뀌지 않습니다. 실제 개인정보와 비밀은 입력하지 마세요.</p><form id="dataset-form"><label for="dataset-json">데이터셋 JSON</label><textarea id="dataset-json" spellcheck="false" rows="13" required></textarea><button class="secondary" id="dataset-button" type="submit">새 데이터셋 버전 등록</button></form></section>
+    <footer>AgentTrust / Local evaluation prototype <span>통과 판정은 정의된 테스트 범위에 한정됩니다.</span></footer>
+  </main>
+</div>
+</body></html>
