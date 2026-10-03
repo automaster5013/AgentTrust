@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { validate, InputError } from '../../packages/contracts/index.js';
 import { hash } from '../../packages/contracts/hash.js';
 import { transaction } from './database.js';
-import { audit, requireWrite } from './auth.js';
+import { audit, requireWrite,revalidateSession } from './auth.js';
 import { pageResult } from './pagination.js';
 
 export const terminalStates = new Set(['succeeded','failed','cancelled','timed_out']);
@@ -50,6 +50,7 @@ export class PgStore {
     const data={name:input.name.trim()},fingerprint=hash(data);
     return transaction(this.database,async client=>{
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[context.organizationId]);
+      await revalidateSession(client,context,{adminOnly:true});
       const prior=(await client.query('SELECT id,name,creation_hash,created_at FROM agenttrust.projects WHERE organization_id=$1 AND creation_key=$2',[context.organizationId,key])).rows[0];
       if(prior){if(prior.creation_hash!==fingerprint)throw new InputError('Idempotency key conflicts with another project.',409);return {id:prior.id,name:prior.name,createdAt:prior.created_at.toISOString(),replay:true};}
       const count=Number((await client.query('SELECT count(*) FROM agenttrust.projects WHERE organization_id=$1',[context.organizationId])).rows[0].count);
@@ -80,6 +81,7 @@ export class PgStore {
     requireWrite(context,kind==='policy'); const data=validate(kind,input);
     return transaction(this.database,async client => {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[context.organizationId]);
+      await revalidateSession(client,context,{write:true,adminOnly:kind==='policy'});
       const count=await client.query('SELECT count(*) FROM agenttrust.versions WHERE organization_id=$1',[context.organizationId]);
       if(Number(count.rows[0].count)>=1000) throw new InputError('Organization version quota reached.',429);
       const id=randomUUID(); const contentHash=hash(data);
@@ -96,6 +98,7 @@ export class PgStore {
     const fingerprint=hash(normalized);
     return transaction(this.database, async client => {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[context.organizationId]);
+      await revalidateSession(client,context,{write:true});
       const previous=await client.query('SELECT * FROM agenttrust.runs WHERE organization_id=$1 AND project_id=$2 AND idempotency_key=$3',[context.organizationId,context.projectId,key]);
       if(previous.rowCount) {
         if(previous.rows[0].fingerprint!==fingerprint) throw new InputError('Idempotency key conflicts with another request.',409);
@@ -144,6 +147,7 @@ export class PgStore {
     requireWrite(context); uuid(id);
     return transaction(this.database,async client => {
       const result=await client.query('SELECT * FROM agenttrust.runs WHERE id=$1 AND organization_id=$2 AND project_id=$3 FOR UPDATE',[id,context.organizationId,context.projectId]);
+      await revalidateSession(client,context,{write:true});
       if(!result.rowCount) throw new InputError('Run not found.',404);
       const row=result.rows[0];
       if(!terminalStates.has(row.state)) await finalize(client,row,incomplete('cancelled','Evaluation was cancelled.'),context);

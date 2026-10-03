@@ -3,7 +3,7 @@ import { InputError } from '../../packages/contracts/index.js';
 import { hash,tokenHash } from '../../packages/contracts/hash.js';
 import { releaseGate } from '../../packages/evaluator/comparison.js';
 import { transaction } from './database.js';
-import { audit,requireWrite } from './auth.js';
+import { audit,requireWrite,revalidateSession } from './auth.js';
 import { publicRun } from './pg-store.js';
 import { loadReceiptSigner } from '../../packages/receipts/signature.js';
 import { pageResult } from './pagination.js';
@@ -32,6 +32,7 @@ export class CI {
     if(!input||Object.keys(input).some(k=>!['name','ttlSeconds','projectId'].includes(k))||typeof input.name!=='string'||input.name.trim().length<1||input.name.length>100||!Number.isInteger(input.ttlSeconds)||input.ttlSeconds<60||input.ttlSeconds>2592000||!uuid(input.projectId))throw new InputError('Expected name, projectId and ttlSeconds (60..2592000).');
     return transaction(this.database,async client=>{
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,2))',[context.organizationId]);
+      await revalidateSession(client,context,{adminOnly:true});
       const project=await client.query('SELECT id FROM agenttrust.projects WHERE organization_id=$1 AND id=$2',[context.organizationId,input.projectId]);
       if(!project.rowCount)throw new InputError('Unknown project.',404);
       const counts=(await client.query("SELECT count(*) AS total,count(*) FILTER(WHERE revoked_at IS NULL AND expires_at>now()) AS active,count(*) FILTER(WHERE created_at>clock_timestamp()-interval '60 seconds') AS recent FROM agenttrust.ci_credentials WHERE organization_id=$1",[context.organizationId])).rows[0];
@@ -59,6 +60,7 @@ export class CI {
     requireWrite(context,true);if(!uuid(id))throw new InputError('Invalid credential id.');
     return transaction(this.database,async client=>{
       const row=(await client.query('SELECT id,revoked_at FROM agenttrust.ci_credentials WHERE organization_id=$1 AND id=$2 FOR UPDATE',[context.organizationId,id])).rows[0];
+      await revalidateSession(client,context,{adminOnly:true});
       if(!row)throw new InputError('Unknown credential.',404);
       if(!row.revoked_at){await client.query('UPDATE agenttrust.ci_credentials SET revoked_at=clock_timestamp() WHERE id=$1',[id]);await audit(client,context,'ci.credential.revoked',id);}
       return {id,revoked:true};
@@ -86,7 +88,7 @@ export class CI {
       if(context.serviceCredentialId){
         const valid=await client.query("SELECT c.id FROM agenttrust.ci_credentials c JOIN agenttrust.memberships m ON m.id=c.created_by WHERE c.id=$1 AND c.organization_id=$2 AND c.project_id=$3 AND c.revoked_at IS NULL AND c.expires_at>clock_timestamp() AND m.active AND m.role='admin' FOR SHARE OF c",[context.serviceCredentialId,context.organizationId,context.projectId]);
         if(!valid.rowCount)throw new InputError('CI credential expired or revoked.',401);
-      }
+      }else await revalidateSession(client,context);
       const now=(await client.query('SELECT clock_timestamp() AS now')).rows[0].now;
       const result=releaseGate(candidate,input,baseline,now.getTime(),review);
       if(previous){

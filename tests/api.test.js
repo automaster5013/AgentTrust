@@ -511,3 +511,69 @@ test('version source reads are scoped immutable evidence and catalog contains on
   const clone=await(await f.request('/v1/dataset-versions',{method:'POST',json:source})).json();assert.notEqual(clone.id,created.id);assert.equal(clone.contentHash,created.contentHash);
   assert.deepEqual((await(await f.request('/v1/versions/'+created.id)).json()).data,source);
 });
+
+async function blockedOn(f,fragment){
+  for(let index=0;index<50;index++){
+    const locks=await f.owner.query(`SELECT 1 FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid
+      WHERE NOT l.granted AND a.usename='agenttrust_api' AND a.datname=current_database() AND a.query LIKE $1`,['%'+fragment+'%']);
+    if(locks.rowCount)return;await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  assert.fail('Expected request to be blocked before changing its authorization.');
+}
+
+test('session expiration during a release lock wait cannot create an approval receipt',async t=>{
+  const f=await fixture(t),{run}=await f.create();await f.engine.tick();
+  const client=await f.owner.connect(),sessionHash=tokenHash(f.cookies.viewer.split('=')[1]);
+  try{
+    await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,3))',[f.first.organizationId]);
+    await f.owner.query("UPDATE agenttrust.sessions SET expires_at=clock_timestamp()+interval '400 milliseconds' WHERE token_hash=$1",[sessionHash]);
+    const pending=f.request('/v1/release-gate',{role:'viewer',method:'POST',json:{candidateRunId:run.id,...f.input()}});
+    await blockedOn(f,'hashtextextended($1,3)');await new Promise(resolve=>setTimeout(resolve,450));await client.query('COMMIT');
+    assert.equal((await pending).status,401);
+    assert.equal(Number((await f.owner.query('SELECT count(*) FROM agenttrust.release_receipts WHERE organization_id=$1',[f.first.organizationId])).rows[0].count),0);
+    const me=await(await f.request('/v1/me')).json();assert.ok(!JSON.stringify(me).includes(tokenHash(f.cookies.admin.split('=')[1])));
+  }finally{await client.query('ROLLBACK').catch(()=>{});client.release();}
+});
+
+test('administrator role loss during project and CI key lock waits rejects new access',async t=>{
+  const f=await fixture(t),client=await f.owner.connect();
+  try{
+    for(const scenario of [
+      {seed:0,path:'/v1/projects',data:{name:'Must not be created'},extra:{'Idempotency-Key':randomUUID()}},
+      {seed:2,path:'/v1/ci-credentials',data:{name:'Must not be issued',projectId:f.first.projectId,ttlSeconds:60}}
+    ]){
+      await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,$2))',[f.first.organizationId,scenario.seed]);
+      const pending=f.request(scenario.path,{method:'POST',json:scenario.data,extra:scenario.extra});
+      await blockedOn(f,'hashtextextended($1,'+scenario.seed+')');
+      await f.owner.query("UPDATE agenttrust.memberships SET role='viewer' WHERE id=$1",[f.contexts.admin.membershipId]);
+      await client.query('COMMIT');assert.equal((await pending).status,403);
+      await f.owner.query("UPDATE agenttrust.memberships SET role='admin' WHERE id=$1",[f.contexts.admin.membershipId]);
+    }
+    assert.equal(Number((await f.owner.query('SELECT count(*) FROM agenttrust.projects WHERE organization_id=$1',[f.first.organizationId])).rows[0].count),1);
+    assert.equal(Number((await f.owner.query('SELECT count(*) FROM agenttrust.ci_credentials WHERE organization_id=$1',[f.first.organizationId])).rows[0].count),0);
+  }finally{await client.query('ROLLBACK').catch(()=>{});await f.owner.query("UPDATE agenttrust.memberships SET role='admin' WHERE id=$1",[f.contexts.admin.membershipId]);client.release();}
+});
+
+test('credential revocation while cancellation waits cannot mutate a run',async t=>{
+  const f=await fixture(t),{run}=await f.create(),client=await f.owner.connect(),credentialId=f.first.credentials.find(actor=>actor.role==='admin').id;
+  try{
+    await client.query('BEGIN');await client.query('SELECT id FROM agenttrust.runs WHERE id=$1 FOR UPDATE',[run.id]);
+    const pending=f.request('/v1/runs/'+run.id+'/cancel',{method:'POST',json:{}});
+    await blockedOn(f,'project_id=$3 FOR UPDATE');
+    await f.owner.query('UPDATE agenttrust.credentials SET revoked_at=clock_timestamp() WHERE id=$1',[credentialId]);
+    await client.query('COMMIT');assert.equal((await pending).status,401);
+    assert.equal((await f.owner.query('SELECT state FROM agenttrust.runs WHERE id=$1',[run.id])).rows[0].state,'queued');
+  }finally{await client.query('ROLLBACK').catch(()=>{});await f.owner.query('UPDATE agenttrust.credentials SET revoked_at=NULL WHERE id=$1',[credentialId]);client.release();}
+});
+
+test('administrator review waiting for serialization does not survive role revocation',async t=>{
+  const f=await fixture(t),policy=await f.store.createVersion(f.contexts.admin,'policy',{name:'Waiting reviewer',minimumPassRate:1,requiresManualApproval:true});
+  const {run}=await f.create('compliant',{policyVersionId:policy.id});await f.engine.tick();const client=await f.owner.connect();
+  try{
+    await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,5))',[f.first.organizationId]);
+    const pending=f.request('/v1/runs/'+run.id+'/reviews',{method:'POST',json:{decision:'approved'},extra:{'Idempotency-Key':randomUUID()}});
+    await blockedOn(f,'hashtextextended($1,5)');await f.owner.query("UPDATE agenttrust.memberships SET role='editor' WHERE id=$1",[f.contexts.admin.membershipId]);
+    await client.query('COMMIT');assert.equal((await pending).status,403);
+    assert.equal(Number((await f.owner.query('SELECT count(*) FROM agenttrust.run_reviews WHERE run_id=$1',[run.id])).rows[0].count),0);
+  }finally{await client.query('ROLLBACK').catch(()=>{});await f.owner.query("UPDATE agenttrust.memberships SET role='admin' WHERE id=$1",[f.contexts.admin.membershipId]);client.release();}
+});

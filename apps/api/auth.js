@@ -10,6 +10,13 @@ export function cookieToken(req) {
   return /^[a-f0-9]{64}$/.test(token || '') ? token : null;
 }
 export const sessionCookie = (token, expired = false) => `${SESSION_COOKIE}=${token || ''}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${expired ? 0 : 28800}`;
+const sessionProof=Symbol('authenticated-session-proof');
+export async function revalidateSession(client,context,{adminOnly=false,write=false}={}){
+  if(!context?.[sessionProof])throw new InputError('Authentication required.',401);
+  const row=(await client.query('SELECT * FROM agenttrust.authenticate_session($1)',[context[sessionProof]])).rows[0];
+  if(!row||row.id!==context.membershipId||row.organization_id!==context.organizationId)throw new InputError('Session expired or revoked.',401);
+  if(adminOnly||write)requireWrite({...context,role:row.role},adminOnly);
+}
 export async function audit(client, context, action, resourceId, detail = {}) {
   await client.query('INSERT INTO agenttrust.audit_events(id,organization_id,actor_id,action,resource_id,detail) VALUES($1,$2,$3,$4,$5,$6)', [randomUUID(),context.organizationId,context.membershipId || null,action,resourceId || null,detail]);
 }
@@ -45,7 +52,7 @@ export class Auth {
     const row = result.rows[0];
     const projects = await transaction(this.database, async client => (await client.query('SELECT id,name FROM agenttrust.projects WHERE organization_id=$1 ORDER BY created_at,id',[row.organization_id])).rows,row.organization_id);
     if (!projects.length) throw new InputError('No accessible project.',403);
-    return { membershipId:row.id, organizationId:row.organization_id, organizationName:row.organization_name, name:row.name, role:row.role, projectId:projects[0].id, projects };
+    return { membershipId:row.id, organizationId:row.organization_id, organizationName:row.organization_name, name:row.name, role:row.role, projectId:projects[0].id, projects,[sessionProof]:tokenHash(token) };
   }
   async logout(token, context) {
     if (!token) return;

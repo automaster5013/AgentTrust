@@ -3,7 +3,7 @@ import { InputError } from '../../packages/contracts/index.js';
 import { hash } from '../../packages/contracts/hash.js';
 import { evaluationPassing } from '../../packages/evaluator/comparison.js';
 import { transaction } from './database.js';
-import { requireWrite,audit } from './auth.js';
+import { requireWrite,audit,revalidateSession } from './auth.js';
 import { publicRun,terminalStates } from './pg-store.js';
 
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
@@ -31,13 +31,14 @@ export class Reviews{
     return transaction(this.database,async client=>{
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,5))',[context.organizationId]);
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,4))',[runId]);
+      await revalidateSession(client,context,{adminOnly:true});
       const prior=(await client.query('SELECT payload,review_hash,request_hash FROM agenttrust.run_reviews WHERE organization_id=$1 AND project_id=$2 AND actor_id=$3 AND idempotency_key=$4',[context.organizationId,context.projectId,context.membershipId,key])).rows[0];
       if(prior){if(prior.request_hash!==requestHash)throw new InputError('Review idempotency key conflict.',409);return {...publicReview(prior),replay:true};}
       const row=(await client.query('SELECT * FROM agenttrust.runs WHERE organization_id=$1 AND project_id=$2 AND id=$3 FOR SHARE',[context.organizationId,context.projectId,runId])).rows[0];
       if(!row)throw new InputError('Unknown run.',404);const run=publicRun(row);
       if(run.snapshot.policy.requiresManualApproval!==true)throw new InputError('This policy does not require manual review.',409);
       if(!terminalStates.has(run.state)||request.decision==='approved'&&!evaluationPassing(run))throw new InputError('Approval requires a completed passing evaluation.',409);
-      if(!(await client.query("SELECT id FROM agenttrust.memberships WHERE id=$1 AND organization_id=$2 AND active AND role='admin'",[context.membershipId,context.organizationId])).rowCount)throw new InputError('Administrator access was revoked.',403);
+      await revalidateSession(client,context,{adminOnly:true});
       const counts=(await client.query("SELECT count(*) AS total,count(*) FILTER(WHERE created_at>clock_timestamp()-interval '60 seconds') AS recent FROM agenttrust.run_reviews WHERE organization_id=$1",[context.organizationId])).rows[0];
       if(Number(counts.total)>=100000||Number(counts.recent)>=120)throw new InputError('Review quota reached.',429);
       const id=randomUUID(),now=(await client.query('SELECT clock_timestamp() AS now')).rows[0].now;
