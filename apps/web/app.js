@@ -188,7 +188,7 @@ $('results').replaceChildren();$('history-body').replaceChildren();$('audit-list
 }
 function showLogin(){
   scopeEpoch++;activeProjectId=null;actor=null;clearProjectData();
-  $('workspace-project').replaceChildren();$('access-key').value='';$('workspace-ui').hidden=true;$('login-panel').hidden=false;
+  $('workspace-project').replaceChildren();$('access-key').value='';$('loading-panel').hidden=true;$('workspace-ui').hidden=true;$('login-panel').hidden=false;
 }
 async function auditHistory(append=false) {
   if(actor?.role!=='admin'||append&&!auditCursor)return;
@@ -207,21 +207,22 @@ async function auditHistory(append=false) {
   if(!append&&!page.items.length)$('audit-list').textContent='선택한 동작의 감사 기록이 없습니다.';
 }
 async function initialize() {
+  $('loading-panel').hidden=false;$('workspace-ui').hidden=true;$('login-panel').hidden=true;
   actor=await api('/v1/me');activeProjectId=actor.projectId;
   $('workspace-project').replaceChildren(...actor.projects.map(p=>{const option=node('option',p.name);option.value=p.id;return option;}));$('workspace-project').value=activeProjectId;
   $('identity-label').textContent=`${actor.organizationName} · ${actor.name} · ${actor.role}`;
-  $('workspace-ui').hidden=false;$('login-panel').hidden=true;$('audit-panel').hidden=actor.role!=='admin';
+  $('audit-panel').hidden=actor.role!=='admin';
   $('ci-panel').hidden=actor.role!=='admin';$('projects').hidden=actor.role!=='admin';$('operations-panel').hidden=actor.role!=='admin';
   $('ci-project').replaceChildren(...actor.projects.map(p=>{const option=node('option',p.name);option.value=p.id;return option;}));
   $('ci-project').value=activeProjectId;
   await ciHistory();await receiptHistory();await sessionHistory();
   await catalog();$('dataset-json').value=JSON.stringify(await api('/v1/sample-dataset'),null,2);await history();await auditHistory();
-  updateButtons();
+  updateButtons();$('loading-panel').hidden=true;$('workspace-ui').hidden=false;$('login-panel').hidden=true;
 }
 $('login-form').addEventListener('submit',async event=>{
   event.preventDefault();$('login-button').disabled=true;$('login-status').textContent='';
   try{const accessKey=$('access-key').value;await api('/v1/auth/login',{method:'POST',body:JSON.stringify({accessKey})});$('access-key').value='';await initialize();}
-  catch(e){$('login-status').textContent=e.message;}
+  catch(e){showLogin();$('login-status').textContent=e.message;}
   finally{$('login-button').disabled=false;}
 });
 $('logout-button').addEventListener('click',async()=>{
@@ -237,7 +238,7 @@ $('cancel-button').addEventListener('click',async()=>{
 $('audit-action').addEventListener('change',()=>auditHistory().catch(e=>message(e.message,true)));
 $('audit-more').addEventListener('click',()=>auditHistory(true).catch(e=>message(e.message,true)));
 $('audit-refresh').addEventListener('click',()=>auditHistory().catch(e=>message(e.message,true)));
-try{await initialize();}catch(e){showLogin();$('login-status').textContent=e.message==='Authentication required.'?'접근 키를 입력해 주세요.':e.message;}
+
 
 $('baseline-run').addEventListener('change',()=>{comparisonSequence++;$('comparison-result').textContent='기준 실행이 변경됐습니다. 다시 비교하세요.';});
 $('compare-form').addEventListener('submit',async event=>{
@@ -398,3 +399,8 @@ async function sessionHistory(append=false){
 }
 $('sessions-refresh').addEventListener('click',async()=>{try{await sessionHistory();}catch(error){$('sessions-status').textContent=error.message;}});
 $('sessions-more').addEventListener('click',async()=>{try{await sessionHistory(true);}catch(error){$('sessions-status').textContent=error.message;}});
+
+
+$('login-button').disabled=true;
+try{await initialize();}catch(e){showLogin();$('login-status').textContent=e.message==='Authentication required.'?'접근 키를 입력해 주세요.':e.message;}
+finally{$('login-button').disabled=false;}

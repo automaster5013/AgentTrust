@@ -197,3 +197,12 @@ GET /v1/runs/:id/reviews accepts optional limit/cursor pagination (default 25, m
 The review panel offers older-record paging and retains sequence/run guards against late page responses or stale refreshes. Pending submissions keep approval/rejection/older-history controls disabled. Changing runs clears the cursor; an older submission error cannot replace the newly selected run's status. Native tests cover backwards clocks, concurrent insertion between pages, cross-tenant/project/run cursors, bigint precision, malformed parameters and UI races. Final gate ordering still uses the unchanged latestReview query.
 
 Actual Docker created 52 synthetic rejection opinions for one passing manual-policy evaluation. Pages returned 25, 25 and 2 reviews in reverse insertion order, while the unpaged compatibility endpoint returned 50. The trusted-public-key signed final gate remained BLOCK/rejected. Browser paging reached 25, 50 and 52 rendered opinions and disabled further paging on the final page. The synthetic opinions are retained as immutable local test history.
+
+
+### Workspace hydration and initial event registration (v0.40.0)
+
+All form/button handlers are registered before the first awaited workspace initialization. A dedicated loading panel is shown while session/project reads hydrate the UI; interactive workspace controls remain hidden until catalog, history, sessions and audit data are ready. The initial login control stays disabled during the session check. Initialization failure clears partial workspace state and restores a usable login; a data-read failure after a successful login also leaves the loading state correctly. This prevents an early form submit from taking the browser's default navigation path while handlers are still being registered.
+
+Three tests defer the first credential-history read, verify form handlers and preventDefault are already installed, and check both initial and post-login read failure recovery. Existing role, selection, pagination and asynchronous response guards remain tested. This is local UI readiness handling; it does not add a new login provider or permission.
+
+Actual Docker browser verification showed only the loading panel during hydration and the workspace after completion. Submitting the history form kept the clean localhost URL without a default form navigation. All 136 tests and syntax checks passed.

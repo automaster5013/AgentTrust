@@ -21,10 +21,11 @@ function execution(id,state='succeeded',manual=false){return {id,state,createdAt
   snapshot:{agent:{name:'Run '+id},dataset:{name:'Synthetic dataset'},policy:{name:'Synthetic policy',requiresManualApproval:manual}},
   agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy',results:[],summary:{cases:0,pass:0,fail:0,inconclusive:0},
   gate:{decision:state==='succeeded'?'pass':'inconclusive',deploymentAllowed:state==='succeeded'&&!manual,...(manual?{requiresManualApproval:true,evaluationPassed:state==='succeeded'}:{})}};}
-async function fixture({manual=false}={}){
+async function fixture({manual=false,initialOverrides,waitForInitialization=true}={}){
   const nodes=new Map(),selects=new Set(['agent','dataset-select','policy','workspace-project','ci-project','baseline-run','history-state','history-decision','audit-action','agent-mode']);
   const element=id=>{if(!nodes.has(id))nodes.set(id,new Element(selects.has(id)?'select':'div'));return nodes.get(id);};
-  const document={getElementById:element,createElement:tag=>new Element(tag)},timers=[],overrides=new Map(),downloads=[];
+  const document={getElementById:element,createElement:tag=>new Element(tag)},timers=[],overrides=new Map(initialOverrides||[]),downloads=[];
+  element('workspace-ui').hidden=true;element('login-panel').hidden=true;element('loading-panel').hidden=false;element('login-button').disabled=true;
   element('timeout-ms').value='30000';element('case-budget').value='100';
   const runs={A:execution('A','running'),B:execution('B','succeeded',manual)};
   const defaultResponse=path=>{
@@ -41,9 +42,10 @@ async function fixture({manual=false}={}){
   const fetch=async(path,options={})=>{const handler=overrides.get(path),data=handler?await handler(options):defaultResponse(path);return {status:200,ok:true,json:async()=>data};};
   const source=await readFile(new URL('../apps/web/app.js',import.meta.url),'utf8');
   const AsyncFunction=Object.getPrototypeOf(async()=>{}).constructor;
-  await new AsyncFunction('document','fetch','setTimeout','crypto','URL',source)(document,fetch,callback=>{timers.push(callback);},webcrypto,{createObjectURL:blob=>{downloads.push(blob);return 'blob:synthetic';},revokeObjectURL(){}});
+  const initialized=new AsyncFunction('document','fetch','setTimeout','crypto','URL',source)(document,fetch,callback=>{timers.push(callback);},webcrypto,{createObjectURL:blob=>{downloads.push(blob);return 'blob:synthetic';},revokeObjectURL(){}});
+  if(waitForInitialization)await initialized;
   const view=id=>{const row=element('history-body').children.find(row=>row.children[0].textContent==='Run '+id);return row.children.at(-1).children[0].fire('click');};
-  return {element,overrides,timers,runs,view,downloads};
+  return {element,overrides,timers,runs,view,downloads,initialized};
 }
 
 test('late cancellation response cannot replace a newly selected run',async()=>{
@@ -162,4 +164,21 @@ test('a review submission failure cannot replace the status of a newly selected 
  const f=await fixture({manual:true}),submission=deferred();f.runs.A=execution('A','succeeded',true);await f.view('B');f.overrides.set('/v1/runs/B/reviews',()=>submission.promise);
  const pending=f.element('review-form').fire('submit',{submitter:{value:'rejected'}});await settle();await f.view('A');f.element('status').textContent='Current run status';submission.resolve(Promise.reject(new Error('Obsolete review failure')));await pending;
  assert.equal(f.element('status').textContent,'Current run status');assert.ok(f.element('snapshot').textContent.includes('실행 A'));
+});
+
+
+test('initial hydration hides interactive workspace and registers forms before the first awaited read',async()=>{
+ const first=deferred(),f=await fixture({initialOverrides:[['/v1/ci-credentials?limit=25',()=>first.promise]],waitForInitialization:false});await settle();
+ assert.equal(f.element('workspace-ui').hidden,true);assert.equal(f.element('loading-panel').hidden,false);assert.equal(f.element('login-panel').hidden,true);assert.equal(f.element('login-button').disabled,true);
+ assert.equal(f.element('history-filter-form').handlers.submit.length,1);assert.equal(f.element('project-form').handlers.submit.length,1);assert.equal(f.element('review-form').handlers.submit.length,1);
+ let prevented=0;await f.element('history-filter-form').fire('submit',{preventDefault:()=>prevented++});assert.equal(prevented,1);
+ first.resolve({items:[],nextCursor:null});await f.initialized;assert.equal(f.element('workspace-ui').hidden,false);assert.equal(f.element('loading-panel').hidden,true);assert.equal(f.element('login-panel').hidden,true);
+});
+test('failed initial hydration returns to a usable login without exposing partial workspace',async()=>{
+ const f=await fixture({initialOverrides:[['/v1/ci-credentials?limit=25',()=>{throw new Error('Synthetic initialization read failed');}]]});
+ assert.equal(f.element('workspace-ui').hidden,true);assert.equal(f.element('loading-panel').hidden,true);assert.equal(f.element('login-panel').hidden,false);assert.equal(f.element('login-button').disabled,false);assert.equal(f.element('login-status').textContent,'Synthetic initialization read failed');
+});
+test('data loading failure after login cannot leave the loading panel stuck',async()=>{
+ const f=await fixture();await f.element('logout-button').fire('click');f.overrides.set('/v1/ci-credentials?limit=25',()=>{throw new Error('Synthetic post-login read failed');});f.element('access-key').value='synthetic-key';await f.element('login-form').fire('submit');
+ assert.equal(f.element('workspace-ui').hidden,true);assert.equal(f.element('loading-panel').hidden,true);assert.equal(f.element('login-panel').hidden,false);assert.equal(f.element('login-button').disabled,false);assert.equal(f.element('access-key').value,'');assert.equal(f.element('login-status').textContent,'Synthetic post-login read failed');
 });
