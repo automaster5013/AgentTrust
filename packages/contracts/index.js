@@ -1,4 +1,5 @@
 import Ajv from 'ajv';
+import { canonical } from './hash.js';
 
 export class InputError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -43,6 +44,10 @@ const schemas = {
   } }
 };
 const validators = Object.fromEntries(Object.entries(schemas).map(([key, schema]) => [key, ajv.compile(schema)]));
+const evidenceCache=new Map(),maximumEntries=128,maximumSourceBytes=262144;
+let sourceBytes=0;
+export const evidenceSchemaCacheStats=()=>({entries:evidenceCache.size,sourceBytes,maximumEntries,maximumSourceBytes});
+function freezeSchema(value){if(value&&typeof value==='object'){for(const child of Object.values(value))freezeSchema(child);Object.freeze(value);}return value;}
 
 // Deliberately bounded JSON Schema subset: no references, regex, custom code or remote resolution.
 export function compileEvidenceSchema(schema, depth = 0) {
@@ -60,7 +65,17 @@ export function compileEvidenceSchema(schema, depth = 0) {
     if (node.enum && (!Array.isArray(node.enum) || node.enum.length > 30)) throw new InputError('Schema enum is too large.');
   }
   inspect(schema, depth);
-  try { return new Ajv({ strict: true, allErrors: true }).compile(schema); }
+  try {
+    const key=JSON.stringify(canonical(schema)),bytes=Buffer.byteLength(key);
+    const cached=evidenceCache.get(key);
+    if(cached){evidenceCache.delete(key);evidenceCache.set(key,cached);return cached.validator;}
+    const validator=new Ajv({strict:true,allErrors:true}).compile(freezeSchema(structuredClone(schema)));
+    if(bytes<=maximumSourceBytes){
+      while(evidenceCache.size>=maximumEntries||sourceBytes+bytes>maximumSourceBytes){const oldest=evidenceCache.keys().next().value;sourceBytes-=evidenceCache.get(oldest).bytes;evidenceCache.delete(oldest);}
+      evidenceCache.set(key,{validator,bytes});sourceBytes+=bytes;
+    }
+    return validator;
+  }
   catch { throw new InputError('Invalid evidence JSON Schema.'); }
 }
 
@@ -76,7 +91,8 @@ export function validate(kind, value) {
   if (kind === 'agent' && (value.mode === 'https') !== (value.connectorId !== undefined && value.endpointHash !== undefined)) throw new InputError('HTTPS agents require a connectorId and endpointHash; mock agents cannot use connection fields.');
   if (kind === 'agent' && value.mode !== 'https' && (value.connectorId !== undefined || value.endpointHash !== undefined)) throw new InputError('Mock agents cannot use connection fields.');
   if (kind === 'dataset') {
-    const caseIds = new Set();
+    const caseIds = new Set(),evidenceSchemas=new Map();
+    const registerSchema=schema=>{evidenceSchemas.set(JSON.stringify(canonical(schema)),schema);if(evidenceSchemas.size>128)throw new InputError('Dataset supports at most 128 distinct evidence schemas.');};
     for (const c of value.cases) {
       if (caseIds.has(c.id)) throw new InputError('Duplicate case id.');
       caseIds.add(c.id);
@@ -88,13 +104,14 @@ export function validate(kind, value) {
         const expected = { contains: ['value'], not_contains: ['value'], json_schema: ['schema'], allowed_tools: ['allowed', 'argumentSchemas'] }[r.type];
         if (expected.some(k => r[k] === undefined && k !== 'argumentSchemas')) throw new InputError(`Missing rule configuration for ${r.type}.`);
         for (const k of ['value', 'schema', 'allowed', 'argumentSchemas']) if (r[k] !== undefined && !expected.includes(k)) throw new InputError('Irrelevant rule configuration.');
-        if (r.schema) compileEvidenceSchema(r.schema);
+        if (r.schema) registerSchema(r.schema);
         for (const [name, schema] of Object.entries(r.argumentSchemas || {})) {
           if (!r.allowed.includes(name)) throw new InputError('Argument schema references an unallowed tool.');
-          compileEvidenceSchema(schema);
+          registerSchema(schema);
         }
       }
     }
+    for(const schema of evidenceSchemas.values())compileEvidenceSchema(schema);
   }
   return structuredClone(value);
 }
