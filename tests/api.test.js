@@ -769,3 +769,14 @@ test('manual approval reviewer role is read after waiting for the CI credential 
   await f.owner.query("UPDATE agenttrust.memberships SET role='viewer' WHERE id=$1",[f.contexts.editor.membershipId]);await client.query('COMMIT');const receipt=await(await pending).json();assert.equal(receipt.deploymentAllowed,false);assert.equal(receipt.manualApproval.status,'invalid');
  }finally{await client.query('ROLLBACK');await f.owner.query("UPDATE agenttrust.memberships SET role='editor' WHERE id=$1",[f.contexts.editor.membershipId]);client.release();}
 });
+
+
+test('manual approval refuses a stored pass whose evidence contradicts its rule statuses',async t=>{
+ const f=await fixture(t),policy=await f.store.createVersion(f.contexts.admin,'policy',{name:'Corrupt review evidence',minimumPassRate:1,requiresManualApproval:true});const created=await f.create('compliant',{policyVersionId:policy.id}),claimed=await f.engine.claim();assert.equal(claimed.id,created.run.id);
+ const outcome=evaluate(claimed.snapshot);outcome.results[0].evidence.output='Incorrect synthetic answer';
+ // Deliberately bypass the application worker guard through the trusted worker role.
+ await transaction(f.workerDb,client=>finalize(client,claimed,outcome));
+ const path='/v1/runs/'+claimed.id+'/reviews';assert.equal((await f.request(path,{method:'POST',json:{decision:'approved'},extra:{'Idempotency-Key':randomUUID()}})).status,409);
+ assert.equal(Number((await f.owner.query('SELECT count(*) FROM agenttrust.run_reviews WHERE run_id=$1',[claimed.id])).rows[0].count),0);
+ assert.equal((await f.request(path,{method:'POST',json:{decision:'rejected',comment:'Stored evidence is inconsistent.'},extra:{'Idempotency-Key':randomUUID()}})).status,201);
+});

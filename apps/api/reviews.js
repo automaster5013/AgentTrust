@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { InputError } from '../../packages/contracts/index.js';
 import { hash } from '../../packages/contracts/hash.js';
 import { evaluationPassing } from '../../packages/evaluator/comparison.js';
+import { runIntegrity } from '../../packages/evaluator/integrity.js';
 import { transaction } from './database.js';
 import { requireWrite,audit,revalidateSession } from './auth.js';
 import { publicRun,terminalStates } from './pg-store.js';
@@ -37,7 +38,7 @@ export class Reviews{
       const row=(await client.query('SELECT * FROM agenttrust.runs WHERE organization_id=$1 AND project_id=$2 AND id=$3 FOR SHARE',[context.organizationId,context.projectId,runId])).rows[0];
       if(!row)throw new InputError('Unknown run.',404);const run=publicRun(row);
       if(run.snapshot.policy.requiresManualApproval!==true)throw new InputError('This policy does not require manual review.',409);
-      if(!terminalStates.has(run.state)||request.decision==='approved'&&!evaluationPassing(run))throw new InputError('Approval requires a completed passing evaluation.',409);
+      if(!terminalStates.has(run.state)||request.decision==='approved'&&(!evaluationPassing(run)||!runIntegrity(run)))throw new InputError('Approval requires a completed, verified passing evaluation.',409);
       await revalidateSession(client,context,{adminOnly:true});
       const counts=(await client.query("SELECT count(*) AS total,count(*) FILTER(WHERE created_at>clock_timestamp()-interval '60 seconds') AS recent FROM agenttrust.run_reviews WHERE organization_id=$1",[context.organizationId])).rows[0];
       if(Number(counts.total)>=100000||Number(counts.recent)>=120)throw new InputError('Review quota reached.',429);

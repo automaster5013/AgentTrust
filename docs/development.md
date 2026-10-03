@@ -173,3 +173,8 @@ The same revalidation applies before replaying an existing idempotent receipt. E
 
 
 Manual-review actor validity is likewise read after credential/session lock waits. The run's review lock still serializes new approvals/rejections, but membership role/activation can change independently. A second native regression reproduced a cached administrator approval remaining PASS after the separate reviewer lost administrator role while the CI request waited on its credential row. Refreshing the latest review after all authorization locks now produces a signed BLOCK with manualApproval.status=invalid. The reviewer is separate from the CI key issuer in this test.
+
+
+### Administrator approval verifies evidence truth (v0.36.0)
+
+Creating an approved manual review requires both a completed passing evaluation and full runIntegrity verification: immutable version/snapshot binding, result hash, exact case/rule coverage, stored evidence re-evaluation, summary and policy gate. A regression deliberately bypasses the application worker through the trusted DB worker role and stores a nominal PASS whose answer contradicts a required rule. Previously the review API accepted an approval even though the CI gate independently blocked the evidence; it now returns 409 without adding a review. An administrator may still record a rejection of that terminal evidence. Review idempotency preserves historical opinions and does not turn them into current deployment permissions. This adds defense at the approval workflow; it does not prove model-output origin or make a compromised database operator untrusted.
