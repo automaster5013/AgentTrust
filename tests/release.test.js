@@ -116,3 +116,9 @@ test('live release gates recompute rule truth from stored evidence after hashes 
  const args=run();args.results[2].evidence.toolEvents[0].args.orderId='UNAPPROVED';args.resultHash=hash({results:args.results,gate:args.gate});assert.equal(releaseGate(args,expected).deploymentAllowed,false);
  assert.equal(releaseGate(run(),expected).deploymentAllowed,true);
 });
+
+test('integrity reuse is confined to one synchronous comparison or release invocation',()=>{
+ const shared=run();assert.equal(releaseGate(shared,expected).deploymentAllowed,true);assert.equal(compareRuns(shared,shared).deploymentAllowed,true);
+ shared.results[0].evidence.output='Synthetic failing evidence';shared.resultHash=hash({results:shared.results,gate:shared.gate});
+ assert.equal(releaseGate(shared,expected).deploymentAllowed,false);assert.equal(compareRuns(shared,shared).comparable,false);
+});
