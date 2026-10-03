@@ -11,6 +11,7 @@ class Element{
   get textContent(){return this.text+this.children.map(child=>child.textContent).join(' ');}
   replaceChildren(...children){this.text='';this.children=children;if(this.tag==='select')this.value=children[0]?.value||'';}
   append(...children){this.children.push(...children);}
+  click(){}
   addEventListener(type,handler){(this.handlers[type]??=[]).push(handler);}
   async fire(type,event={}){for(const handler of this.handlers[type]||[])await handler({preventDefault(){},...event});}
 }
@@ -23,7 +24,7 @@ function execution(id,state='succeeded',manual=false){return {id,state,createdAt
 async function fixture({manual=false}={}){
   const nodes=new Map(),selects=new Set(['agent','dataset-select','policy','workspace-project','ci-project','baseline-run','history-state','history-decision','audit-action','agent-mode']);
   const element=id=>{if(!nodes.has(id))nodes.set(id,new Element(selects.has(id)?'select':'div'));return nodes.get(id);};
-  const document={getElementById:element,createElement:tag=>new Element(tag)},timers=[],overrides=new Map();
+  const document={getElementById:element,createElement:tag=>new Element(tag)},timers=[],overrides=new Map(),downloads=[];
   element('timeout-ms').value='30000';element('case-budget').value='100';
   const runs={A:execution('A','running'),B:execution('B','succeeded',manual)};
   const defaultResponse=path=>{
@@ -40,9 +41,9 @@ async function fixture({manual=false}={}){
   const fetch=async(path,options={})=>{const handler=overrides.get(path),data=handler?await handler(options):defaultResponse(path);return {status:200,ok:true,json:async()=>data};};
   const source=await readFile(new URL('../apps/web/app.js',import.meta.url),'utf8');
   const AsyncFunction=Object.getPrototypeOf(async()=>{}).constructor;
-  await new AsyncFunction('document','fetch','setTimeout','crypto',source)(document,fetch,callback=>{timers.push(callback);},webcrypto);
+  await new AsyncFunction('document','fetch','setTimeout','crypto','URL',source)(document,fetch,callback=>{timers.push(callback);},webcrypto,{createObjectURL:blob=>{downloads.push(blob);return 'blob:synthetic';},revokeObjectURL(){}});
   const view=id=>{const row=element('history-body').children.find(row=>row.children[0].textContent==='Run '+id);return row.children.at(-1).children[0].fire('click');};
-  return {element,overrides,timers,runs,view};
+  return {element,overrides,timers,runs,view,downloads};
 }
 
 test('late cancellation response cannot replace a newly selected run',async()=>{
@@ -110,4 +111,31 @@ test('session refresh cannot re-enable revocation buttons while a termination is
  const terminating=f.element('session-list').children[0].children.at(-1).fire('click');await settle();await f.element('sessions-refresh').fire('click');
  assert.equal(f.element('session-list').children[0].children.at(-1).disabled,true);assert.equal(f.element('sessions-refresh').disabled,true);
  pending.resolve({id:session.id,revoked:true,current:false});await terminating;assert.equal(f.element('sessions-refresh').disabled,false);assert.equal(f.element('session-list').children[0].children.at(-1).disabled,false);
+});
+
+
+const evidenceCase=(index,status='pass')=>({caseId:'case-'+index,input:'Synthetic input '+index,evidence:{output:'Synthetic output',toolEvents:[]},rules:[{ruleId:'rule',required:true,status,reason:'Synthetic reason'}]});
+test('evidence pagination bounds rendered cases while retaining whole-run totals and selection',async()=>{
+ const f=await fixture();f.runs.B.results=Array.from({length:25},(_,i)=>evidenceCase(i));f.runs.B.summary={cases:25,pass:25,fail:0,inconclusive:0};await f.view('B');
+ assert.equal(f.element('results').children.length,10);assert.match(f.element('evidence-count').textContent,/1–10/);assert.equal(f.element('evidence-previous').disabled,true);assert.equal(f.element('case-count').textContent,'25');
+ await f.element('evidence-next').fire('click');assert.equal(f.element('results').children[0].children[0].textContent,'case-10');
+ await f.element('evidence-next').fire('click');assert.equal(f.element('results').children.length,5);assert.equal(f.element('evidence-next').disabled,true);assert.equal(f.element('allowed').textContent,'허용');
+ await f.element('evidence-previous').fire('click');assert.match(f.element('evidence-count').textContent,/11–20/);
+ await f.view('B');assert.match(f.element('evidence-count').textContent,/11–20/);
+ f.runs.A=execution('A');f.runs.A.results=[evidenceCase(99)];await f.view('A');assert.match(f.element('evidence-count').textContent,/1–1/);assert.equal(f.element('results').children[0].children[0].textContent,'case-99');
+});
+test('evidence search and rule filters preserve failed and inconclusive evidence without changing the gate',async()=>{
+ const f=await fixture();f.runs.B.results=[evidenceCase(1),evidenceCase(2,'fail'),evidenceCase(3,'inconclusive'),{...evidenceCase(4),error:'Synthetic adapter failure',rules:[]}];await f.view('B');
+ f.element('evidence-filter').value='fail';await f.element('evidence-filter').fire('change');assert.equal(f.element('results').children.length,1);assert.match(f.element('results').textContent,/case-2/);assert.match(f.element('results').textContent,/FAIL/);
+ f.element('evidence-filter').value='inconclusive';await f.element('evidence-filter').fire('change');assert.equal(f.element('results').children.length,2);assert.match(f.element('results').textContent,/Synthetic adapter failure/);
+ f.element('evidence-filter').value='';f.element('evidence-search').value='INPUT 1';await f.element('evidence-search').fire('input');assert.equal(f.element('results').children.length,1);assert.match(f.element('results').textContent,/case-1/);assert.equal(f.element('allowed').textContent,'허용');
+ f.element('evidence-search').value='no match';await f.element('evidence-search').fire('input');assert.match(f.element('results').textContent,/검색·필터에 맞는 사례가 없습니다/);assert.equal(f.element('evidence-next').disabled,true);
+ await f.element('logout-button').fire('click');assert.equal(f.element('evidence-search').disabled,true);assert.equal(f.element('evidence-filter').disabled,true);assert.equal(f.element('evidence-search').value,'');assert.equal(f.element('evidence-count').textContent,'실행을 선택하면 사례를 찾아볼 수 있습니다.');
+});
+
+
+test('filtered paginated evidence downloads the complete immutable run JSON',async()=>{
+ const f=await fixture();f.runs.B.results=Array.from({length:25},(_,i)=>evidenceCase(i,i===24?'fail':'pass'));await f.view('B');
+ f.element('evidence-filter').value='fail';await f.element('evidence-filter').fire('change');assert.equal(f.element('results').children.length,1);
+ await f.element('download').fire('click');assert.equal(f.downloads.length,1);const exported=JSON.parse(await f.downloads[0].text());assert.equal(exported.id,'B');assert.equal(exported.results.length,25);assert.equal(exported.results[24].rules[0].status,'fail');assert.equal(exported.snapshotHash,'synthetic-B');
 });

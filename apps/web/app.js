@@ -1,5 +1,7 @@
 const $ = id => document.getElementById(id);
 let currentRun = null;
+let evidencePage=0;
+const evidencePageSize=10;
 let actor = null;
 let activeProjectId = null;
 let scopeEpoch = 0;
@@ -55,7 +57,7 @@ function updateButtons(){
 function render(run) {
   if(currentRun?.id===run.id&&terminal.has(currentRun.state)&&!terminal.has(run.state))return false;
   comparisonSequence++;
-  if(currentRun?.id!==run.id){$('review-comment').value='';$('manual-gate-output').textContent='';}
+  if(currentRun?.id!==run.id){$('review-comment').value='';$('manual-gate-output').textContent='';evidencePage=0;$('evidence-search').value='';$('evidence-filter').value='';}
   currentRun = run;
   $('comparison-result').textContent='후보 실행을 조회한 뒤 기준 실행을 선택하세요.';
   const decision = run.gate.decision;
@@ -70,10 +72,27 @@ function render(run) {
   $('snapshot').textContent = `실행 ${run.id}\n에이전트 ${run.snapshot.agent.name} · 데이터셋 ${run.snapshot.dataset.name} · 정책 ${run.snapshot.policy.name}\n스냅샷 SHA-256 ${run.snapshotHash}`;
   $('download').disabled = !terminal.has(run.state);
   $('cancel-button').disabled = terminal.has(run.state) || actor?.role === 'viewer';
-  const cards = run.results.map(c => {
+  renderEvidence();
+  return true;
+}
+function renderEvidence(){
+  const run=currentRun,results=run?.results||[],search=$('evidence-search').value.trim().toLocaleLowerCase(),filter=$('evidence-filter').value;
+  const matches=results.filter(c=>{
+    if(search&&!`${c.caseId} ${c.input}`.toLocaleLowerCase().includes(search))return false;
+    if(filter==='fail')return c.rules.some(r=>r.status==='fail');
+    if(filter==='inconclusive')return !!c.error||c.rules.some(r=>r.status==='inconclusive');
+    if(filter==='pass')return !c.error&&c.rules.length>0&&c.rules.every(r=>r.status==='pass');
+    return true;
+  });
+  evidencePage=Math.min(evidencePage,Math.max(0,Math.ceil(matches.length/evidencePageSize)-1));
+  const start=evidencePage*evidencePageSize,visible=matches.slice(start,start+evidencePageSize);
+  $('evidence-search').disabled=!run;$('evidence-filter').disabled=!run;
+  $('evidence-previous').disabled=!run||evidencePage===0;$('evidence-next').disabled=!run||start+evidencePageSize>=matches.length;
+  $('evidence-count').textContent=!run?'실행을 선택하면 사례를 찾아볼 수 있습니다.':matches.length?`일치 ${matches.length} / 전체 ${results.length}개 사례 · ${start+1}–${start+visible.length} 표시`:`일치 0 / 전체 ${results.length}개 사례`;
+  const cards = visible.map(c => {
     const card = node('article', undefined, 'case');
     card.append(node('h3', c.caseId), node('div', '입력', 'case-label'), node('pre', c.input), node('div', '에이전트 출력', 'case-label'), node('pre', c.error || c.evidence.output || '(출력 증거 없음)'));
-    card.append(node('div', '모의 도구 이벤트', 'case-label'), node('pre', JSON.stringify(c.evidence.toolEvents ?? '(증거 없음)', null, 2)));
+    card.append(node('div', '도구 이벤트', 'case-label'), node('pre', JSON.stringify(c.evidence.toolEvents ?? '(증거 없음)', null, 2)));
     for (const r of c.rules) {
       const row = node('div', undefined, 'rule-row');
       const detail = node('div', undefined, 'rule-info'); detail.append(node('strong', `${r.ruleId} · ${r.required ? '필수' : '선택'}`), node('span', r.reason));
@@ -81,9 +100,11 @@ function render(run) {
     }
     return card;
   });
-  $('results').replaceChildren(...(cards.length ? cards : [node('div', terminal.has(run.state) ? '실행이 종료됐습니다. 확정된 사례 결과가 없습니다.' : '평가 결과를 기다리고 있습니다.', 'empty')]));
-  return true;
+  $('results').replaceChildren(...(cards.length ? cards : [node('div', !run?'첫 평가를 실행해 규칙별 판정과 에이전트 출력을 확인하세요.':results.length?'검색·필터에 맞는 사례가 없습니다.':terminal.has(run.state)?'실행이 종료됐습니다. 확정된 사례 결과가 없습니다.':'평가 결과를 기다리고 있습니다.', 'empty')]));
 }
+for(const id of ['evidence-search','evidence-filter'])$(id).addEventListener(id==='evidence-search'?'input':'change',()=>{evidencePage=0;renderEvidence();});
+$('evidence-previous').addEventListener('click',()=>{evidencePage=Math.max(0,evidencePage-1);renderEvidence();});
+$('evidence-next').addEventListener('click',()=>{evidencePage++;renderEvidence();});
 async function history(append=false) {
   if(append&&!runCursor)return;
   const sequence=++historySequence,params=new URLSearchParams({limit:'25'});
@@ -144,11 +165,12 @@ $('download').addEventListener('click', () => {
   const link = node('a'); link.href = url; link.download = `agenttrust-${currentRun.id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 function clearProjectData(){
+  evidencePage=0;$('evidence-search').value='';$('evidence-filter').value='';
   sessionSequence++;sessionCursor=null;sessionButtons=[];$('session-list').replaceChildren();$('sessions-status').textContent='';$('sessions-more').disabled=true;
   comparisonSequence++;keyHistorySequence++;receiptHistorySequence++;reviewSequence++;
   inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전의 고정된 내용과 해시를 확인할 수 있습니다.';
   auditSequence++;auditCursor=null;$('audit-more').disabled=true;$('audit-action').value='';
-  currentRun=null;selectedRunId=null;selectedRunSequence++;historySequence++;runCursor=null;$('history-more').disabled=true;$('history-state').value='';$('history-decision').value='';message('');$('run-button').disabled=true;$('dataset-button').disabled=true;
+  currentRun=null;renderEvidence();selectedRunId=null;selectedRunSequence++;historySequence++;runCursor=null;$('history-more').disabled=true;$('history-state').value='';$('history-decision').value='';message('');$('run-button').disabled=true;$('dataset-button').disabled=true;
   for(const id of ['agent-name','policy-name','project-name'])$(id).value='';
   for(const id of ['agent','dataset-select','policy'])$(id).replaceChildren();
   keyCursor=null;receiptCursor=null;$('ci-more').disabled=true;$('receipts-more').disabled=true;
