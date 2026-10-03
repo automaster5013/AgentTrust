@@ -79,3 +79,7 @@ queued → running → succeeded/failed/cancelled/timed_out. queued에서 직접
 결과 해시는 디지털 서명이 아니다. 감사 행은 API/워커 역할에 대해 추가만 가능하며 DB 소유자까지 막는 WORM 저장소는 아니다. 데이터 원문은 PostgreSQL에 저장되므로 상용 배포 전 암호화·보존·삭제 정책을 검증해야 한다. TypeScript 전환은 아직 수행하지 않았다.
 
 참고: [PostgreSQL 작업 잠금](https://www.postgresql.org/docs/17/sql-select.html), [node-postgres 트랜잭션](https://node-postgres.com/features/transactions), [Compose 프로젝트 분리](https://docs.docker.com/compose/how-tos/project-name/).
+
+선택 버전 조회: `GET /v1/versions/:id`는 현재 조직·프로젝트의 버전만 `{id,kind,data,contentHash,createdAt}`로 반환한다. 조회자도 읽을 수 있으며 다른 조직/프로젝트는 404다. 저장된 원문 해시가 불일치하면 정상 버전으로 반환하지 않는다. `/v1/catalog`은 이름·사례 수·정책 통과율/관리자 검토 여부·생성 시각·해시 등의 요약만 DB에서 읽으며 데이터셋 원문 전체를 목록에 가져오지 않는다.
+
+평가 설정 아래 내용 버튼으로 선택한 에이전트·데이터셋·정책 원문과 해시를 확인할 수 있다. 데이터셋 불러오기는 선택 버전의 원문을 복사 이름의 편집 초안으로 불러온다. 등록하면 새로운 ID와 해시를 가진 불변 버전을 만들며 기존 실행의 스냅샷은 바꾸지 않는다. 불러오기 응답을 기다리는 동안 초안이 수정되면 덮어쓰지 않는다. 늦게 도착한 버전 조회 응답은 선택 버전/워크스페이스가 바뀌면 표시하지 않는다.

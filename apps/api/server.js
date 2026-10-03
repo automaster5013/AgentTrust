@@ -69,6 +69,8 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       if(req.method==='GET'&&path==='/v1/receipt-signing-key')return send(200,ci.signer?.publicMetadata()||{algorithm:null,keyId:null});
       if(req.method==='GET'&&path==='/v1/projects')return send(200,context.projects);
       if(req.method==='POST'&&path==='/v1/projects'){const project=await store.createProject(context,await body(req),req.headers['idempotency-key']);return send(project.replay?200:201,project);}
+      const versionMatch=/^\/v1\/versions\/([a-zA-Z0-9-]+)$/.exec(path);
+      if(req.method==='GET'&&versionMatch)return send(200,await store.getVersion(context,versionMatch[1]));
       if(req.method==='GET'&&path==='/v1/catalog') return send(200,await store.catalog(context));
       if(req.method==='GET'&&path==='/v1/operations')return send(200,await store.operations(context));
       if(req.method==='GET'&&path==='/v1/sample-dataset') return send(200,sampleDataset);

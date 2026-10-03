@@ -492,3 +492,22 @@ test('HTTP API refuses a migration-owner database connection before reading prot
   const login=await fetch(base+'/v1/auth/login',{method:'POST',headers,body:JSON.stringify({accessKey:f.first.credentials[0].token})});assert.equal(login.status,503);
   assert.equal((await fetch(base+'/')).status,200);
 });
+
+test('version source reads are scoped immutable evidence and catalog contains only bounded metadata',async t=>{
+  const f=await fixture(t),source=await(await f.request('/v1/sample-dataset')).json();
+  source.name='Large synthetic version inspection';source.cases[0].input='x'.repeat(9000);
+  const created=await(await f.request('/v1/dataset-versions',{method:'POST',json:source})).json();
+  const detail=await(await f.request('/v1/versions/'+created.id,{role:'viewer'})).json();
+  assert.deepEqual(detail.data,source);assert.equal(detail.kind,'dataset');assert.equal(detail.contentHash,hash(source));assert.ok(detail.createdAt);
+  const catalog=await(await f.request('/v1/catalog')).json();
+  const metadata=catalog.dataset.find(version=>version.id===created.id);assert.equal(metadata.cases,source.cases.length);assert.equal(metadata.contentHash,detail.contentHash);assert.ok(metadata.createdAt);
+  assert.ok(!JSON.stringify(catalog).includes('x'.repeat(100)));assert.equal(catalog.policy[0].minimumPassRate,1);assert.equal(catalog.policy[0].requiresManualApproval,false);
+  const manual=await(await f.request('/v1/policy-versions',{method:'POST',json:{name:'Inspection manual policy',minimumPassRate:0.8,requiresManualApproval:true,manualApprovalTtlSeconds:120}})).json();
+  const policies=(await(await f.request('/v1/catalog')).json()).policy;assert.equal(policies.find(policy=>policy.id===manual.id).manualApprovalTtlSeconds,120);
+  assert.equal((await f.request('/v1/versions/'+created.id,{role:'other_admin'})).status,404);
+  const project=await f.store.createProject(f.contexts.admin,{name:'Other selected project'},randomUUID());
+  assert.equal((await f.request('/v1/versions/'+created.id,{extra:{'X-AgentTrust-Project':project.id}})).status,404);
+  assert.equal((await f.request('/v1/versions/not-a-uuid')).status,400);
+  const clone=await(await f.request('/v1/dataset-versions',{method:'POST',json:source})).json();assert.notEqual(clone.id,created.id);assert.equal(clone.contentHash,created.contentHash);
+  assert.deepEqual((await(await f.request('/v1/versions/'+created.id)).json()).data,source);
+});

@@ -8,6 +8,7 @@ let selectedRunId = null;
 let keyCursor=null,receiptCursor=null,runCursor=null;
 let historySequence=0;
 let auditCursor=null,auditSequence=0;
+let inspectionSequence=0;
 const terminal = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
 const decisionLabels = { pass: '통과', block: '차단', inconclusive: '판정 불가' };
 const stateLabels = { queued: '대기 중', running: '실행 중', succeeded: '평가 완료', failed: '실행 실패', cancelled: '취소됨', timed_out: '시간 초과' };
@@ -29,10 +30,11 @@ function node(tag, text, className) {
 }
 async function catalog(selectedDataset) {
   const data = await api('/v1/catalog');
+  inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전의 고정된 내용과 해시를 확인할 수 있습니다.';
   for (const [kind, id] of [['agent', 'agent'], ['dataset', 'dataset-select'], ['policy', 'policy']]) {
     const select = $(id); const previous = typeof selectedDataset==='object' && selectedDataset?.[kind] ? selectedDataset[kind] : kind === 'dataset' && typeof selectedDataset==='string' ? selectedDataset : select.value;
     select.replaceChildren(...data[kind].map(v => {
-      const option = node('option', `${v.name}${v.cases ? ` · ${v.cases}개 사례` : ''}`);
+      const option = node('option', `${v.name}${v.cases ? ` · ${v.cases}개 사례` : ''}${kind==='policy'?` · ${Math.round(v.minimumPassRate*100)}%${v.requiresManualApproval?' · 관리자 검토':''}`:''}`);
       option.value = v.id; return option;
     }));
     if (data[kind].some(v => v.id === previous)) select.value = previous;
@@ -42,6 +44,8 @@ async function catalog(selectedDataset) {
 }
 function updateButtons(){
   const writer=actor&&actor.role!=='viewer';
+  for(const [kind,id] of [['agent','agent'],['dataset','dataset-select'],['policy','policy']])$('inspect-'+kind).disabled=!$(id).value;
+  $('dataset-copy').disabled=!writer||!$('dataset-select').value;
   $('run-button').disabled=!writer||loading||!$('agent').value||!$('dataset-select').value||!$('policy').value;
   $('dataset-button').disabled=!writer;$('agent-create').disabled=!writer;$('policy-create').disabled=actor?.role!=='admin';
 }
@@ -134,6 +138,7 @@ $('download').addEventListener('click', () => {
   const link = node('a'); link.href = url; link.download = `agenttrust-${currentRun.id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 function clearProjectData(){
+  inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전의 고정된 내용과 해시를 확인할 수 있습니다.';
   auditSequence++;auditCursor=null;$('audit-more').disabled=true;$('audit-action').value='';
   currentRun=null;selectedRunId=null;historySequence++;runCursor=null;$('history-more').disabled=true;$('history-state').value='';$('history-decision').value='';message('');$('run-button').disabled=true;$('dataset-button').disabled=true;
   for(const id of ['agent-name','policy-name','project-name'])$(id).value='';
@@ -300,4 +305,23 @@ $('manual-gate-check').addEventListener('click',async()=>{
   try{const result=await api('/v1/release-gate',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({candidateRunId:run.id,agentVersionId:run.agentVersionId,datasetVersionId:run.datasetVersionId,policyVersionId:run.policyVersionId})});
     if(selectedRunId!==run.id)return;$('manual-gate-output').textContent='현재 CI 게이트: '+(result.deploymentAllowed?'통과':'차단')+' · 검토 상태 '+({approved:'승인 유효',rejected:'반려',missing:'승인 대기',expired:'승인 만료',invalid:'승인 무효'}[result.manualApproval?.status]||'불필요')+'\n'+result.reasons.map(reason=>reason.startsWith('A current administrator approval')?'유효한 관리자 승인이 필요합니다.':reason).join('\n');await receiptHistory();
   }catch(e){if(selectedRunId===run.id)$('manual-gate-output').textContent=e.message;}finally{$('manual-gate-check').disabled=false;}
+});
+
+for(const [kind,selector] of [['agent','agent'],['dataset','dataset-select'],['policy','policy']]){
+  $(selector).addEventListener('change',()=>{inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전이 변경됐습니다. 내용을 다시 조회하세요.';});
+  $('inspect-'+kind).addEventListener('click',async()=>{
+    const sequence=++inspectionSequence,id=$(selector).value;
+    try{const version=await api('/v1/versions/'+id);if(sequence!==inspectionSequence||$(selector).value!==id)return;
+      $('version-inspection-meta').textContent=`${version.data.name} · ${new Date(version.createdAt).toLocaleString('ko-KR')} · SHA-256 ${version.contentHash}`;
+      $('version-inspection-output').textContent=JSON.stringify(version.data,null,2);
+    }catch(error){if(sequence===inspectionSequence)message(error.message,true);}
+  });
+}
+$('dataset-copy').addEventListener('click',async()=>{
+  const id=$('dataset-select').value,draft=$('dataset-json').value;$('dataset-copy').disabled=true;
+  try{const version=await api('/v1/versions/'+id);if($('dataset-select').value!==id)return;
+    if($('dataset-json').value!==draft){message('초안이 수정되어 불러온 내용으로 덮어쓰지 않았습니다.');return;}
+    $('dataset-json').value=JSON.stringify({...version.data,name:version.data.name.slice(0,95)+' 복사'},null,2);
+    message('선택한 데이터셋을 새 버전 초안으로 불러왔습니다. 수정 후 등록하면 새로운 버전이 생성됩니다.');
+  }catch(error){message(error.message,true);}finally{updateButtons();}
 });

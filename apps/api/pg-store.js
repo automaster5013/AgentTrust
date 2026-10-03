@@ -61,10 +61,19 @@ export class PgStore {
   }
   async catalog(context) {
     return transaction(this.database, async client => {
-      const rows = (await client.query('SELECT * FROM agenttrust.versions WHERE organization_id=$1 AND project_id=$2 ORDER BY created_at,id',[context.organizationId,context.projectId])).rows;
+      const rows = (await client.query(`SELECT id,kind,content_hash,created_at,data->>'name' AS name,data->>'mode' AS mode,CASE WHEN kind='dataset' THEN jsonb_array_length(data->'cases') END AS case_count,data->'minimumPassRate' AS minimum_pass_rate,data->'requiresManualApproval' AS requires_manual_approval,data->'manualApprovalTtlSeconds' AS manual_approval_ttl FROM agenttrust.versions WHERE organization_id=$1 AND project_id=$2 ORDER BY created_at,id`,[context.organizationId,context.projectId])).rows;
       const result={agent:[],dataset:[],policy:[]};
-      for(const row of rows) result[row.kind].push({id:row.id,name:row.data.name,contentHash:row.content_hash,mode:row.data.mode,cases:row.data.cases?.length});
+      for(const row of rows) result[row.kind].push({id:row.id,name:row.name,contentHash:row.content_hash,createdAt:row.created_at.toISOString(),mode:row.mode||undefined,cases:row.case_count??undefined,...(row.kind==='policy'?{minimumPassRate:row.minimum_pass_rate,requiresManualApproval:row.requires_manual_approval===true,manualApprovalTtlSeconds:row.requires_manual_approval===true?row.manual_approval_ttl??3600:undefined}:{})});
       return result;
+    },context.organizationId);
+  }
+  async getVersion(context,id){
+    uuid(id);
+    return transaction(this.database,async client=>{
+      const row=(await client.query('SELECT id,kind,data,content_hash,created_at FROM agenttrust.versions WHERE id=$1 AND organization_id=$2 AND project_id=$3',[id,context.organizationId,context.projectId])).rows[0];
+      if(!row)throw new InputError('Version not found.',404);
+      if(hash(row.data)!==row.content_hash)throw new Error('Version evidence hash mismatch.');
+      return {id:row.id,kind:row.kind,data:row.data,contentHash:row.content_hash,createdAt:row.created_at.toISOString()};
     },context.organizationId);
   }
   async createVersion(context,kind,input) {
