@@ -577,3 +577,33 @@ test('administrator review waiting for serialization does not survive role revoc
     assert.equal(Number((await f.owner.query('SELECT count(*) FROM agenttrust.run_reviews WHERE run_id=$1',[run.id])).rows[0].count),0);
   }finally{await client.query('ROLLBACK').catch(()=>{});await f.owner.query("UPDATE agenttrust.memberships SET role='admin' WHERE id=$1",[f.contexts.admin.membershipId]);client.release();}
 });
+
+test('corrupt stored versions are never exposed as trusted source or queued for evaluation',async t=>{
+  const f=await fixture(t);
+  for(const source of [{data:{name:'Corrupt hash fixture',mode:'compliant'},contentHash:'a'.repeat(64)},{data:{name:'Malformed contract fixture',mode:'unknown'},contentHash:null}]){
+    const id=randomUUID(),contentHash=source.contentHash||hash(source.data);
+    await f.owner.query("INSERT INTO agenttrust.versions(id,organization_id,project_id,kind,data,content_hash) VALUES($1,$2,$3,'agent',$4,$5)",[id,f.first.organizationId,f.first.projectId,source.data,contentHash]);
+    const read=await f.request('/v1/versions/'+id);assert.equal(read.status,503);assert.equal((await read.json()).error,'Service unavailable.');
+    const submission=await f.request('/v1/runs',{method:'POST',json:f.input('compliant',{agentVersionId:id}),extra:{'Idempotency-Key':randomUUID()}});assert.equal(submission.status,503);
+  }
+  assert.equal(Number((await f.owner.query('SELECT count(*) FROM agenttrust.runs WHERE organization_id=$1',[f.first.organizationId])).rows[0].count),0);
+});
+
+test('API INSERT privilege cannot bypass the queued initial-state boundary',async t=>{
+  const f=await fixture(t),{run}=await f.create(),outcome=evaluate(run.snapshot);
+  for(const attempt of [
+    {state:'succeeded',attempts:0,outcome,resultHash:hash({results:outcome.results,gate:outcome.gate}),completedAt:new Date()},
+    {state:'cancelled',attempts:0},
+    {state:'queued',attempts:1},
+    {state:'queued',attempts:0,leaseToken:randomUUID()},
+    {state:'queued',attempts:0,startedAt:new Date()},
+    {state:'queued',attempts:0,outcome:{gate:{decision:'pass',deploymentAllowed:true}}}
+  ]){
+    await assert.rejects(transaction(f.database,client=>client.query(`INSERT INTO agenttrust.runs
+      (id,organization_id,project_id,agent_version_id,dataset_version_id,policy_version_id,idempotency_key,fingerprint,snapshot,snapshot_hash,timeout_ms,case_budget,max_attempts,deadline,state,attempts,outcome,result_hash,completed_at,lease_token,started_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,30000,100,3,clock_timestamp()+interval '30 seconds',$11,$12,$13,$14,$15,$16,$17)`,
+      [randomUUID(),f.first.organizationId,f.first.projectId,run.agentVersionId,run.datasetVersionId,run.policyVersionId,randomUUID(),hash({synthetic:true}),run.snapshot,run.snapshotHash,attempt.state,attempt.attempts,attempt.outcome||null,attempt.resultHash||null,attempt.completedAt||null,attempt.leaseToken||null,attempt.startedAt||null]),f.first.organizationId),/New runs must (?:begin queued|be queued)/);
+  }
+  assert.equal(Number((await f.owner.query('SELECT count(*) FROM agenttrust.runs WHERE organization_id=$1',[f.first.organizationId])).rows[0].count),1);
+  await f.engine.tick();assert.equal((await f.store.getRun(f.contexts.admin,run.id)).state,'succeeded');
+});

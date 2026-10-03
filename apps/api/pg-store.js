@@ -8,6 +8,11 @@ import { pageResult } from './pagination.js';
 export const terminalStates = new Set(['succeeded','failed','cancelled','timed_out']);
 export const incomplete = (state, reason) => ({ state, results:[], summary:{cases:0,rules:0,pass:0,fail:0,inconclusive:0,passRate:0}, gate:{ decision:'inconclusive',deploymentAllowed:false,reason } });
 function uuid(value) { if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value || '')) throw new InputError('Invalid resource id.'); return value; }
+function trustedVersion(row){
+  try{if(hash(row.data)!==row.content_hash)throw new Error();validate(row.kind,row.data);}
+  catch{throw new Error('Stored version evidence is invalid.');}
+  return row.data;
+}
 export function publicRun(row) {
   const outcome = row.outcome || incomplete(row.state,'Evaluation has not completed.');
   return { id:row.id, organizationId:row.organization_id, projectId:row.project_id,
@@ -73,8 +78,7 @@ export class PgStore {
     return transaction(this.database,async client=>{
       const row=(await client.query('SELECT id,kind,data,content_hash,created_at FROM agenttrust.versions WHERE id=$1 AND organization_id=$2 AND project_id=$3',[id,context.organizationId,context.projectId])).rows[0];
       if(!row)throw new InputError('Version not found.',404);
-      if(hash(row.data)!==row.content_hash)throw new Error('Version evidence hash mismatch.');
-      return {id:row.id,kind:row.kind,data:row.data,contentHash:row.content_hash,createdAt:row.created_at.toISOString()};
+      return {id:row.id,kind:row.kind,data:trustedVersion(row),contentHash:row.content_hash,createdAt:row.created_at.toISOString()};
     },context.organizationId);
   }
   async createVersion(context,kind,input) {
@@ -110,7 +114,7 @@ export class PgStore {
       for(const kind of ['agent','dataset','policy']) {
         const result=await client.query('SELECT * FROM agenttrust.versions WHERE id=$1 AND organization_id=$2 AND project_id=$3 AND kind=$4',[request[`${kind}VersionId`],context.organizationId,context.projectId,kind]);
         if(!result.rowCount) throw new InputError(`Unknown ${kind} version.`,404);
-        const v=result.rows[0]; snapshot[kind]={...v.data,id:v.id,contentHash:v.content_hash,createdAt:v.created_at.toISOString()};
+        const v=result.rows[0]; snapshot[kind]={...trustedVersion(v),id:v.id,contentHash:v.content_hash,createdAt:v.created_at.toISOString()};
       }
       const id=randomUUID();
       const result=await client.query(`INSERT INTO agenttrust.runs(id,organization_id,project_id,agent_version_id,dataset_version_id,policy_version_id,idempotency_key,fingerprint,snapshot,snapshot_hash,timeout_ms,case_budget,max_attempts,deadline)
