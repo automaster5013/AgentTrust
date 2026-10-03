@@ -105,3 +105,7 @@ Dynamic requests with Sec-Fetch-Site accept only same-origin or none; same-site,
 ### Repeated setup retention (v0.25.0)
 
 Setup creates sample organizations and versions only when the database contains no organizations. Existing projects, including intentionally empty projects, receive no additional sample versions on repeated setup. Existing access keys are never regenerated. An empty database with a pre-existing credentials file is rejected before seeding; restore the matching database and credentials together. The completion message resolves the actual credentials path on Windows and Unix. Local validation compared all stored versions and the credentials-file digest before and after running setup again; both were unchanged.
+
+### Concurrent login protection (v0.26.0)
+
+The per-process 20-failure/minute login budget also reserves capacity for pending credential checks. Parallel requests cannot all pass the budget check before their database lookup returns. A completed authentication rejection records its completion time; success and database errors release the reservation without adding an invalid-credential failure. A burst of legitimate logins can receive 429 while other checks are pending; retry once they complete. This limit is process-local and shared across credentials. Controlled concurrent tests verify exactly 20 unknown-key lookups, rejection of the next request before DB access, and reservation recovery after database errors.

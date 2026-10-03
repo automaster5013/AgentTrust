@@ -24,14 +24,15 @@ export function requireWrite(context, adminOnly = false) {
   if (!context || (adminOnly ? context.role !== 'admin' : !['admin','editor'].includes(context.role))) throw new InputError('Insufficient role.',403);
 }
 export class Auth {
-  constructor(database) { this.database = database; this.failures = []; }
+  constructor(database) { this.database = database; this.failures = []; this.pendingLogins=0; }
   async login(token) {
     const now = Date.now(); this.failures = this.failures.filter(t => t > now-60000);
-    if (this.failures.length >= 20) throw new InputError('Too many login attempts. Try again in one minute.',429);
+    if (this.failures.length+this.pendingLogins >= 20) throw new InputError('Too many login attempts. Try again in one minute.',429);
     if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) { this.failures.push(now); throw new InputError('Invalid access key.',401); }
-    return transaction(this.database, async client => {
+    this.pendingLogins++;
+    try {return await transaction(this.database, async client => {
       const result = await client.query('SELECT * FROM agenttrust.lookup_credential($1)',[tokenHash(token)]);
-      if (!result.rowCount) { this.failures.push(now); throw new InputError('Invalid access key.',401); }
+      if (!result.rowCount) throw new InputError('Invalid access key.',401);
       const row = result.rows[0]; const session = randomBytes(32).toString('hex');
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,1))',[row.credential_id]);
       const valid=(await client.query('SELECT * FROM agenttrust.lookup_credential($1)',[tokenHash(token)])).rows[0];
@@ -43,7 +44,10 @@ export class Auth {
       await client.query("INSERT INTO agenttrust.sessions(token_hash,credential_id,expires_at) VALUES($1,$2,now()+interval '8 hours')",[tokenHash(session),row.credential_id]);
       await audit(client,{ organizationId:row.organization_id,membershipId:row.membership_id },'auth.login',row.credential_id);
       return { token:session };
-    });
+    });}catch(error){
+      if(error instanceof InputError&&error.status===401)this.failures.push(Date.now());
+      throw error;
+    }finally{this.pendingLogins--;}
   }
   async authenticate(token) {
     if (!token) throw new InputError('Authentication required.',401);
