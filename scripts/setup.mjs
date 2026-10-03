@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID,generateKeyPairSync,createPrivateKey,createPublicKey } from 'node:crypto';
 import { mkdir, readFile, writeFile, chmod } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -26,6 +26,14 @@ export async function seedOrganization(database, name, actors = ['admin','editor
 }
 async function main() {
   await mkdir('.local', { recursive: true });
+  await mkdir('.local/receipt-signing',{recursive:true,mode:0o700});
+  if(!existsSync('.local/receipt-signing/private.pem')){
+    const pair=generateKeyPairSync('ed25519');
+    await writeFile('.local/receipt-signing/private.pem',pair.privateKey.export({type:'pkcs8',format:'pem'}),{flag:'wx',mode:0o600});
+  }
+  const signingPublic=createPublicKey(createPrivateKey(await readFile('.local/receipt-signing/private.pem','utf8'))).export({type:'spki',format:'pem'});
+  if(!existsSync('.local/receipt-signing/public.pem'))await writeFile('.local/receipt-signing/public.pem',signingPublic,{flag:'wx',mode:0o600});
+  else if(await readFile('.local/receipt-signing/public.pem','utf8')!==signingPublic)throw new Error('Receipt signing key pair mismatch. Preserve the private files and review their origin.');
   if (!existsSync('.env')) {
     const owner = randomBytes(24).toString('hex'), api = randomBytes(24).toString('hex'), worker = randomBytes(24).toString('hex');
     const env = [ 'PORT=4310', 'DB_PORT=55432', `DB_OWNER_PASSWORD=${owner}`, `DB_API_PASSWORD=${api}`, `DB_WORKER_PASSWORD=${worker}`,
@@ -39,6 +47,11 @@ async function main() {
     await writeFile('.env',env, { mode: 0o600 });
   }
   process.loadEnvFile('.env');
+  if(!process.env.AGENTTRUST_RECEIPT_SIGNING_KEY_FILE){
+    const configuration=await readFile('.env','utf8');
+    await writeFile('.env',configuration.trimEnd()+'\nAGENTTRUST_RECEIPT_SIGNING_KEY_FILE=C:/AgentTrust/.local/receipt-signing/private.pem\n',{mode:0o600});
+    process.env.AGENTTRUST_RECEIPT_SIGNING_KEY_FILE='C:/AgentTrust/.local/receipt-signing/private.pem';
+  }
   for (const key of ['DB_OWNER_PASSWORD','DB_API_PASSWORD','DB_WORKER_PASSWORD']) if (!/^[a-f0-9]{48}$/.test(process.env[key] || '')) throw new Error(`Expected generated configuration for ${key}. Preserve existing configuration and review .env.example.`);
   execFileSync('docker', ['compose','up','-d','--wait','db'], { stdio: 'inherit' });
   const owner = pool(process.env.OWNER_DATABASE_URL);

@@ -3,7 +3,8 @@ import { checkRelease } from '../scripts/release-gate.mjs';
 import test from 'node:test';
 import { request as httpRequest } from 'node:http';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { randomUUID,generateKeyPairSync } from 'node:crypto';
+import { ReceiptSigner,verifyReceipt } from '../packages/receipts/signature.js';
 import { createApp } from '../apps/api/server.js';
 import { pool,transaction } from '../apps/api/database.js';
 import { Auth } from '../apps/api/auth.js';
@@ -301,4 +302,18 @@ test('concurrent project creation cannot exceed the organization quota',async t=
   const responses=await Promise.all([0,1].map(i=>f.request('/v1/projects',{method:'POST',json:{name:'New '+i},extra:{'Idempotency-Key':randomUUID()}})));
   assert.deepEqual(responses.map(r=>r.status).sort(),[201,429]);
   assert.equal(Number((await f.owner.query('SELECT count(*) FROM agenttrust.projects WHERE organization_id=$1',[f.first.organizationId])).rows[0].count),100);
+});
+
+
+test('signed release receipts survive read and replay and require a trusted public key in CI',async t=>{
+  const pair=generateKeyPairSync('ed25519'),publicKey=pair.publicKey.export({type:'spki',format:'pem'}),signer=new ReceiptSigner(pair.privateKey.export({type:'pkcs8',format:'pem'}));
+  const f=await fixture(t,{ciOptions:{signer}}),{run}=await f.create();await f.engine.tick();
+  const expected={base:f.base,accessKey:f.first.credentials.find(c=>c.role==='viewer').token,candidateRunId:run.id,...f.input(),trustedPublicKey:publicKey,checkKey:randomUUID()};
+  const checked=await checkRelease(expected),replayed=await checkRelease(expected);assert.deepEqual(replayed.signature,checked.signature);
+  assert.equal(verifyReceipt(checked,publicKey).signatureVerified,true);
+  const stored=await(await f.request('/v1/release-receipts/'+checked.artifact.receiptId)).json();assert.deepEqual(stored.signature,checked.signature);assert.equal(verifyReceipt(stored,publicKey).signatureVerified,true);
+  assert.equal((await(await f.request('/v1/receipt-signing-key')).json()).keyId,signer.keyId);
+  await assert.rejects(checkRelease({...expected,checkKey:randomUUID(),trustedPublicKey:generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'})}),/trusted key/);
+  await assert.rejects(f.owner.query('UPDATE agenttrust.release_receipts SET signature=NULL WHERE id=$1',[checked.artifact.receiptId]),/immutable/);
+  const legacy=await new CI(f.database,{signer:null}).check(f.contexts.admin,{candidateRunId:run.id,...f.input()},randomUUID());assert.equal(legacy.signature,undefined);assert.throws(()=>verifyReceipt(legacy,publicKey),/signed release receipt/);
 });

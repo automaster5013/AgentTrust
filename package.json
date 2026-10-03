@@ -1,6 +1,6 @@
 {
   "name": "agenttrust",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -15,6 +15,7 @@
     "docker:up": "docker compose up --build -d --wait",
     "docker:stop": "docker compose stop",
     "release:gate": "node scripts/release-gate.mjs",
+    "receipt:verify": "node scripts/verify-receipt.mjs",
     "backup": "node --env-file-if-exists=.env scripts/recovery.mjs backup",
     "backup:verify": "node --env-file-if-exists=.env scripts/recovery.mjs verify",
     "backup:roundtrip": "node --env-file-if-exists=.env scripts/recovery.mjs roundtrip"

@@ -23,7 +23,9 @@ services:
     environment:
       PORT: "4310"
       CONTAINER_MODE: "true"
+      AGENTTRUST_RECEIPT_SIGNING_KEY_FILE: /run/secrets/receipt-signing-key
       DATABASE_URL: postgres://agenttrust_api:${DB_API_PASSWORD:?Missing API password}@db:5432/agenttrust
+    secrets: [receipt-signing-key]
     ports:
       - "127.0.0.1:${PORT:-4310}:4310"
     depends_on:
@@ -64,3 +66,7 @@ networks:
     internal: true
   host-access:
     internal: false
+
+secrets:
+  receipt-signing-key:
+    file: .local/receipt-signing/private.pem

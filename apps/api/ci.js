@@ -5,18 +5,19 @@ import { releaseGate } from '../../packages/evaluator/comparison.js';
 import { transaction } from './database.js';
 import { audit,requireWrite } from './auth.js';
 import { publicRun } from './pg-store.js';
+import { loadReceiptSigner } from '../../packages/receipts/signature.js';
 
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
 function receiptArtifact(row){
   const artifact={schemaVersion:1,receiptId:row.id,organizationId:row.organization_id,projectId:row.project_id,checkedAt:row.created_at.toISOString(),request:row.request,result:row.result,
     evidence:{candidate:{runId:row.candidate_run_id,snapshotHash:row.candidate_snapshot_hash,resultHash:row.candidate_result_hash},...(row.baseline_run_id?{baseline:{runId:row.baseline_run_id,snapshotHash:row.baseline_snapshot_hash,resultHash:row.baseline_result_hash}}:{})}};
   if(hash(artifact)!==row.artifact_hash)throw new Error('Receipt integrity mismatch.');
-  return {artifact,artifactHash:row.artifact_hash};
+  return {artifact,artifactHash:row.artifact_hash,...(row.signature?{signature:row.signature}:{})};
 }
 export class CI {
-  constructor(database,{checkLimitPerMinute=120,receiptQuota=100000}={}){
+  constructor(database,{checkLimitPerMinute=120,receiptQuota=100000,signer=loadReceiptSigner()}={}){
     if(!Number.isInteger(checkLimitPerMinute)||checkLimitPerMinute<1||checkLimitPerMinute>120||!Number.isInteger(receiptQuota)||receiptQuota<1||receiptQuota>100000)throw new Error('Invalid CI limits.');
-    this.database=database;this.checkLimitPerMinute=checkLimitPerMinute;this.receiptQuota=receiptQuota;
+    this.database=database;this.checkLimitPerMinute=checkLimitPerMinute;this.receiptQuota=receiptQuota;this.signer=signer;
   }
   async authenticate(token){
     if(typeof token!=='string'||!/^atci_[a-f0-9]{64}$/.test(token))throw new InputError('Invalid CI credential.',401);
@@ -86,13 +87,14 @@ export class CI {
       const artifact={schemaVersion:1,receiptId,organizationId:context.organizationId,projectId:context.projectId,checkedAt:now.toISOString(),request:input,result,
         evidence:{candidate:{runId:candidate.id,snapshotHash:candidate.snapshotHash,resultHash:candidate.resultHash},...(baseline?{baseline:{runId:baseline.id,snapshotHash:baseline.snapshotHash,resultHash:baseline.resultHash}}:{})}};
       const artifactHash=hash(artifact);
-      await client.query('INSERT INTO agenttrust.release_receipts(id,organization_id,project_id,candidate_run_id,baseline_run_id,service_credential_id,actor_id,request,result,candidate_snapshot_hash,candidate_result_hash,baseline_snapshot_hash,baseline_result_hash,artifact_hash,created_at,principal_key,idempotency_key,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)',[receiptId,context.organizationId,context.projectId,candidate.id,baseline?.id||null,context.serviceCredentialId||null,context.membershipId||null,input,result,candidate.snapshotHash,candidate.resultHash,baseline?.snapshotHash||null,baseline?.resultHash||null,artifactHash,now,principalKey,idempotencyKey||null,requestHash]);
+      const signature=this.signer?.sign(artifact);
+      await client.query('INSERT INTO agenttrust.release_receipts(id,organization_id,project_id,candidate_run_id,baseline_run_id,service_credential_id,actor_id,request,result,candidate_snapshot_hash,candidate_result_hash,baseline_snapshot_hash,baseline_result_hash,artifact_hash,created_at,principal_key,idempotency_key,request_hash,signature) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)',[receiptId,context.organizationId,context.projectId,candidate.id,baseline?.id||null,context.serviceCredentialId||null,context.membershipId||null,input,result,candidate.snapshotHash,candidate.resultHash,baseline?.snapshotHash||null,baseline?.resultHash||null,artifactHash,now,principalKey,idempotencyKey||null,requestHash,signature||null]);
       await audit(client,context,'ci.release.checked',receiptId,{projectId:context.projectId,runId:candidate.id,serviceCredentialId:context.serviceCredentialId||null,decision:result.decision,artifactHash});
-      return {...result,artifact,artifactHash};
+      return {...result,artifact,artifactHash,...(signature?{signature}:{})};
     },context.organizationId);
   }
   async receipts(context){
-    return transaction(this.database,async client=>(await client.query("SELECT id,candidate_run_id,baseline_run_id,created_at,artifact_hash,result->>'decision' AS decision FROM agenttrust.release_receipts WHERE organization_id=$1 AND project_id=$2 ORDER BY created_at DESC,id DESC LIMIT 100",[context.organizationId,context.projectId])).rows,context.organizationId);
+    return transaction(this.database,async client=>(await client.query("SELECT id,candidate_run_id,baseline_run_id,created_at,artifact_hash,result->>'decision' AS decision,signature->>'keyId' AS signing_key_id FROM agenttrust.release_receipts WHERE organization_id=$1 AND project_id=$2 ORDER BY created_at DESC,id DESC LIMIT 100",[context.organizationId,context.projectId])).rows,context.organizationId);
   }
   async receipt(context,id){
     if(!uuid(id))throw new InputError('Invalid receipt id.');
