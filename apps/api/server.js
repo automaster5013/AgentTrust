@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { PgStore } from './pg-store.js';
-import { Auth,cookieToken,sessionCookie } from './auth.js';
+import { Auth,cookieToken,sessionCookie,sessionPageContext } from './auth.js';
 import { pool } from './database.js';
 import { validateDatabaseRole } from './role-guard.js';
 import { parseJson } from '../../packages/contracts/json.js';
@@ -78,6 +78,9 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       const ciRevoke=/^\/v1\/ci-credentials\/([a-zA-Z0-9-]+)\/revoke$/.exec(path);
       if(req.method==='POST'&&ciRevoke){await body(req);return send(200,await ci.revoke(context,ciRevoke[1]));}
       if(req.method==='POST'&&path==='/v1/release-gate')return send(200,await ci.check(context,await body(req),req.headers['idempotency-key']));
+      if(req.method==='GET'&&path==='/v1/sessions')return send(200,await auth.sessions(context,pagination(requestUrl.searchParams.size?requestUrl.searchParams:new URLSearchParams({limit:'25'}),sessionPageContext(context))));
+      const sessionRevoke=/^\/v1\/sessions\/([a-zA-Z0-9-]+)\/revoke$/.exec(path);
+      if(req.method==='POST'&&sessionRevoke){const input=await body(req);if(!input||Array.isArray(input)||typeof input!=='object'||Object.keys(input).length)throw new InputError('Expected an empty JSON object.');const result=await auth.revokeSession(context,sessionRevoke[1]);return send(200,result,result.current?{'Set-Cookie':sessionCookie('',true)}:{});}
       if(req.method==='GET'&&path==='/v1/me') return send(200,context);
       if(req.method==='GET'&&path==='/v1/receipt-signing-key')return send(200,ci.signer?.publicMetadata()||{algorithm:null,keyId:null});
       if(req.method==='GET'&&path==='/v1/projects')return send(200,context.projects);

@@ -617,3 +617,43 @@ test('HTTP release receipts block worker evidence whose pass statuses contradict
  const receipt=await response.json();assert.equal(receipt.deploymentAllowed,false);assert.equal(receipt.decision,'block');assert.ok(receipt.reasons.some(reason=>reason.includes('inconsistent')));
  const stored=await(await f.request('/v1/release-receipts/'+receipt.artifact.receiptId)).json();assert.equal(stored.artifact.result.deploymentAllowed,false);assert.equal(stored.artifactHash,receipt.artifactHash);
 });
+
+test('session management scopes viewer access and administrator revocation without exposing token hashes',async t=>{
+ const f=await fixture(t),adminPage=await(await f.request('/v1/sessions')).json(),viewerPage=await(await f.request('/v1/sessions',{role:'viewer'})).json();
+ assert.equal(adminPage.scope,'organization');assert.equal(adminPage.items.length,3);assert.equal(viewerPage.scope,'self');assert.equal(viewerPage.items.length,1);assert.equal(viewerPage.items[0].current,true);
+ assert.ok(viewerPage.items.every(s=>s.membershipId===f.contexts.viewer.membershipId));assert.ok(adminPage.items.every(s=>!Object.hasOwn(s,'token_hash')&&!Object.hasOwn(s,'token')&&!Object.hasOwn(s,'credential_id')));
+ const target=viewerPage.items[0].id,admin=adminPage.items.find(s=>s.current).id,foreign=(await(await f.request('/v1/sessions',{role:'other_admin'})).json()).items[0].id;
+ assert.equal((await f.request('/v1/sessions/'+admin+'/revoke',{role:'viewer',method:'POST',json:{}})).status,404);
+ assert.equal((await f.request('/v1/sessions/'+foreign+'/revoke',{method:'POST',json:{}})).status,404);
+ assert.equal((await f.request('/v1/sessions/'+target+'/revoke',{method:'POST',json:{}})).status,200);
+ assert.equal((await f.request('/v1/me',{role:'viewer'})).status,401);assert.equal((await f.request('/v1/me')).status,200);
+ const audits=await f.store.auditEvents(f.contexts.admin);assert.equal(audits.filter(e=>e.action==='auth.session.revoked'&&e.resource_id===target).length,1);
+ assert.equal((await f.request('/v1/sessions/'+target+'/revoke',{method:'POST',json:{}})).status,404);
+});
+test('self session revocation clears its cookie and session pages reject role-bound cursor reuse',async t=>{
+ const f=await fixture(t),adminPage=await(await f.request('/v1/sessions?limit=1')).json();assert.ok(adminPage.nextCursor);
+ assert.equal((await f.request('/v1/sessions?limit=1&cursor='+adminPage.nextCursor,{role:'viewer'})).status,400);
+ let cursor,seen=[];do{const page=await(await f.request('/v1/sessions?limit=1'+(cursor?'&cursor='+cursor:''))).json();seen.push(...page.items.map(s=>s.id));cursor=page.nextCursor;}while(cursor);assert.equal(new Set(seen).size,3);
+ const own=(await(await f.request('/v1/sessions',{role:'viewer'})).json()).items[0];const response=await f.request('/v1/sessions/'+own.id+'/revoke',{role:'viewer',method:'POST',json:{}});assert.equal(response.status,200);assert.match(response.headers.get('set-cookie'),/Max-Age=0/);assert.equal((await response.json()).current,true);
+ assert.equal((await f.request('/v1/me',{role:'viewer'})).status,401);
+});
+
+test('session revocation rolls back after administrator role loss during a row-lock wait',async t=>{
+ const f=await fixture(t),target=(await(await f.request('/v1/sessions',{role:'viewer'})).json()).items[0].id,client=await f.owner.connect();
+ try{
+  await client.query('BEGIN');await client.query('SELECT id FROM agenttrust.sessions WHERE id=$1 FOR UPDATE',[target]);
+  const pending=f.request('/v1/sessions/'+target+'/revoke',{method:'POST',json:{}});await blockedOn(f,'DELETE FROM agenttrust.sessions WHERE id=$1');
+  await f.owner.query("UPDATE agenttrust.memberships SET role='viewer' WHERE id=$1",[f.contexts.admin.membershipId]);await client.query('COMMIT');assert.equal((await pending).status,403);
+  assert.equal((await f.owner.query('SELECT id FROM agenttrust.sessions WHERE id=$1',[target])).rowCount,1);assert.equal((await f.request('/v1/me',{role:'viewer'})).status,200);
+  assert.equal(Number((await f.owner.query("SELECT count(*) FROM agenttrust.audit_events WHERE organization_id=$1 AND action='auth.session.revoked'",[f.first.organizationId])).rows[0].count),0);
+ }finally{await client.query('ROLLBACK').catch(()=>{});await f.owner.query("UPDATE agenttrust.memberships SET role='admin' WHERE id=$1",[f.contexts.admin.membershipId]);client.release();}
+});
+test('self revocation cannot commit after its own session expires while waiting for a row lock',async t=>{
+ const f=await fixture(t),target=(await(await f.request('/v1/sessions',{role:'viewer'})).json()).items[0].id,client=await f.owner.connect();
+ try{
+  await f.owner.query("UPDATE agenttrust.sessions SET expires_at=clock_timestamp()+interval '400 milliseconds' WHERE id=$1",[target]);await client.query('BEGIN');await client.query('SELECT id FROM agenttrust.sessions WHERE id=$1 FOR UPDATE',[target]);
+  const pending=f.request('/v1/sessions/'+target+'/revoke',{role:'viewer',method:'POST',json:{}});await blockedOn(f,'DELETE FROM agenttrust.sessions WHERE id=$1');await new Promise(resolve=>setTimeout(resolve,450));await client.query('COMMIT');assert.equal((await pending).status,401);
+  assert.equal((await f.owner.query('SELECT id FROM agenttrust.sessions WHERE id=$1',[target])).rowCount,1);
+  assert.equal(Number((await f.owner.query("SELECT count(*) FROM agenttrust.audit_events WHERE organization_id=$1 AND action='auth.session.revoked'",[f.first.organizationId])).rows[0].count),0);
+ }finally{await client.query('ROLLBACK').catch(()=>{});client.release();}
+});

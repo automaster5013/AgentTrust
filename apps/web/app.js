@@ -11,6 +11,7 @@ let historySequence=0;
 let auditCursor=null,auditSequence=0;
 let inspectionSequence=0,comparisonSequence=0,keyHistorySequence=0,receiptHistorySequence=0,reviewSequence=0;
 let reviewBusy=false;
+let sessionCursor=null,sessionSequence=0,sessionBusy=false,sessionButtons=[];
 const terminal = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
 const decisionLabels = { pass: '통과', block: '차단', inconclusive: '판정 불가' };
 const stateLabels = { queued: '대기 중', running: '실행 중', succeeded: '평가 완료', failed: '실행 실패', cancelled: '취소됨', timed_out: '시간 초과' };
@@ -143,6 +144,7 @@ $('download').addEventListener('click', () => {
   const link = node('a'); link.href = url; link.download = `agenttrust-${currentRun.id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 function clearProjectData(){
+  sessionSequence++;sessionCursor=null;sessionButtons=[];$('session-list').replaceChildren();$('sessions-status').textContent='';$('sessions-more').disabled=true;
   comparisonSequence++;keyHistorySequence++;receiptHistorySequence++;reviewSequence++;
   inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전의 고정된 내용과 해시를 확인할 수 있습니다.';
   auditSequence++;auditCursor=null;$('audit-more').disabled=true;$('audit-action').value='';
@@ -190,7 +192,7 @@ async function initialize() {
   $('ci-panel').hidden=actor.role!=='admin';$('projects').hidden=actor.role!=='admin';$('operations-panel').hidden=actor.role!=='admin';
   $('ci-project').replaceChildren(...actor.projects.map(p=>{const option=node('option',p.name);option.value=p.id;return option;}));
   $('ci-project').value=activeProjectId;
-  await ciHistory();await receiptHistory();
+  await ciHistory();await receiptHistory();await sessionHistory();
   await catalog();$('dataset-json').value=JSON.stringify(await api('/v1/sample-dataset'),null,2);await history();await auditHistory();
   updateButtons();
 }
@@ -341,3 +343,30 @@ $('dataset-copy').addEventListener('click',async()=>{
     message('선택한 데이터셋을 새 버전 초안으로 불러왔습니다. 수정 후 등록하면 새로운 버전이 생성됩니다.');
   }catch(error){message(error.message,true);}finally{updateButtons();}
 });
+
+function sessionControls(){
+  $('sessions-refresh').disabled=sessionBusy;$('sessions-more').disabled=sessionBusy||!sessionCursor;
+  for(const button of sessionButtons)button.disabled=sessionBusy;
+}
+async function sessionHistory(append=false){
+  if(!actor||append&&!sessionCursor)return;
+  const sequence=++sessionSequence,params=new URLSearchParams({limit:'25'});if(append)params.set('cursor',sessionCursor);
+  const page=await api('/v1/sessions?'+params);if(sequence!==sessionSequence)return;
+  sessionCursor=page.nextCursor;if(!append){$('session-list').replaceChildren();sessionButtons=[];}
+  $('sessions-scope').textContent=page.scope==='organization'?'관리자: 현재 조직의 활성 세션을 확인하고 종료할 수 있습니다. 접근 키 자체는 철회하지 않습니다.':'현재 계정의 활성 세션만 표시합니다. 이 세션을 종료하면 로그인 화면으로 돌아갑니다.';
+  for(const session of page.items){
+    const row=node('div',undefined,'audit-entry');row.append(node('strong',session.name+' '),node('span',`${session.role} · ${session.current?'현재 브라우저 · ':''}${session.id.slice(0,8)} · 시작 ${new Date(session.createdAt).toLocaleString('ko-KR')} · 만료 ${new Date(session.expiresAt).toLocaleString('ko-KR')}`));
+    const button=node('button',session.current?'현재 세션 종료':'세션 종료','secondary');sessionButtons.push(button);
+    button.addEventListener('click',async()=>{
+      if(sessionBusy)return;sessionBusy=true;sessionControls();const epoch=scopeEpoch;
+      try{const result=await api(`/v1/sessions/${session.id}/revoke`,{method:'POST',body:'{}'});
+        if(result.current){showLogin();$('login-status').textContent='현재 세션을 종료했습니다. 접근 키로 다시 로그인할 수 있습니다.';}
+        else{$('sessions-status').textContent='선택한 세션을 종료했습니다.';await sessionHistory();await auditHistory();}
+      }catch(error){if(epoch===scopeEpoch)$('sessions-status').textContent=error.message;}
+      finally{sessionBusy=false;sessionControls();if(actor)try{await sessionHistory();}catch(error){$('sessions-status').textContent=error.message;}}
+    });row.append(button);$('session-list').append(row);
+  }
+  if(!append&&!page.items.length)$('session-list').textContent='활성 세션이 없습니다.';sessionControls();
+}
+$('sessions-refresh').addEventListener('click',async()=>{try{await sessionHistory();}catch(error){$('sessions-status').textContent=error.message;}});
+$('sessions-more').addEventListener('click',async()=>{try{await sessionHistory(true);}catch(error){$('sessions-status').textContent=error.message;}});

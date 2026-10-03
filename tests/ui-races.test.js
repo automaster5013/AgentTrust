@@ -95,3 +95,19 @@ test('review refresh keeps approval buttons disabled while a submission is pendi
   await f.element('review-refresh').fire('click');assert.equal(f.element('review-approve').disabled,true);assert.equal(f.element('review-reject').disabled,true);
   submission.resolve({id:'synthetic-review'});await pending;assert.equal(f.element('review-approve').disabled,false);
 });
+
+test('older session list response cannot overwrite a newer refresh',async()=>{
+ const f=await fixture(),older=deferred();let calls=0;
+ const session=name=>({id:name,membershipId:'member',name,role:'viewer',current:false,createdAt:'2026-01-01T00:00:00Z',expiresAt:'2026-01-01T01:00:00Z'});
+ f.overrides.set('/v1/sessions?limit=25',()=>++calls===1?older.promise:{items:[session('newer')],nextCursor:null,scope:'organization'});
+ const first=f.element('sessions-refresh').fire('click');await settle();await f.element('sessions-refresh').fire('click');older.resolve({items:[session('older')],nextCursor:null,scope:'organization'});await first;
+ assert.ok(f.element('session-list').textContent.includes('newer'));assert.ok(!f.element('session-list').textContent.includes('older'));
+});
+test('session refresh cannot re-enable revocation buttons while a termination is pending',async()=>{
+ const f=await fixture(),pending=deferred(),session={id:'synthetic-session',name:'Viewer',role:'viewer',current:false,createdAt:'2026-01-01T00:00:00Z',expiresAt:'2026-01-01T01:00:00Z'};
+ f.overrides.set('/v1/sessions?limit=25',()=>({items:[session],nextCursor:null,scope:'organization'}));await f.element('sessions-refresh').fire('click');
+ f.overrides.set('/v1/sessions/synthetic-session/revoke',()=>pending.promise);
+ const terminating=f.element('session-list').children[0].children.at(-1).fire('click');await settle();await f.element('sessions-refresh').fire('click');
+ assert.equal(f.element('session-list').children[0].children.at(-1).disabled,true);assert.equal(f.element('sessions-refresh').disabled,true);
+ pending.resolve({id:session.id,revoked:true,current:false});await terminating;assert.equal(f.element('sessions-refresh').disabled,false);assert.equal(f.element('session-list').children[0].children.at(-1).disabled,false);
+});

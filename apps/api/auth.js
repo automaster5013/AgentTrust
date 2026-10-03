@@ -1,7 +1,9 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { InputError } from '../../packages/contracts/index.js';
-import { tokenHash } from '../../packages/contracts/hash.js';
+import { hash,tokenHash } from '../../packages/contracts/hash.js';
 import { transaction } from './database.js';
+import { pageResult } from './pagination.js';
+export const sessionPageContext=context=>({...context,cursorScope:hash({resource:'sessions',role:context.role,membershipId:context.role==='admin'?null:context.membershipId})});
 
 export const SESSION_COOKIE = 'agenttrust_session';
 export function cookieToken(req) {
@@ -57,6 +59,38 @@ export class Auth {
     const projects = await transaction(this.database, async client => (await client.query('SELECT id,name FROM agenttrust.projects WHERE organization_id=$1 ORDER BY created_at,id',[row.organization_id])).rows,row.organization_id);
     if (!projects.length) throw new InputError('No accessible project.',403);
     return { membershipId:row.id, organizationId:row.organization_id, organizationName:row.organization_name, name:row.name, role:row.role, projectId:projects[0].id, projects,[sessionProof]:tokenHash(token) };
+  }
+  async sessions(context,page={limit:25}) {
+    return transaction(this.database,async client=>{
+      await revalidateSession(client,context,{adminOnly:context.role==='admin'});
+      const rows=(await client.query(`SELECT s.id,m.id AS "membershipId",m.name,m.role,s.created_at AS "createdAt",s.expires_at AS "expiresAt",
+        s.token_hash=$3 AS current,to_char(s.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
+        FROM agenttrust.sessions s JOIN agenttrust.credentials c ON c.id=s.credential_id JOIN agenttrust.memberships m ON m.id=c.membership_id
+        WHERE m.organization_id=$1 AND ($2::uuid IS NULL OR m.id=$2) AND m.active AND c.revoked_at IS NULL AND s.expires_at>clock_timestamp()
+        AND ($4::timestamptz IS NULL OR (s.created_at,s.id)<($4::timestamptz,$5::uuid))
+        ORDER BY s.created_at DESC,s.id DESC LIMIT $6`,[context.organizationId,context.role==='admin'?null:context.membershipId,context[sessionProof],page.cursor?.time||null,page.cursor?.id||null,page.limit+1])).rows;
+      return {...pageResult(rows,page,sessionPageContext(context)),scope:context.role==='admin'?'organization':'self'};
+    },context.organizationId);
+  }
+  async revokeSession(context,id) {
+    if(typeof id!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id))throw new InputError('Invalid session id.');
+    return transaction(this.database,async client=>{
+      const target=(await client.query(`SELECT s.id,s.token_hash=$3 AS current FROM agenttrust.sessions s
+        JOIN agenttrust.credentials c ON c.id=s.credential_id JOIN agenttrust.memberships m ON m.id=c.membership_id
+        WHERE s.id=$4 AND m.organization_id=$1 AND ($2::uuid IS NULL OR m.id=$2)`,[context.organizationId,context.role==='admin'?null:context.membershipId,context[sessionProof],id])).rows[0];
+      await revalidateSession(client,context,{adminOnly:context.role==='admin'});
+      if(!target)throw new InputError('Unknown session.',404);
+      // DELETE supplies the row lock without granting UPDATE on session identity columns.
+      const deleted=(await client.query('DELETE FROM agenttrust.sessions WHERE id=$1 RETURNING id,credential_id,expires_at,token_hash=$2 AS current',[id,context[sessionProof]])).rows[0];
+      if(!deleted){await revalidateSession(client,context,{adminOnly:context.role==='admin'});throw new InputError('Unknown session.',404);}
+      if(deleted.current){
+        const valid=(await client.query(`SELECT c.id FROM agenttrust.credentials c JOIN agenttrust.memberships m ON m.id=c.membership_id
+          WHERE c.id=$1 AND m.id=$2 AND m.organization_id=$3 AND c.revoked_at IS NULL AND m.active AND $4::timestamptz>clock_timestamp()`,[deleted.credential_id,context.membershipId,context.organizationId,deleted.expires_at])).rowCount;
+        if(!valid)throw new InputError('Session expired or revoked.',401);
+      }else await revalidateSession(client,context,{adminOnly:context.role==='admin'});
+      await audit(client,context,'auth.session.revoked',id,{current:deleted.current});
+      return {id,revoked:true,current:deleted.current};
+    },context.organizationId);
   }
   async logout(token, context) {
     if (!token) return;
