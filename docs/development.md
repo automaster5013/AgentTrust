@@ -93,3 +93,11 @@ queued → running → succeeded/failed/cancelled/timed_out. queued에서 직접
 실제 Docker API/독립 워커에서도 50사례·500규칙의 합성 데이터셋을 등록하고 500규칙 PASS를 확인했다. 이 장치에서 등록 요청 64ms, 완료 관찰 271ms, 직후 health 요청 4ms였다. 결과 측정은 .local/schema-benchmark.json에 보존하며 이는 단일 합성 측정이다.
 
 화면 응답 순서 보호: 취소 요청은 클릭한 실행 ID를 고정하고 이후 다른 실행을 선택하면 취소 응답으로 근거 패널을 바꾸지 않는다. 후보/기준 변경 후 이전 비교 응답은 무시한다. 동일 실행을 다시 선택해도 이전 polling 세대는 종료하며 확정된 종료 상태를 대기/실행 상태로 되돌리지 않는다. CI 키/검증 기록과 관리자 검토 새로고침도 이전 응답을 무시한다. 검토 제출 중에는 새로고침이 승인/반려 버튼을 다시 활성화하지 않는다. 실제 app.js를 지연 HTTP 응답과 최소 DOM 모델에서 실행해 6가지 경합을 검증했다. 변경 전 소스에서는 최초 4가지 회귀 테스트가 모두 실패했고 변경 후 통과했다. 이 테스트는 브라우저 레이아웃 검증을 대체하지 않는다.
+
+### Request admission (v0.24.0)
+
+Dynamic API and health requests share a per-process limit of 32 concurrent handlers (injected test limits must be integers from 1 to 64). Excess requests receive 503 with Retry-After: 1 before database access or body parsing. Static login assets remain available. TCP connections are capped at 128. This is local process protection, not a distributed tenant rate limit.
+
+An admitted slot remains occupied until both handler work settles and the response finishes or closes. Disconnecting a client cannot release capacity while its database work is pending. Authorized mutations may finish after disconnection; retry with the existing idempotency key where supported. Response finish reflects transmission to the operating system, not proof of client receipt.
+
+Dynamic requests with Sec-Fetch-Site accept only same-origin or none; same-site, cross-site and unknown values are rejected before database access. Headerless native clients remain supported. Existing exact Origin and loopback Host checks remain in force. Fetch Metadata supplements authentication and does not authenticate native clients.

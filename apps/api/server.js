@@ -22,8 +22,10 @@ async function body(req) {
   for await(const chunk of req){size+=chunk.length;if(size>262144)throw new InputError('JSON body exceeds 256 KiB.',413);chunks.push(chunk);}
   try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw new InputError('Invalid JSON body.');}
 }
-export function createApp({database,store=new PgStore(database),auth=new Auth(database),ci=new CI(database),reviews=new Reviews(database)}={}) {
+export function createApp({database,store=new PgStore(database),auth=new Auth(database),ci=new CI(database),reviews=new Reviews(database),maxConcurrentRequests=32}={}) {
   if(!database) throw new Error('PostgreSQL database is required.');
+  if(!Number.isInteger(maxConcurrentRequests)||maxConcurrentRequests<1||maxConcurrentRequests>64)throw new Error('Request limit must be between 1 and 64.');
+  let activeRequests=0;
   const server=createServer(async(req,res)=>{
     const traceId=randomUUID();
     const headers={
@@ -31,6 +33,7 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       'X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Cache-Control':'no-store','X-Trace-Id':traceId
     };
     const send=(code,data,extra={})=>{res.writeHead(code,{...headers,'Content-Type':'application/json; charset=utf-8',...extra});res.end(JSON.stringify(data));};
+    let completeWork=()=>{};
     try {
       const authority=/^127\.0\.0\.1:(\d+)$/.exec(req.headers.host||'');
       const port=Number(authority?.[1]);
@@ -40,6 +43,15 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       if(req.headers.origin&&req.headers.origin!==`http://${req.headers.host}`) throw new InputError('Cross-origin requests are denied.',403);
       const requestUrl=new URL(req.url,`http://${req.headers.host}`),path=requestUrl.pathname;
       if(req.method==='GET'&&assets[path]){const[file,type]=assets[path];res.writeHead(200,{...headers,'Content-Type':`${type}; charset=utf-8`});res.end(await readFile(new URL(file,webRoot)));return;}
+      const site=req.headers['sec-fetch-site'];
+      if(site!==undefined&&!['same-origin','none'].includes(site))throw new InputError('Cross-site requests are denied.',403);
+      if(activeRequests>=maxConcurrentRequests)return send(503,{error:'Service busy.',traceId},{'Retry-After':'1','Connection':'close'});
+      activeRequests++;
+      let workDone=false,responseDone=false,released=false;
+      const release=()=>{if(workDone&&responseDone&&!released){released=true;activeRequests--;}};
+      const finish=()=>{responseDone=true;release();};
+      res.once('finish',finish);res.once('close',finish);
+      completeWork=()=>{workDone=true;release();};
       await validateDatabaseRole(database,'api');
       if(req.method==='GET'&&path==='/health') {await database.query('SELECT 1');return send(200,{status:'ok',mode:'local-mock',persistent:true});}
       if(req.method==='POST'&&path==='/v1/auth/login') {
@@ -97,9 +109,10 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       throw new InputError('Endpoint not found.',404);
     } catch(error) {
       if(!(error instanceof InputError)) console.error(`API request failed (${error.code||'runtime'}), trace ${traceId}.`);
-      send(error instanceof InputError?error.status:503,{error:error instanceof InputError?error.message:'Service unavailable.',traceId});
-    }
+      if(!res.destroyed&&!res.headersSent)send(error instanceof InputError?error.status:503,{error:error instanceof InputError?error.message:'Service unavailable.',traceId});
+    } finally {completeWork();}
   });
+  server.maxConnections=128;
   server.requestTimeout=10000;server.headersTimeout=10000;return server;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
