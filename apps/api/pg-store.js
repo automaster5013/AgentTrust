@@ -23,6 +23,22 @@ export async function finalize(client,row,outcome,context = {}) {
 }
 export class PgStore {
   constructor(database) { this.database=database; }
+  async createProject(context,input,key){
+    requireWrite(context,true);
+    if(!input||Array.isArray(input)||typeof input!=='object'||Object.keys(input).some(k=>k!=='name')||typeof input.name!=='string'||input.name.trim().length<1||input.name.length>100)throw new InputError('Project name must contain 1-100 characters.');
+    if(typeof key!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(key))throw new InputError('Idempotency-Key must contain 8-100 letters, digits, underscores or hyphens.');
+    const data={name:input.name.trim()},fingerprint=hash(data);
+    return transaction(this.database,async client=>{
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[context.organizationId]);
+      const prior=(await client.query('SELECT id,name,creation_hash,created_at FROM agenttrust.projects WHERE organization_id=$1 AND creation_key=$2',[context.organizationId,key])).rows[0];
+      if(prior){if(prior.creation_hash!==fingerprint)throw new InputError('Idempotency key conflicts with another project.',409);return {id:prior.id,name:prior.name,createdAt:prior.created_at.toISOString(),replay:true};}
+      const count=Number((await client.query('SELECT count(*) FROM agenttrust.projects WHERE organization_id=$1',[context.organizationId])).rows[0].count);
+      if(count>=100)throw new InputError('Organization project quota reached.',429);
+      const id=randomUUID(),row=(await client.query('INSERT INTO agenttrust.projects(id,organization_id,name,creation_key,creation_hash) VALUES($1,$2,$3,$4,$5) RETURNING created_at',[id,context.organizationId,data.name,key,fingerprint])).rows[0];
+      await audit(client,context,'project.created',id,{});
+      return {id,name:data.name,createdAt:row.created_at.toISOString(),replay:false};
+    },context.organizationId);
+  }
   async catalog(context) {
     return transaction(this.database, async client => {
       const rows = (await client.query('SELECT * FROM agenttrust.versions WHERE organization_id=$1 AND project_id=$2 ORDER BY created_at,id',[context.organizationId,context.projectId])).rows;

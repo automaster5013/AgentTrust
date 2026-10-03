@@ -273,3 +273,32 @@ test('idempotent release approval is not reused after its result validity window
   const stale=await f.request('/v1/release-gate',{method:'POST',json:input,extra:{'Idempotency-Key':key}});assert.equal(stale.status,409);
   const current=await f.request('/v1/release-gate',{method:'POST',json:input,extra:{'Idempotency-Key':randomUUID()}});assert.equal((await current.json()).deploymentAllowed,false);
 });
+
+
+test('admin project creation is atomic, tenant scoped and starts with an empty version catalog',async t=>{
+  const f=await fixture(t),key=randomUUID(),payload={name:'Release workspace'};
+  for(const role of ['editor','viewer'])assert.equal((await f.request('/v1/projects',{role,method:'POST',json:payload,extra:{'Idempotency-Key':randomUUID()}})).status,403);
+  for(const json of [{name:''},{name:' '.repeat(5)},{name:'x'.repeat(101)},{name:'ok',organizationId:f.other.organizationId},[],null])assert.equal((await f.request('/v1/projects',{method:'POST',json,extra:{'Idempotency-Key':randomUUID()}})).status,400);
+  const responses=await Promise.all(Array.from({length:6},()=>f.request('/v1/projects',{method:'POST',json:payload,extra:{'Idempotency-Key':key}})));
+  assert.equal(responses.filter(r=>r.status===201).length,1);assert.equal(responses.filter(r=>r.status===200).length,5);
+  const projects=await Promise.all(responses.map(r=>r.json()));assert.equal(new Set(projects.map(p=>p.id)).size,1);const project=projects[0];
+  assert.equal((await f.request('/v1/projects',{method:'POST',json:{name:'conflict'},extra:{'Idempotency-Key':key}})).status,409);
+  const own=await(await f.request('/v1/projects')).json(),foreign=await(await f.request('/v1/projects',{role:'other_admin'})).json();assert.ok(own.some(p=>p.id===project.id));assert.ok(!foreign.some(p=>p.id===project.id));
+  const scope={'X-AgentTrust-Project':project.id};assert.deepEqual(await(await f.request('/v1/catalog',{extra:scope})).json(),{agent:[],dataset:[],policy:[]});
+  const selected={...f.contexts.admin,projectId:project.id};
+  const dataset=await f.store.createVersion(selected,'dataset',await(await f.request('/v1/sample-dataset')).json());
+  const agent=await f.store.createVersion(selected,'agent',{name:'Project agent',mode:'compliant'}),policy=await f.store.createVersion(selected,'policy',{name:'Strict',minimumPassRate:1});
+  const run=await(await f.request('/v1/runs',{method:'POST',extra:{...scope,'Idempotency-Key':randomUUID()},json:{agentVersionId:agent.id,datasetVersionId:dataset.id,policyVersionId:policy.id}})).json();await f.engine.tick();assert.equal((await f.store.getRun(selected,run.id)).gate.deploymentAllowed,true);
+  assert.equal((await f.request('/v1/runs/'+run.id)).status,404);
+  const events=await f.store.auditEvents(f.contexts.admin);assert.equal(events.filter(e=>e.action==='project.created'&&e.resource_id===project.id).length,1);
+  const rows=await transaction(f.database,c=>c.query('SELECT id FROM agenttrust.projects WHERE id=$1',[project.id]),f.other.organizationId);assert.equal(rows.rowCount,0);
+  await assert.rejects(transaction(f.database,c=>c.query('INSERT INTO agenttrust.projects(id,organization_id,name) VALUES($1,$2,$3)',[randomUUID(),f.first.organizationId,'spoof']),f.other.organizationId),/row-level security/);
+});
+
+test('concurrent project creation cannot exceed the organization quota',async t=>{
+  const f=await fixture(t);
+  for(let i=0;i<98;i++)await f.owner.query('INSERT INTO agenttrust.projects(id,organization_id,name) VALUES($1,$2,$3)',[randomUUID(),f.first.organizationId,'Quota fixture '+i]);
+  const responses=await Promise.all([0,1].map(i=>f.request('/v1/projects',{method:'POST',json:{name:'New '+i},extra:{'Idempotency-Key':randomUUID()}})));
+  assert.deepEqual(responses.map(r=>r.status).sort(),[201,429]);
+  assert.equal(Number((await f.owner.query('SELECT count(*) FROM agenttrust.projects WHERE organization_id=$1',[f.first.organizationId])).rows[0].count),100);
+});

@@ -62,6 +62,8 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       if(req.method==='POST'&&ciRevoke){await body(req);return send(200,await ci.revoke(context,ciRevoke[1]));}
       if(req.method==='POST'&&path==='/v1/release-gate')return send(200,await ci.check(context,await body(req),req.headers['idempotency-key']));
       if(req.method==='GET'&&path==='/v1/me') return send(200,context);
+      if(req.method==='GET'&&path==='/v1/projects')return send(200,context.projects);
+      if(req.method==='POST'&&path==='/v1/projects'){const project=await store.createProject(context,await body(req),req.headers['idempotency-key']);return send(project.replay?200:201,project);}
       if(req.method==='GET'&&path==='/v1/catalog') return send(200,await store.catalog(context));
       if(req.method==='GET'&&path==='/v1/sample-dataset') return send(200,sampleDataset);
       if(req.method==='GET'&&path==='/v1/runs') return send(200,await store.listRuns(context));
