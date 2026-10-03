@@ -1,4 +1,5 @@
 import { InputError } from '../../packages/contracts/index.js';
+import { hash } from '../../packages/contracts/hash.js';
 
 export function pagination(query,context){
   if(!query.size)return undefined;
@@ -11,7 +12,7 @@ export function pagination(query,context){
     try{
       if(!text||text.length>512||!/^[A-Za-z0-9_-]+$/.test(text))throw new Error();
       const bytes=Buffer.from(text,'base64url');if(bytes.toString('base64url')!==text)throw new Error();cursor=JSON.parse(bytes.toString('utf8'));
-      if(!cursor||Object.keys(cursor).sort().join(',')!=='id,organizationId,projectId,time'||cursor.organizationId!==context.organizationId||cursor.projectId!==context.projectId||
+      if(!cursor||Object.keys(cursor).sort().join(',')!==(context.cursorScope?'id,organizationId,projectId,scope,time':'id,organizationId,projectId,time')||cursor.organizationId!==context.organizationId||cursor.projectId!==context.projectId||(context.cursorScope&&cursor.scope!==context.cursorScope)||
         !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(cursor.id)||
         !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(cursor.time)||new Date(cursor.time).toISOString().slice(0,19)!==cursor.time.slice(0,19))throw new Error();
     }catch{throw new InputError('Invalid or foreign project cursor.');}
@@ -20,5 +21,12 @@ export function pagination(query,context){
 }
 export function pageResult(rows,page,context){
   const more=rows.length>page.limit,selected=rows.slice(0,page.limit),last=selected.at(-1);
-  return {items:selected.map(({cursor_time,...row})=>row),nextCursor:more?Buffer.from(JSON.stringify({organizationId:context.organizationId,projectId:context.projectId,time:last.cursor_time,id:last.id})).toString('base64url'):null};
+  return {items:selected.map(({cursor_time,...row})=>row),nextCursor:more?Buffer.from(JSON.stringify({organizationId:context.organizationId,projectId:context.projectId,...(context.cursorScope?{scope:context.cursorScope}:{}),time:last.cursor_time,id:last.id})).toString('base64url'):null};
+}
+export function runPagination(query,context){
+  const state=query.get('state'),decision=query.get('decision');
+  if(query.getAll('state').length>1||query.getAll('decision').length>1||state!==null&&!['queued','running','succeeded','failed','cancelled','timed_out'].includes(state)||decision!==null&&!['pass','block','inconclusive'].includes(decision))throw new InputError('Invalid execution history filters.');
+  const filters={state,decision},cursorContext={...context,cursorScope:hash({resource:'runs',filters})},pageQuery=new URLSearchParams(query);
+  pageQuery.delete('state');pageQuery.delete('decision');
+  return {filters,cursorContext,page:pagination(pageQuery,cursorContext)};
 }

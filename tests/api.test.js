@@ -364,3 +364,21 @@ test('operations expose only the selected project queue to admins and report sta
   await f.store.cancel(f.contexts.admin,run.id);const completed=await(await f.request('/v1/operations')).json();assert.equal(completed.queue.queued,0);assert.equal(completed.recent.completed24h,1);
   const other=await(await f.request('/v1/operations',{role:'other_admin'})).json();assert.equal(other.queue.queued,1);assert.equal(other.recent.completed24h,0);
 });
+
+
+test('run history pages preserve evidence summaries, filters and cursor scope',async t=>{
+  const f=await fixture(t),ids=[];
+  for(const mode of ['compliant','regression','error','compliant','regression']){const {run}=await f.create(mode);await f.engine.tick();ids.push(run.id);}
+  const {run:queued}=await f.create();
+  const seen=[];let cursor;
+  do{const page=await(await f.request('/v1/runs?limit=2'+(cursor?'&cursor='+cursor:''))).json();assert.ok(page.items.every(r=>r.snapshot===undefined&&r.results===undefined));seen.push(...page.items.map(r=>r.id));cursor=page.nextCursor;}while(cursor);
+  assert.equal(seen.length,6);assert.equal(new Set(seen).size,6);assert.ok(seen.includes(queued.id));
+  const first=await(await f.request('/v1/runs?limit=1&decision=pass')).json();assert.equal(first.items[0].gate.decision,'pass');assert.ok(first.nextCursor);
+  assert.equal((await f.request('/v1/runs?limit=1&decision=block&cursor='+first.nextCursor)).status,400);
+  assert.equal((await f.request('/v1/runs?limit=1&decision=pass&cursor='+first.nextCursor,{role:'other_admin'})).status,400);
+  const second=await(await f.request('/v1/runs?limit=1&decision=pass&cursor='+first.nextCursor)).json();assert.equal(second.items.length,1);assert.notEqual(second.items[0].id,first.items[0].id);assert.equal(second.nextCursor,null);
+  const failed=await(await f.request('/v1/runs?limit=25&state=failed')).json();assert.equal(failed.items.length,1);assert.equal(failed.items[0].gate.decision,'inconclusive');
+  const waiting=await(await f.request('/v1/runs?limit=25&state=queued&decision=inconclusive')).json();assert.equal(waiting.items.length,1);assert.equal(waiting.items[0].id,queued.id);assert.equal(waiting.items[0].gate.deploymentAllowed,false);
+  for(const query of ['state=unknown','decision=allowed','state=queued&state=running','decision=pass&decision=block','limit=25&unknown=1'])assert.equal((await f.request('/v1/runs?'+query)).status,400);
+  const legacy=await(await f.request('/v1/runs')).json();assert.ok(Array.isArray(legacy));assert.equal(legacy.length,6);
+});

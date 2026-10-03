@@ -5,7 +5,8 @@ let activeProjectId = null;
 let scopeEpoch = 0;
 let loading = false;
 let selectedRunId = null;
-let keyCursor=null,receiptCursor=null;
+let keyCursor=null,receiptCursor=null,runCursor=null;
+let historySequence=0;
 const terminal = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
 const decisionLabels = { pass: '통과', block: '차단', inconclusive: '판정 불가' };
 const stateLabels = { queued: '대기 중', running: '실행 중', succeeded: '평가 완료', failed: '실행 실패', cancelled: '취소됨', timed_out: '시간 초과' };
@@ -70,18 +71,29 @@ function render(run) {
   });
   $('results').replaceChildren(...(cards.length ? cards : [node('div', terminal.has(run.state) ? '실행이 종료됐습니다. 확정된 사례 결과가 없습니다.' : '평가 결과를 기다리고 있습니다.', 'empty')]));
 }
-async function history() {
-  const runs = await api('/v1/runs');
+async function history(append=false) {
+  if(append&&!runCursor)return;
+  const sequence=++historySequence,params=new URLSearchParams({limit:'25'});
+  if($('history-state').value)params.set('state',$('history-state').value);
+  if($('history-decision').value)params.set('decision',$('history-decision').value);
+  if(append)params.set('cursor',runCursor);
+  const [page,baselines]=await Promise.all([api('/v1/runs?'+params.toString()),append?Promise.resolve(null):api('/v1/runs?limit=100&state=succeeded')]);
+  if(sequence!==historySequence)return;
+  runCursor=page.nextCursor;$('history-more').disabled=!runCursor;
+  if(!append){
+  const runs=baselines.items;
   const previous=$('baseline-run').value;
   $('baseline-run').replaceChildren(...runs.map(r=>{const option=node('option',`${r.agentName} · ${stateLabels[r.state]} · ${r.id.slice(0,8)}`);option.value=r.id;return option;}));
   if(runs.some(r=>r.id===previous))$('baseline-run').value=previous;
-  $('history-body').replaceChildren(...runs.map(r => {
+  $('history-body').replaceChildren();
+  }
+  $('history-body').append(...page.items.map(r => {
     const row = node('tr');
     row.append(node('td', r.agentName), node('td', r.datasetName), node('td', stateLabels[r.state] || r.state));
     const gate = node('td'); gate.append(node('span', decisionLabels[r.gate.decision], `chip ${r.gate.decision}`));
     const action = node('td'); const button = node('button', '조회', 'secondary');
     button.addEventListener('click', () => selectRun(r.id).catch(e => message(e.message, true))); action.append(button);
-    row.append(gate, node('td', new Date(r.createdAt).toLocaleTimeString('ko-KR')), action); return row;
+    row.append(gate, node('td', new Date(r.createdAt).toLocaleString('ko-KR')), action); return row;
   }));
 }
 async function selectRun(id) {
@@ -119,7 +131,7 @@ $('download').addEventListener('click', () => {
   const link = node('a'); link.href = url; link.download = `agenttrust-${currentRun.id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 function clearProjectData(){
-  currentRun=null;selectedRunId=null;message('');$('run-button').disabled=true;$('dataset-button').disabled=true;
+  currentRun=null;selectedRunId=null;historySequence++;runCursor=null;$('history-more').disabled=true;$('history-state').value='';$('history-decision').value='';message('');$('run-button').disabled=true;$('dataset-button').disabled=true;
   for(const id of ['agent-name','policy-name','project-name'])$(id).value='';
   for(const id of ['agent','dataset-select','policy'])$(id).replaceChildren();
   keyCursor=null;receiptCursor=null;$('ci-more').disabled=true;$('receipts-more').disabled=true;
@@ -246,3 +258,6 @@ function renderOperations(data){
 $('operations-refresh').addEventListener('click',async()=>{
   $('operations-refresh').disabled=true;try{renderOperations(await api('/v1/operations'));}catch(e){message(e.message,true);}finally{$('operations-refresh').disabled=false;}
 });
+
+$('history-filter-form').addEventListener('submit',async event=>{event.preventDefault();runCursor=null;try{await history();}catch(e){message(e.message,true);}});
+$('history-more').addEventListener('click',async()=>{$('history-more').disabled=true;try{await history(true);}catch(e){message(e.message,true);$('history-more').disabled=!runCursor;}});

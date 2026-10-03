@@ -3,6 +3,7 @@ import { validate, InputError } from '../../packages/contracts/index.js';
 import { hash } from '../../packages/contracts/hash.js';
 import { transaction } from './database.js';
 import { audit, requireWrite } from './auth.js';
+import { pageResult } from './pagination.js';
 
 export const terminalStates = new Set(['succeeded','failed','cancelled','timed_out']);
 export const incomplete = (state, reason) => ({ state, results:[], summary:{cases:0,rules:0,pass:0,fail:0,inconclusive:0,passRate:0}, gate:{ decision:'inconclusive',deploymentAllowed:false,reason } });
@@ -114,10 +115,21 @@ export class PgStore {
       return publicRun(result.rows[0]);
     },context.organizationId);
   }
-  async listRuns(context) {
-    return transaction(this.database,async client => (await client.query('SELECT * FROM agenttrust.runs WHERE organization_id=$1 AND project_id=$2 ORDER BY created_at DESC LIMIT 100',[context.organizationId,context.projectId])).rows.map(row => {
-      const run=publicRun(row); return {id:run.id,state:run.state,createdAt:run.createdAt,gate:run.gate,summary:run.summary,agentName:run.snapshot.agent.name,datasetName:run.snapshot.dataset.name};
-    }),context.organizationId);
+  async listRuns(context,{page,filters={},cursorContext=context}={}) {
+    return transaction(this.database,async client => {
+      const rows=(await client.query(`SELECT id,state,created_at,outcome->'gate' AS gate,outcome->'summary' AS summary,
+        snapshot->'agent'->>'name' AS agent_name,snapshot->'dataset'->>'name' AS dataset_name,
+        to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
+        FROM agenttrust.runs WHERE organization_id=$1 AND project_id=$2
+        AND ($3::timestamptz IS NULL OR (created_at,id)<($3::timestamptz,$4::uuid))
+        AND ($5::text IS NULL OR state=$5)
+        AND ($6::text IS NULL OR coalesce(outcome->'gate'->>'decision','inconclusive')=$6)
+        ORDER BY created_at DESC,id DESC LIMIT $7`,[context.organizationId,context.projectId,page?.cursor?.time||null,page?.cursor?.id||null,filters.state||null,filters.decision||null,page?page.limit+1:100])).rows.map(row=>{
+          const fallback=incomplete(row.state,'Evaluation has not completed.');
+          return {id:row.id,state:row.state,createdAt:row.created_at.toISOString(),gate:row.gate||fallback.gate,summary:row.summary||fallback.summary,agentName:row.agent_name,datasetName:row.dataset_name,cursor_time:row.cursor_time};
+        });
+      return page?pageResult(rows,page,cursorContext):rows.map(({cursor_time,...row})=>row);
+    },context.organizationId);
   }
   async cancel(context,id) {
     requireWrite(context); uuid(id);
