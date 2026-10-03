@@ -188,3 +188,12 @@ Aggregate outcomes also have an 8 MiB limit on serialized UTF-8 JSON, independen
 
 
 For the same 29,378-byte synthetic dataset (one case, twenty schema rules, 3,000 violations per rule), a local before/after evaluation measured serialized outcome size 11,536,346 bytes versus 22,166 bytes, with the same twenty FAIL statuses and BLOCK gate. Maximum reason length fell from 510,701 to 882 code units. A single local pure-function sample took 71 ms versus 6 ms, excluding database/network/thread startup. Current Docker returned the full run, including its snapshot, in 52,908 bytes and verified a signed BLOCK receipt; observed evaluation-plus-gate completion was 358 ms. These are targeted synthetic measurements, not production throughput guarantees.
+
+
+### Sequence-ordered manual-review pages (v0.39.0)
+
+GET /v1/runs/:id/reviews accepts optional limit/cursor pagination (default 25, maximum 100). Without query parameters it retains the prior latest-50 array response. Pages use the monotonic bigint review_order, not createdAt, so later opinions with older wall-clock timestamps stay first. Cursor order is a decimal string to preserve values beyond JavaScript's safe integer range and is bounded to PostgreSQL bigint; cursor shape, tenant, project and run-specific scope are checked. New reviews arriving after page one do not duplicate or reorder the older continuation; refresh retrieves the latest page. The existing review-order index supports this range without a new migration.
+
+The review panel offers older-record paging and retains sequence/run guards against late page responses or stale refreshes. Pending submissions keep approval/rejection/older-history controls disabled. Changing runs clears the cursor; an older submission error cannot replace the newly selected run's status. Native tests cover backwards clocks, concurrent insertion between pages, cross-tenant/project/run cursors, bigint precision, malformed parameters and UI races. Final gate ordering still uses the unchanged latestReview query.
+
+Actual Docker created 52 synthetic rejection opinions for one passing manual-policy evaluation. Pages returned 25, 25 and 2 reviews in reverse insertion order, while the unpaged compatibility endpoint returned 50. The trusted-public-key signed final gate remained BLOCK/rejected. Browser paging reached 25, 50 and 52 rendered opinions and disabled further paging on the final page. The synthetic opinions are retained as immutable local test history.

@@ -1,6 +1,6 @@
 import { CI } from './ci.js';
-import { Reviews } from './reviews.js';
-import { pagination,runPagination,auditPagination } from './pagination.js';
+import { Reviews,reviewPageContext } from './reviews.js';
+import { pagination,runPagination,auditPagination,sequencePagination } from './pagination.js';
 import { compareRuns } from '../../packages/evaluator/comparison.js';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -105,7 +105,7 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       if(req.method==='POST'&&kind) return send(201,await store.createVersion(context,kind,await body(req)));
       if(req.method==='POST'&&path==='/v1/runs'){const result=await store.createRun(context,await body(req),req.headers['idempotency-key']);return send(result.replay?200:202,result.run);}
       const reviewMatch=/^\/v1\/runs\/([a-zA-Z0-9-]+)\/reviews$/.exec(path);
-      if(req.method==='GET'&&reviewMatch)return send(200,await reviews.list(context,reviewMatch[1]));
+      if(req.method==='GET'&&reviewMatch)return send(200,await reviews.list(context,reviewMatch[1],sequencePagination(requestUrl.searchParams,reviewPageContext(context,reviewMatch[1]))));
       if(req.method==='POST'&&reviewMatch){const review=await reviews.create(context,reviewMatch[1],await body(req),req.headers['idempotency-key']);return send(review.replay?200:201,review);}
       const match=/^\/v1\/runs\/([a-zA-Z0-9-]+)(?:\/(results|gate|cancel))?$/.exec(path);
       if(req.method==='POST'&&match?.[2]==='cancel'){await body(req);return send(200,await store.cancel(context,match[1]));}

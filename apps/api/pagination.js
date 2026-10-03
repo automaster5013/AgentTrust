@@ -37,3 +37,20 @@ export function auditPagination(query,context){
   const cursorContext={...context,cursorScope:hash({resource:'audit-events',action})},pageQuery=new URLSearchParams(query);
   pageQuery.delete('action');return {action,cursorContext,page:pagination(pageQuery,cursorContext)};
 }
+
+
+export function sequencePagination(query,context){
+  if(!query.size)return undefined;
+  if([...query.keys()].some(key=>!['limit','cursor'].includes(key))||query.getAll('limit').length>1||query.getAll('cursor').length>1)throw new InputError('Invalid pagination parameters.');
+  const {limit}=pagination(new URLSearchParams({limit:query.get('limit')||'25'}),context);let cursor;
+  if(query.has('cursor'))try{
+    const text=query.get('cursor');if(!text||text.length>512||!/^[A-Za-z0-9_-]+$/.test(text))throw new Error();
+    const bytes=Buffer.from(text,'base64url');if(bytes.toString('base64url')!==text)throw new Error();cursor=JSON.parse(bytes.toString('utf8'));
+    if(!cursor||Object.keys(cursor).sort().join(',')!=='order,organizationId,projectId,scope'||cursor.organizationId!==context.organizationId||cursor.projectId!==context.projectId||cursor.scope!==context.cursorScope||typeof cursor.order!=='string'||!/^[1-9][0-9]{0,18}$/.test(cursor.order)||BigInt(cursor.order)>9223372036854775807n)throw new Error();
+  }catch{throw new InputError('Invalid or foreign review cursor.');}
+  return {limit,cursor};
+}
+export function sequencePageResult(rows,page,context){
+  const more=rows.length>page.limit,selected=rows.slice(0,page.limit),last=selected.at(-1);
+  return {items:selected.map(({cursor_order,...row})=>row),nextCursor:more?Buffer.from(JSON.stringify({organizationId:context.organizationId,projectId:context.projectId,scope:context.cursorScope,order:String(last.cursor_order)})).toString('base64url'):null};
+}

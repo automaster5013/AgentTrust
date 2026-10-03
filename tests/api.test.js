@@ -780,3 +780,21 @@ test('manual approval refuses a stored pass whose evidence contradicts its rule 
  assert.equal(Number((await f.owner.query('SELECT count(*) FROM agenttrust.run_reviews WHERE run_id=$1',[claimed.id])).rows[0].count),0);
  assert.equal((await f.request(path,{method:'POST',json:{decision:'rejected',comment:'Stored evidence is inconsistent.'},extra:{'Idempotency-Key':randomUUID()}})).status,201);
 });
+
+
+test('manual review pages use insertion order across backwards clocks and bind tenant project and run',async t=>{
+ const f=await fixture(t),policy=await f.store.createVersion(f.contexts.admin,'policy',{name:'Paged reviews',minimumPassRate:1,requiresManualApproval:true}),{run}=await f.create('compliant',{policyVersionId:policy.id});await f.engine.tick();const path='/v1/runs/'+run.id+'/reviews';
+ const approved=await(await f.request(path,{method:'POST',json:{decision:'approved',comment:'First opinion'},extra:{'Idempotency-Key':randomUUID()}})).json();
+ await f.request(path,{method:'POST',json:{decision:'rejected',comment:'Second opinion'},extra:{'Idempotency-Key':randomUUID()}});
+ const {reviewHash,replay,...original}=approved,payload={...original,id:randomUUID(),decision:'rejected',comment:'Later sequence with older clock',createdAt:new Date(Date.now()-3600000).toISOString()};
+ await f.owner.query('INSERT INTO agenttrust.run_reviews(id,organization_id,project_id,run_id,actor_id,decision,payload,review_hash,idempotency_key,request_hash,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',[payload.id,payload.organizationId,payload.projectId,payload.runId,payload.actorId,payload.decision,payload,hash(payload),randomUUID(),hash({synthetic:true}),payload.createdAt]);
+ const originalIds=(await(await f.request(path)).json()).map(review=>review.id),first=await(await f.request(path+'?limit=1')).json();assert.equal(first.items[0].id,payload.id);assert.ok(first.nextCursor);assert.ok(!Object.hasOwn(first.items[0],'cursor_order'));
+ await f.request(path,{method:'POST',json:{decision:'approved',comment:'Arrived after first page'},extra:{'Idempotency-Key':randomUUID()}});
+ const ids=first.items.map(review=>review.id);let cursor=first.nextCursor;while(cursor){const page=await(await f.request(path+'?limit=1&cursor='+encodeURIComponent(cursor))).json();ids.push(...page.items.map(review=>review.id));cursor=page.nextCursor;}assert.deepEqual(ids,originalIds);assert.equal(new Set(ids).size,3);
+ const otherRun=(await f.create('compliant',{policyVersionId:policy.id})).run;
+ assert.equal((await f.request('/v1/runs/'+otherRun.id+'/reviews?cursor='+encodeURIComponent(first.nextCursor))).status,400);
+ assert.equal((await f.request(path+'?cursor='+encodeURIComponent(first.nextCursor),{role:'other_admin'})).status,400);
+ const project=await(await f.request('/v1/projects',{method:'POST',json:{name:'Other review project'},extra:{'Idempotency-Key':randomUUID()}})).json();
+ assert.equal((await f.request(path+'?cursor='+encodeURIComponent(first.nextCursor),{extra:{'X-AgentTrust-Project':project.id}})).status,400);
+ for(const query of ['limit=101','limit=1&limit=2','cursor=%%%','limit=1&sort=clock'])assert.equal((await f.request(path+'?'+query)).status,400);
+});

@@ -6,6 +6,8 @@ import { runIntegrity } from '../../packages/evaluator/integrity.js';
 import { transaction } from './database.js';
 import { requireWrite,audit,revalidateSession } from './auth.js';
 import { publicRun,terminalStates } from './pg-store.js';
+import { sequencePageResult } from './pagination.js';
+export const reviewPageContext=(context,runId)=>({...context,cursorScope:hash({resource:'run-reviews',runId})});
 
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
 function publicReview(row){if(hash(row.payload)!==row.review_hash)throw new Error('Review integrity mismatch.');return {...row.payload,reviewHash:row.review_hash};}
@@ -17,11 +19,12 @@ export async function latestReview(client,context,runId){
 }
 export class Reviews{
   constructor(database){this.database=database;}
-  async list(context,runId){
+  async list(context,runId,page){
     if(!uuid(runId))throw new InputError('Invalid run id.');
     return transaction(this.database,async client=>{
       if(!(await client.query('SELECT id FROM agenttrust.runs WHERE organization_id=$1 AND project_id=$2 AND id=$3',[context.organizationId,context.projectId,runId])).rowCount)throw new InputError('Unknown run.',404);
-      return (await client.query('SELECT payload,review_hash FROM agenttrust.run_reviews WHERE organization_id=$1 AND project_id=$2 AND run_id=$3 ORDER BY review_order DESC LIMIT 50',[context.organizationId,context.projectId,runId])).rows.map(publicReview);
+      const rows=(await client.query('SELECT payload,review_hash,review_order FROM agenttrust.run_reviews WHERE organization_id=$1 AND project_id=$2 AND run_id=$3 AND ($4::bigint IS NULL OR review_order<$4::bigint) ORDER BY review_order DESC LIMIT $5',[context.organizationId,context.projectId,runId,page?.cursor?.order||null,page?page.limit+1:50])).rows;
+      return page?sequencePageResult(rows.map(row=>({...publicReview(row),cursor_order:row.review_order})),page,reviewPageContext(context,runId)):rows.map(publicReview);
     },context.organizationId);
   }
   async create(context,runId,input,key){

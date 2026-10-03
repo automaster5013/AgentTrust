@@ -34,7 +34,7 @@ async function fixture({manual=false}={}){
     if(path.startsWith('/v1/runs?'))return {items:Object.values(runs).map(run=>({id:run.id,agentName:'Run '+run.id,datasetName:'Dataset',state:run.state,gate:run.gate,createdAt:run.createdAt})),nextCursor:null};
     if(path==='/v1/operations')return {worker:{state:'recent',lastSeen:null},queue:{queued:1,running:0,overdue:0,expiredLeases:0},recent:{completed24h:1,errors24h:0},observedAt:'2026-01-01T00:00:00Z'};
     if(path==='/v1/usage')return {completed_runs:1,evaluated_cases:1,attempts:1};
-    if(path.startsWith('/v1/runs/')&&path.endsWith('/reviews'))return [];
+    if(path.startsWith('/v1/runs/')&&path.includes('/reviews'))return path.includes('?')?{items:[],nextCursor:null}:[];
     if(path.startsWith('/v1/runs/'))return runs[path.split('/')[3]];
     return {items:[],nextCursor:null};
   };
@@ -91,9 +91,10 @@ test('older CI history response cannot overwrite a newer refresh',async()=>{
 
 test('review refresh keeps approval buttons disabled while a submission is pending',async()=>{
   const f=await fixture({manual:true}),submission=deferred();await f.view('B');
-  f.overrides.set('/v1/runs/B/reviews',options=>options.method==='POST'?submission.promise:[]);
+  f.overrides.set('/v1/runs/B/reviews',()=>submission.promise);
+  f.overrides.set('/v1/runs/B/reviews?limit=25',()=>({items:[],nextCursor:'older'}));
   const pending=f.element('review-form').fire('submit',{submitter:{value:'approved'}});await settle();
-  await f.element('review-refresh').fire('click');assert.equal(f.element('review-approve').disabled,true);assert.equal(f.element('review-reject').disabled,true);
+  await f.element('review-refresh').fire('click');assert.equal(f.element('review-approve').disabled,true);assert.equal(f.element('review-reject').disabled,true);assert.equal(f.element('review-more').disabled,true);
   submission.resolve({id:'synthetic-review'});await pending;assert.equal(f.element('review-approve').disabled,false);
 });
 
@@ -138,4 +139,27 @@ test('filtered paginated evidence downloads the complete immutable run JSON',asy
  const f=await fixture();f.runs.B.results=Array.from({length:25},(_,i)=>evidenceCase(i,i===24?'fail':'pass'));await f.view('B');
  f.element('evidence-filter').value='fail';await f.element('evidence-filter').fire('change');assert.equal(f.element('results').children.length,1);
  await f.element('download').fire('click');assert.equal(f.downloads.length,1);const exported=JSON.parse(await f.downloads[0].text());assert.equal(exported.id,'B');assert.equal(exported.results.length,25);assert.equal(exported.results[24].rules[0].status,'fail');assert.equal(exported.snapshotHash,'synthetic-B');
+});
+
+
+const reviewEntry=comment=>({id:comment,actorId:'synthetic-actor',createdAt:'2026-01-01T00:00:00Z',decision:'rejected',comment});
+test('review pages append in order and a newer refresh excludes an older pending page',async()=>{
+ const f=await fixture({manual:true}),older=deferred();let refresh=0;
+ f.overrides.set('/v1/runs/B/reviews?limit=25',()=>({items:[reviewEntry(++refresh===1?'first':'refreshed')],nextCursor:'older'}));await f.view('B');assert.equal(f.element('review-more').disabled,false);assert.match(f.element('review-history-status').textContent,/1개 표시/);
+ f.overrides.set('/v1/runs/B/reviews?limit=25&cursor=older',()=>({items:[reviewEntry('second')],nextCursor:null}));await f.element('review-more').fire('click');assert.match(f.element('review-list').textContent,/first/);assert.match(f.element('review-list').textContent,/second/);assert.equal(f.element('review-more').disabled,true);assert.match(f.element('review-history-status').textContent,/2개 표시.*마지막 기록/);
+ await f.element('review-refresh').fire('click');f.overrides.set('/v1/runs/B/reviews?limit=25&cursor=older',()=>older.promise);const pending=f.element('review-more').fire('click');await settle();await f.element('review-refresh').fire('click');older.resolve({items:[reviewEntry('obsolete')],nextCursor:null});await pending;
+ assert.match(f.element('review-list').textContent,/refreshed/);assert.ok(!f.element('review-list').textContent.includes('obsolete'));assert.equal(f.element('review-more').disabled,false);
+});
+test('a pending review page cannot append after another run is selected',async()=>{
+ const f=await fixture({manual:true}),older=deferred();f.runs.A=execution('A','succeeded',true);
+ f.overrides.set('/v1/runs/B/reviews?limit=25',()=>({items:[reviewEntry('B opinion')],nextCursor:'older'}));await f.view('B');f.overrides.set('/v1/runs/B/reviews?limit=25&cursor=older',()=>older.promise);
+ const pending=f.element('review-more').fire('click');await settle();await f.view('A');older.resolve({items:[reviewEntry('obsolete B opinion')],nextCursor:null});await pending;
+ assert.ok(!f.element('review-list').textContent.includes('B opinion'));assert.equal(f.element('review-more').disabled,true);
+});
+
+
+test('a review submission failure cannot replace the status of a newly selected run',async()=>{
+ const f=await fixture({manual:true}),submission=deferred();f.runs.A=execution('A','succeeded',true);await f.view('B');f.overrides.set('/v1/runs/B/reviews',()=>submission.promise);
+ const pending=f.element('review-form').fire('submit',{submitter:{value:'rejected'}});await settle();await f.view('A');f.element('status').textContent='Current run status';submission.resolve(Promise.reject(new Error('Obsolete review failure')));await pending;
+ assert.equal(f.element('status').textContent,'Current run status');assert.ok(f.element('snapshot').textContent.includes('실행 A'));
 });
