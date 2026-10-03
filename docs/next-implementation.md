@@ -106,3 +106,7 @@ CI 조회 함수의 전용 NOLOGIN 읽기 역할 적용, AES-256-GCM 로컬 백�
 ## v0.16 완료
 
 임시 CI workflow에 Docker 평가·재시작 지속성·서명 승인·관리자 반려·워커 중단 복구·암호화 복원을 추가했다. 실제 로컬 Docker에서 중단된 slow 실행의 차단 유지, heartbeat stale과 lease 만료, 두 번째 시도 완료와 감사 중복 방지를 확인했다. API/worker는 정상 상태로 복구했으며 LogiTrack 보존 자산은 건드리지 않았다. 원격 GitHub 실행은 아직 수행하지 않았다.
+
+## v0.17 완료
+
+API/워커 effective DB principal과 상승 가능한 역할 멤버십·DDL 권한·소유권을 검사한다. API는 매 API 요청 전에 검증해 소유자 연결을 거부하며 워커는 시작/heartbeat에서 잘못된 역할이나 DB 오류를 감지하면 안전하게 중단한다. 실제 정상 역할과 소유자 연결 거절, 각 상승 속성의 fail-closed 동작을 테스트한다.

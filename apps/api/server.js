@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { PgStore } from './pg-store.js';
 import { Auth,cookieToken,sessionCookie } from './auth.js';
 import { pool } from './database.js';
+import { validateDatabaseRole } from './role-guard.js';
 import { InputError } from '../../packages/contracts/index.js';
 import { sampleDataset } from '../../packages/contracts/samples.js';
 
@@ -39,6 +40,7 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       if(req.headers.origin&&req.headers.origin!==`http://${req.headers.host}`) throw new InputError('Cross-origin requests are denied.',403);
       const requestUrl=new URL(req.url,`http://${req.headers.host}`),path=requestUrl.pathname;
       if(req.method==='GET'&&assets[path]){const[file,type]=assets[path];res.writeHead(200,{...headers,'Content-Type':`${type}; charset=utf-8`});res.end(await readFile(new URL(file,webRoot)));return;}
+      await validateDatabaseRole(database,'api');
       if(req.method==='GET'&&path==='/health') {await database.query('SELECT 1');return send(200,{status:'ok',mode:'local-mock',persistent:true});}
       if(req.method==='POST'&&path==='/v1/auth/login') {
         const input=await body(req);
@@ -102,7 +104,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   const port=Number(process.env.PORT||4310);
   if(!Number.isInteger(port)||port<1024||port>65535)throw new Error('PORT must be between 1024 and 65535.');
   const database=pool(process.env.DATABASE_URL);const server=createApp({database});
-  await database.query('SELECT 1');
+  await validateDatabaseRole(database,'api');
   server.listen(port,process.env.CONTAINER_MODE==='true'?'0.0.0.0':'127.0.0.1',()=>console.log(`AgentTrust authenticated local workspace: http://127.0.0.1:${port}`));
   const stop=()=>{server.close(async()=>{await database.end();});server.closeAllConnections();};
   process.on('SIGINT',stop);process.on('SIGTERM',stop);

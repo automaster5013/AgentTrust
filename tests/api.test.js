@@ -480,3 +480,15 @@ test('organization audit history pages and action filters preserve scope and tim
   assert.deepEqual((await(await f.request('/v1/audit-events?limit=2&action=test.audit',{role:'other_admin'})).json()).items,[]);
   assert.ok(Array.isArray(await(await f.request('/v1/audit-events')).json()));
 });
+
+test('HTTP API refuses a migration-owner database connection before reading protected data',async t=>{
+  const f=await fixture(t),unsafe=createApp({database:f.owner});
+  await new Promise(resolve=>unsafe.listen(0,'127.0.0.1',resolve));
+  t.after(async()=>{unsafe.closeAllConnections();await new Promise(resolve=>unsafe.close(resolve));});
+  const base=`http://127.0.0.1:${unsafe.address().port}`;
+  for(const path of ['/health','/v1/catalog']){
+    const response=await fetch(base+path);assert.equal(response.status,503);const data=await response.json();assert.equal(data.error,'Service unavailable.');assert.ok(!JSON.stringify(data).includes('agenttrust_owner'));
+  }
+  const login=await fetch(base+'/v1/auth/login',{method:'POST',headers,body:JSON.stringify({accessKey:f.first.credentials[0].token})});assert.equal(login.status,503);
+  assert.equal((await fetch(base+'/')).status,200);
+});
