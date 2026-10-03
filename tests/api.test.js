@@ -11,6 +11,7 @@ import { Auth } from '../apps/api/auth.js';
 import { PgStore,incomplete } from '../apps/api/pg-store.js';
 import { WorkerEngine } from '../apps/worker/engine.js';
 import { heartbeat } from '../apps/worker/health.js';
+import { evaluate } from '../packages/evaluator/index.js';
 import { seedOrganization } from '../scripts/setup.mjs';
 import { tokenHash,hash } from '../packages/contracts/hash.js';
 
@@ -439,4 +440,25 @@ test('later rejection wins over earlier approval even with an older wall-clock t
   await f.owner.query('INSERT INTO agenttrust.run_reviews(id,organization_id,project_id,run_id,actor_id,decision,payload,review_hash,idempotency_key,request_hash,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',[payload.id,payload.organizationId,payload.projectId,payload.runId,payload.actorId,payload.decision,payload,hash(payload),randomUUID(),hash({synthetic:true}),payload.createdAt]);
   const gate=await(await f.request('/v1/release-gate',{method:'POST',json:{candidateRunId:run.id,...f.input('compliant',{policyVersionId:policy.id})}})).json();assert.equal(gate.deploymentAllowed,false);assert.equal(gate.manualApproval.status,'rejected');assert.equal(gate.manualApproval.reviewId,payload.id);
   const reviews=await(await f.request(path)).json();assert.equal(reviews[0].id,payload.id);
+});
+
+
+test('authentication tables require tenant context and API cannot forge worker completion',async t=>{
+  const f=await fixture(t);
+  for(const table of ['organizations','memberships','credentials','sessions']){
+    assert.equal(Number((await f.database.query('SELECT count(*) FROM agenttrust.'+table)).rows[0].count),0);
+    const rows=await transaction(f.database,c=>c.query('SELECT * FROM agenttrust.'+table),f.first.organizationId);
+    assert.ok(rows.rowCount>0);
+    if(table==='organizations')assert.ok(rows.rows.every(r=>r.id===f.first.organizationId));
+    if(table==='memberships')assert.ok(rows.rows.every(r=>r.organization_id===f.first.organizationId));
+    if(table==='credentials')assert.ok(rows.rows.every(r=>f.first.credentials.some(c=>c.id===r.id)));
+    if(table==='sessions')assert.ok(rows.rows.every(r=>f.first.credentials.some(c=>c.id===r.credential_id)));
+  }
+  await assert.rejects(transaction(f.database,c=>c.query("INSERT INTO agenttrust.sessions(token_hash,credential_id,expires_at) VALUES($1,$2,now()+interval '1 hour')",[hash(randomUUID()),f.other.credentials[0].id]),f.first.organizationId),/row-level security/);
+  const {run}=await f.create(),outcome=evaluate(run.snapshot);
+  await assert.rejects(transaction(f.database,c=>c.query("UPDATE agenttrust.runs SET state='succeeded',outcome=$2,result_hash=$3,completed_at=now() WHERE id=$1",[run.id,outcome,hash({results:outcome.results,gate:outcome.gate})]),f.first.organizationId),/worker completion is required/);
+  await f.engine.tick();assert.equal((await f.store.getRun(f.contexts.admin,run.id)).gate.deploymentAllowed,true);
+  const {run:cancel}=await f.create();assert.equal((await f.store.cancel(f.contexts.admin,cancel.id)).state,'cancelled');
+  const functions=(await f.owner.query("SELECT proname,prosecdef,proconfig,pg_get_userbyid(proowner) AS owner FROM pg_proc WHERE oid IN ('agenttrust.lookup_credential(text)'::regprocedure,'agenttrust.authenticate_session(text)'::regprocedure)")).rows;
+  assert.equal(functions.length,2);assert.ok(functions.every(fn=>fn.owner==='agenttrust_auth'&&fn.prosecdef&&fn.proconfig.includes('search_path=pg_catalog, pg_temp')));
 });

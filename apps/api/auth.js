@@ -23,27 +23,24 @@ export class Auth {
     if (this.failures.length >= 20) throw new InputError('Too many login attempts. Try again in one minute.',429);
     if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) { this.failures.push(now); throw new InputError('Invalid access key.',401); }
     return transaction(this.database, async client => {
-      const result = await client.query(`SELECT c.id AS credential_id,m.id AS membership_id,m.organization_id,m.name,m.role,o.name AS organization_name
-        FROM agenttrust.credentials c JOIN agenttrust.memberships m ON m.id=c.membership_id JOIN agenttrust.organizations o ON o.id=m.organization_id
-        WHERE c.token_hash=$1 AND c.revoked_at IS NULL AND m.active=true`,[tokenHash(token)]);
+      const result = await client.query('SELECT * FROM agenttrust.lookup_credential($1)',[tokenHash(token)]);
       if (!result.rowCount) { this.failures.push(now); throw new InputError('Invalid access key.',401); }
       const row = result.rows[0]; const session = randomBytes(32).toString('hex');
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,1))',[row.credential_id]);
+      const valid=(await client.query('SELECT * FROM agenttrust.lookup_credential($1)',[tokenHash(token)])).rows[0];
+      if(!valid||valid.organization_id!==row.organization_id)throw new InputError('Access key expired or revoked.',401);
+      await client.query("SELECT set_config('app.organization_id',$1,true)",[row.organization_id]);
       await client.query('DELETE FROM agenttrust.sessions WHERE expires_at <= now()');
       const active = await client.query('SELECT count(*) FROM agenttrust.sessions WHERE credential_id=$1',[row.credential_id]);
       if (Number(active.rows[0].count) >= 20) throw new InputError('Too many active sessions. Sign out of an existing session.',429);
       await client.query("INSERT INTO agenttrust.sessions(token_hash,credential_id,expires_at) VALUES($1,$2,now()+interval '8 hours')",[tokenHash(session),row.credential_id]);
-      await client.query("SELECT set_config('app.organization_id',$1,true)",[row.organization_id]);
       await audit(client,{ organizationId:row.organization_id,membershipId:row.membership_id },'auth.login',row.credential_id);
       return { token:session };
     });
   }
   async authenticate(token) {
     if (!token) throw new InputError('Authentication required.',401);
-    const result = await this.database.query(`SELECT m.id,m.organization_id,m.name,m.role,o.name AS organization_name
-      FROM agenttrust.sessions s JOIN agenttrust.credentials c ON c.id=s.credential_id JOIN agenttrust.memberships m ON m.id=c.membership_id
-      JOIN agenttrust.organizations o ON o.id=m.organization_id
-      WHERE s.token_hash=$1 AND s.expires_at>now() AND c.revoked_at IS NULL AND m.active=true`,[tokenHash(token)]);
+    const result = await this.database.query('SELECT * FROM agenttrust.authenticate_session($1)',[tokenHash(token)]);
     if (!result.rowCount) throw new InputError('Session expired or revoked.',401);
     const row = result.rows[0];
     const projects = await transaction(this.database, async client => (await client.query('SELECT id,name FROM agenttrust.projects WHERE organization_id=$1 ORDER BY created_at,id',[row.organization_id])).rows,row.organization_id);

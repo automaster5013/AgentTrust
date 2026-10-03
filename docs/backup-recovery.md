@@ -14,4 +14,4 @@ v0.4~v0.5에서 생성한 기존 평문 백업은 보존하며 checksum 기반 �
 
 2026-10-04 첫 roundtrip 검증 완료: 스냅샷 데이터 지문 일치, 복원된 조직 RLS 확인, 애플리케이션 CONNECT 차단. 실제 파일과 보고서는 `.local/backups`에 보존했다. 관련 옵션은 [PostgreSQL pg_restore 문서](https://www.postgresql.org/docs/17/app-pgrestore.html)를 따른다.
 
-2026-10-04 v0.6 암호화 roundtrip 검증 완료: 데이터·보안 카탈로그 지문 일치, 조직 RLS 확인, 애플리케이션 CONNECT 차단, 키 디렉터리의 사용자/SYSTEM 전용 ACL 확인. 암호화·인증 동작은 [Node.js 24 crypto 문서](https://nodejs.org/download/release/v24.16.0/docs/api/crypto.html)를 따른다. CI 인증 조회 함수는 로그인 불가 전용 역할 agenttrust_auth가 실행하며 CI 키·멤버십 읽기만 허용한다. 일반 실행 데이터 읽기와 키 수정은 허용하지 않는다.
+2026-10-04 v0.6 암호화 roundtrip 검증 완료: 데이터·보안 카탈로그 지문 일치, 조직 RLS 확인, 애플리케이션 CONNECT 차단, 키 디렉터리의 사용자/SYSTEM 전용 ACL 확인. 암호화·인증 동작은 [Node.js 24 crypto 문서](https://nodejs.org/download/release/v24.16.0/docs/api/crypto.html)를 따른다. CI 인증 조회 함수는 로그인 불가 전용 역할 agenttrust_auth가 실행하며 CI 및 일반 세션 인증에 필요한 조직·멤버십·키·세션 읽기만 허용한다. 일반 실행 데이터 읽기와 키 수정은 허용하지 않는다.
