@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdir,writeFile,unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { backupPath,verifyBackup,securityFingerprint } from '../scripts/recovery.mjs';
+import { backupPath,verifyBackup,securityFingerprint,verifyAuthTenantPolicies } from '../scripts/recovery.mjs';
 import { pool } from '../apps/api/database.js';
 
 test('recovery accepts only generated backup names within the private backup directory',()=>{
@@ -43,4 +43,19 @@ test('corrupt backup data is rejected before any restore database is created',as
   t.after(async()=>{await unlink(path);await unlink(path+'.manifest.json');});
   await writeFile(path+'.manifest.json',JSON.stringify({schemaVersion:1,name,sha256:'a'.repeat(64),tables:{}}),{flag:'wx',mode:0o600});
   await assert.rejects(verifyBackup(name),/checksum mismatch/);
+});
+
+test('restored security checks detect disabled immutability triggers and validate all tenant tables',async()=>{
+  assert.equal(new URL(process.env.TEST_OWNER_DATABASE_URL).pathname,'/agenttrust_test');
+  const database=pool(process.env.TEST_OWNER_DATABASE_URL),client=await database.connect();
+  try{
+    const organizations=(await client.query('SELECT id FROM agenttrust.organizations ORDER BY id LIMIT 2')).rows.map(row=>row.id);
+    assert.equal(await verifyAuthTenantPolicies(client,organizations),true);
+    await client.query('BEGIN');const legacy=await securityFingerprint(client,1),before=await securityFingerprint(client,2);
+    await client.query('ALTER TABLE agenttrust.runs DISABLE TRIGGER protect_run');
+    assert.notEqual(await securityFingerprint(client,2),before);
+    assert.equal(await securityFingerprint(client,1),legacy);
+    await client.query('ROLLBACK');
+    await assert.rejects(securityFingerprint(client,3),/Unsupported/);
+  }finally{await client.query('ROLLBACK').catch(()=>{});client.release();await database.end();}
 });

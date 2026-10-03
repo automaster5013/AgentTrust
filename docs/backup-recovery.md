@@ -15,3 +15,7 @@ v0.4~v0.5에서 생성한 기존 평문 백업은 보존하며 checksum 기반 �
 2026-10-04 첫 roundtrip 검증 완료: 스냅샷 데이터 지문 일치, 복원된 조직 RLS 확인, 애플리케이션 CONNECT 차단. 실제 파일과 보고서는 `.local/backups`에 보존했다. 관련 옵션은 [PostgreSQL pg_restore 문서](https://www.postgresql.org/docs/17/app-pgrestore.html)를 따른다.
 
 2026-10-04 v0.6 암호화 roundtrip 검증 완료: 데이터·보안 카탈로그 지문 일치, 조직 RLS 확인, 애플리케이션 CONNECT 차단, 키 디렉터리의 사용자/SYSTEM 전용 ACL 확인. 암호화·인증 동작은 [Node.js 24 crypto 문서](https://nodejs.org/download/release/v24.16.0/docs/api/crypto.html)를 따른다. CI 인증 조회 함수는 로그인 불가 전용 역할 agenttrust_auth가 실행하며 CI 및 일반 세션 인증에 필요한 조직·멤버십·키·세션 읽기만 허용한다. 일반 실행 데이터 읽기와 키 수정은 허용하지 않는다.
+
+최근 복구 강화: 테이블 지문은 PostgreSQL 커서에서 25행씩 읽어 기존 canonical 배열 해시와 동일한 값을 계산한다. 전체 테이블을 Node 메모리에 보관하지 않는다. 정렬은 PostgreSQL이 담당하므로 복구 전용 트랜잭션에는 300초 statement timeout을 사용한다. 일반 API의 5초 제한은 유지한다. 커서는 [PostgreSQL DECLARE 문서](https://www.postgresql.org/docs/17/sql-declare.html)의 트랜잭션 범위에서 사용한다.
+
+신규 manifest의 securityVersion 2는 트리거 활성 상태·정의, 제약 조건, 열 타입·기본값, 스키마 권한, 역할 멤버십까지 비교한다. securityVersion 없는 기존 manifest는 기존 보안 지문 알고리즘으로 검증한다. 복원 DB 생성 직후부터 애플리케이션 CONNECT를 차단한다. 세션 인증 RLS가 있는 스키마에서는 모든 테넌트 테이블의 컨텍스트 없는 조회가 비어 있는지, 각 조직의 실제 행 지문이 소유자가 계산한 조직 범위 지문과 일치하는지, 제한된 자격증명 조회가 동작하는지 추가 확인한다. 전역 worker heartbeat는 테넌트 테이블에서 제외한다. 해당 인증 함수가 없는 구형 백업은 authTenantPoliciesVerified를 null로 기록하여 추가 검증을 수행하지 않았음을 표시한다.
