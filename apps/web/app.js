@@ -5,10 +5,12 @@ let activeProjectId = null;
 let scopeEpoch = 0;
 let loading = false;
 let selectedRunId = null;
+let selectedRunSequence=0;
 let keyCursor=null,receiptCursor=null,runCursor=null;
 let historySequence=0;
 let auditCursor=null,auditSequence=0;
-let inspectionSequence=0;
+let inspectionSequence=0,comparisonSequence=0,keyHistorySequence=0,receiptHistorySequence=0,reviewSequence=0;
+let reviewBusy=false;
 const terminal = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
 const decisionLabels = { pass: '통과', block: '차단', inconclusive: '판정 불가' };
 const stateLabels = { queued: '대기 중', running: '실행 중', succeeded: '평가 완료', failed: '실행 실패', cancelled: '취소됨', timed_out: '시간 초과' };
@@ -50,6 +52,8 @@ function updateButtons(){
   $('dataset-button').disabled=!writer;$('agent-create').disabled=!writer;$('policy-create').disabled=actor?.role!=='admin';
 }
 function render(run) {
+  if(currentRun?.id===run.id&&terminal.has(currentRun.state)&&!terminal.has(run.state))return false;
+  comparisonSequence++;
   if(currentRun?.id!==run.id){$('review-comment').value='';$('manual-gate-output').textContent='';}
   currentRun = run;
   $('comparison-result').textContent='후보 실행을 조회한 뒤 기준 실행을 선택하세요.';
@@ -77,6 +81,7 @@ function render(run) {
     return card;
   });
   $('results').replaceChildren(...(cards.length ? cards : [node('div', terminal.has(run.state) ? '실행이 종료됐습니다. 확정된 사례 결과가 없습니다.' : '평가 결과를 기다리고 있습니다.', 'empty')]));
+  return true;
 }
 async function history(append=false) {
   if(append&&!runCursor)return;
@@ -104,11 +109,11 @@ async function history(append=false) {
   }));
 }
 async function selectRun(id) {
-  selectedRunId = id;
+  selectedRunId = id;const sequence=++selectedRunSequence;
   for (let attempt = 0; attempt < 800; attempt++) {
     const run = await api(`/v1/runs/${id}`);
-    if (selectedRunId !== id) return;
-    render(run);await reviewHistory(run);
+    if (selectedRunId !== id||sequence!==selectedRunSequence) return;
+    if(!render(run))return;await reviewHistory(run);
     if (terminal.has(run.state)) { await history(); await auditHistory(); return; }
     await new Promise(resolve => setTimeout(resolve, 150));
   }
@@ -138,9 +143,10 @@ $('download').addEventListener('click', () => {
   const link = node('a'); link.href = url; link.download = `agenttrust-${currentRun.id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 function clearProjectData(){
+  comparisonSequence++;keyHistorySequence++;receiptHistorySequence++;reviewSequence++;
   inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전의 고정된 내용과 해시를 확인할 수 있습니다.';
   auditSequence++;auditCursor=null;$('audit-more').disabled=true;$('audit-action').value='';
-  currentRun=null;selectedRunId=null;historySequence++;runCursor=null;$('history-more').disabled=true;$('history-state').value='';$('history-decision').value='';message('');$('run-button').disabled=true;$('dataset-button').disabled=true;
+  currentRun=null;selectedRunId=null;selectedRunSequence++;historySequence++;runCursor=null;$('history-more').disabled=true;$('history-state').value='';$('history-decision').value='';message('');$('run-button').disabled=true;$('dataset-button').disabled=true;
   for(const id of ['agent-name','policy-name','project-name'])$(id).value='';
   for(const id of ['agent','dataset-select','policy'])$(id).replaceChildren();
   keyCursor=null;receiptCursor=null;$('ci-more').disabled=true;$('receipts-more').disabled=true;
@@ -198,26 +204,33 @@ $('logout-button').addEventListener('click',async()=>{
   try{await api('/v1/auth/logout',{method:'POST',body:'{}'});showLogin();}catch(e){message(e.message,true);}
 });
 $('cancel-button').addEventListener('click',async()=>{
-  if(!currentRun)return;$('cancel-button').disabled=true;
-  try{const run=await api(`/v1/runs/${currentRun.id}/cancel`,{method:'POST',body:'{}'});render(run);await reviewHistory(run);await history();await auditHistory();message('실행을 취소했습니다. 늦은 응답은 판정에 반영되지 않습니다.');}
-  catch(e){message(e.message,true);}
+  if(!currentRun)return;const target=currentRun;$('cancel-button').disabled=true;
+  try{const run=await api(`/v1/runs/${target.id}/cancel`,{method:'POST',body:'{}'});
+    if(selectedRunId===target.id){render(run);await reviewHistory(run);}
+    await history();await auditHistory();message(`실행 ${target.id.slice(0,8)}을 취소했습니다. 늦은 응답은 판정에 반영되지 않습니다.`);
+  }catch(e){message(e.message,true);}
 });
 $('audit-action').addEventListener('change',()=>auditHistory().catch(e=>message(e.message,true)));
 $('audit-more').addEventListener('click',()=>auditHistory(true).catch(e=>message(e.message,true)));
 $('audit-refresh').addEventListener('click',()=>auditHistory().catch(e=>message(e.message,true)));
 try{await initialize();}catch(e){showLogin();$('login-status').textContent=e.message==='Authentication required.'?'접근 키를 입력해 주세요.':e.message;}
 
+$('baseline-run').addEventListener('change',()=>{comparisonSequence++;$('comparison-result').textContent='기준 실행이 변경됐습니다. 다시 비교하세요.';});
 $('compare-form').addEventListener('submit',async event=>{
   event.preventDefault();if(!currentRun){message('먼저 후보 실행을 조회하세요.',true);return;}
-  try{const result=await api('/v1/compare',{method:'POST',body:JSON.stringify({candidateRunId:currentRun.id,baselineRunId:$('baseline-run').value})});
+  const sequence=++comparisonSequence,candidateId=currentRun.id,baselineId=$('baseline-run').value;
+  const current=()=>sequence===comparisonSequence&&selectedRunId===candidateId&&$('baseline-run').value===baselineId;
+  try{const result=await api('/v1/compare',{method:'POST',body:JSON.stringify({candidateRunId:candidateId,baselineRunId:baselineId})});
+    if(!current())return;
     $('comparison-result').textContent=`${result.comparable?'비교 완료':'비교 불가: 불완전한 평가'} · 회귀 ${result.regressions.length}개 · 배포 ${result.deploymentAllowed?'허용':'차단'}\n통과율 변화 ${(result.passRateDelta*100).toFixed(1)}%p\n`+result.changes.map(c=>`${c.caseId} / ${c.ruleId}: ${c.before} → ${c.after}`).join('\n');
-  }catch(e){$('comparison-result').textContent=e.message;}
+  }catch(e){if(current())$('comparison-result').textContent=e.message;}
 });
 
 async function ciHistory(append=false){
   if(actor?.role!=='admin')return;
   if(append&&!keyCursor)return;
-  const page=await api('/v1/ci-credentials?limit=25'+(append?'&cursor='+encodeURIComponent(keyCursor):''));keyCursor=page.nextCursor;$('ci-more').disabled=!keyCursor;
+  const sequence=++keyHistorySequence;
+  const page=await api('/v1/ci-credentials?limit=25'+(append?'&cursor='+encodeURIComponent(keyCursor):''));if(sequence!==keyHistorySequence)return;keyCursor=page.nextCursor;$('ci-more').disabled=!keyCursor;
   if(!append)$('ci-key-list').replaceChildren();
   $('ci-key-list').append(...page.items.map(key=>{
     const row=node('div',undefined,'audit-entry');const expired=Date.parse(key.expires_at)<=Date.now();
@@ -228,7 +241,8 @@ async function ciHistory(append=false){
 async function receiptHistory(append=false){
   if(!actor)return;
   if(append&&!receiptCursor)return;
-  const page=await api('/v1/release-receipts?limit=25'+(append?'&cursor='+encodeURIComponent(receiptCursor):''));receiptCursor=page.nextCursor;$('receipts-more').disabled=!receiptCursor;
+  const sequence=++receiptHistorySequence;
+  const page=await api('/v1/release-receipts?limit=25'+(append?'&cursor='+encodeURIComponent(receiptCursor):''));if(sequence!==receiptHistorySequence)return;receiptCursor=page.nextCursor;$('receipts-more').disabled=!receiptCursor;
   if(!append)$('receipt-list').replaceChildren();
   $('receipt-list').append(...page.items.map(receipt=>{
     const row=node('div',undefined,'audit-entry');row.append(node('strong',`${decisionLabels[receipt.decision]} `),node('span',`${new Date(receipt.created_at).toLocaleString('ko-KR')} · 실행 ${receipt.candidate_run_id.slice(0,8)} · ${receipt.signing_key_id?'서명 포함':'기존 서명 없음'} `));
@@ -283,21 +297,23 @@ $('history-more').addEventListener('click',async()=>{$('history-more').disabled=
 
 $('policy-manual').addEventListener('change',()=>{$('policy-review-ttl').disabled=!$('policy-manual').checked;});
 async function reviewHistory(run=currentRun){
+  const sequence=++reviewSequence;
   if(!run||!run.snapshot.policy.requiresManualApproval){$('review-panel').hidden=true;return;}
-  const reviews=await api('/v1/runs/'+run.id+'/reviews');if(selectedRunId!==run.id)return;
+  const reviews=await api('/v1/runs/'+run.id+'/reviews');if(sequence!==reviewSequence||selectedRunId!==run.id)return;
   $('review-panel').hidden=false;$('review-form').hidden=actor?.role!=='admin';
-  $('review-approve').disabled=actor?.role!=='admin'||run.state!=='succeeded'||run.gate.evaluationPassed!==true;
-  $('review-reject').disabled=actor?.role!=='admin'||!terminal.has(run.state);
+  $('review-approve').disabled=reviewBusy||actor?.role!=='admin'||run.state!=='succeeded'||run.gate.evaluationPassed!==true;
+  $('review-reject').disabled=reviewBusy||actor?.role!=='admin'||!terminal.has(run.state);
   $('manual-status').textContent='정책에서 관리자 검토를 요구합니다. 승인 유효 시간 '+(run.snapshot.policy.manualApprovalTtlSeconds??3600)+'초. 최종 배포 판단은 현재 CI 게이트를 확인하세요.';
   $('review-list').replaceChildren(...reviews.map(review=>{const row=node('div',undefined,'audit-entry');row.append(node('strong',review.decision==='approved'?'승인 ':'반려 '),node('span',new Date(review.createdAt).toLocaleString('ko-KR')+' · 검토자 '+review.actorId.slice(0,8)),node('p',review.comment||'(의견 없음)'));return row;}));
   if(!reviews.length)$('review-list').textContent='아직 관리자 검토 기록이 없습니다.';
 }
 $('review-form').addEventListener('submit',async event=>{
-  event.preventDefault();if(!currentRun||!['approved','rejected'].includes(event.submitter?.value))return;
-  const run=currentRun,decision=event.submitter.value;$('review-approve').disabled=true;$('review-reject').disabled=true;
+  event.preventDefault();if(reviewBusy||!currentRun||!['approved','rejected'].includes(event.submitter?.value))return;
+  const run=currentRun,decision=event.submitter.value;reviewBusy=true;$('review-approve').disabled=true;$('review-reject').disabled=true;
   try{await api('/v1/runs/'+run.id+'/reviews',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({decision,comment:$('review-comment').value})});
     if(selectedRunId!==run.id)return;$('review-comment').value='';$('manual-gate-output').textContent='검토 상태가 변경되었습니다. 최종 게이트를 다시 확인하세요.';await reviewHistory(run);await auditHistory();message(decision==='approved'?'관리자 승인 기록을 저장했습니다.':'반려 기록을 저장했습니다.');
-  }catch(e){message(e.message,true);await reviewHistory().catch(()=>{});}
+  }catch(e){message(e.message,true);}
+  finally{reviewBusy=false;await reviewHistory().catch(()=>{});}
 });
 $('review-refresh').addEventListener('click',()=>reviewHistory().catch(e=>message(e.message,true)));
 $('manual-gate-check').addEventListener('click',async()=>{
