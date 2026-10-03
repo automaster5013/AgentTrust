@@ -101,3 +101,7 @@ Dynamic API and health requests share a per-process limit of 32 concurrent handl
 An admitted slot remains occupied until both handler work settles and the response finishes or closes. Disconnecting a client cannot release capacity while its database work is pending. Authorized mutations may finish after disconnection; retry with the existing idempotency key where supported. Response finish reflects transmission to the operating system, not proof of client receipt.
 
 Dynamic requests with Sec-Fetch-Site accept only same-origin or none; same-site, cross-site and unknown values are rejected before database access. Headerless native clients remain supported. Existing exact Origin and loopback Host checks remain in force. Fetch Metadata supplements authentication and does not authenticate native clients.
+
+### Repeated setup retention (v0.25.0)
+
+Setup creates sample organizations and versions only when the database contains no organizations. Existing projects, including intentionally empty projects, receive no additional sample versions on repeated setup. Existing access keys are never regenerated. An empty database with a pre-existing credentials file is rejected before seeding; restore the matching database and credentials together. The completion message resolves the actual credentials path on Windows and Unix. Local validation compared all stored versions and the credentials-file digest before and after running setup again; both were unchanged.

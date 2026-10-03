@@ -25,6 +25,18 @@ export async function seedOrganization(database, name, actors = ['admin','editor
     return { organizationId, projectId, name, credentials };
   });
 }
+// Setup must not modify existing project content, including intentionally empty workspaces.
+export async function initializeSeedData(database,{credentialsFile='.local/credentials.json'}={}) {
+  const count=await database.query('SELECT count(*) FROM agenttrust.organizations');
+  if(Number(count.rows[0].count)!==0) {
+    if(!existsSync(credentialsFile))console.log('Existing data retained. Local access keys are not regenerated; restore the existing credentials file.');
+    return {seeded:false};
+  }
+  if(existsSync(credentialsFile))throw new Error('Existing credentials must be preserved; restore their database before initializing new seed data.');
+  const organizations=[await seedOrganization(database,'AgentTrust Development'),await seedOrganization(database,'Isolation Demo')];
+  await writeFile(credentialsFile,JSON.stringify({organizations},null,2)+'\n',{flag:'wx',mode:0o600});
+  return {seeded:true};
+}
 async function main() {
   await mkdir('.local', { recursive: true });
   await mkdir('.local/receipt-signing',{recursive:true,mode:0o700});
@@ -64,21 +76,7 @@ async function main() {
       if (!exists.rowCount) await owner.query(`CREATE ROLE ${role} LOGIN ${bypass ? 'BYPASSRLS' : 'NOBYPASSRLS'} PASSWORD '${password}'`);
     }
     await migrate(owner);
-    const count = await owner.query('SELECT count(*) FROM agenttrust.organizations');
-    if (Number(count.rows[0].count) === 0) {
-      const organizations = [await seedOrganization(owner,'AgentTrust Development'), await seedOrganization(owner,'Isolation Demo')];
-      await writeFile('.local/credentials.json',JSON.stringify({ organizations },null,2)+'\n', { mode: 0o600 });
-    } else {
-      if (!existsSync('.local/credentials.json')) console.log('Existing data retained. Local access keys are not regenerated; restore the existing credentials file.');
-      for (const org of (await owner.query('SELECT id FROM agenttrust.organizations')).rows) {
-        const project = (await owner.query('SELECT id FROM agenttrust.projects WHERE organization_id=$1 ORDER BY id LIMIT 1',[org.id])).rows[0];
-        if (!project) continue;
-        for (const [mode,name] of modes) {
-          const existing=await owner.query("SELECT 1 FROM agenttrust.versions WHERE organization_id=$1 AND project_id=$2 AND kind='agent' AND data->>'mode'=$3",[org.id,project.id,mode]);
-          if(!existing.rowCount){const data={name,mode};await owner.query("INSERT INTO agenttrust.versions(id,organization_id,project_id,kind,data,content_hash) VALUES($1,$2,$3,'agent',$4,$5)",[randomUUID(),org.id,project.id,data,hash(data)]);}
-        }
-      }
-    }
+    await initializeSeedData(owner);
     if (!(await owner.query("SELECT 1 FROM pg_database WHERE datname='agenttrust_test'")).rowCount) await owner.query('CREATE DATABASE agenttrust_test OWNER agenttrust_owner');
   } finally { await owner.end(); }
   const testDb = pool(process.env.TEST_OWNER_DATABASE_URL);
@@ -93,6 +91,6 @@ async function main() {
     await chmod('.env',0o600);await chmod('.local',0o700);
     if(existsSync('.local/credentials.json'))await chmod('.local/credentials.json',0o600);
   }
-  console.log('Database migrations complete. Access keys: C:\\AgentTrust\\.local\\credentials.json (not printed or committed).');
+  console.log(`Database migrations complete. Access keys: ${resolve('.local/credentials.json')} (not printed or committed).`);
 }
 if (process.argv[1]?.endsWith('setup.mjs')) main().catch(error => { console.error(`Setup failed (${error.code || 'configuration'}): ${error.code ? 'Check database or Docker availability.' : error.message}`); process.exitCode=1; });
