@@ -16,11 +16,11 @@ import { seedOrganization } from '../scripts/setup.mjs';
 import { tokenHash,hash } from '../packages/contracts/hash.js';
 
 const headers={'Content-Type':'application/json','X-AgentTrust-Request':'local-ui'};
-async function fixture(t,{ciOptions}={}) {
+async function fixture(t,{ciOptions,authOptions}={}) {
   if(!process.env.TEST_DATABASE_URL||new URL(process.env.TEST_DATABASE_URL).pathname!=='/agenttrust_test') throw new Error('Run npm run setup; integration tests require the isolated agenttrust_test database.');
   const owner=pool(process.env.TEST_OWNER_DATABASE_URL), database=pool(process.env.TEST_DATABASE_URL), workerDb=pool(process.env.TEST_WORKER_DATABASE_URL);
   const first=await seedOrganization(owner,`Test ${randomUUID()}`),other=await seedOrganization(owner,`Other ${randomUUID()}`);
-  const store=new PgStore(database),auth=new Auth(database),engine=new WorkerEngine(workerDb,{leaseMs:1500,pollMs:20});
+  const store=new PgStore(database),auth=new Auth(database,authOptions),engine=new WorkerEngine(workerDb,{leaseMs:1500,pollMs:20});
   const server=createApp({database,store,auth,ci:new CI(database,ciOptions)});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const base=`http://127.0.0.1:${server.address().port}`;
   const cookies={}; const contexts={};
@@ -686,4 +686,43 @@ test('lease fencing is enforced by the completion write even when database deliv
  const delayed=new WorkerEngine(delayedDb,{leaseMs:400}),claimed=await delayed.claim();assert.equal(claimed.id,run.id);
  assert.equal(await delayed.complete(claimed,evaluate(claimed.snapshot)),false);assert.equal((await f.store.getRun(f.contexts.admin,run.id)).state,'running');
  await f.engine.tick();const recovered=await f.store.getRun(f.contexts.admin,run.id);assert.equal(recovered.state,'succeeded');assert.equal(recovered.attempts,2);
+});
+
+
+test('successful login limits survive logout and API restart and remain tenant scoped',async t=>{
+ const options={successLoginLimitPerCredential:2,successLoginLimitPerOrganization:4},f=await fixture(t,{authOptions:options});
+ const key=f.first.credentials.find(c=>c.role==='admin'),viewer=f.first.credentials.find(c=>c.role==='viewer');
+ const extra=await f.auth.login(key.token);await f.auth.logout(extra.token,f.contexts.admin);
+ await assert.rejects(f.auth.login(key.token),e=>e.status===429);
+ await assert.rejects(f.auth.login(viewer.token),e=>e.status===429);
+ await assert.rejects(new Auth(f.database,options).login(key.token),e=>e.status===429);
+ const independent=await f.auth.login(f.other.credentials.find(c=>c.role==='admin').token);assert.ok(independent.token);
+ const count=(await f.owner.query("SELECT count(*) FROM agenttrust.audit_events WHERE organization_id=$1 AND action='auth.login'",[f.contexts.admin.organizationId])).rows[0];assert.equal(Number(count.count),4);
+});
+
+test('credential revocation and principal rebinding during an organization login lock wait reject login',async t=>{
+ const f=await fixture(t),admin=f.first.credentials.find(c=>c.role==='admin'),editor=f.first.credentials.find(c=>c.role==='editor'),client=await f.owner.connect();
+ try{for(const scenario of ['revoked','rebound']){
+  const before=Number((await f.owner.query('SELECT count(*) FROM agenttrust.sessions WHERE credential_id=$1',[admin.id])).rows[0].count);
+  await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,6))',[f.contexts.admin.organizationId]);
+  const pending=fetch(f.base+'/v1/auth/login',{method:'POST',headers,body:JSON.stringify({accessKey:admin.token})});await blockedOn(f,'hashtextextended($1,6)');
+  if(scenario==='revoked')await f.owner.query('UPDATE agenttrust.credentials SET revoked_at=clock_timestamp() WHERE id=$1',[admin.id]);
+  else{await f.owner.query('UPDATE agenttrust.credentials SET token_hash=$2 WHERE id=$1',[admin.id,tokenHash(randomUUID())]);await f.owner.query('UPDATE agenttrust.credentials SET token_hash=$2 WHERE id=$1',[editor.id,tokenHash(admin.token)]);}
+  await client.query('COMMIT');assert.equal((await pending).status,401);
+  assert.equal(Number((await f.owner.query('SELECT count(*) FROM agenttrust.sessions WHERE credential_id=$1',[admin.id])).rows[0].count),before);
+  await f.owner.query('UPDATE agenttrust.credentials SET token_hash=$2 WHERE id=$1',[editor.id,tokenHash(editor.token)]);await f.owner.query('UPDATE agenttrust.credentials SET token_hash=$2,revoked_at=NULL WHERE id=$1',[admin.id,tokenHash(admin.token)]);
+ }}finally{await client.query('ROLLBACK');await f.owner.query('UPDATE agenttrust.credentials SET token_hash=$2 WHERE id=$1',[editor.id,tokenHash(editor.token)]);await f.owner.query('UPDATE agenttrust.credentials SET token_hash=$2,revoked_at=NULL WHERE id=$1',[admin.id,tokenHash(admin.token)]);client.release();}
+});
+
+
+test('organization success budget is atomic across API instances and timestamps follow lock waits',async t=>{
+ const options={successLoginLimitPerCredential:2,successLoginLimitPerOrganization:4},f=await fixture(t,{authOptions:options}),client=await f.owner.connect();
+ try{
+  await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,6))',[f.first.organizationId]);
+  const second=new Auth(f.database,options),keys=['admin','editor'].map(role=>f.first.credentials.find(c=>c.role===role));
+  const pending=Promise.allSettled([f.auth.login(keys[0].token),second.login(keys[1].token)]);await blockedOn(f,'hashtextextended($1,6)');
+  await new Promise(resolve=>setTimeout(resolve,250));const releasedAt=(await client.query('SELECT clock_timestamp() AS time')).rows[0].time;await client.query('COMMIT');
+  const outcomes=await pending;assert.equal(outcomes.filter(o=>o.status==='fulfilled').length,1);assert.equal(outcomes.filter(o=>o.status==='rejected'&&o.reason.status===429).length,1);
+  const events=(await f.owner.query("SELECT created_at FROM agenttrust.audit_events WHERE organization_id=$1 AND action='auth.login' ORDER BY created_at DESC",[f.first.organizationId])).rows;assert.equal(events.length,4);assert.ok(events[0].created_at>=releasedAt);
+ }finally{await client.query('ROLLBACK');client.release();}
 });

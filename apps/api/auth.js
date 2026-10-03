@@ -19,14 +19,18 @@ export async function revalidateSession(client,context,{adminOnly=false,write=fa
   if(!row||row.id!==context.membershipId||row.organization_id!==context.organizationId)throw new InputError('Session expired or revoked.',401);
   if(adminOnly||write)requireWrite({...context,role:row.role},adminOnly);
 }
-export async function audit(client, context, action, resourceId, detail = {}) {
-  await client.query('INSERT INTO agenttrust.audit_events(id,organization_id,actor_id,action,resource_id,detail) VALUES($1,$2,$3,$4,$5,$6)', [randomUUID(),context.organizationId,context.membershipId || null,action,resourceId || null,detail]);
+export async function audit(client, context, action, resourceId, detail = {},{eventTime=false}={}) {
+  await client.query(`INSERT INTO agenttrust.audit_events(id,organization_id,actor_id,action,resource_id,detail,created_at) VALUES($1,$2,$3,$4,$5,$6,${eventTime?'clock_timestamp()':'now()'})`, [randomUUID(),context.organizationId,context.membershipId || null,action,resourceId || null,detail]);
 }
 export function requireWrite(context, adminOnly = false) {
   if (!context || (adminOnly ? context.role !== 'admin' : !['admin','editor'].includes(context.role))) throw new InputError('Insufficient role.',403);
 }
 export class Auth {
-  constructor(database) { this.database = database; this.failures = []; this.pendingLogins=0; }
+  constructor(database,{successLoginLimitPerCredential=20,successLoginLimitPerOrganization=120}={}) {
+    if(!Number.isInteger(successLoginLimitPerCredential)||successLoginLimitPerCredential<1||successLoginLimitPerCredential>20||!Number.isInteger(successLoginLimitPerOrganization)||successLoginLimitPerOrganization<1||successLoginLimitPerOrganization>120)throw new Error('Invalid successful-login limits.');
+    this.database = database; this.failures = []; this.pendingLogins=0;
+    this.successLoginLimitPerCredential=successLoginLimitPerCredential;this.successLoginLimitPerOrganization=successLoginLimitPerOrganization;
+  }
   async login(token) {
     const now = Date.now(); this.failures = this.failures.filter(t => t > now-60000);
     if (this.failures.length+this.pendingLogins >= 20) throw new InputError('Too many login attempts. Try again in one minute.',429);
@@ -37,14 +41,17 @@ export class Auth {
       if (!result.rowCount) throw new InputError('Invalid access key.',401);
       const row = result.rows[0]; const session = randomBytes(32).toString('hex');
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,1))',[row.credential_id]);
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,6))',[row.organization_id]);
       const valid=(await client.query('SELECT * FROM agenttrust.lookup_credential($1)',[tokenHash(token)])).rows[0];
-      if(!valid||valid.organization_id!==row.organization_id)throw new InputError('Access key expired or revoked.',401);
+      if(!valid||valid.organization_id!==row.organization_id||valid.credential_id!==row.credential_id||valid.membership_id!==row.membership_id)throw new InputError('Access key expired or revoked.',401);
       await client.query("SELECT set_config('app.organization_id',$1,true)",[row.organization_id]);
+      const recent=(await client.query("SELECT count(*) AS organization_count,count(*) FILTER (WHERE resource_id=$1) AS credential_count FROM agenttrust.audit_events WHERE action='auth.login' AND created_at>clock_timestamp()-interval '60 seconds'",[row.credential_id])).rows[0];
+      if(Number(recent.credential_count)>=this.successLoginLimitPerCredential||Number(recent.organization_count)>=this.successLoginLimitPerOrganization)throw new InputError('Too many successful logins. Try again in one minute.',429);
       await client.query('DELETE FROM agenttrust.sessions WHERE expires_at <= now()');
       const active = await client.query('SELECT count(*) FROM agenttrust.sessions WHERE credential_id=$1',[row.credential_id]);
       if (Number(active.rows[0].count) >= 20) throw new InputError('Too many active sessions. Sign out of an existing session.',429);
       await client.query("INSERT INTO agenttrust.sessions(token_hash,credential_id,expires_at) VALUES($1,$2,now()+interval '8 hours')",[tokenHash(session),row.credential_id]);
-      await audit(client,{ organizationId:row.organization_id,membershipId:row.membership_id },'auth.login',row.credential_id);
+      await audit(client,{ organizationId:row.organization_id,membershipId:row.membership_id },'auth.login',row.credential_id,{}, {eventTime:true});
       return { token:session };
     });}catch(error){
       if(error instanceof InputError&&error.status===401)this.failures.push(Date.now());

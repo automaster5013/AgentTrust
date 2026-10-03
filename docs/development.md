@@ -40,7 +40,7 @@ Docker 재시작 검증: `node --env-file=.env scripts/smoke.mjs before` → Age
 
 ## 인증과 역할
 
-로컬 개발용 임의 접근 키는 256비트이며 DB에는 SHA-256 해시만 저장한다. 세션도 해시로 저장하고 8시간 후 만료한다. 계정 비활성화 또는 키 폐기 상태를 매 요청에 검사한다. 로그인 실패는 1분당 20회, 키당 활성 세션은 20개로 제한한다. 이 로그인 제한은 API 프로세스 단위다.
+로컬 개발용 임의 접근 키는 256비트이며 DB에는 SHA-256 해시만 저장한다. 세션도 해시로 저장하고 8시간 후 만료한다. 계정 비활성화 또는 키 폐기 상태를 매 요청에 검사한다. 로그인 실패 및 진행 중 인증 예약은 API 프로세스별 1분당 20회 예산을 공유한다. 성공 로그인은 DB 기준 키당 1분에 20회, 조직당 120회로 제한하며 로그아웃이나 API 재시작으로 초기화되지 않는다. 키당 활성 세션도 20개로 제한한다.
 
 조회자는 자기 조직 결과·버전·사용량을 조회한다. 작성자는 데이터셋·에이전트 버전 생성, 실행·취소가 가능하다. 관리자는 정책 버전 생성과 감사 기록 조회도 가능하다. 조직은 로그인한 멤버십에서 결정하며 요청의 조직 헤더로 바꿀 수 없다. 초기에는 조직당 기본 프로젝트 하나를 사용한다.
 
@@ -149,3 +149,10 @@ The parent worker verifies the child outcome before storing it: exact outcome fi
 Completion is finalized by a conditional database UPDATE using one materialized current timestamp for the lease predicate, deadline decision and completedAt. Expired leases cannot complete, including when a row lock or database delivery delay crosses the lease boundary. A still-leased run past its deadline stores timed_out with matching result hash. Usage/audit are recorded only if that conditional write succeeds. Existing sweep/cancel paths retain their state-specific logic.
 
 Native regressions demonstrate that the previous completion path accepted a pass after a row-lock wait outlasted its lease. Tests now verify lease recovery with attempts=2, deadline timeout after waiting, delayed delivery of the final write, quarantined worker evidence, and preservation of valid large outcomes. The independent CI corruption test deliberately uses direct trusted-worker DB completion to confirm the API gate still rejects inconsistent evidence even if the application worker guard is bypassed. No database permission is widened.
+
+
+### Successful-login churn and credential binding (v0.33.0)
+
+Successful logins are limited to 20 per access key and 120 per organization in a rolling 60-second database window. Credential and organization advisory locks make this shared limit atomic across concurrent API instances; recent immutable auth.login audit records supply the count. Signing out or restarting the API does not reset it. Login audit timestamps use the actual insertion clock, so time spent waiting for a lock cannot backdate a new success out of its rate window. Existing process-local invalid-attempt/pending reservations and the 20-active-session limit remain separate bounds. These limits slow authenticated session/audit churn; they do not implement retention or a total audit-storage quota.
+
+After both locks, the access-key lookup must still match the original credential UUID, membership UUID and organization. Revocation or rebinding during the wait returns 401 before creating a session or audit event. Tests exercise real organization-lock waits with revocation and a same-organization token-hash reassignment, logout/restart-resistant quotas, tenant isolation and bounded configuration. Trusted DB administrators remain outside the adversarial boundary.

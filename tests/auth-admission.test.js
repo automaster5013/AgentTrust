@@ -20,3 +20,8 @@ test('database failures release pending login slots without recording invalid cr
  assert.deepEqual(await Promise.all(pending),Array(20).fill('Synthetic database failure'));assert.equal(auth.pendingLogins,0);assert.equal(auth.failures.length,0);
  const next=auth.login('b'.repeat(64)).catch(e=>e.status);await new Promise(r=>setImmediate(r));assert.equal(lookups.length,21);lookups.at(-1).resolve({rows:[],rowCount:0});assert.equal(await next,401);
 });
+
+
+test('successful login limits reject unbounded or malformed configuration',()=>{
+ for(const options of [{successLoginLimitPerCredential:0},{successLoginLimitPerCredential:21},{successLoginLimitPerCredential:1.5},{successLoginLimitPerOrganization:121},{successLoginLimitPerOrganization:NaN}])assert.throws(()=>new Auth({},options),/Invalid successful-login limits/);
+});
