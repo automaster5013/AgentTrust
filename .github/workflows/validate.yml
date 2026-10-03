@@ -33,8 +33,8 @@ jobs:
           node --env-file-if-exists=.env scripts/manual-review-smoke.mjs
       - name: Verify interrupted worker lease recovery
         run: node --env-file-if-exists=.env scripts/resilience-smoke.mjs
-      - name: Verify encrypted isolated backup restoration
-        run: npm run backup:roundtrip
+      - name: Verify backup authentication failure cleanup and isolated restoration
+        run: npm run smoke:recovery
       - name: Stop temporary CI services
         if: always()
         run: docker compose down
