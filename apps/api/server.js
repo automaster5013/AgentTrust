@@ -10,6 +10,7 @@ import { PgStore } from './pg-store.js';
 import { Auth,cookieToken,sessionCookie } from './auth.js';
 import { pool } from './database.js';
 import { validateDatabaseRole } from './role-guard.js';
+import { parseJson } from '../../packages/contracts/json.js';
 import { InputError } from '../../packages/contracts/index.js';
 import { sampleDataset } from '../../packages/contracts/samples.js';
 
@@ -20,7 +21,7 @@ async function body(req) {
   if(req.headers['x-agenttrust-request']!=='local-ui') throw new InputError('Missing local request header.',403);
   let size=0;const chunks=[];
   for await(const chunk of req){size+=chunk.length;if(size>262144)throw new InputError('JSON body exceeds 256 KiB.',413);chunks.push(chunk);}
-  try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw new InputError('Invalid JSON body.');}
+  try{return parseJson(Buffer.concat(chunks));}catch{throw new InputError('Invalid JSON body.');}
 }
 export function createApp({database,store=new PgStore(database),auth=new Auth(database),ci=new CI(database),reviews=new Reviews(database),maxConcurrentRequests=32}={}) {
   if(!database) throw new Error('PostgreSQL database is required.');

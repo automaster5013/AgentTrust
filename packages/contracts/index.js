@@ -1,5 +1,6 @@
 import Ajv from 'ajv';
 import { canonical } from './hash.js';
+import { assertJsonValue } from './json.js';
 
 export class InputError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -80,12 +81,7 @@ export function compileEvidenceSchema(schema, depth = 0) {
 }
 
 export function validate(kind, value) {
-  const pending = [[value, 0]]; let nodes = 0;
-  while (pending.length) {
-    const [item, depth] = pending.pop();
-    if (++nodes > 30000 || depth > 16) throw new InputError('Input nesting or node budget exceeded.');
-    if (item && typeof item === 'object') for (const child of Object.values(item)) pending.push([child, depth + 1]);
-  }
+  try{assertJsonValue(value);}catch(error){throw new InputError(error.message);}
   if (!validators[kind]?.(value)) throw new InputError(`Invalid ${kind}: ${ajv.errorsText(validators[kind]?.errors)}`);
   if(kind==='policy'&&value.manualApprovalTtlSeconds!==undefined&&value.requiresManualApproval!==true)throw new InputError('Approval validity requires a manual approval policy.');
   if (kind === 'agent' && (value.mode === 'https') !== (value.connectorId !== undefined && value.endpointHash !== undefined)) throw new InputError('HTTPS agents require a connectorId and endpointHash; mock agents cannot use connection fields.');

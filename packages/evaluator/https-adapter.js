@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { request } from 'node:https';
 import { isIP } from 'node:net';
+import { parseJson } from '../contracts/json.js';
 import { validate } from '../contracts/index.js';
 
 // Conservative IPv4-only egress. IPv6 and special-use destinations fail closed.
@@ -38,7 +39,7 @@ export async function httpsEvidence(snapshot,testCase,{organizationId,configurat
       let size=0;const chunks=[];
       res.on('data',chunk=>{size+=chunk.length;if(size>65536)fail();else chunks.push(chunk);});
       res.on('error',reject);res.on('aborted',()=>reject(new Error('Incomplete HTTPS response.')));
-      res.on('end',()=>{try{resolve(validateEvidence(JSON.parse(Buffer.concat(chunks).toString('utf8'))));}catch{reject(new Error('Invalid HTTPS evidence.'));}});
+      res.on('end',()=>{try{resolve(validateEvidence(parseJson(Buffer.concat(chunks))));}catch{reject(new Error('Invalid HTTPS evidence.'));}});
     });
     timer=setTimeout(()=>req.destroy(new Error('HTTPS adapter deadline exceeded.')),5000);
     req.on('error',error=>{clearTimeout(timer);reject(error);});req.on('close',()=>clearTimeout(timer));req.end(payload);
