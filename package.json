@@ -1,6 +1,6 @@
 {
   "name": "agenttrust",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -18,7 +18,8 @@
     "receipt:verify": "node scripts/verify-receipt.mjs",
     "backup": "node --env-file-if-exists=.env scripts/recovery.mjs backup",
     "backup:verify": "node --env-file-if-exists=.env scripts/recovery.mjs verify",
-    "backup:roundtrip": "node --env-file-if-exists=.env scripts/recovery.mjs roundtrip"
+    "backup:roundtrip": "node --env-file-if-exists=.env scripts/recovery.mjs roundtrip",
+    "smoke:resilience": "node --env-file-if-exists=.env scripts/resilience-smoke.mjs"
   },
   "dependencies": {
     "ajv": "8.20.0",

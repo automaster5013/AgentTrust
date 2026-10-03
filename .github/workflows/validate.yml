@@ -20,7 +20,21 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm audit --audit-level=high --cache .cache/npm
-      - run: docker compose build api
+      - run: docker compose up --build -d --wait api worker
+      - name: Verify independent Docker evaluation and persisted evidence
+        run: |
+          node --env-file-if-exists=.env scripts/smoke.mjs before
+          docker compose restart api worker
+          docker compose up -d --wait api worker
+          node --env-file-if-exists=.env scripts/smoke.mjs after
+      - name: Verify signed CI gate and manual approval boundaries
+        run: |
+          node --env-file-if-exists=.env scripts/ci-smoke.mjs
+          node --env-file-if-exists=.env scripts/manual-review-smoke.mjs
+      - name: Verify interrupted worker lease recovery
+        run: node --env-file-if-exists=.env scripts/resilience-smoke.mjs
+      - name: Verify encrypted isolated backup restoration
+        run: npm run backup:roundtrip
       - name: Stop temporary CI services
         if: always()
         run: docker compose down
