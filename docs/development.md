@@ -206,3 +206,7 @@ All form/button handlers are registered before the first awaited workspace initi
 Three tests defer the first credential-history read, verify form handlers and preventDefault are already installed, and check both initial and post-login read failure recovery. Existing role, selection, pagination and asynchronous response guards remain tested. This is local UI readiness handling; it does not add a new login provider or permission.
 
 Actual Docker browser verification showed only the loading panel during hydration and the workspace after completion. Submitting the history form kept the clean localhost URL without a default form navigation. All 136 tests and syntax checks passed.
+
+### Bounded sustained local verification (v0.41.0)
+
+The reusable smoke:sustained command executes nine synthetic runs per cycle across all mock modes, timeout and cancellation, checks two trusted-key signed decisions, and verifies scoped usage/case totals and exactly one terminal audit per run. Cycle count is limited to 1..30 and start interval to 1,000..60,000 ms; malformed, repeated, unknown or missing CLI options fail before authentication. Each invocation writes a unique private report and cleans up its own session and unfinished runs. It adds no new fixture versions, CI credentials or administrator approvals. Short two-cycle verification produced eighteen expected outcomes with no transient retries, exactly-once accounting and logout. Six invalid CLI combinations were rejected. The workflow includes the same short command; remote execution remains unverified.
