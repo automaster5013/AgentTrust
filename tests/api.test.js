@@ -10,6 +10,7 @@ import { pool,transaction } from '../apps/api/database.js';
 import { Auth } from '../apps/api/auth.js';
 import { PgStore,incomplete } from '../apps/api/pg-store.js';
 import { WorkerEngine } from '../apps/worker/engine.js';
+import { heartbeat } from '../apps/worker/health.js';
 import { seedOrganization } from '../scripts/setup.mjs';
 import { tokenHash } from '../packages/contracts/hash.js';
 
@@ -348,4 +349,18 @@ test('credential creation rate is shared across projects and cannot be evaded by
   }
   assert.equal((await f.request('/v1/ci-credentials',{method:'POST',json:{name:'Rate limit',projectId:f.first.projectId,ttlSeconds:60}})).status,429);
   assert.equal(Number((await f.owner.query('SELECT count(*) FROM agenttrust.ci_credentials WHERE organization_id=$1',[f.first.organizationId])).rows[0].count),20);
+});
+
+
+test('operations expose only the selected project queue to admins and report stale worker signals',async t=>{
+  const f=await fixture(t),prior=(await f.owner.query("SELECT last_seen FROM agenttrust.service_health WHERE service='worker'")).rows[0];
+  t.after(async()=>{const db=pool(process.env.TEST_OWNER_DATABASE_URL);try{if(prior)await db.query("UPDATE agenttrust.service_health SET last_seen=$1 WHERE service='worker'",[prior.last_seen]);else await db.query("DELETE FROM agenttrust.service_health WHERE service='worker'");}finally{await db.end();}});
+  const {run}=await f.create('compliant',{timeoutMs:100});await new Promise(resolve=>setTimeout(resolve,120));await f.store.createRun(f.contexts.other_admin,{...f.input(),agentVersionId:(await f.store.catalog(f.contexts.other_admin)).agent.find(v=>v.mode==='compliant').id,datasetVersionId:(await f.store.catalog(f.contexts.other_admin)).dataset[0].id,policyVersionId:(await f.store.catalog(f.contexts.other_admin)).policy[0].id},randomUUID());
+  for(const role of ['editor','viewer'])assert.equal((await f.request('/v1/operations',{role})).status,403);
+  await f.owner.query("INSERT INTO agenttrust.service_health(service,last_seen) VALUES('worker',clock_timestamp()-interval '1 minute') ON CONFLICT(service) DO UPDATE SET last_seen=excluded.last_seen");
+  const stale=await(await f.request('/v1/operations')).json();assert.equal(stale.worker.state,'stale');assert.equal(stale.queue.queued,1);assert.equal(stale.queue.overdue,1);assert.equal(stale.projectId,f.first.projectId);
+  await assert.rejects(f.database.query("UPDATE agenttrust.service_health SET last_seen=clock_timestamp() WHERE service='worker'"),/permission denied/);
+  await heartbeat(f.workerDb);const recent=await(await f.request('/v1/operations')).json();assert.equal(recent.worker.state,'recent');assert.ok(recent.worker.ageSeconds>=0);
+  await f.store.cancel(f.contexts.admin,run.id);const completed=await(await f.request('/v1/operations')).json();assert.equal(completed.queue.queued,0);assert.equal(completed.recent.completed24h,1);
+  const other=await(await f.request('/v1/operations',{role:'other_admin'})).json();assert.equal(other.queue.queued,1);assert.equal(other.recent.completed24h,0);
 });

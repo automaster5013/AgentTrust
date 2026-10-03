@@ -129,6 +129,8 @@ $('results').replaceChildren();$('history-body').replaceChildren();$('audit-list
   $('gate-badge').textContent='실행 대기';$('gate-badge').className='gate idle';$('gate-title').textContent='배포 판단을 기다립니다';
   $('gate-reason').textContent='평가를 실행하면 정책을 기준으로 결과를 표시합니다.';$('allowed').textContent='—';$('run-state').textContent='대기';
   $('snapshot').textContent='아직 선택한 실행이 없습니다.';$('dataset-json').value='';$('usage-summary').textContent='';
+  $('operations-detail').textContent='';$('operations-alert').textContent='';
+  for(const id of ['worker-signal','queue-waiting','queue-running','queue-overdue'])$(id).textContent='—';
   for(const id of ['case-count','pass-count','fail-count','unknown-count'])$(id).textContent='—';
   $('download').disabled=true;$('cancel-button').disabled=true;
 }
@@ -138,7 +140,8 @@ function showLogin(){
 }
 async function auditHistory() {
   if(actor?.role!=='admin') return;
-  const [events,usage]=await Promise.all([api('/v1/audit-events'),api('/v1/usage')]);
+  const [events,usage,operations]=await Promise.all([api('/v1/audit-events'),api('/v1/usage'),api('/v1/operations')]);
+  renderOperations(operations);
   $('usage-summary').textContent=`조직 전체 완료 실행 ${usage.completed_runs}개 · 결과 사례 ${usage.evaluated_cases}개 · 시도 ${usage.attempts}회 (모의 사용량)`;
   $('audit-list').replaceChildren(...events.map(e=>{
     const row=node('div',undefined,'audit-entry');row.append(node('strong',e.action+' '),node('span',`${new Date(e.created_at).toLocaleString('ko-KR')} · ${e.resource_id || '—'}`));return row;
@@ -149,7 +152,7 @@ async function initialize() {
   $('workspace-project').replaceChildren(...actor.projects.map(p=>{const option=node('option',p.name);option.value=p.id;return option;}));$('workspace-project').value=activeProjectId;
   $('identity-label').textContent=`${actor.organizationName} · ${actor.name} · ${actor.role}`;
   $('workspace-ui').hidden=false;$('login-panel').hidden=true;$('audit-panel').hidden=actor.role!=='admin';
-  $('ci-panel').hidden=actor.role!=='admin';$('projects').hidden=actor.role!=='admin';
+  $('ci-panel').hidden=actor.role!=='admin';$('projects').hidden=actor.role!=='admin';$('operations-panel').hidden=actor.role!=='admin';
   $('ci-project').replaceChildren(...actor.projects.map(p=>{const option=node('option',p.name);option.value=p.id;return option;}));
   $('ci-project').value=activeProjectId;
   await ciHistory();await receiptHistory();
@@ -233,3 +236,13 @@ for(const kind of ['agent','policy'])$(kind+'-form').addEventListener('submit',a
 
 $('ci-more').addEventListener('click',async()=>{$('ci-more').disabled=true;try{await ciHistory(true);}catch(e){$('ci-status').textContent=e.message;$('ci-more').disabled=!keyCursor;}});
 $('receipts-more').addEventListener('click',async()=>{$('receipts-more').disabled=true;try{await receiptHistory(true);}catch(e){message(e.message,true);$('receipts-more').disabled=!receiptCursor;}});
+
+function renderOperations(data){
+  $('worker-signal').textContent={recent:'신호 있음',stale:'지연됨',missing:'미확인'}[data.worker.state];
+  $('queue-waiting').textContent=data.queue.queued;$('queue-running').textContent=data.queue.running;$('queue-overdue').textContent=data.queue.overdue;
+  $('operations-detail').textContent='선택한 프로젝트 · 최근 24시간 완료 '+data.recent.completed24h+'개 · 실행 오류/시간 초과 '+data.recent.errors24h+'개 · 워커 신호 '+(data.worker.lastSeen?new Date(data.worker.lastSeen).toLocaleString('ko-KR'):'없음')+' · 조회 '+new Date(data.observedAt).toLocaleTimeString('ko-KR');
+  $('operations-alert').textContent=(data.worker.state!=='recent'?'최근 워커 신호가 없습니다. Docker 워커와 DB 연결을 확인하세요. ':'')+(data.queue.overdue||data.queue.expiredLeases?'처리가 지연된 실행이 있습니다. 실행 기록의 상태와 워커 복구를 확인하세요.':'');
+}
+$('operations-refresh').addEventListener('click',async()=>{
+  $('operations-refresh').disabled=true;try{renderOperations(await api('/v1/operations'));}catch(e){message(e.message,true);}finally{$('operations-refresh').disabled=false;}
+});

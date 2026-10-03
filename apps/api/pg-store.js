@@ -23,6 +23,25 @@ export async function finalize(client,row,outcome,context = {}) {
 }
 export class PgStore {
   constructor(database) { this.database=database; }
+  async operations(context){
+    requireWrite(context,true);
+    return transaction(this.database,async client=>{
+      const now=(await client.query('SELECT clock_timestamp() AS now')).rows[0].now;
+      const health=(await client.query("SELECT last_seen FROM agenttrust.service_health WHERE service='worker'")).rows[0];
+      const age=health?Math.floor((now-health.last_seen)/1000):null;
+      const row=(await client.query(`SELECT count(*) FILTER(WHERE state='queued') AS queued,
+        count(*) FILTER(WHERE state='running') AS running,
+        count(*) FILTER(WHERE state IN ('queued','running') AND deadline<=$3) AS overdue,
+        count(*) FILTER(WHERE state='running' AND lease_until<=$3) AS expired_leases,
+        min(created_at) FILTER(WHERE state='queued') AS oldest_queued_at,
+        count(*) FILTER(WHERE completed_at>$3::timestamptz-interval '24 hours') AS completed_24h,
+        count(*) FILTER(WHERE completed_at>$3::timestamptz-interval '24 hours' AND state IN ('failed','timed_out')) AS errors_24h,
+        max(completed_at) AS last_completed_at FROM agenttrust.runs WHERE organization_id=$1 AND project_id=$2`,[context.organizationId,context.projectId,now])).rows[0];
+      return {projectId:context.projectId,observedAt:now.toISOString(),worker:{state:age===null?'missing':age>=0&&age<=15?'recent':'stale',lastSeen:health?.last_seen.toISOString()||null,ageSeconds:age},
+        queue:{queued:Number(row.queued),running:Number(row.running),overdue:Number(row.overdue),expiredLeases:Number(row.expired_leases),oldestQueuedAt:row.oldest_queued_at?.toISOString()||null},
+        recent:{completed24h:Number(row.completed_24h),errors24h:Number(row.errors_24h),lastCompletedAt:row.last_completed_at?.toISOString()||null}};
+    },context.organizationId);
+  }
   async createProject(context,input,key){
     requireWrite(context,true);
     if(!input||Array.isArray(input)||typeof input!=='object'||Object.keys(input).some(k=>k!=='name')||typeof input.name!=='string'||input.name.trim().length<1||input.name.length>100)throw new InputError('Project name must contain 1-100 characters.');
