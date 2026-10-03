@@ -1,5 +1,6 @@
 import { InputError } from '../contracts/index.js';
 import { hash } from '../contracts/hash.js';
+import { runIntegrity } from './integrity.js';
 export const evaluationPassing=run=>run.state==='succeeded'&&run.gate.decision==='pass'&&(run.gate.deploymentAllowed===true||run.snapshot.policy.requiresManualApproval===true&&run.gate.requiresManualApproval===true&&run.gate.evaluationPassed===true);
 
 export function compareRuns(baseline, candidate) {
@@ -8,7 +9,7 @@ export function compareRuns(baseline, candidate) {
   const index = run => new Map(run.results.flatMap(c => c.rules.map(r => [JSON.stringify([c.caseId,r.ruleId]),r.status])));
   const before=index(baseline), after=index(candidate);
   const coverage=run=>{const expected=run.snapshot.dataset.cases.flatMap(c=>c.rules.map(r=>JSON.stringify([c.id,r.id])));const actual=run.results.flatMap(c=>c.rules.map(r=>JSON.stringify([c.caseId,r.ruleId])));return expected.length===actual.length&&new Set(actual).size===expected.length&&expected.every(k=>actual.includes(k));};
-  const complete = run => coverage(run) && run.state==='succeeded' && !run.results.some(c=>c.error) && run.results.length===run.snapshot.dataset.cases.length && run.results.every(c=>c.rules.every(r=>r.status!=='inconclusive'));
+  const complete = run => runIntegrity(run) && coverage(run) && run.state==='succeeded' && !run.results.some(c=>c.error) && run.results.length===run.snapshot.dataset.cases.length && run.results.every(c=>c.rules.every(r=>r.status!=='inconclusive'));
   const comparable=complete(baseline)&&complete(candidate)&&before.size===after.size&&[...before.keys()].every(k=>after.has(k));
   const changes=[...before].filter(([key,status])=>after.get(key)!==status).map(([key,status])=>({caseId:JSON.parse(key)[0],ruleId:JSON.parse(key)[1],before:status,after:after.get(key)||'missing'}));
   const regressions=changes.filter(c=>c.before==='pass'&&c.after!=='pass');
@@ -25,6 +26,7 @@ export function releaseGate(run, expected, baseline, now=Date.now(),review) {
   if(!Number.isFinite(age)||age<0||age>maxAgeSeconds*1000) reasons.push('Result is missing, stale or future-dated.');
   if(!evaluationPassing(run)) reasons.push('A completed passing evaluation is required.');
   if(run.snapshotHash!==hash(run.snapshot)||run.resultHash!==hash({results:run.results,gate:run.gate})) reasons.push('Evidence integrity verification failed.');
+  if(!runIntegrity(run))reasons.push('Evidence structure, version binding or summary is inconsistent.');
   if(!compareRuns(run,run).comparable) reasons.push('Evaluation coverage is incomplete.');
   const comparison=baseline?compareRuns(baseline,run):undefined;
   if(comparison&&!(comparison.evaluationPassed??comparison.deploymentAllowed)) reasons.push('Baseline comparison is incomplete or regressed.');

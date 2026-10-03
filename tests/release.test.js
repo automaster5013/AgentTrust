@@ -9,9 +9,10 @@ import { validate } from '../packages/contracts/index.js';
 import { hash } from '../packages/contracts/hash.js';
 import { sampleDataset } from '../packages/contracts/samples.js';
 
-const snapshot={agent:{id:'a',mode:'compliant'},dataset:{...sampleDataset,contentHash:'dataset'},policy:{minimumPassRate:1,contentHash:'policy'}};
+const version=(id,data)=>({...data,id,contentHash:hash(data)});
+const snapshot={agent:version('a',{name:'Synthetic agent',mode:'compliant'}),dataset:version('d',sampleDataset),policy:version('p',{name:'Synthetic release',minimumPassRate:1})};
 function run(mode='compliant') {
-  const s=structuredClone(snapshot);s.agent.mode=mode;
+  const s=structuredClone(snapshot);s.agent=version('a',{name:'Synthetic agent',mode});
   const outcome=evaluate(s);
   return {id:mode,organizationId:'o',projectId:'p',agentVersionId:'a',datasetVersionId:'d',policyVersionId:'p',snapshot:s,snapshotHash:hash(s),...outcome,resultHash:hash({results:outcome.results,gate:outcome.gate}),completedAt:new Date().toISOString()};
 }
@@ -78,7 +79,7 @@ test('asynchronous external adapter errors never permit a release',async()=>{
 
 
 test('manual approval policies keep automatic passes blocked until valid bound approval exists',()=>{
-  const base=run(),s={...base.snapshot,policy:{...base.snapshot.policy,requiresManualApproval:true,manualApprovalTtlSeconds:60}},outcome=evaluate(s),now=Date.now();
+  const base=run(),s={...base.snapshot,policy:version('p',{name:'Synthetic manual release',minimumPassRate:1,requiresManualApproval:true,manualApprovalTtlSeconds:60})},outcome=evaluate(s),now=Date.now();
   const candidate={...base,...outcome,snapshot:s,snapshotHash:hash(s),resultHash:hash({results:outcome.results,gate:outcome.gate}),completedAt:new Date(now).toISOString()};
   assert.equal(candidate.gate.decision,'pass');assert.equal(candidate.gate.deploymentAllowed,false);assert.equal(candidate.gate.evaluationPassed,true);
   assert.equal(compareRuns(candidate,candidate).deploymentAllowed,false);assert.equal(compareRuns(candidate,candidate).evaluationPassed,true);
@@ -92,4 +93,18 @@ test('manual approval policies keep automatic passes blocked until valid bound a
   const rejected={...payload,decision:'rejected'};assert.equal(releaseGate(candidate,expected,undefined,now,{...rejected,reviewHash:hash(rejected),actorValid:true}).manualApproval.status,'rejected');
   assert.equal(releaseGate(candidate,{...expected,agentVersionId:'wrong'},undefined,now,review).deploymentAllowed,false);
   for(const policy of [{name:'Bad',minimumPassRate:1,manualApprovalTtlSeconds:60},{name:'Bad',minimumPassRate:1,requiresManualApproval:true,manualApprovalTtlSeconds:59},{name:'Bad',minimumPassRate:1,requiresManualApproval:'yes'}])assert.throws(()=>validate('policy',policy));
+});
+
+test('release and baseline comparisons reject internally inconsistent rebased evidence',()=>{
+  const original=run();assert.equal(releaseGate(original,expected).deploymentAllowed,true);
+  const altered=[];
+  const wrongVersion=run();wrongVersion.snapshot.agent.id='other';wrongVersion.snapshotHash=hash(wrongVersion.snapshot);altered.push(wrongVersion);
+  const changedPolicy=run();changedPolicy.snapshot.policy.minimumPassRate=0;changedPolicy.snapshotHash=hash(changedPolicy.snapshot);altered.push(changedPolicy);
+  const wrongRequired=run();wrongRequired.results[0].rules[0].required=false;wrongRequired.resultHash=hash({results:wrongRequired.results,gate:wrongRequired.gate});altered.push(wrongRequired);
+  const wrongType=run();wrongType.results[0].rules[0].type='not_contains';wrongType.resultHash=hash({results:wrongType.results,gate:wrongType.gate});altered.push(wrongType);
+  const wrongInput=run();wrongInput.results[0].input='different input';wrongInput.resultHash=hash({results:wrongInput.results,gate:wrongInput.gate});altered.push(wrongInput);
+  const wrongSummary=run();wrongSummary.summary.passRate=0.1;altered.push(wrongSummary);
+  const forgedPass=run('regression');forgedPass.gate={decision:'pass',deploymentAllowed:true,reason:'Forged'};forgedPass.resultHash=hash({results:forgedPass.results,gate:forgedPass.gate});altered.push(forgedPass);
+  const tamperedBaseline=run();tamperedBaseline.results[0].evidence.output='changed';altered.push(tamperedBaseline);
+  for(const item of altered){assert.equal(releaseGate(item,expected).deploymentAllowed,false);assert.equal(compareRuns(item,original).comparable,false);assert.equal(releaseGate(original,expected,item).deploymentAllowed,false);}
 });
