@@ -5,6 +5,7 @@ let activeProjectId = null;
 let scopeEpoch = 0;
 let loading = false;
 let selectedRunId = null;
+let keyCursor=null,receiptCursor=null;
 const terminal = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
 const decisionLabels = { pass: '통과', block: '차단', inconclusive: '판정 불가' };
 const stateLabels = { queued: '대기 중', running: '실행 중', succeeded: '평가 완료', failed: '실행 실패', cancelled: '취소됨', timed_out: '시간 초과' };
@@ -121,6 +122,7 @@ function clearProjectData(){
   currentRun=null;selectedRunId=null;message('');$('run-button').disabled=true;$('dataset-button').disabled=true;
   for(const id of ['agent-name','policy-name','project-name'])$(id).value='';
   for(const id of ['agent','dataset-select','policy'])$(id).replaceChildren();
+  keyCursor=null;receiptCursor=null;$('ci-more').disabled=true;$('receipts-more').disabled=true;
   $('ci-issued-key').value='';$('ci-key-box').hidden=true;$('ci-key-list').replaceChildren();$('receipt-list').replaceChildren();$('ci-project').replaceChildren();$('ci-name').value='';$('ci-status').textContent='';
   $('baseline-run').replaceChildren();$('comparison-result').textContent='';
 $('results').replaceChildren();$('history-body').replaceChildren();$('audit-list').replaceChildren();
@@ -178,23 +180,27 @@ $('compare-form').addEventListener('submit',async event=>{
   }catch(e){$('comparison-result').textContent=e.message;}
 });
 
-async function ciHistory(){
+async function ciHistory(append=false){
   if(actor?.role!=='admin')return;
-  const keys=await api('/v1/ci-credentials');
-  $('ci-key-list').replaceChildren(...keys.map(key=>{
+  if(append&&!keyCursor)return;
+  const page=await api('/v1/ci-credentials?limit=25'+(append?'&cursor='+encodeURIComponent(keyCursor):''));keyCursor=page.nextCursor;$('ci-more').disabled=!keyCursor;
+  if(!append)$('ci-key-list').replaceChildren();
+  $('ci-key-list').append(...page.items.map(key=>{
     const row=node('div',undefined,'audit-entry');const expired=Date.parse(key.expires_at)<=Date.now();
     row.append(node('strong',key.name+' '),node('span',`${key.project_id.slice(0,8)} · ${key.revoked_at?'철회됨':expired?'만료됨':'활성'} · 만료 ${new Date(key.expires_at).toLocaleString('ko-KR')}`));
     if(!key.revoked_at&&!expired){const button=node('button','철회','secondary');button.addEventListener('click',async()=>{button.disabled=true;try{await api(`/v1/ci-credentials/${key.id}/revoke`,{method:'POST',body:'{}'});await ciHistory();$('ci-status').textContent='키를 철회했습니다.';}catch(e){$('ci-status').textContent=e.message;button.disabled=false;}});row.append(button);}return row;
   }));
 }
-async function receiptHistory(){
+async function receiptHistory(append=false){
   if(!actor)return;
-  const receipts=await api('/v1/release-receipts');
-  $('receipt-list').replaceChildren(...receipts.map(receipt=>{
+  if(append&&!receiptCursor)return;
+  const page=await api('/v1/release-receipts?limit=25'+(append?'&cursor='+encodeURIComponent(receiptCursor):''));receiptCursor=page.nextCursor;$('receipts-more').disabled=!receiptCursor;
+  if(!append)$('receipt-list').replaceChildren();
+  $('receipt-list').append(...page.items.map(receipt=>{
     const row=node('div',undefined,'audit-entry');row.append(node('strong',`${decisionLabels[receipt.decision]} `),node('span',`${new Date(receipt.created_at).toLocaleString('ko-KR')} · 실행 ${receipt.candidate_run_id.slice(0,8)} · ${receipt.signing_key_id?'서명 포함':'기존 서명 없음'} `));
     const button=node('button','기록 JSON 저장','secondary');button.addEventListener('click',async()=>{try{const data=await api(`/v1/release-receipts/${receipt.id}`);const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=node('a');link.href=url;link.download=`agenttrust-receipt-${receipt.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){message(e.message,true);}});row.append(button);return row;
   }));
-  if(!receipts.length)$('receipt-list').textContent='아직 CI 검증 기록이 없습니다.';
+  if(!append&&!page.items.length)$('receipt-list').textContent='아직 CI 검증 기록이 없습니다.';
 }
 $('ci-key-form').addEventListener('submit',async event=>{
   event.preventDefault();$('workspace-project').disabled=true;$('logout-button').disabled=true;$('ci-create').disabled=true;$('ci-status').textContent='';$('ci-issued-key').value='';$('ci-key-box').hidden=true;
@@ -224,3 +230,6 @@ for(const kind of ['agent','policy'])$(kind+'-form').addEventListener('submit',a
     const version=await api('/v1/'+kind+'-versions',{method:'POST',body:JSON.stringify(input)});await catalog({[kind]:version.id});await auditHistory();message((kind==='agent'?'에이전트':'정책')+' 새 버전을 등록했습니다: '+version.name);
   }catch(e){message(e.message,true);}finally{updateButtons();}
 });
+
+$('ci-more').addEventListener('click',async()=>{$('ci-more').disabled=true;try{await ciHistory(true);}catch(e){$('ci-status').textContent=e.message;$('ci-more').disabled=!keyCursor;}});
+$('receipts-more').addEventListener('click',async()=>{$('receipts-more').disabled=true;try{await receiptHistory(true);}catch(e){message(e.message,true);$('receipts-more').disabled=!receiptCursor;}});

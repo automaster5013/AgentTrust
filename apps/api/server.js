@@ -1,4 +1,5 @@
 import { CI } from './ci.js';
+import { pagination } from './pagination.js';
 import { compareRuns } from '../../packages/evaluator/comparison.js';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -35,7 +36,7 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       if(!authority||port<1024||port>65535) throw new InputError('Use the loopback address 127.0.0.1.',403);
       if(process.env.CONTAINER_MODE!=='true'&&port!==req.socket.localPort) throw new InputError('Unexpected host port.',403);
       if(req.headers.origin&&req.headers.origin!==`http://${req.headers.host}`) throw new InputError('Cross-origin requests are denied.',403);
-      const path=new URL(req.url,`http://${req.headers.host}`).pathname;
+      const requestUrl=new URL(req.url,`http://${req.headers.host}`),path=requestUrl.pathname;
       if(req.method==='GET'&&assets[path]){const[file,type]=assets[path];res.writeHead(200,{...headers,'Content-Type':`${type}; charset=utf-8`});res.end(await readFile(new URL(file,webRoot)));return;}
       if(req.method==='GET'&&path==='/health') {await database.query('SELECT 1');return send(200,{status:'ok',mode:'local-mock',persistent:true});}
       if(req.method==='POST'&&path==='/v1/auth/login') {
@@ -53,10 +54,10 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
         if(context.role==='ci'?selectedProject!==context.projectId:!context.projects.some(p=>p.id===selectedProject))throw new InputError('Unknown project.',404);
         context.projectId=selectedProject;
       }
-      if(req.method==='GET'&&path==='/v1/release-receipts')return send(200,await ci.receipts(context));
+      if(req.method==='GET'&&path==='/v1/release-receipts')return send(200,await ci.receipts(context,pagination(requestUrl.searchParams,context)));
       const receiptMatch=/^\/v1\/release-receipts\/([a-zA-Z0-9-]+)$/.exec(path);
       if(req.method==='GET'&&receiptMatch)return send(200,await ci.receipt(context,receiptMatch[1]));
-      if(req.method==='GET'&&path==='/v1/ci-credentials')return send(200,await ci.list(context));
+      if(req.method==='GET'&&path==='/v1/ci-credentials')return send(200,await ci.list(context,pagination(requestUrl.searchParams,context)));
       if(req.method==='POST'&&path==='/v1/ci-credentials')return send(201,await ci.create(context,await body(req)));
       const ciRevoke=/^\/v1\/ci-credentials\/([a-zA-Z0-9-]+)\/revoke$/.exec(path);
       if(req.method==='POST'&&ciRevoke){await body(req);return send(200,await ci.revoke(context,ciRevoke[1]));}

@@ -317,3 +317,35 @@ test('signed release receipts survive read and replay and require a trusted publ
   await assert.rejects(f.owner.query('UPDATE agenttrust.release_receipts SET signature=NULL WHERE id=$1',[checked.artifact.receiptId]),/immutable/);
   const legacy=await new CI(f.database,{signer:null}).check(f.contexts.admin,{candidateRunId:run.id,...f.input()},randomUUID());assert.equal(legacy.signature,undefined);assert.throws(()=>verifyReceipt(legacy,publicKey),/signed release receipt/);
 });
+
+
+test('key and receipt pages are stable, project bound and preserve sub-millisecond ordering',async t=>{
+  const f=await fixture(t),{run}=await f.create();await f.engine.tick();const otherProject=randomUUID();
+  await f.owner.query('INSERT INTO agenttrust.projects(id,organization_id,name) VALUES($1,$2,$3)',[otherProject,f.first.organizationId,'Other pagination project']);
+  for(let i=0;i<7;i++){
+    assert.equal((await f.request('/v1/ci-credentials',{method:'POST',json:{name:'Page '+i,projectId:f.first.projectId,ttlSeconds:60}})).status,201);
+    assert.equal((await f.request('/v1/release-gate',{method:'POST',json:{candidateRunId:run.id,...f.input()},extra:{'Idempotency-Key':randomUUID()}})).status,200);
+  }
+  const foreignKey=await(await f.request('/v1/ci-credentials',{method:'POST',json:{name:'Foreign page',projectId:otherProject,ttlSeconds:60}})).json();
+  await f.owner.query(`WITH ranked AS(SELECT id,row_number() OVER(ORDER BY id) AS n FROM agenttrust.ci_credentials WHERE organization_id=$1 AND project_id=$2),base AS(SELECT date_trunc('milliseconds',clock_timestamp()) AS time) UPDATE agenttrust.ci_credentials c SET created_at=base.time+ranked.n*interval '1 microsecond' FROM ranked,base WHERE c.id=ranked.id`,[f.first.organizationId,f.first.projectId]);
+  for(const path of ['/v1/ci-credentials','/v1/release-receipts']){
+    const ids=[],cursors=[];let cursor;
+    do{const page=await(await f.request(path+'?limit=2'+(cursor?'&cursor='+encodeURIComponent(cursor):''))).json();assert.ok(page.items.length<=2);ids.push(...page.items.map(i=>i.id));cursor=page.nextCursor;if(cursor)cursors.push(cursor);}while(cursor);
+    assert.equal(ids.length,7);assert.equal(new Set(ids).size,7);assert.ok(!ids.includes(foreignKey.id));
+    assert.equal((await f.request(path+'?limit=2&cursor='+cursors[0],{role:'other_admin'})).status,400);
+    assert.equal((await f.request(path+'?limit=2&cursor='+cursors[0],{extra:{'X-AgentTrust-Project':otherProject}})).status,400);
+    for(const query of ['limit=0','limit=101','limit=2&limit=3','limit=2&cursor=bad','limit=2&unknown=1','cursor='])assert.equal((await f.request(path+'?'+query)).status,400);
+    const legacy=await(await f.request(path)).json();assert.ok(Array.isArray(legacy));assert.equal(legacy.length,7);
+  }
+  const other=await(await f.request('/v1/ci-credentials?limit=2',{extra:{'X-AgentTrust-Project':otherProject}})).json();assert.equal(other.items.length,1);assert.equal(other.items[0].id,foreignKey.id);
+});
+
+test('credential creation rate is shared across projects and cannot be evaded by revocation',async t=>{
+  const f=await fixture(t);
+  for(let i=0;i<20;i++){
+    const credential=await(await f.request('/v1/ci-credentials',{method:'POST',json:{name:'Rate fixture '+i,projectId:f.first.projectId,ttlSeconds:60}})).json();
+    await f.request('/v1/ci-credentials/'+credential.id+'/revoke',{method:'POST',json:{}});
+  }
+  assert.equal((await f.request('/v1/ci-credentials',{method:'POST',json:{name:'Rate limit',projectId:f.first.projectId,ttlSeconds:60}})).status,429);
+  assert.equal(Number((await f.owner.query('SELECT count(*) FROM agenttrust.ci_credentials WHERE organization_id=$1',[f.first.organizationId])).rows[0].count),20);
+});

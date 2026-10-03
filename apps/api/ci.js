@@ -6,6 +6,7 @@ import { transaction } from './database.js';
 import { audit,requireWrite } from './auth.js';
 import { publicRun } from './pg-store.js';
 import { loadReceiptSigner } from '../../packages/receipts/signature.js';
+import { pageResult } from './pagination.js';
 
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
 function receiptArtifact(row){
@@ -32,17 +33,26 @@ export class CI {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,2))',[context.organizationId]);
       const project=await client.query('SELECT id FROM agenttrust.projects WHERE organization_id=$1 AND id=$2',[context.organizationId,input.projectId]);
       if(!project.rowCount)throw new InputError('Unknown project.',404);
-      const active=await client.query('SELECT count(*) FROM agenttrust.ci_credentials WHERE organization_id=$1 AND revoked_at IS NULL AND expires_at>now()',[context.organizationId]);
-      if(Number(active.rows[0].count)>=100)throw new InputError('Active CI credential quota reached.',429);
+      const counts=(await client.query("SELECT count(*) AS total,count(*) FILTER(WHERE revoked_at IS NULL AND expires_at>now()) AS active,count(*) FILTER(WHERE created_at>clock_timestamp()-interval '60 seconds') AS recent FROM agenttrust.ci_credentials WHERE organization_id=$1",[context.organizationId])).rows[0];
+      if(Number(counts.active)>=100)throw new InputError('Active CI credential quota reached.',429);
+      if(Number(counts.total)>=10000)throw new InputError('Organization CI credential history quota reached.',429);
+      if(Number(counts.recent)>=20)throw new InputError('Too many CI credential requests. Try again in one minute.',429);
       const id=randomUUID(),token='atci_'+randomBytes(32).toString('hex');
       const row=(await client.query("INSERT INTO agenttrust.ci_credentials(id,organization_id,project_id,name,token_hash,created_by,expires_at) VALUES($1,$2,$3,$4,$5,$6,now()+$7::integer*interval '1 second') RETURNING id,project_id,name,created_at,expires_at",[id,context.organizationId,input.projectId,input.name.trim(),tokenHash(token),context.membershipId,input.ttlSeconds])).rows[0];
       await audit(client,context,'ci.credential.created',id,{projectId:input.projectId,expiresAt:row.expires_at.toISOString()});
       return {...row,token};
     },context.organizationId);
   }
-  async list(context){
+  async list(context,page){
     requireWrite(context,true);
-    return transaction(this.database,async client=>(await client.query('SELECT id,project_id,name,created_at,expires_at,revoked_at FROM agenttrust.ci_credentials WHERE organization_id=$1 ORDER BY created_at DESC LIMIT 200',[context.organizationId])).rows,context.organizationId);
+    return transaction(this.database,async client=>{
+      const rows=(await client.query(`SELECT id,project_id,name,created_at,expires_at,revoked_at,
+        to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
+        FROM agenttrust.ci_credentials WHERE organization_id=$1 AND project_id=$2
+        AND ($3::timestamptz IS NULL OR (created_at,id)<($3::timestamptz,$4::uuid))
+        ORDER BY created_at DESC,id DESC LIMIT $5`,[context.organizationId,context.projectId,page?.cursor?.time||null,page?.cursor?.id||null,page?page.limit+1:200])).rows;
+      return page?pageResult(rows,page,context):rows.map(({cursor_time,...row})=>row);
+    },context.organizationId);
   }
   async revoke(context,id){
     requireWrite(context,true);if(!uuid(id))throw new InputError('Invalid credential id.');
@@ -93,8 +103,15 @@ export class CI {
       return {...result,artifact,artifactHash,...(signature?{signature}:{})};
     },context.organizationId);
   }
-  async receipts(context){
-    return transaction(this.database,async client=>(await client.query("SELECT id,candidate_run_id,baseline_run_id,created_at,artifact_hash,result->>'decision' AS decision,signature->>'keyId' AS signing_key_id FROM agenttrust.release_receipts WHERE organization_id=$1 AND project_id=$2 ORDER BY created_at DESC,id DESC LIMIT 100",[context.organizationId,context.projectId])).rows,context.organizationId);
+  async receipts(context,page){
+    return transaction(this.database,async client=>{
+      const rows=(await client.query(`SELECT id,candidate_run_id,baseline_run_id,created_at,artifact_hash,result->>'decision' AS decision,signature->>'keyId' AS signing_key_id,
+        to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
+        FROM agenttrust.release_receipts WHERE organization_id=$1 AND project_id=$2
+        AND ($3::timestamptz IS NULL OR (created_at,id)<($3::timestamptz,$4::uuid))
+        ORDER BY created_at DESC,id DESC LIMIT $5`,[context.organizationId,context.projectId,page?.cursor?.time||null,page?.cursor?.id||null,page?page.limit+1:100])).rows;
+      return page?pageResult(rows,page,context):rows.map(({cursor_time,...row})=>row);
+    },context.organizationId);
   }
   async receipt(context,id){
     if(!uuid(id))throw new InputError('Invalid receipt id.');

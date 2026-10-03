@@ -2,6 +2,7 @@ import { randomBytes, randomUUID,generateKeyPairSync,createPrivateKey,createPubl
 import { mkdir, readFile, writeFile, chmod } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
 import { pool, transaction } from '../apps/api/database.js';
 import { migrate } from './migrate.mjs';
 import { hash, tokenHash } from '../packages/contracts/hash.js';
@@ -49,8 +50,9 @@ async function main() {
   process.loadEnvFile('.env');
   if(!process.env.AGENTTRUST_RECEIPT_SIGNING_KEY_FILE){
     const configuration=await readFile('.env','utf8');
-    await writeFile('.env',configuration.trimEnd()+'\nAGENTTRUST_RECEIPT_SIGNING_KEY_FILE=C:/AgentTrust/.local/receipt-signing/private.pem\n',{mode:0o600});
-    process.env.AGENTTRUST_RECEIPT_SIGNING_KEY_FILE='C:/AgentTrust/.local/receipt-signing/private.pem';
+    const signingPath=resolve('.local/receipt-signing/private.pem').replaceAll('\\','/');
+    await writeFile('.env',configuration.trimEnd()+'\nAGENTTRUST_RECEIPT_SIGNING_KEY_FILE='+JSON.stringify(signingPath)+'\n',{mode:0o600});
+    process.env.AGENTTRUST_RECEIPT_SIGNING_KEY_FILE=signingPath;
   }
   for (const key of ['DB_OWNER_PASSWORD','DB_API_PASSWORD','DB_WORKER_PASSWORD']) if (!/^[a-f0-9]{48}$/.test(process.env[key] || '')) throw new Error(`Expected generated configuration for ${key}. Preserve existing configuration and review .env.example.`);
   execFileSync('docker', ['compose','up','-d','--wait','db'], { stdio: 'inherit' });
