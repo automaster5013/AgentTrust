@@ -1,16 +1,30 @@
-# 로컬 개발과 API 계약
+# 로컬 개발과 API 계약 — v0.2
 
-## 실행
+## 시작과 정지
 
-Node.js 24가 필요하다. 검증 환경은 Windows와 Node 24.15.0이다.
+Node.js 24와 실행 중인 Docker Desktop이 필요하다. 모든 명령은 C:\AgentTrust에서 실행한다.
 
 ```powershell
 Set-Location C:\AgentTrust
-npm.cmd ci --cache .cache/npm
-npm.cmd start
+npm.cmd ci --cache .cache/npm --ignore-scripts
+npm.cmd run setup
+npm.cmd run docker:up
 ```
 
-브라우저에서 `http://127.0.0.1:4310`을 연다. `localhost` 별칭은 Host 검증으로 거절된다. 포트는 `.env.example`을 참고해 `.env`에 설정할 수 있다. 바인딩 주소는 항상 127.0.0.1이며 공개 배포용 설정은 없다.
+화면: http://127.0.0.1:4310. 접근 키는 `.local/credentials.json`의 첫 조직에서 admin/editor/viewer 역할에 맞는 token을 복사해 로그인한다. 두 번째 조직은 격리 확인용이다. 키는 화면에 표시하거나 저장소에 커밋하지 않는다. 로그인 입력은 성공 후 지우고 세션은 HttpOnly·SameSite=Strict 쿠키로 유지한다.
+
+setup은 없을 때만 `.env`와 로컬 키를 생성하고 마이그레이션을 적용한다. 반복 실행은 기존 데이터와 키를 보존한다. `.env`와 `.local`은 현재 Windows 사용자와 SYSTEM으로 접근을 제한한다(Unix에서는 0600/0700). 두 경로를 잃으면 기존 DB 비밀번호·접근 키가 자동 복구되지 않으므로 안전한 장소에 함께 보관한다. `.env.example`을 그대로 복사하는 대신 setup으로 실제 설정을 생성한다.
+
+```powershell
+# 데이터와 이미지를 보존하며 AgentTrust만 정지
+npm.cmd run docker:stop
+# 다시 시작
+npm.cmd run docker:up
+```
+
+Compose 프로젝트는 agenttrust이며 DB 볼륨은 agenttrust_postgres-data다. API의 호스트 포트는 4310, DB의 호스트 포트는 55432이고 둘 다 루프백에만 공개된다. 워커는 공개 포트가 없다. Node/PostgreSQL 이미지는 검증한 digest로 고정했다. 이미지 갱신은 별도 검증 후 진행한다.
+
+## 개발과 검증
 
 ```powershell
 npm.cmd run check
@@ -18,36 +32,50 @@ npm.cmd test
 npm.cmd audit --cache .cache/npm
 ```
 
-## 구현 범위
+setup은 운영 개발용 agenttrust DB와 별도의 agenttrust_test DB를 준비한다. 테스트는 _test DB만 사용하고 합성 조직을 생성한다. 현재 테스트 기록은 이 DB에 남는다. 실제 DB·사용자 자료를 테스트 URL로 지정하지 않는다.
 
-이 버전은 Node ESM JavaScript, Node HTTP 서버, 일반 HTML/CSS/JavaScript, Ajv 8.20.0을 사용한다. 첫 평가 흐름의 계약과 동작을 빠르게 검증하기 위해 빌드 도구 없이 구성했다. TypeScript·DB·큐를 이용한 운영 구조는 다음 구현 단계에서 도입한다. 고정 종속성과 package-lock.json을 사용한다.
+API/워커를 호스트 Node로 디버깅하려면 Docker의 api/worker만 정지한 뒤 각각 npm.cmd start와 npm.cmd run worker를 실행한다. DB 컨테이너는 유지한다. 동일 4310 포트에 Docker API와 호스트 API를 동시에 실행하지 않는다.
 
-합성 샘플 3개, 모의 에이전트 6개, 기본 정책이 시작 시 등록된다. 화면에서 JSON 데이터셋의 새 버전을 저장하고 에이전트·데이터셋·정책을 선택해 실행할 수 있다. 결과에는 사례별 입력/출력/도구 이벤트/규칙 근거와 게이트, 실행 스냅샷, SHA-256 해시가 포함된다. 결과 JSON을 내려받을 수 있다.
+Docker 재시작 검증: `node --env-file=.env scripts/smoke.mjs before` → AgentTrust 컨테이너만 정지/재시작 → `node --env-file=.env scripts/smoke.mjs after`. 합성 평가를 저장하고 이후 결과 해시·스냅샷·사용량·완료 감사 이벤트를 비교한다.
 
-버전과 완료된 실행은 메모리에서 불변이며 조회 응답은 복제된다. 키 순서를 정규화한 JSON으로 해시한다. 메모리 큐는 setImmediate 기반으로 실행하며 외부 도구를 호출하지 않는다. 오류 시 fail-open하지 않는다.
+## 인증과 역할
 
-모의 mode: compliant, regression, forbidden_tool, error, missing_evidence, unsafe_output.
+로컬 개발용 임의 접근 키는 256비트이며 DB에는 SHA-256 해시만 저장한다. 세션도 해시로 저장하고 8시간 후 만료한다. 계정 비활성화 또는 키 폐기 상태를 매 요청에 검사한다. 로그인 실패는 1분당 20회, 키당 활성 세션은 20개로 제한한다. 이 로그인 제한은 API 프로세스 단위다.
 
-## 요청 계약
+조회자는 자기 조직 결과·버전·사용량을 조회한다. 작성자는 데이터셋·에이전트 버전 생성, 실행·취소가 가능하다. 관리자는 정책 버전 생성과 감사 기록 조회도 가능하다. 조직은 로그인한 멤버십에서 결정하며 요청의 조직 헤더로 바꿀 수 없다. 초기에는 조직당 기본 프로젝트 하나를 사용한다.
 
-조회: `GET /health`, `/v1/catalog`, `/v1/sample-dataset`, `/v1/runs`, `/v1/runs/{id}`, `/v1/runs/{id}/results`, `/v1/runs/{id}/gate`.
+DB API 역할은 소유자 권한과 BYPASSRLS가 없으며 트랜잭션마다 조직 범위를 설정한다. 프로젝트·버전·실행·감사·사용량 테이블에 강제 RLS를 적용한다. 외래 키도 조직/프로젝트가 일치해야 한다. 워커는 전 조직 큐 처리를 위해 별도의 BYPASSRLS 역할을 사용하지만 실행·감사·사용량 테이블로 권한을 제한한다. DB 소유자는 마이그레이션/로컬 준비에만 사용한다.
 
-생성: `POST /v1/agent-versions`, `/v1/dataset-versions`, `/v1/policy-versions`, `/v1/runs`.
-모든 POST에 `Content-Type: application/json`, `X-AgentTrust-Request: local-ui`가 필요하다. 이는 교차 사이트 요청 방어용이며 인증 자격이 아니다. 조직 인증은 아직 없다.
+## 실행과 API
 
-실행 본문: `{ "agentVersionId": "...", "datasetVersionId": "...", "policyVersionId": "..." }`.
-실행 생성에는 8~100자의 영문/숫자/하이픈/밑줄 `Idempotency-Key`가 필요하다. 최초 202, 동일 요청 재사용 200, 다른 요청으로 재사용 409를 반환한다.
+인증: `POST /v1/auth/login`에 `{ "accessKey": "..." }`, `POST /v1/auth/logout`에 `{}`, `GET /v1/me`.
+인증 없이 정적 화면과 GET /health만 접근할 수 있다. 나머지 데이터 API는 세션을 요구한다.
 
-규칙: contains/not_contains의 value, json_schema의 schema, allowed_tools의 allowed와 선택 argumentSchemas. required를 생략하면 필수다. 각 사례는 최소 하나의 필수 규칙이 필요하다. 필수 규칙 실패가 있으면 block, 필수 증거 누락이나 실행 오류는 inconclusive(이미 필수 실패가 확인됐다면 block), 나머지는 minimumPassRate 기준을 적용한다. pass만 deploymentAllowed=true다. 실행 성공과 게이트 통과는 별도다.
+조회: GET /v1/catalog, /v1/sample-dataset, /v1/runs, /v1/runs/{id}, /v1/runs/{id}/results, /v1/runs/{id}/gate, /v1/audit-events(관리자), /v1/usage.
+생성: POST /v1/agent-versions, /v1/dataset-versions, /v1/policy-versions(관리자), /v1/runs.
+취소: POST /v1/runs/{id}/cancel에 {}.
+모든 POST는 Content-Type: application/json과 X-AgentTrust-Request: local-ui를 요구한다. 커스텀 헤더는 인증 자격이 아니다.
 
-JSON Schema 지원은 제한된 하위 집합이다: type, properties, required, additionalProperties(boolean), items, enum, minimum/maximum, minLength/maxLength, minItems/maxItems. 중첩 깊이 6, 객체 속성 30, enum 항목 30까지. 참조, 정규식, 외부 스키마, 사용자 키워드, format은 거절한다.
+실행 본문은 agentVersionId, datasetVersionId, policyVersionId와 선택 timeoutMs(기본 30000, 100~120000), caseBudget(기본 100, 1~100), maxAttempts(기본 3, 1~5)를 받는다. Idempotency-Key는 8~100자의 영문·숫자·하이픈·밑줄이다. 조직/프로젝트 안에서 같은 키와 같은 요청은 동일 실행을 반환하고, 다른 요청 재사용은 409다. JSON 키 순서나 기본값 생략은 동일 요청으로 처리한다.
 
-입력 한도: 요청 256 KiB, 데이터셋 100개 사례, 사례당 20개 규칙/도구 이벤트, 원문 문자열 10,000자. 메모리 한도: 각 버전 종류와 실행은 세션당 500개. 초과 시 429를 반환한다. 원문은 합성 데이터만 입력한다.
+평가 요청은 버전 스냅샷과 함께 트랜잭션으로 저장된다. 독립 워커는 SKIP LOCKED로 작업을 점유하고 5초 lease를 갱신한다. 죽은 워커의 lease가 만료되면 다른 워커가 재시도한다. 이전 시도의 lease token은 결과 확정에 사용할 수 없다. 모든 종료 결과·사용량·감사 이벤트를 한 트랜잭션으로 확정한다.
 
-## 보안 경계와 현재 제한
+시간 예산은 큐 대기 시간부터 계산한다. 워커가 없으면 대기 작업의 시간 초과 확정은 워커가 다시 실행될 때 수행되며 그동안 게이트는 닫혀 있다. 취소는 즉시 DB 상태를 확정하고 늦은 결과를 거절한다. 사례 예산을 초과하면 실행을 실패로 종료한다. 사용량은 시도 횟수와 확정된 결과 사례 수를 나타내는 모의 계량이며 실제 모델 비용/청구는 아니다.
 
-루프백 바인딩, 정확한 Host 검사, Origin 검사, JSON+커스텀 헤더, CSP, textContent 렌더링을 적용한다. 파일 제공은 세 개의 정적 자산 허용목록으로 제한한다. 평가 대상 출력은 HTML로 해석하지 않는다.
+queued → running → succeeded/failed/cancelled/timed_out. queued에서 직접 취소·시간 초과도 가능하다. 필수 규칙 실패는 block, 오류·누락·취소·시간 초과는 inconclusive이며 이미 확인한 필수 실패는 block을 유지한다. pass만 배포 허용으로 해석한다. 실행 성공과 게이트 통과는 별도다.
 
-DB 영속성, 외부 어댑터, 실제 인증/조직 격리, 워커 프로세스/lease, 취소·시간 초과·예산 계량, 감사 저장, CI 배포 연결은 아직 구현하지 않았다. 서버 재시작은 전체 세션을 초기화한다. 결과 해시는 변조 탐지용 비교값이며 디지털 서명 또는 독립 감사 증거를 대체하지 않는다. 상용화 전 로드맵의 게이트는 계속 적용된다.
+## 입력과 평가 규칙
 
-참고 공식 문서: [Node HTTP](https://nodejs.org/docs/latest-v24.x/api/http.html), [Node test runner](https://nodejs.org/docs/latest-v24.x/api/test.html), [Ajv](https://ajv.js.org/guide/getting-started.html).
+모의 mode는 compliant, regression, forbidden_tool, error, missing_evidence, unsafe_output, slow다. slow는 2.5초 합성 지연으로 취소/시간 초과를 확인한다. 실제 외부 도구는 호출하지 않는다.
+
+규칙: contains/not_contains(value), json_schema(schema), allowed_tools(allowed 및 선택 argumentSchemas). required 생략은 필수이며 사례당 최소 한 개가 필요하다. JSON Schema는 type, properties, required, additionalProperties(boolean), items, enum, minimum/maximum, minLength/maxLength, minItems/maxItems만 허용한다. 스키마 깊이 6·속성 30·enum 30으로 제한하고 참조·정규식·외부 스키마·format은 거절한다.
+
+요청 256 KiB, 100개 사례, 사례당 규칙/도구 이벤트 20개, 문자열 10000자, 입력 중첩 16·노드 30000으로 제한한다. 조직당 버전 1000개, 실행 10000개, 미완료 실행 10개다. 목록/감사는 최근 100개를 반환한다. 원문은 합성 데이터만 입력한다.
+
+## 현재 경계
+
+루프백 전용 HTTP 개발 환경이며 쿠키의 Secure 속성은 사용하지 않는다. TLS+Secure 쿠키, OIDC/SSO, 운영용 계정/키 관리, 공유 로그인 제한, 외부 어댑터, 프로젝트별 역할, 보존·삭제·백업 복원, 실제 요금 계량, 배포 승인 예외/CI 배포 연결은 이후 단계다. 실제 모델 호출과 임의 코드 실행 샌드박스는 없다. 워커의 평가 스레드는 자원 제한용이며 비신뢰 코드를 실행하는 보안 샌드박스가 아니다.
+
+결과 해시는 디지털 서명이 아니다. 감사 행은 API/워커 역할에 대해 추가만 가능하며 DB 소유자까지 막는 WORM 저장소는 아니다. 데이터 원문은 PostgreSQL에 저장되므로 상용 배포 전 암호화·보존·삭제 정책을 검증해야 한다. TypeScript 전환은 아직 수행하지 않았다.
+
+참고: [PostgreSQL 작업 잠금](https://www.postgresql.org/docs/17/sql-select.html), [node-postgres 트랜잭션](https://node-postgres.com/features/transactions), [Compose 프로젝트 분리](https://docs.docker.com/compose/how-tos/project-name/).

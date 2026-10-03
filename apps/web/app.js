@@ -1,14 +1,16 @@
 const $ = id => document.getElementById(id);
 let currentRun = null;
+let actor = null;
 let loading = false;
 let selectedRunId = null;
 const terminal = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
 const decisionLabels = { pass: '통과', block: '차단', inconclusive: '판정 불가' };
-const stateLabels = { queued: '대기 중', running: '실행 중', succeeded: '평가 완료', failed: '실행 실패' };
+const stateLabels = { queued: '대기 중', running: '실행 중', succeeded: '평가 완료', failed: '실행 실패', cancelled: '취소됨', timed_out: '시간 초과' };
 function message(text, error = false) { $('status').textContent = text; $('status').className = error ? 'error' : ''; }
 async function api(path, options = {}) {
   const response = await fetch(path, { ...options, headers: { 'Content-Type': 'application/json', 'X-AgentTrust-Request': 'local-ui', ...options.headers } });
   const data = await response.json();
+  if (response.status === 401) showLogin();
   if (!response.ok) throw new Error(data.error || '요청을 완료하지 못했습니다.');
   return data;
 }
@@ -27,6 +29,7 @@ async function catalog(selectedDataset) {
       option.value = v.id; return option;
     }));
     if (data[kind].some(v => v.id === previous)) select.value = previous;
+    else if(kind==='agent') select.value=data.agent.find(v=>v.mode==='compliant')?.id || select.value;
   }
 }
 function render(run) {
@@ -34,13 +37,14 @@ function render(run) {
   const decision = run.gate.decision;
   $('gate-badge').textContent = decision.toUpperCase(); $('gate-badge').className = `gate ${decision}`;
   $('gate-title').textContent = { pass: '정의된 배포 기준을 통과했습니다', block: '배포를 차단해야 합니다', inconclusive: '추가 검증이 필요합니다' }[decision];
-  const reasons = { 'A required rule failed.': '필수 규칙이 실패했습니다. 사례별 근거를 확인하고 변경을 수정하세요.', 'Required evaluation evidence is incomplete.': '실행 오류 또는 필수 증거 누락으로 안전하게 판단할 수 없습니다.', 'The policy pass rate threshold was not met.': '정책에서 요구하는 규칙 통과율을 충족하지 못했습니다.', 'All required rules passed and the policy threshold was met.': '모든 필수 규칙과 통과율 조건을 충족했습니다. 판정은 해당 테스트 범위에 한정됩니다.', 'Evaluation has not completed.': '평가가 완료될 때까지 배포를 허용하지 않습니다.' };
+  const reasons = { 'A required rule failed.': '필수 규칙이 실패했습니다. 사례별 근거를 확인하고 변경을 수정하세요.', 'Required evaluation evidence is incomplete.': '실행 오류 또는 필수 증거 누락으로 안전하게 판단할 수 없습니다.', 'The policy pass rate threshold was not met.': '정책에서 요구하는 규칙 통과율을 충족하지 못했습니다.', 'All required rules passed and the policy threshold was met.': '모든 필수 규칙과 통과율 조건을 충족했습니다. 판정은 해당 테스트 범위에 한정됩니다.', 'Evaluation has not completed.': '평가가 완료될 때까지 배포를 허용하지 않습니다.', 'Evaluation was cancelled.': '실행을 취소했습니다. 완료되지 않은 평가는 배포를 허용하지 않습니다.', 'Evaluation exceeded its time budget.': '설정한 시간 예산을 초과했습니다. 배포를 허용하지 않습니다.', 'Evaluation exceeded its case budget.': '설정한 사례 예산을 초과했습니다. 배포를 허용하지 않습니다.' };
   $('gate-reason').textContent = reasons[run.gate.reason] || run.gate.reason;
   $('allowed').textContent = run.gate.deploymentAllowed ? '허용' : '허용 안 함';
   $('run-state').textContent = stateLabels[run.state] || run.state;
   for (const [key, id] of [['cases', 'case-count'], ['pass', 'pass-count'], ['fail', 'fail-count'], ['inconclusive', 'unknown-count']]) $(id).textContent = run.summary?.[key] ?? '—';
   $('snapshot').textContent = `실행 ${run.id}\n에이전트 ${run.snapshot.agent.name} · 데이터셋 ${run.snapshot.dataset.name} · 정책 ${run.snapshot.policy.name}\n스냅샷 SHA-256 ${run.snapshotHash}`;
   $('download').disabled = !terminal.has(run.state);
+  $('cancel-button').disabled = terminal.has(run.state) || actor?.role === 'viewer';
   const cards = run.results.map(c => {
     const card = node('article', undefined, 'case');
     card.append(node('h3', c.caseId), node('div', '입력', 'case-label'), node('pre', c.input), node('div', '에이전트 출력', 'case-label'), node('pre', c.error || c.evidence.output || '(출력 증거 없음)'));
@@ -52,7 +56,7 @@ function render(run) {
     }
     return card;
   });
-  $('results').replaceChildren(...(cards.length ? cards : [node('div', '평가 결과를 기다리고 있습니다.', 'empty')]));
+  $('results').replaceChildren(...(cards.length ? cards : [node('div', terminal.has(run.state) ? '실행이 종료됐습니다. 확정된 사례 결과가 없습니다.' : '평가 결과를 기다리고 있습니다.', 'empty')]));
 }
 async function history() {
   const runs = await api('/v1/runs');
@@ -67,11 +71,11 @@ async function history() {
 }
 async function selectRun(id) {
   selectedRunId = id;
-  for (let attempt = 0; attempt < 30; attempt++) {
+  for (let attempt = 0; attempt < 800; attempt++) {
     const run = await api(`/v1/runs/${id}`);
     if (selectedRunId !== id) return;
     render(run);
-    if (terminal.has(run.state)) { await history(); return; }
+    if (terminal.has(run.state)) { await history(); await auditHistory(); return; }
     await new Promise(resolve => setTimeout(resolve, 150));
   }
   throw new Error('평가가 아직 완료되지 않았습니다. 실행 기록에서 다시 조회하세요.');
@@ -80,10 +84,10 @@ $('run-form').addEventListener('submit', async event => {
   event.preventDefault(); if (loading) return;
   loading = true; $('run-button').disabled = true; message('평가 실행을 요청했습니다…');
   try {
-    const run = await api('/v1/runs', { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ agentVersionId: $('agent').value, datasetVersionId: $('dataset-select').value, policyVersionId: $('policy').value }) });
+    const run = await api('/v1/runs', { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ agentVersionId: $('agent').value, datasetVersionId: $('dataset-select').value, policyVersionId: $('policy').value, timeoutMs: Number($('timeout-ms').value), caseBudget: Number($('case-budget').value) }) });
     await selectRun(run.id); message('평가가 종료되었습니다. 게이트 판정과 근거를 확인하세요.');
   } catch (e) { message(e.message, true); }
-  finally { loading = false; $('run-button').disabled = false; }
+  finally { loading = false; $('run-button').disabled = actor?.role === 'viewer' || !actor; }
 });
 $('dataset-form').addEventListener('submit', async event => {
   event.preventDefault(); $('dataset-button').disabled = true;
@@ -99,7 +103,44 @@ $('download').addEventListener('click', () => {
   const url = URL.createObjectURL(new Blob([JSON.stringify(currentRun, null, 2)], { type: 'application/json' }));
   const link = node('a'); link.href = url; link.download = `agenttrust-${currentRun.id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
-$('run-button').disabled = true;
-try {
-  await catalog(); $('dataset-json').value = JSON.stringify(await api('/v1/sample-dataset'), null, 2); await history(); $('run-button').disabled = false;
-} catch (e) { message(`초기화 실패: ${e.message}`, true); }
+function showLogin() {
+  actor=null;currentRun=null;selectedRunId=null;message('');
+  $('workspace-ui').hidden=true;$('login-panel').hidden=false;
+  $('access-key').value='';$('results').replaceChildren();$('history-body').replaceChildren();$('audit-list').replaceChildren();
+  $('gate-badge').textContent='실행 대기';$('gate-badge').className='gate idle';$('gate-title').textContent='배포 판단을 기다립니다';
+  $('gate-reason').textContent='평가를 실행하면 정책을 기준으로 결과를 표시합니다.';$('allowed').textContent='—';$('run-state').textContent='대기';
+  $('snapshot').textContent='아직 선택한 실행이 없습니다.';$('dataset-json').value='';$('usage-summary').textContent='';
+  for(const id of ['case-count','pass-count','fail-count','unknown-count'])$(id).textContent='—';
+  $('download').disabled=true;$('cancel-button').disabled=true;
+}
+async function auditHistory() {
+  if(actor?.role!=='admin') return;
+  const [events,usage]=await Promise.all([api('/v1/audit-events'),api('/v1/usage')]);
+  $('usage-summary').textContent=`완료 실행 ${usage.completed_runs}개 · 결과 사례 ${usage.evaluated_cases}개 · 시도 ${usage.attempts}회 (모의 사용량)`;
+  $('audit-list').replaceChildren(...events.map(e=>{
+    const row=node('div',undefined,'audit-entry');row.append(node('strong',e.action+' '),node('span',`${new Date(e.created_at).toLocaleString('ko-KR')} · ${e.resource_id || '—'}`));return row;
+  }));
+}
+async function initialize() {
+  actor=await api('/v1/me');
+  $('identity-label').textContent=`${actor.organizationName} · ${actor.name} · ${actor.role}`;
+  $('workspace-ui').hidden=false;$('login-panel').hidden=true;$('audit-panel').hidden=actor.role!=='admin';
+  await catalog();$('dataset-json').value=JSON.stringify(await api('/v1/sample-dataset'),null,2);await history();await auditHistory();
+  $('run-button').disabled=actor.role==='viewer';$('dataset-button').disabled=actor.role==='viewer';
+}
+$('login-form').addEventListener('submit',async event=>{
+  event.preventDefault();$('login-button').disabled=true;$('login-status').textContent='';
+  try{const accessKey=$('access-key').value;await api('/v1/auth/login',{method:'POST',body:JSON.stringify({accessKey})});$('access-key').value='';await initialize();}
+  catch(e){$('login-status').textContent=e.message;}
+  finally{$('login-button').disabled=false;}
+});
+$('logout-button').addEventListener('click',async()=>{
+  try{await api('/v1/auth/logout',{method:'POST',body:'{}'});showLogin();}catch(e){message(e.message,true);}
+});
+$('cancel-button').addEventListener('click',async()=>{
+  if(!currentRun)return;$('cancel-button').disabled=true;
+  try{const run=await api(`/v1/runs/${currentRun.id}/cancel`,{method:'POST',body:'{}'});render(run);await history();await auditHistory();message('실행을 취소했습니다. 늦은 응답은 판정에 반영되지 않습니다.');}
+  catch(e){message(e.message,true);}
+});
+$('audit-refresh').addEventListener('click',()=>auditHistory().catch(e=>message(e.message,true)));
+try{await initialize();}catch(e){showLogin();$('login-status').textContent=e.message==='Authentication required.'?'접근 키를 입력해 주세요.':e.message;}

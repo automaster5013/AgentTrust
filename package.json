@@ -1,6 +1,6 @@
 {
   "name": "agenttrust",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -8,10 +8,15 @@
   },
   "scripts": {
     "start": "node --env-file-if-exists=.env apps/api/server.js",
-    "test": "node --test",
-    "check": "node scripts/check.mjs"
+    "test": "node --env-file-if-exists=.env --test",
+    "check": "node scripts/check.mjs",
+    "setup": "node scripts/setup.mjs",
+    "worker": "node --env-file-if-exists=.env apps/worker/main.js",
+    "docker:up": "docker compose up --build -d --wait",
+    "docker:stop": "docker compose stop"
   },
   "dependencies": {
-    "ajv": "8.20.0"
+    "ajv": "8.20.0",
+    "pg": "8.23.1"
   }
 }

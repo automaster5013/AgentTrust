@@ -16,7 +16,7 @@ const rule = {
 };
 const schemas = {
   agent: { type: 'object', additionalProperties: false, required: ['name', 'mode'], properties: {
-    name: { ...text, maxLength: 100 }, mode: { enum: ['compliant', 'regression', 'forbidden_tool', 'error', 'missing_evidence', 'unsafe_output'] }
+    name: { ...text, maxLength: 100 }, mode: { enum: ['compliant', 'regression', 'forbidden_tool', 'error', 'missing_evidence', 'unsafe_output', 'slow'] }
   } },
   dataset: { type: 'object', additionalProperties: false, required: ['name', 'cases'], properties: {
     name: { ...text, maxLength: 100 }, cases: { type: 'array', minItems: 1, maxItems: 100, items: {
@@ -37,7 +37,8 @@ const schemas = {
     name: { ...text, maxLength: 100 }, minimumPassRate: { type: 'number', minimum: 0, maximum: 1 }
   } },
   run: { type: 'object', additionalProperties: false, required: ['agentVersionId', 'datasetVersionId', 'policyVersionId'], properties: {
-    agentVersionId: { ...text, maxLength: 80 }, datasetVersionId: { ...text, maxLength: 80 }, policyVersionId: { ...text, maxLength: 80 }
+    agentVersionId: { ...text, maxLength: 80 }, datasetVersionId: { ...text, maxLength: 80 }, policyVersionId: { ...text, maxLength: 80 },
+    timeoutMs: { type: 'integer', minimum: 100, maximum: 120000 }, caseBudget: { type: 'integer', minimum: 1, maximum: 100 }, maxAttempts: { type: 'integer', minimum: 1, maximum: 5 }
   } }
 };
 const validators = Object.fromEntries(Object.entries(schemas).map(([key, schema]) => [key, ajv.compile(schema)]));
@@ -63,6 +64,12 @@ export function compileEvidenceSchema(schema, depth = 0) {
 }
 
 export function validate(kind, value) {
+  const pending = [[value, 0]]; let nodes = 0;
+  while (pending.length) {
+    const [item, depth] = pending.pop();
+    if (++nodes > 30000 || depth > 16) throw new InputError('Input nesting or node budget exceeded.');
+    if (item && typeof item === 'object') for (const child of Object.values(item)) pending.push([child, depth + 1]);
+  }
   if (!validators[kind]?.(value)) throw new InputError(`Invalid ${kind}: ${ajv.errorsText(validators[kind]?.errors)}`);
   if (kind === 'dataset') {
     const caseIds = new Set();

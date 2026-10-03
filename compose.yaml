@@ -1,0 +1,56 @@
+name: agenttrust
+services:
+  db:
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    environment:
+      POSTGRES_DB: agenttrust
+      POSTGRES_USER: agenttrust_owner
+      POSTGRES_PASSWORD: ${DB_OWNER_PASSWORD:?Run npm run setup first}
+    ports:
+      - "127.0.0.1:${DB_PORT:-55432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agenttrust_owner -d agenttrust"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  api:
+    build: .
+    image: agenttrust-app:local
+    environment:
+      PORT: "4310"
+      CONTAINER_MODE: "true"
+      DATABASE_URL: postgres://agenttrust_api:${DB_API_PASSWORD:?Missing API password}@db:5432/agenttrust
+    ports:
+      - "127.0.0.1:${PORT:-4310}:4310"
+    depends_on:
+      db:
+        condition: service_healthy
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4310/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+  worker:
+    pull_policy: never
+    image: agenttrust-app:local
+    command: ["node", "apps/worker/main.js"]
+    environment:
+      WORKER_DATABASE_URL: postgres://agenttrust_worker:${DB_WORKER_PASSWORD:?Missing worker password}@db:5432/agenttrust
+    depends_on:
+      db:
+        condition: service_healthy
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+volumes:
+  postgres-data:

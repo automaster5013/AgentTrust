@@ -1,14 +1,26 @@
 name: Validate
 on: [push, pull_request]
+permissions:
+  contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: agenttrust-ci-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '24'
           cache: npm
-      - run: npm ci
+      - run: npm ci --cache .cache/npm --ignore-scripts
+      - run: npm run setup
       - run: npm run check
       - run: npm test
+      - run: npm audit --audit-level=high --cache .cache/npm
+      - run: docker compose build api
+      - name: Stop temporary CI services
+        if: always()
+        run: docker compose down

@@ -1,0 +1,7 @@
+node_modules
+.git
+.cache
+.local
+.env
+.env.*
+docs/evidence

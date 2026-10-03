@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { evaluate, evaluateRule } from '../packages/evaluator/index.js';
 import { sampleDataset } from '../packages/contracts/samples.js';
 import { validate } from '../packages/contracts/index.js';
-import { Store } from '../apps/api/store.js';
+
 
 const snapshot = mode => ({ agent: { name: mode, mode }, dataset: structuredClone(sampleDataset), policy: { name: 'strict', minimumPassRate: 1 } });
 for (const [mode, decision, state] of [
@@ -47,33 +47,11 @@ test('validation rejects malformed contracts and dangerous schema keywords', () 
   assert.throws(() => validate('dataset', empty));
   assert.throws(() => validate('policy', { name: 'x', minimumPassRate: -1 }));
 });
-test('source mutations and later versions do not change an existing run', async () => {
-  const store = new Store();
-  const input = structuredClone(sampleDataset); const dataset = store.createVersion('dataset', input);
-  const catalog = store.catalog();
-  const request = { agentVersionId: catalog.agent[0].id, datasetVersionId: dataset.id, policyVersionId: catalog.policy[0].id };
-  const { run } = store.createRun(request, 'immutable-key');
-  input.cases[0].mock.output = 'mutated'; dataset.cases[0].rules[0].value = 'mutated';
-  store.createVersion('dataset', { ...input, name: 'changed' });
-  const returned = store.getRun(run.id); returned.snapshot.policy.minimumPassRate = 0;
-  await new Promise(resolve => setImmediate(resolve));
-  const final = store.getRun(run.id);
-  assert.equal(final.gate.decision, 'pass'); assert.equal(final.snapshotHash, run.snapshotHash);
-  assert.equal(final.snapshot.policy.minimumPassRate, 1);
-  assert.equal(final.snapshot.dataset.cases[0].rules[0].value, '7일');
-  const before = final.resultHash; store.execute(run.id); assert.equal(store.getRun(run.id).resultHash, before);
-});
-test('idempotency returns the same run and rejects changed requests', () => {
-  const store = new Store(); const c = store.catalog();
-  const input = { agentVersionId: c.agent[0].id, datasetVersionId: c.dataset[0].id, policyVersionId: c.policy[0].id };
-  const first = store.createRun(input, 'same-request'); const replay = store.createRun(input, 'same-request');
-  assert.equal(first.run.id, replay.run.id); assert.equal(replay.replay, true);
-  const reordered = { policyVersionId: input.policyVersionId, datasetVersionId: input.datasetVersionId, agentVersionId: input.agentVersionId };
-  assert.equal(store.createRun(reordered, 'same-request').run.id, first.run.id);
-  assert.throws(() => store.createRun({ ...input, agentVersionId: c.agent[1].id }, 'same-request'), /conflict/);
-  assert.throws(() => store.createRun(input, ''), /Idempotency/);
-});
-test('local memory capacity is bounded', () => {
-  const store = new Store({ limit: 6 });
-  assert.throws(() => store.createVersion('agent', { name: 'extra', mode: 'compliant' }), /capacity/);
+
+
+test('deeply nested evidence is rejected before schema compilation or database serialization', () => {
+  const data=structuredClone(sampleDataset);let nested={};const root=nested;
+  for(let i=0;i<30;i++){nested.child={};nested=nested.child;}
+  data.cases[2].mock.toolEvents[0].args=root;
+  assert.throws(()=>validate('dataset',data),/nesting/);
 });

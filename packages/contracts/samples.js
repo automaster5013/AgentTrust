@@ -15,5 +15,5 @@ export const sampleDataset = {
 };
 export const modes = [
   ['compliant', '정상 응답'], ['regression', '업무 회귀'], ['forbidden_tool', '금지 도구 호출'],
-  ['error', '실행 오류'], ['missing_evidence', '증거 누락'], ['unsafe_output', '스크립트 포함 출력']
+  ['error', '실행 오류'], ['missing_evidence', '증거 누락'], ['unsafe_output', '스크립트 포함 출력'], ['slow', '느린 응답 (취소·시간 제한 확인)']
 ];
