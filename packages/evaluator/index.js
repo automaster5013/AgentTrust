@@ -11,6 +11,11 @@ export function mockAdapter(agent, testCase) {
   return evidence;
 }
 
+function schemaDiagnostic(errors){
+  const details=JSON.stringify(errors.slice(0,5)),note=errors.length>5?` (${errors.length} validation errors; first 5 shown.)`:'';
+  const available=2000-note.length;
+  return (details.length>available?details.slice(0,available-1).toWellFormed()+'…':details)+note;
+}
 export function evaluateRule(rule, evidence) {
   const result = { ruleId: rule.id, type: rule.type, required: rule.required !== false };
   function finish(status, reason) { return { ...result, status, reason }; }
@@ -31,7 +36,8 @@ export function evaluateRule(rule, evidence) {
     let data;
     try { data = JSON.parse(evidence.output); } catch { return finish('fail', 'Output is not valid JSON.'); }
     const validator = compileEvidenceSchema(rule.schema);
-    return finish(validator(data) ? 'pass' : 'fail', validator.errors ? JSON.stringify(validator.errors) : 'Output satisfies JSON Schema.');
+    const passed=validator(data);
+    return finish(passed ? 'pass' : 'fail', passed ? 'Output satisfies JSON Schema.' : schemaDiagnostic(validator.errors));
   }
   return finish('inconclusive', 'Unsupported rule.');
 }

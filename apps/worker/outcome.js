@@ -1,11 +1,10 @@
-import { assertJsonValue } from '../../packages/contracts/json.js';
 import { hash } from '../../packages/contracts/hash.js';
 import { runIntegrity } from '../../packages/evaluator/integrity.js';
-import { incomplete } from '../../packages/evaluator/outcome.js';
+import { incomplete,assertOutcomeBudget } from '../../packages/evaluator/outcome.js';
 
 export function trustworthyOutcome(row,outcome){
   try{
-    assertJsonValue(outcome,{maximumNodes:60000});
+    assertOutcomeBudget(outcome);
     if(!Number.isInteger(row.case_budget)||row.case_budget<1||row.case_budget>100)return false;
     if(!outcome||Object.keys(outcome).sort().join(',')!=='gate,results,state,summary'||!Array.isArray(outcome.results)||outcome.results.length>row.case_budget)return false;
     if(outcome.state==='failed'&&!outcome.results.length){

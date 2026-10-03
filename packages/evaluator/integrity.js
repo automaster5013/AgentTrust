@@ -1,10 +1,12 @@
 import { hash } from '../contracts/hash.js';
 import { validate } from '../contracts/index.js';
 import { evaluateRule } from './index.js';
+import { assertOutcomeBudget } from './outcome.js';
 
 // Validate stored evidence relationships; this does not call the agent again.
 export function runIntegrity(run){
   try{
+    assertOutcomeBudget({state:run.state,results:run.results,summary:run.summary,gate:run.gate});
     if(run.snapshotHash!==hash(run.snapshot)||run.resultHash!==hash({results:run.results,gate:run.gate}))return false;
     for(const kind of ['agent','dataset','policy']){
       const {id,contentHash,createdAt,...data}=run.snapshot[kind];

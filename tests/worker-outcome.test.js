@@ -30,3 +30,21 @@ test('oversized aggregate evidence is replaced before transferring it out of the
  const value={results:Array(61000).fill(0)},bounded=boundedOutcome(value);assert.equal(bounded.state,'failed');assert.equal(bounded.gate.deploymentAllowed,false);assert.equal(bounded.results.length,0);
  const honest=evaluate(fixture().snapshot);assert.equal(boundedOutcome(honest),honest);
 });
+
+
+test('schema diagnostic amplification is bounded without losing failure truth or source evidence',()=>{
+ const properties=Object.fromEntries(Array.from({length:30},(_,i)=>['property'+i,{type:'string'}])),schema={type:'array',items:{type:'object',required:Object.keys(properties),additionalProperties:false,properties}},output=JSON.stringify(Array.from({length:100},()=>({})));
+ const dataset={name:'Synthetic schema errors',cases:[{id:'errors',input:'Synthetic',mock:{output,toolEvents:[]},rules:Array.from({length:20},(_,i)=>({id:'schema'+i,type:'json_schema',schema}))}]};validate('dataset',dataset);const f=fixture('compliant',dataset),outcome=evaluate(f.snapshot);
+ assert.equal(outcome.gate.decision,'block');assert.equal(outcome.summary.fail,20);assert.equal(outcome.results[0].evidence.output,output);
+ assert.ok(outcome.results[0].rules.every(r=>r.reason.length<=2000));assert.match(outcome.results[0].rules[0].reason,/3000 validation errors/);assert.equal(trustworthyOutcome(f.row,outcome),true);
+});
+test('outcome byte budget rejects huge strings even when the JSON node count is small',()=>{
+ const dataset={name:'Synthetic byte bound',cases:[{id:'bytes',input:'Synthetic',mock:{output:'x',toolEvents:[]},rules:[{id:'required',type:'contains',value:'x'}]}]},f=fixture('compliant',dataset),outcome=evaluate(f.snapshot);outcome.results[0].evidence.output='x'+'가'.repeat(3000000);
+ assertJsonValue(outcome,{maximumNodes:60000});assert.equal(trustworthyOutcome(f.row,outcome),false);const bounded=boundedOutcome(outcome);assert.equal(bounded.state,'failed');assert.equal(bounded.gate.deploymentAllowed,false);assert.equal(bounded.results.length,0);
+});
+
+
+test('truncated schema diagnostics remain valid Unicode and JSONB-storeable',()=>{
+ const name='😀'.repeat(1400),dataset={name:'Synthetic Unicode diagnostics',cases:[{id:'unicode',input:'Synthetic',mock:{output:'{}',toolEvents:[]},rules:[{id:'schema',type:'json_schema',schema:{type:'object',properties:{[name]:{type:'string'}},required:[name],additionalProperties:false}}]}]};validate('dataset',dataset);const f=fixture('compliant',dataset),outcome=evaluate(f.snapshot),reason=outcome.results[0].rules[0].reason;
+ assert.ok(reason.length<=2000);assert.equal(reason.isWellFormed(),true);assertJsonValue(outcome);assert.equal(outcome.gate.decision,'block');assert.equal(trustworthyOutcome(f.row,outcome),true);
+});
