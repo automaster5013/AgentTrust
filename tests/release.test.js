@@ -108,3 +108,11 @@ test('release and baseline comparisons reject internally inconsistent rebased ev
   const tamperedBaseline=run();tamperedBaseline.results[0].evidence.output='changed';altered.push(tamperedBaseline);
   for(const item of altered){assert.equal(releaseGate(item,expected).deploymentAllowed,false);assert.equal(compareRuns(item,original).comparable,false);assert.equal(releaseGate(original,expected,item).deploymentAllowed,false);}
 });
+
+test('live release gates recompute rule truth from stored evidence after hashes and summaries are rebased',()=>{
+ const promote=value=>{for(const result of value.results){delete result.error;for(const rule of result.rules)rule.status='pass';}const count=value.results.reduce((sum,result)=>sum+result.rules.length,0);value.summary={cases:value.results.length,rules:count,pass:count,fail:0,inconclusive:0,passRate:1};value.gate=structuredClone(run().gate);value.state='succeeded';value.resultHash=hash({results:value.results,gate:value.gate});return value;};
+ for(const mode of ['regression','forbidden_tool']){const forged=promote(run(mode));assert.equal(releaseGate(forged,expected).deploymentAllowed,false);assert.equal(compareRuns(forged,run()).comparable,false);}
+ const schema=run();schema.results[1].evidence.output=JSON.stringify({status:'pending',confidence:0.95});schema.resultHash=hash({results:schema.results,gate:schema.gate});assert.equal(releaseGate(schema,expected).deploymentAllowed,false);
+ const args=run();args.results[2].evidence.toolEvents[0].args.orderId='UNAPPROVED';args.resultHash=hash({results:args.results,gate:args.gate});assert.equal(releaseGate(args,expected).deploymentAllowed,false);
+ assert.equal(releaseGate(run(),expected).deploymentAllowed,true);
+});

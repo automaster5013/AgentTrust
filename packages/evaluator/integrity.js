@@ -1,4 +1,6 @@
 import { hash } from '../contracts/hash.js';
+import { validate } from '../contracts/index.js';
+import { evaluateRule } from './index.js';
 
 // Validate stored evidence relationships; this does not call the agent again.
 export function runIntegrity(run){
@@ -6,6 +8,7 @@ export function runIntegrity(run){
     if(run.snapshotHash!==hash(run.snapshot)||run.resultHash!==hash({results:run.results,gate:run.gate}))return false;
     for(const kind of ['agent','dataset','policy']){
       const {id,contentHash,createdAt,...data}=run.snapshot[kind];
+      validate(kind,data);
       if(id!==run[kind+'VersionId']||!/^[a-f0-9]{64}$/.test(contentHash)||hash(data)!==contentHash)return false;
     }
     const cases=run.snapshot.dataset.cases,counts={pass:0,fail:0,inconclusive:0};
@@ -20,6 +23,8 @@ export function runIntegrity(run){
       for(const resultRule of result.rules){
         const rule=rules.get(resultRule.ruleId);
         if(!rule||resultRule.type!==rule.type||resultRule.required!==(rule.required!==false)||!Object.hasOwn(counts,resultRule.status))return false;
+        if(result.error){if(resultRule.status!=='inconclusive')return false;}
+        else if(evaluateRule(rule,result.evidence).status!==resultRule.status)return false;
         counts[resultRule.status]++;total++;
         if(resultRule.required){requiredFailure ||= resultRule.status==='fail';requiredUnknown ||= resultRule.status==='inconclusive';}
       }

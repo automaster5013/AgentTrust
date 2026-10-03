@@ -607,3 +607,13 @@ test('API INSERT privilege cannot bypass the queued initial-state boundary',asyn
   assert.equal(Number((await f.owner.query('SELECT count(*) FROM agenttrust.runs WHERE organization_id=$1',[f.first.organizationId])).rows[0].count),1);
   await f.engine.tick();assert.equal((await f.store.getRun(f.contexts.admin,run.id)).state,'succeeded');
 });
+
+test('HTTP release receipts block worker evidence whose pass statuses contradict stored output',async t=>{
+ const f=await fixture(t);const created=await f.create('regression'),claimed=await f.engine.claim();assert.equal(claimed.id,created.run.id);
+ const forged=evaluate(claimed.snapshot);for(const result of forged.results)for(const rule of result.rules)rule.status='pass';
+ const count=forged.results.reduce((sum,result)=>sum+result.rules.length,0);forged.summary={cases:forged.results.length,rules:count,pass:count,fail:0,inconclusive:0,passRate:1};forged.gate={decision:'pass',deploymentAllowed:true,reason:'Synthetic inconsistent worker output'};
+ assert.equal(await f.engine.complete(claimed,forged),true);
+ const response=await f.request('/v1/release-gate',{method:'POST',json:{candidateRunId:claimed.id,...f.input('regression')},extra:{'Idempotency-Key':randomUUID()}});assert.equal(response.status,200);
+ const receipt=await response.json();assert.equal(receipt.deploymentAllowed,false);assert.equal(receipt.decision,'block');assert.ok(receipt.reasons.some(reason=>reason.includes('inconsistent')));
+ const stored=await(await f.request('/v1/release-receipts/'+receipt.artifact.receiptId)).json();assert.equal(stored.artifact.result.deploymentAllowed,false);assert.equal(stored.artifactHash,receipt.artifactHash);
+});
