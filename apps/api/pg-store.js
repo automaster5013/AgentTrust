@@ -6,7 +6,8 @@ import { audit, requireWrite,revalidateSession } from './auth.js';
 import { pageResult } from './pagination.js';
 
 export const terminalStates = new Set(['succeeded','failed','cancelled','timed_out']);
-export const incomplete = (state, reason) => ({ state, results:[], summary:{cases:0,rules:0,pass:0,fail:0,inconclusive:0,passRate:0}, gate:{ decision:'inconclusive',deploymentAllowed:false,reason } });
+import { incomplete } from '../../packages/evaluator/outcome.js';
+export { incomplete };
 function uuid(value) { if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value || '')) throw new InputError('Invalid resource id.'); return value; }
 function trustedVersion(row){
   try{if(hash(row.data)!==row.content_hash)throw new Error();validate(row.kind,row.data);}
@@ -24,6 +25,9 @@ export function publicRun(row) {
 }
 export async function finalize(client,row,outcome,context = {}) {
   await client.query(`UPDATE agenttrust.runs SET state=$2,outcome=$3,result_hash=$4,completed_at=clock_timestamp(),lease_token=NULL,lease_until=NULL WHERE id=$1`,[row.id,outcome.state,outcome,hash({results:outcome.results,gate:outcome.gate})]);
+  await recordCompletion(client,row,outcome,context);
+}
+export async function recordCompletion(client,row,outcome,context={}){
   await client.query('INSERT INTO agenttrust.usage_events(organization_id,run_id,attempts,evaluated_cases) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',[row.organization_id,row.id,row.attempts,outcome.results.length]);
   await audit(client,{...context,organizationId:row.organization_id},`run.${outcome.state}`,row.id,{attempts:row.attempts,gate:outcome.gate.decision});
 }

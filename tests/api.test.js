@@ -8,7 +8,7 @@ import { ReceiptSigner,verifyReceipt } from '../packages/receipts/signature.js';
 import { createApp } from '../apps/api/server.js';
 import { pool,transaction } from '../apps/api/database.js';
 import { Auth } from '../apps/api/auth.js';
-import { PgStore,incomplete } from '../apps/api/pg-store.js';
+import { PgStore,incomplete,finalize } from '../apps/api/pg-store.js';
 import { WorkerEngine } from '../apps/worker/engine.js';
 import { heartbeat } from '../apps/worker/health.js';
 import { evaluate } from '../packages/evaluator/index.js';
@@ -512,10 +512,10 @@ test('version source reads are scoped immutable evidence and catalog contains on
   assert.deepEqual((await(await f.request('/v1/versions/'+created.id)).json()).data,source);
 });
 
-async function blockedOn(f,fragment){
+async function blockedOn(f,fragment,user='agenttrust_api'){
   for(let index=0;index<50;index++){
     const locks=await f.owner.query(`SELECT 1 FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid
-      WHERE NOT l.granted AND a.usename='agenttrust_api' AND a.datname=current_database() AND a.query LIKE $1`,['%'+fragment+'%']);
+      WHERE NOT l.granted AND a.usename=$2 AND a.datname=current_database() AND a.query LIKE $1`,['%'+fragment+'%',user]);
     if(locks.rowCount)return;await new Promise(resolve=>setTimeout(resolve,10));
   }
   assert.fail('Expected request to be blocked before changing its authorization.');
@@ -612,7 +612,8 @@ test('HTTP release receipts block worker evidence whose pass statuses contradict
  const f=await fixture(t);const created=await f.create('regression'),claimed=await f.engine.claim();assert.equal(claimed.id,created.run.id);
  const forged=evaluate(claimed.snapshot);for(const result of forged.results)for(const rule of result.rules)rule.status='pass';
  const count=forged.results.reduce((sum,result)=>sum+result.rules.length,0);forged.summary={cases:forged.results.length,rules:count,pass:count,fail:0,inconclusive:0,passRate:1};forged.gate={decision:'pass',deploymentAllowed:true,reason:'Synthetic inconsistent worker output'};
- assert.equal(await f.engine.complete(claimed,forged),true);
+ // Deliberately bypass the application completion guard using the trusted worker DB role.
+ await transaction(f.workerDb,async client=>{const row=(await client.query('SELECT * FROM agenttrust.runs WHERE id=$1 FOR UPDATE',[claimed.id])).rows[0];await finalize(client,row,forged);});
  const response=await f.request('/v1/release-gate',{method:'POST',json:{candidateRunId:claimed.id,...f.input('regression')},extra:{'Idempotency-Key':randomUUID()}});assert.equal(response.status,200);
  const receipt=await response.json();assert.equal(receipt.deploymentAllowed,false);assert.equal(receipt.decision,'block');assert.ok(receipt.reasons.some(reason=>reason.includes('inconsistent')));
  const stored=await(await f.request('/v1/release-receipts/'+receipt.artifact.receiptId)).json();assert.equal(stored.artifact.result.deploymentAllowed,false);assert.equal(stored.artifactHash,receipt.artifactHash);
@@ -656,4 +657,33 @@ test('self revocation cannot commit after its own session expires while waiting 
   assert.equal((await f.owner.query('SELECT id FROM agenttrust.sessions WHERE id=$1',[target])).rowCount,1);
   assert.equal(Number((await f.owner.query("SELECT count(*) FROM agenttrust.audit_events WHERE organization_id=$1 AND action='auth.session.revoked'",[f.first.organizationId])).rows[0].count),0);
  }finally{await client.query('ROLLBACK').catch(()=>{});client.release();}
+});
+
+test('worker completion rechecks lease and deadline after an actual row-lock wait',async t=>{
+ const f=await fixture(t),client=await f.owner.connect();
+ try{
+  for(const scenario of ['lease','deadline']){
+   const {run}=await f.create('compliant',scenario==='deadline'?{timeoutMs:400}:{}),claimed=await f.engine.claim();assert.equal(claimed.id,run.id);
+   await client.query('BEGIN');await client.query('SELECT id FROM agenttrust.runs WHERE id=$1 FOR UPDATE',[run.id]);
+   const pending=f.engine.complete(claimed,evaluate(claimed.snapshot));await blockedOn(f,"WHERE id=$1 AND state='running'",'agenttrust_worker');await new Promise(resolve=>setTimeout(resolve,scenario==='lease'?1600:600));await client.query('COMMIT');
+   const accepted=await pending,final=await f.store.getRun(f.contexts.admin,run.id);
+   if(scenario==='lease'){assert.equal(accepted,false);assert.equal(final.state,'running');await f.engine.tick();const recovered=await f.store.getRun(f.contexts.admin,run.id);assert.equal(recovered.state,'succeeded');assert.equal(recovered.attempts,2);}
+   else{assert.equal(accepted,true);assert.equal(final.state,'timed_out');assert.equal(final.gate.deploymentAllowed,false);}
+  }
+ }finally{await client.query('ROLLBACK').catch(()=>{});client.release();}
+});
+
+test('application worker completion quarantines inconsistent evidence as a nonpassing failure',async t=>{
+ const f=await fixture(t),{run}=await f.create('compliant'),claimed=await f.engine.claim();assert.equal(claimed.id,run.id);
+ const forged=evaluate(claimed.snapshot);forged.results[0].evidence.output='Synthetic rule violation';assert.equal(await f.engine.complete(claimed,forged),true);
+ const stored=await f.store.getRun(f.contexts.admin,run.id);assert.equal(stored.state,'failed');assert.equal(stored.gate.decision,'inconclusive');assert.equal(stored.gate.deploymentAllowed,false);assert.equal(stored.results.length,0);assert.match(stored.gate.reason,/inconsistent/);
+ const usage=await f.store.usage(f.contexts.admin);assert.equal(usage.evaluated_cases,0);
+ const audit=await f.store.auditEvents(f.contexts.admin);assert.equal(audit.filter(e=>e.action==='run.failed'&&e.resource_id===run.id).length,1);
+});
+
+test('lease fencing is enforced by the completion write even when database delivery is delayed',async t=>{
+ const f=await fixture(t),{run}=await f.create(),delayedDb={connect:async()=>{const client=await f.workerDb.connect();return {release:()=>client.release(),query:async(...args)=>{if(args[0].includes('UPDATE agenttrust.runs')&&args[0].includes('completed_at'))await new Promise(resolve=>setTimeout(resolve,500));return client.query(...args);}};}};
+ const delayed=new WorkerEngine(delayedDb,{leaseMs:400}),claimed=await delayed.claim();assert.equal(claimed.id,run.id);
+ assert.equal(await delayed.complete(claimed,evaluate(claimed.snapshot)),false);assert.equal((await f.store.getRun(f.contexts.admin,run.id)).state,'running');
+ await f.engine.tick();const recovered=await f.store.getRun(f.contexts.admin,run.id);assert.equal(recovered.state,'succeeded');assert.equal(recovered.attempts,2);
 });

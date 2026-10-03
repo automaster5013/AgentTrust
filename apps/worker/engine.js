@@ -3,6 +3,8 @@ import { Worker } from 'node:worker_threads';
 import { setTimeout } from 'node:timers/promises';
 import { transaction } from '../api/database.js';
 import { audit } from '../api/auth.js';
+import { finalizeClaim } from './finalize.js';
+import { trustworthyOutcome } from './outcome.js';
 import { finalize, incomplete } from '../api/pg-store.js';
 
 export class WorkerEngine {
@@ -34,12 +36,13 @@ export class WorkerEngine {
   async complete(row,outcome) {
     if(!outcome) return false;
     return transaction(this.database,async client => {
-      const result=await client.query(`SELECT *,deadline<=clock_timestamp() AS expired FROM agenttrust.runs
+      const result=await client.query(`SELECT * FROM agenttrust.runs
         WHERE id=$1 AND state='running' AND lease_token=$2 AND lease_until>clock_timestamp() FOR UPDATE`,[row.id,row.lease_token]);
       if(!result.rowCount) return false;
       const current=result.rows[0];
-      await finalize(client,current,current.expired?incomplete('timed_out','Evaluation exceeded its time budget.'):outcome);
-      return true;
+      const checked=trustworthyOutcome(current,outcome)?outcome:incomplete('failed','Evaluation worker returned inconsistent evidence.');
+      // The actual write uses one current DB timestamp for lease, deadline and completion.
+      return finalizeClaim(client,current,checked);
     });
   }
   async execute(row) {
