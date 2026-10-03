@@ -83,12 +83,17 @@ export class CI {
       };
       const candidate=await read(input.candidateRunId),baseline=input.baselineRunId?await read(input.baselineRunId):undefined;
       let review;
-      if(candidate.snapshot.policy.requiresManualApproval){await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,4))',[candidate.id]);review=await latestReview(client,context,candidate.id);}
+      if(candidate.snapshot.policy.requiresManualApproval)await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,4))',[candidate.id]);
       // Lock the credential for the check transaction; revocation takes effect before the next check.
       if(context.serviceCredentialId){
-        const valid=await client.query("SELECT c.id FROM agenttrust.ci_credentials c JOIN agenttrust.memberships m ON m.id=c.created_by WHERE c.id=$1 AND c.organization_id=$2 AND c.project_id=$3 AND c.revoked_at IS NULL AND c.expires_at>clock_timestamp() AND m.active AND m.role='admin' FOR SHARE OF c",[context.serviceCredentialId,context.organizationId,context.projectId]);
+        const binding=[context.serviceCredentialId,context.organizationId,context.projectId];
+        const locked=await client.query('SELECT id FROM agenttrust.ci_credentials WHERE id=$1 AND organization_id=$2 AND project_id=$3 FOR SHARE',binding);
+        if(!locked.rowCount)throw new InputError('CI credential expired or revoked.',401);
+        // A lock predicate may be evaluated before waiting. This new statement checks the post-lock clock and issuer role.
+        const valid=await client.query("SELECT c.id FROM agenttrust.ci_credentials c JOIN agenttrust.memberships m ON m.id=c.created_by WHERE c.id=$1 AND c.organization_id=$2 AND c.project_id=$3 AND c.revoked_at IS NULL AND c.expires_at>clock_timestamp() AND m.active AND m.role='admin'",binding);
         if(!valid.rowCount)throw new InputError('CI credential expired or revoked.',401);
       }else await revalidateSession(client,context);
+      if(candidate.snapshot.policy.requiresManualApproval)review=await latestReview(client,context,candidate.id);
       const now=(await client.query('SELECT clock_timestamp() AS now')).rows[0].now;
       const result=releaseGate(candidate,input,baseline,now.getTime(),review);
       if(previous){

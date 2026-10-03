@@ -726,3 +726,46 @@ test('organization success budget is atomic across API instances and timestamps 
   const events=(await f.owner.query("SELECT created_at FROM agenttrust.audit_events WHERE organization_id=$1 AND action='auth.login' ORDER BY created_at DESC",[f.first.organizationId])).rows;assert.equal(events.length,4);assert.ok(events[0].created_at>=releasedAt);
  }finally{await client.query('ROLLBACK');client.release();}
 });
+
+
+test('CI credential row-lock waits cannot preserve expired credentials or revoked issuer roles',async t=>{
+ const f=await fixture(t),{run}=await f.create();await f.engine.tick();const client=await f.owner.connect();
+ try{for(const scenario of ['expiry','issuer','revocation','inactive']){
+  const credential=await(await f.request('/v1/ci-credentials',{method:'POST',json:{name:'Row-wait '+scenario,projectId:f.first.projectId,ttlSeconds:60}})).json();
+  if(scenario==='expiry')await f.owner.query("UPDATE agenttrust.ci_credentials SET expires_at=clock_timestamp()+interval '400 milliseconds' WHERE id=$1",[credential.id]);
+  await client.query('BEGIN');await client.query('SELECT id FROM agenttrust.ci_credentials WHERE id=$1 FOR UPDATE',[credential.id]);
+  const pending=f.request('/v1/release-gate',{method:'POST',json:{candidateRunId:run.id,...f.input()},extra:{Authorization:'Bearer '+credential.token}});await blockedOn(f,'project_id=$3 FOR SHARE');
+  if(scenario==='expiry')await new Promise(resolve=>setTimeout(resolve,450));
+  else if(scenario==='revocation')await client.query('UPDATE agenttrust.ci_credentials SET revoked_at=clock_timestamp() WHERE id=$1',[credential.id]);
+  else await f.owner.query(scenario==='inactive'?"UPDATE agenttrust.memberships SET active=false WHERE id=$1":"UPDATE agenttrust.memberships SET role='editor' WHERE id=$1",[f.contexts.admin.membershipId]);
+  await client.query('COMMIT');assert.equal((await pending).status,401);
+  await f.owner.query("UPDATE agenttrust.memberships SET role='admin',active=true WHERE id=$1",[f.contexts.admin.membershipId]);
+  assert.equal(Number((await f.owner.query('SELECT count(*) FROM agenttrust.release_receipts WHERE organization_id=$1',[f.first.organizationId])).rows[0].count),0);
+ }}finally{await client.query('ROLLBACK');await f.owner.query("UPDATE agenttrust.memberships SET role='admin',active=true WHERE id=$1",[f.contexts.admin.membershipId]);client.release();}
+});
+
+
+test('a previously approved idempotent CI receipt cannot replay after key expiry during its row-lock wait',async t=>{
+ const f=await fixture(t),{run}=await f.create();await f.engine.tick();const credential=await(await f.request('/v1/ci-credentials',{method:'POST',json:{name:'Replay expiry',projectId:f.first.projectId,ttlSeconds:60}})).json();
+ const key=randomUUID(),input={candidateRunId:run.id,...f.input()},extra={Authorization:'Bearer '+credential.token,'Idempotency-Key':key};
+ const original=await(await f.request('/v1/release-gate',{method:'POST',json:input,extra})).json();assert.equal(original.deploymentAllowed,true);const client=await f.owner.connect();
+ try{
+  await f.owner.query("UPDATE agenttrust.ci_credentials SET expires_at=clock_timestamp()+interval '400 milliseconds' WHERE id=$1",[credential.id]);await client.query('BEGIN');await client.query('SELECT id FROM agenttrust.ci_credentials WHERE id=$1 FOR UPDATE',[credential.id]);
+  const pending=f.request('/v1/release-gate',{method:'POST',json:input,extra});await blockedOn(f,'project_id=$3 FOR SHARE');await new Promise(resolve=>setTimeout(resolve,450));await client.query('COMMIT');assert.equal((await pending).status,401);
+  assert.equal(Number((await f.owner.query('SELECT count(*) FROM agenttrust.release_receipts WHERE organization_id=$1',[f.first.organizationId])).rows[0].count),1);
+  const historical=await(await f.request('/v1/release-receipts/'+original.artifact.receiptId)).json();assert.equal(historical.artifactHash,original.artifactHash);
+ }finally{await client.query('ROLLBACK');client.release();}
+});
+
+
+test('manual approval reviewer role is read after waiting for the CI credential lock',async t=>{
+ const f=await fixture(t);await f.owner.query("UPDATE agenttrust.memberships SET role='admin' WHERE id=$1",[f.contexts.editor.membershipId]);
+ const policy=await f.store.createVersion(f.contexts.admin,'policy',{name:'Reviewer wait',minimumPassRate:1,requiresManualApproval:true});const {run}=await f.create('compliant',{policyVersionId:policy.id});await f.engine.tick();
+ assert.equal((await f.request('/v1/runs/'+run.id+'/reviews',{role:'editor',method:'POST',json:{decision:'approved'},extra:{'Idempotency-Key':randomUUID()}})).status,201);
+ const credential=await(await f.request('/v1/ci-credentials',{method:'POST',json:{name:'Reviewer lock',projectId:f.first.projectId,ttlSeconds:60}})).json(),client=await f.owner.connect();
+ try{
+  await client.query('BEGIN');await client.query('SELECT id FROM agenttrust.ci_credentials WHERE id=$1 FOR UPDATE',[credential.id]);
+  const pending=f.request('/v1/release-gate',{method:'POST',json:{candidateRunId:run.id,...f.input('compliant',{policyVersionId:policy.id})},extra:{Authorization:'Bearer '+credential.token}});await blockedOn(f,'project_id=$3 FOR SHARE');
+  await f.owner.query("UPDATE agenttrust.memberships SET role='viewer' WHERE id=$1",[f.contexts.editor.membershipId]);await client.query('COMMIT');const receipt=await(await pending).json();assert.equal(receipt.deploymentAllowed,false);assert.equal(receipt.manualApproval.status,'invalid');
+ }finally{await client.query('ROLLBACK');await f.owner.query("UPDATE agenttrust.memberships SET role='editor' WHERE id=$1",[f.contexts.editor.membershipId]);client.release();}
+});
