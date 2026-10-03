@@ -1,6 +1,6 @@
 import { CI } from './ci.js';
 import { Reviews } from './reviews.js';
-import { pagination,runPagination } from './pagination.js';
+import { pagination,runPagination,auditPagination } from './pagination.js';
 import { compareRuns } from '../../packages/evaluator/comparison.js';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -71,7 +71,7 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       if(req.method==='GET'&&path==='/v1/operations')return send(200,await store.operations(context));
       if(req.method==='GET'&&path==='/v1/sample-dataset') return send(200,sampleDataset);
       if(req.method==='GET'&&path==='/v1/runs') return send(200,await store.listRuns(context,runPagination(requestUrl.searchParams,context)));
-      if(req.method==='GET'&&path==='/v1/audit-events') return send(200,await store.auditEvents(context));
+      if(req.method==='GET'&&path==='/v1/audit-events') return send(200,await store.auditEvents(context,auditPagination(requestUrl.searchParams,context)));
       if(req.method==='GET'&&path==='/v1/usage') return send(200,await store.usage(context));
       if(req.method==='POST'&&path==='/v1/compare'){
         const input=await body(req);

@@ -141,9 +141,17 @@ export class PgStore {
       return publicRun((await client.query('SELECT * FROM agenttrust.runs WHERE id=$1',[id])).rows[0]);
     },context.organizationId);
   }
-  async auditEvents(context) {
+  async auditEvents(context,{action=null,cursorContext=context,page}={}) {
     requireWrite(context,true);
-    return transaction(this.database, async client => (await client.query('SELECT id,actor_id,action,resource_id,detail,created_at FROM agenttrust.audit_events WHERE organization_id=$1 ORDER BY created_at DESC LIMIT 100',[context.organizationId])).rows,context.organizationId);
+    return transaction(this.database,async client=>{
+      const rows=(await client.query(`SELECT id,actor_id,action,resource_id,detail,created_at,
+        to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
+        FROM agenttrust.audit_events WHERE organization_id=$1
+        AND ($2::timestamptz IS NULL OR (created_at,id)<($2::timestamptz,$3::uuid))
+        AND ($4::text IS NULL OR action=$4) ORDER BY created_at DESC,id DESC LIMIT $5`,
+        [context.organizationId,page?.cursor?.time||null,page?.cursor?.id||null,action,page?page.limit+1:100])).rows;
+      return page?pageResult(rows,page,cursorContext):rows.map(({cursor_time,...row})=>row);
+    },context.organizationId);
   }
   async usage(context) {
     return transaction(this.database,async client => (await client.query('SELECT count(*)::int AS completed_runs,coalesce(sum(evaluated_cases),0)::int AS evaluated_cases,coalesce(sum(attempts),0)::int AS attempts FROM agenttrust.usage_events WHERE organization_id=$1',[context.organizationId])).rows[0],context.organizationId);

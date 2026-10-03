@@ -462,3 +462,21 @@ test('authentication tables require tenant context and API cannot forge worker c
   const functions=(await f.owner.query("SELECT proname,prosecdef,proconfig,pg_get_userbyid(proowner) AS owner FROM pg_proc WHERE oid IN ('agenttrust.lookup_credential(text)'::regprocedure,'agenttrust.authenticate_session(text)'::regprocedure)")).rows;
   assert.equal(functions.length,2);assert.ok(functions.every(fn=>fn.owner==='agenttrust_auth'&&fn.prosecdef&&fn.proconfig.includes('search_path=pg_catalog, pg_temp')));
 });
+
+test('organization audit history pages and action filters preserve scope and timestamp precision',async t=>{
+  const f=await fixture(t),ids=[];
+  for(let index=0;index<4;index++){
+    const id=randomUUID();ids.push(id);await f.owner.query(`INSERT INTO agenttrust.audit_events(id,organization_id,action,created_at)
+      VALUES($1,$2,'test.audit','2025-01-01T00:00:00.000001Z'::timestamptz+$3::int*interval '1 microsecond')`,[id,f.first.organizationId,index]);
+  }
+  const first=await(await f.request('/v1/audit-events?limit=2&action=test.audit')).json();
+  assert.deepEqual(first.items.map(row=>row.id),ids.slice(2).reverse());assert.ok(first.nextCursor);
+  const second=await(await f.request('/v1/audit-events?limit=2&action=test.audit&cursor='+first.nextCursor)).json();
+  assert.deepEqual(second.items.map(row=>row.id),ids.slice(0,2).reverse());assert.equal(second.nextCursor,null);
+  for(const path of ['/v1/audit-events?limit=2&cursor='+first.nextCursor,'/v1/audit-events?action=auth.login&cursor='+first.nextCursor,'/v1/audit-events?action=x&action=y','/v1/audit-events?unexpected=x','/v1/audit-events?action=bad%20action'])assert.equal((await f.request(path)).status,400);
+  assert.equal((await f.request('/v1/audit-events?limit=2&action=test.audit&cursor='+first.nextCursor,{role:'other_admin'})).status,400);
+  assert.equal((await f.request('/v1/audit-events?limit=2',{role:'viewer'})).status,403);
+  assert.equal((await f.request('/v1/audit-events?limit=2',{role:'editor'})).status,403);
+  assert.deepEqual((await(await f.request('/v1/audit-events?limit=2&action=test.audit',{role:'other_admin'})).json()).items,[]);
+  assert.ok(Array.isArray(await(await f.request('/v1/audit-events')).json()));
+});

@@ -7,6 +7,7 @@ let loading = false;
 let selectedRunId = null;
 let keyCursor=null,receiptCursor=null,runCursor=null;
 let historySequence=0;
+let auditCursor=null,auditSequence=0;
 const terminal = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
 const decisionLabels = { pass: '통과', block: '차단', inconclusive: '판정 불가' };
 const stateLabels = { queued: '대기 중', running: '실행 중', succeeded: '평가 완료', failed: '실행 실패', cancelled: '취소됨', timed_out: '시간 초과' };
@@ -133,6 +134,7 @@ $('download').addEventListener('click', () => {
   const link = node('a'); link.href = url; link.download = `agenttrust-${currentRun.id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 function clearProjectData(){
+  auditSequence++;auditCursor=null;$('audit-more').disabled=true;$('audit-action').value='';
   currentRun=null;selectedRunId=null;historySequence++;runCursor=null;$('history-more').disabled=true;$('history-state').value='';$('history-decision').value='';message('');$('run-button').disabled=true;$('dataset-button').disabled=true;
   for(const id of ['agent-name','policy-name','project-name'])$(id).value='';
   for(const id of ['agent','dataset-select','policy'])$(id).replaceChildren();
@@ -153,14 +155,21 @@ function showLogin(){
   scopeEpoch++;activeProjectId=null;actor=null;clearProjectData();
   $('workspace-project').replaceChildren();$('access-key').value='';$('workspace-ui').hidden=true;$('login-panel').hidden=false;
 }
-async function auditHistory() {
-  if(actor?.role!=='admin') return;
-  const [events,usage,operations]=await Promise.all([api('/v1/audit-events'),api('/v1/usage'),api('/v1/operations')]);
-  renderOperations(operations);
-  $('usage-summary').textContent=`조직 전체 완료 실행 ${usage.completed_runs}개 · 결과 사례 ${usage.evaluated_cases}개 · 시도 ${usage.attempts}회 (모의 사용량)`;
-  $('audit-list').replaceChildren(...events.map(e=>{
+async function auditHistory(append=false) {
+  if(actor?.role!=='admin'||append&&!auditCursor)return;
+  const sequence=++auditSequence,params=new URLSearchParams({limit:'25'});
+  if($('audit-action').value)params.set('action',$('audit-action').value);
+  if(append)params.set('cursor',auditCursor);
+  const [page,usage,operations]=await Promise.all([api('/v1/audit-events?'+params),append?null:api('/v1/usage'),append?null:api('/v1/operations')]);
+  if(sequence!==auditSequence)return;
+  auditCursor=page.nextCursor;$('audit-more').disabled=!auditCursor;
+  if(!append){renderOperations(operations);
+    $('usage-summary').textContent=`조직 전체 완료 실행 ${usage.completed_runs}개 · 결과 사례 ${usage.evaluated_cases}개 · 시도 ${usage.attempts}회 (모의 사용량)`;
+    $('audit-list').replaceChildren();}
+  $('audit-list').append(...page.items.map(e=>{
     const row=node('div',undefined,'audit-entry');row.append(node('strong',e.action+' '),node('span',`${new Date(e.created_at).toLocaleString('ko-KR')} · ${e.resource_id || '—'}`));return row;
   }));
+  if(!append&&!page.items.length)$('audit-list').textContent='선택한 동작의 감사 기록이 없습니다.';
 }
 async function initialize() {
   actor=await api('/v1/me');activeProjectId=actor.projectId;
@@ -188,6 +197,8 @@ $('cancel-button').addEventListener('click',async()=>{
   try{const run=await api(`/v1/runs/${currentRun.id}/cancel`,{method:'POST',body:'{}'});render(run);await reviewHistory(run);await history();await auditHistory();message('실행을 취소했습니다. 늦은 응답은 판정에 반영되지 않습니다.');}
   catch(e){message(e.message,true);}
 });
+$('audit-action').addEventListener('change',()=>auditHistory().catch(e=>message(e.message,true)));
+$('audit-more').addEventListener('click',()=>auditHistory(true).catch(e=>message(e.message,true)));
 $('audit-refresh').addEventListener('click',()=>auditHistory().catch(e=>message(e.message,true)));
 try{await initialize();}catch(e){showLogin();$('login-status').textContent=e.message==='Authentication required.'?'접근 키를 입력해 주세요.':e.message;}
 

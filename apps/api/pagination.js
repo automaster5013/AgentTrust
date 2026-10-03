@@ -30,3 +30,10 @@ export function runPagination(query,context){
   pageQuery.delete('state');pageQuery.delete('decision');
   return {filters,cursorContext,page:pagination(pageQuery,cursorContext)};
 }
+
+export function auditPagination(query,context){
+  const action=query.get('action');
+  if(query.getAll('action').length>1||action!==null&&!/^[a-z][a-z0-9_.]{0,79}$/.test(action))throw new InputError('Invalid audit action filter.');
+  const cursorContext={...context,cursorScope:hash({resource:'audit-events',action})},pageQuery=new URLSearchParams(query);
+  pageQuery.delete('action');return {action,cursorContext,page:pagination(pageQuery,cursorContext)};
+}
