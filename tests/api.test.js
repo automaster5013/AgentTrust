@@ -193,3 +193,33 @@ test('release API and CI bridge enforce versions, baseline coverage, tenant boun
   const external=(await f.store.createRun(f.contexts.admin,{...expected,agentVersionId:https.id},randomUUID())).run;await f.engine.tick();
   const failed=await f.store.getRun(f.contexts.admin,external.id);assert.equal(failed.state,'failed');assert.equal(failed.gate.decision,'inconclusive');
 });
+
+test('project CI keys are one-time, scoped, expiring and revocable; receipts are immutable and audited',async t=>{
+  const f=await fixture(t);const {run}=await f.create();await f.engine.tick();
+  const input={name:'Pipeline',projectId:f.contexts.admin.projectId,ttlSeconds:3600};
+  for(const role of ['viewer','editor'])assert.equal((await f.request('/v1/ci-credentials',{role,method:'POST',json:input})).status,403);
+  const issued=await f.request('/v1/ci-credentials',{method:'POST',json:input});assert.equal(issued.status,201);const credential=await issued.json();assert.match(credential.token,/^atci_[a-f0-9]{64}$/);
+  const listed=await(await f.request('/v1/ci-credentials')).json();assert.ok(!JSON.stringify(listed).includes(credential.token));assert.ok(!listed.some(c=>c.token_hash));
+  const bearer={Authorization:`Bearer ${credential.token}`};
+  const check={candidateRunId:run.id,...f.input()};
+  const response=await f.request('/v1/release-gate',{method:'POST',json:check,extra:bearer});assert.equal(response.status,200);const receipt=await response.json();assert.equal(receipt.deploymentAllowed,true);assert.match(receipt.artifactHash,/^[a-f0-9]{64}$/);
+  const retrieved=await f.request(`/v1/release-receipts/${receipt.artifact.receiptId}`);assert.equal(retrieved.status,200);assert.equal((await retrieved.json()).artifactHash,receipt.artifactHash);
+  assert.equal((await f.request(`/v1/release-receipts/${receipt.artifact.receiptId}`,{role:'other_admin'})).status,404);
+  const receipts=await(await f.request('/v1/release-receipts',{role:'viewer'})).json();assert.ok(receipts.some(r=>r.id===receipt.artifact.receiptId));
+  for(const path of ['/v1/runs','/v1/catalog','/v1/me','/v1/ci-credentials','/v1/audit-events'])assert.equal((await f.request(path,{extra:bearer})).status,403);
+  assert.equal((await f.request('/v1/runs',{method:'POST',json:f.input(),extra:bearer})).status,403);
+  const cli=await checkRelease({base:f.base+'/',accessKey:credential.token,...check});assert.equal(cli.deploymentAllowed,true);
+  const project=randomUUID();await f.owner.query('INSERT INTO agenttrust.projects(id,organization_id,name) VALUES($1,$2,$3)',[project,f.first.organizationId,'Second project']);
+  const foreignProject=await(await f.request('/v1/ci-credentials',{method:'POST',json:{...input,projectId:project}})).json();
+  assert.equal((await f.request('/v1/release-gate',{method:'POST',json:check,extra:{Authorization:`Bearer ${foreignProject.token}`}})).status,404);
+  const foreignOrg=(await f.store.createRun(f.contexts.other_admin,{agentVersionId:(await f.store.catalog(f.contexts.other_admin)).agent[0].id,datasetVersionId:(await f.store.catalog(f.contexts.other_admin)).dataset[0].id,policyVersionId:(await f.store.catalog(f.contexts.other_admin)).policy[0].id},randomUUID())).run;
+  assert.equal((await f.request('/v1/release-gate',{method:'POST',json:{...check,candidateRunId:foreignOrg.id},extra:bearer})).status,404);
+  const revoke=await f.request(`/v1/ci-credentials/${credential.id}/revoke`,{method:'POST',json:{}});assert.equal(revoke.status,200);
+  assert.equal((await f.request('/v1/release-gate',{method:'POST',json:check,extra:bearer})).status,401);
+  const again=await f.request(`/v1/ci-credentials/${credential.id}/revoke`,{method:'POST',json:{}});assert.equal(again.status,200);
+  await f.owner.query("UPDATE agenttrust.ci_credentials SET created_at=now()-interval '120 seconds',expires_at=now()-interval '60 seconds' WHERE id=$1",[foreignProject.id]);
+  assert.equal((await f.request('/v1/release-gate',{method:'POST',json:check,extra:{Authorization:`Bearer ${foreignProject.token}`}})).status,401);
+  await assert.rejects(()=>f.owner.query('DELETE FROM agenttrust.release_receipts WHERE id=$1',[receipt.artifact.receiptId]),/immutable/);
+  const events=await f.store.auditEvents(f.contexts.admin);assert.equal(events.filter(e=>e.action==='ci.credential.revoked').length,1);assert.ok(events.some(e=>e.action==='ci.release.checked'));assert.ok(!JSON.stringify(events).includes(credential.token));
+  const isolated=await transaction(f.database,c=>c.query('SELECT id FROM agenttrust.release_receipts WHERE id=$1',[receipt.artifact.receiptId]),f.other.organizationId);assert.equal(isolated.rowCount,0);
+});

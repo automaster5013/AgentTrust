@@ -33,3 +33,7 @@ UI에서 후보 실행을 조회한 다음 기준 실행을 선택해 비교한�
 검증 근거: Node HTTPS의 TLS/lookup 옵션은 [Node 공식 HTTPS 문서](https://github.com/nodejs/node/blob/main/doc/api/https.md)를 기준으로 구현했다. HTTPS 전송은 주입한 합성 transport로 보안 옵션·주소 고정·오류를 검증했고 실제 고객 서버 호출은 수행하지 않았다.
 
 최종 검증: 자동 테스트 33개 통과, Docker 재빌드/health 및 실제 기본 worker egress 차단 확인, 정지·재시작 후 결과·해시·계량·감사 보존 확인, 브라우저 비교 완료(회귀 0개) 확인, npm audit 알려진 취약점 0개.
+
+## v0.4 변경
+
+CI 전용 프로젝트 키와 서버 승인 기록을 추가했다. CLI는 서버에서 검증 기록을 생성하고 요청 일치/아티팩트 해시를 확인한다. 자세한 내용은 [CI 운영 안내](ci-operations.md), [백업·복원 검증](backup-recovery.md)을 따른다. 앞의 v0.3 조회자 키 방식은 호환용으로 남아 있다.

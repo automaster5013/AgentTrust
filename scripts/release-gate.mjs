@@ -1,22 +1,29 @@
-import { releaseGate } from '../packages/evaluator/comparison.js';
+import { hash } from '../packages/contracts/hash.js';
 import { pathToFileURL } from 'node:url';
 
 export async function checkRelease({base,accessKey,candidateRunId,baselineRunId,...expected}) {
   const url=new URL(base);
   if(url.protocol!=='http:'||url.hostname!=='127.0.0.1'||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw new Error('CI bridge requires a loopback API URL.');
+  if(expected.maxAgeSeconds!==undefined&&(!Number.isInteger(expected.maxAgeSeconds)||expected.maxAgeSeconds<1||expected.maxAgeSeconds>86400))throw new Error('Invalid result validity window.');
+  const request={candidateRunId,...(baselineRunId?{baselineRunId}:{}),...expected};
   const headers={'Content-Type':'application/json','X-AgentTrust-Request':'local-ui'};
   const call=async(path,options={})=>{
     const response=await fetch(new URL(path,url),{...options,headers:{...headers,...options.headers},redirect:'error',signal:AbortSignal.timeout(10000)});
     if(!response.ok)throw new Error(`AgentTrust API rejected request (${response.status}).`);
     return response;
   };
+  const check=async authorization=>{
+    const response=await call('/v1/release-gate',{method:'POST',headers:authorization,body:JSON.stringify(request)});
+    const result=await response.json();
+    if(typeof result.deploymentAllowed!=='boolean'||!['pass','block'].includes(result.decision)||result.runId!==candidateRunId||!result.artifact||hash(result.artifact.request)!==hash(request)||result.artifactHash!==hash(result.artifact)||hash(result.artifact.result)!==hash(Object.fromEntries(Object.entries(result).filter(([k])=>!['artifact','artifactHash'].includes(k)))))throw new Error('Release receipt integrity verification failed.');
+    return result;
+  };
+  if(typeof accessKey==='string'&&accessKey.startsWith('atci_'))return check({Authorization:`Bearer ${accessKey}`});
   const login=await call('/v1/auth/login',{method:'POST',body:JSON.stringify({accessKey})});
   const cookie=login.headers.get('set-cookie')?.split(';')[0];
   if(!cookie)throw new Error('Session is missing.');
   try {
-    const read=async id=>(await call(`/v1/runs/${encodeURIComponent(id)}`,{headers:{Cookie:cookie}})).json();
-    const run=await read(candidateRunId),baseline=baselineRunId?await read(baselineRunId):undefined;
-    return releaseGate(run,expected,baseline);
+    return await check({Cookie:cookie});
   } finally {
     await call('/v1/auth/logout',{method:'POST',headers:{Cookie:cookie},body:'{}'});
   }

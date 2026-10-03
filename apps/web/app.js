@@ -109,6 +109,7 @@ $('download').addEventListener('click', () => {
 });
 function showLogin() {
   actor=null;currentRun=null;selectedRunId=null;message('');
+  $('ci-issued-key').value='';$('ci-key-box').hidden=true;$('ci-key-list').replaceChildren();$('receipt-list').replaceChildren();$('ci-project').replaceChildren();$('ci-name').value='';$('ci-status').textContent='';
   $('baseline-run').replaceChildren();$('comparison-result').textContent='';
   $('workspace-ui').hidden=true;$('login-panel').hidden=false;
   $('access-key').value='';$('results').replaceChildren();$('history-body').replaceChildren();$('audit-list').replaceChildren();
@@ -130,6 +131,9 @@ async function initialize() {
   actor=await api('/v1/me');
   $('identity-label').textContent=`${actor.organizationName} · ${actor.name} · ${actor.role}`;
   $('workspace-ui').hidden=false;$('login-panel').hidden=true;$('audit-panel').hidden=actor.role!=='admin';
+  $('ci-panel').hidden=actor.role!=='admin';
+  $('ci-project').replaceChildren(...actor.projects.map(p=>{const option=node('option',p.name);option.value=p.id;return option;}));
+  await ciHistory();await receiptHistory();
   await catalog();$('dataset-json').value=JSON.stringify(await api('/v1/sample-dataset'),null,2);await history();await auditHistory();
   $('run-button').disabled=actor.role==='viewer';$('dataset-button').disabled=actor.role==='viewer';
 }
@@ -156,3 +160,30 @@ $('compare-form').addEventListener('submit',async event=>{
     $('comparison-result').textContent=`${result.comparable?'비교 완료':'비교 불가: 불완전한 평가'} · 회귀 ${result.regressions.length}개 · 배포 ${result.deploymentAllowed?'허용':'차단'}\n통과율 변화 ${(result.passRateDelta*100).toFixed(1)}%p\n`+result.changes.map(c=>`${c.caseId} / ${c.ruleId}: ${c.before} → ${c.after}`).join('\n');
   }catch(e){$('comparison-result').textContent=e.message;}
 });
+
+async function ciHistory(){
+  if(actor?.role!=='admin')return;
+  const keys=await api('/v1/ci-credentials');
+  $('ci-key-list').replaceChildren(...keys.map(key=>{
+    const row=node('div',undefined,'audit-entry');const expired=Date.parse(key.expires_at)<=Date.now();
+    row.append(node('strong',key.name+' '),node('span',`${key.project_id.slice(0,8)} · ${key.revoked_at?'철회됨':expired?'만료됨':'활성'} · 만료 ${new Date(key.expires_at).toLocaleString('ko-KR')}`));
+    if(!key.revoked_at&&!expired){const button=node('button','철회','secondary');button.addEventListener('click',async()=>{button.disabled=true;try{await api(`/v1/ci-credentials/${key.id}/revoke`,{method:'POST',body:'{}'});await ciHistory();$('ci-status').textContent='키를 철회했습니다.';}catch(e){$('ci-status').textContent=e.message;button.disabled=false;}});row.append(button);}return row;
+  }));
+}
+async function receiptHistory(){
+  if(!actor)return;
+  const receipts=await api('/v1/release-receipts');
+  $('receipt-list').replaceChildren(...receipts.map(receipt=>{
+    const row=node('div',undefined,'audit-entry');row.append(node('strong',`${decisionLabels[receipt.decision]} `),node('span',`${new Date(receipt.created_at).toLocaleString('ko-KR')} · 실행 ${receipt.candidate_run_id.slice(0,8)} `));
+    const button=node('button','기록 JSON 저장','secondary');button.addEventListener('click',async()=>{try{const data=await api(`/v1/release-receipts/${receipt.id}`);const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=node('a');link.href=url;link.download=`agenttrust-receipt-${receipt.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){message(e.message,true);}});row.append(button);return row;
+  }));
+  if(!receipts.length)$('receipt-list').textContent='아직 CI 검증 기록이 없습니다.';
+}
+$('ci-key-form').addEventListener('submit',async event=>{
+  event.preventDefault();$('ci-create').disabled=true;$('ci-status').textContent='';$('ci-issued-key').value='';$('ci-key-box').hidden=true;
+  try{const key=await api('/v1/ci-credentials',{method:'POST',body:JSON.stringify({name:$('ci-name').value,projectId:$('ci-project').value,ttlSeconds:Number($('ci-ttl').value)})});$('ci-issued-key').value=key.token;$('ci-key-box').hidden=false;await ciHistory();$('ci-status').textContent='CI 키를 발급했습니다. 안전하게 보관한 뒤 키 창을 닫으세요.';}catch(e){$('ci-status').textContent=e.message;}finally{$('ci-create').disabled=false;}
+});
+$('ci-key-hide').addEventListener('click',()=>{$('ci-issued-key').value='';$('ci-key-box').hidden=true;});
+$('ci-key-copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('ci-issued-key').value);$('ci-status').textContent='키를 복사했습니다. CI 비밀 저장소에 보관하세요.';}catch{$('ci-status').textContent='클립보드에 접근할 수 없습니다.';}});
+$('ci-refresh').addEventListener('click',()=>ciHistory().catch(e=>{$('ci-status').textContent=e.message;}));
+$('receipts-refresh').addEventListener('click',()=>receiptHistory().catch(e=>message(e.message,true)));

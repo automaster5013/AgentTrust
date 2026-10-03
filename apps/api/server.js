@@ -1,4 +1,5 @@
-import { compareRuns, releaseGate } from '../../packages/evaluator/comparison.js';
+import { CI } from './ci.js';
+import { compareRuns } from '../../packages/evaluator/comparison.js';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
@@ -18,7 +19,7 @@ async function body(req) {
   for await(const chunk of req){size+=chunk.length;if(size>262144)throw new InputError('JSON body exceeds 256 KiB.',413);chunks.push(chunk);}
   try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw new InputError('Invalid JSON body.');}
 }
-export function createApp({database,store=new PgStore(database),auth=new Auth(database)}={}) {
+export function createApp({database,store=new PgStore(database),auth=new Auth(database),ci=new CI(database)}={}) {
   if(!database) throw new Error('PostgreSQL database is required.');
   const server=createServer(async(req,res)=>{
     const traceId=randomUUID();
@@ -42,7 +43,17 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
         if(!input||typeof input!=='object'||Object.keys(input).length!==1||typeof input.accessKey!=='string') throw new InputError('Expected an accessKey.');
         const session=await auth.login(input.accessKey);return send(200,{authenticated:true},{'Set-Cookie':sessionCookie(session.token)});
       }
-      const token=cookieToken(req); const context=await auth.authenticate(token);
+      const token=cookieToken(req);
+      const context=req.headers.authorization?await ci.authenticate(/^Bearer (.+)$/.exec(req.headers.authorization)?.[1]):await auth.authenticate(token);
+      if(context.role==='ci' && !(req.method==='POST'&&path==='/v1/release-gate'))throw new InputError('CI credentials can only check release gates.',403);
+      if(req.method==='GET'&&path==='/v1/release-receipts')return send(200,await ci.receipts(context));
+      const receiptMatch=/^\/v1\/release-receipts\/([a-zA-Z0-9-]+)$/.exec(path);
+      if(req.method==='GET'&&receiptMatch)return send(200,await ci.receipt(context,receiptMatch[1]));
+      if(req.method==='GET'&&path==='/v1/ci-credentials')return send(200,await ci.list(context));
+      if(req.method==='POST'&&path==='/v1/ci-credentials')return send(201,await ci.create(context,await body(req)));
+      const ciRevoke=/^\/v1\/ci-credentials\/([a-zA-Z0-9-]+)\/revoke$/.exec(path);
+      if(req.method==='POST'&&ciRevoke){await body(req);return send(200,await ci.revoke(context,ciRevoke[1]));}
+      if(req.method==='POST'&&path==='/v1/release-gate')return send(200,await ci.check(context,await body(req)));
       if(req.method==='POST'&&path==='/v1/auth/logout'){await body(req);await auth.logout(token,context);return send(200,{authenticated:false},{'Set-Cookie':sessionCookie('',true)});}
       if(req.method==='GET'&&path==='/v1/me') return send(200,context);
       if(req.method==='GET'&&path==='/v1/catalog') return send(200,await store.catalog(context));
@@ -50,13 +61,13 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       if(req.method==='GET'&&path==='/v1/runs') return send(200,await store.listRuns(context));
       if(req.method==='GET'&&path==='/v1/audit-events') return send(200,await store.auditEvents(context));
       if(req.method==='GET'&&path==='/v1/usage') return send(200,await store.usage(context));
-      if(req.method==='POST'&&['/v1/compare','/v1/release-gate'].includes(path)){
+      if(req.method==='POST'&&path==='/v1/compare'){
         const input=await body(req);
         if(!input||typeof input!=='object'||Array.isArray(input)||typeof input.candidateRunId!=='string')throw new InputError('candidateRunId is required.');
         const candidate=await store.getRun(context,input.candidateRunId);
         const baseline=input.baselineRunId?await store.getRun(context,input.baselineRunId):undefined;
         if(path==='/v1/compare'&&!baseline) throw new InputError('baselineRunId is required.');
-        return send(200,path==='/v1/compare'?compareRuns(baseline,candidate):releaseGate(candidate,input,baseline));
+        return send(200,compareRuns(baseline,candidate));
       }
       const kind={'/v1/agent-versions':'agent','/v1/dataset-versions':'dataset','/v1/policy-versions':'policy'}[path];
       if(req.method==='POST'&&kind) return send(201,await store.createVersion(context,kind,await body(req)));
