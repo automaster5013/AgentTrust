@@ -75,3 +75,21 @@ test('asynchronous external adapter errors never permit a release',async()=>{
   const result=await evaluateAsync(snapshot,async()=>{throw new Error('secret error');});
   assert.equal(result.gate.decision,'inconclusive');assert.equal(result.gate.deploymentAllowed,false);assert.ok(!JSON.stringify(result).includes('secret error'));
 });
+
+
+test('manual approval policies keep automatic passes blocked until valid bound approval exists',()=>{
+  const base=run(),s={...base.snapshot,policy:{...base.snapshot.policy,requiresManualApproval:true,manualApprovalTtlSeconds:60}},outcome=evaluate(s),now=Date.now();
+  const candidate={...base,...outcome,snapshot:s,snapshotHash:hash(s),resultHash:hash({results:outcome.results,gate:outcome.gate}),completedAt:new Date(now).toISOString()};
+  assert.equal(candidate.gate.decision,'pass');assert.equal(candidate.gate.deploymentAllowed,false);assert.equal(candidate.gate.evaluationPassed,true);
+  assert.equal(compareRuns(candidate,candidate).deploymentAllowed,false);assert.equal(compareRuns(candidate,candidate).evaluationPassed,true);
+  assert.equal(releaseGate(candidate,expected,undefined,now).manualApproval.status,'missing');
+  const payload={schemaVersion:1,id:'review',organizationId:candidate.organizationId,projectId:candidate.projectId,runId:candidate.id,actorId:'admin',decision:'approved',comment:'Synthetic evidence reviewed',createdAt:new Date(now).toISOString(),snapshotHash:candidate.snapshotHash,resultHash:candidate.resultHash};
+  const review={...payload,reviewHash:hash(payload),actorValid:true};assert.equal(releaseGate(candidate,expected,undefined,now,review).deploymentAllowed,true);
+  assert.equal(releaseGate(candidate,expected,undefined,now+61000,review).manualApproval.status,'expired');
+  for(const changed of [{...payload,projectId:'foreign'},{...payload,resultHash:'changed'},{...payload,createdAt:new Date(now+1000).toISOString()}])assert.equal(releaseGate(candidate,expected,undefined,now,{...changed,reviewHash:hash(changed),actorValid:true}).deploymentAllowed,false);
+  assert.equal(releaseGate(candidate,expected,undefined,now,{...review,actorValid:false}).manualApproval.status,'invalid');
+  assert.equal(releaseGate(candidate,expected,undefined,now,{...review,comment:'tampered'}).manualApproval.status,'invalid');
+  const rejected={...payload,decision:'rejected'};assert.equal(releaseGate(candidate,expected,undefined,now,{...rejected,reviewHash:hash(rejected),actorValid:true}).manualApproval.status,'rejected');
+  assert.equal(releaseGate(candidate,{...expected,agentVersionId:'wrong'},undefined,now,review).deploymentAllowed,false);
+  for(const policy of [{name:'Bad',minimumPassRate:1,manualApprovalTtlSeconds:60},{name:'Bad',minimumPassRate:1,requiresManualApproval:true,manualApprovalTtlSeconds:59},{name:'Bad',minimumPassRate:1,requiresManualApproval:'yes'}])assert.throws(()=>validate('policy',policy));
+});

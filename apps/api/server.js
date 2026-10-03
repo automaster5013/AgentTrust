@@ -1,4 +1,5 @@
 import { CI } from './ci.js';
+import { Reviews } from './reviews.js';
 import { pagination,runPagination } from './pagination.js';
 import { compareRuns } from '../../packages/evaluator/comparison.js';
 import { createServer } from 'node:http';
@@ -20,7 +21,7 @@ async function body(req) {
   for await(const chunk of req){size+=chunk.length;if(size>262144)throw new InputError('JSON body exceeds 256 KiB.',413);chunks.push(chunk);}
   try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw new InputError('Invalid JSON body.');}
 }
-export function createApp({database,store=new PgStore(database),auth=new Auth(database),ci=new CI(database)}={}) {
+export function createApp({database,store=new PgStore(database),auth=new Auth(database),ci=new CI(database),reviews=new Reviews(database)}={}) {
   if(!database) throw new Error('PostgreSQL database is required.');
   const server=createServer(async(req,res)=>{
     const traceId=randomUUID();
@@ -83,6 +84,9 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       const kind={'/v1/agent-versions':'agent','/v1/dataset-versions':'dataset','/v1/policy-versions':'policy'}[path];
       if(req.method==='POST'&&kind) return send(201,await store.createVersion(context,kind,await body(req)));
       if(req.method==='POST'&&path==='/v1/runs'){const result=await store.createRun(context,await body(req),req.headers['idempotency-key']);return send(result.replay?200:202,result.run);}
+      const reviewMatch=/^\/v1\/runs\/([a-zA-Z0-9-]+)\/reviews$/.exec(path);
+      if(req.method==='GET'&&reviewMatch)return send(200,await reviews.list(context,reviewMatch[1]));
+      if(req.method==='POST'&&reviewMatch){const review=await reviews.create(context,reviewMatch[1],await body(req),req.headers['idempotency-key']);return send(review.replay?200:201,review);}
       const match=/^\/v1\/runs\/([a-zA-Z0-9-]+)(?:\/(results|gate|cancel))?$/.exec(path);
       if(req.method==='POST'&&match?.[2]==='cancel'){await body(req);return send(200,await store.cancel(context,match[1]));}
       if(req.method==='GET'&&match&&match[2]!=='cancel'){const run=await store.getRun(context,match[1]);return send(200,match[2]?run[match[2]]:run);}

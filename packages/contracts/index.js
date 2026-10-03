@@ -34,7 +34,8 @@ const schemas = {
     } }
   } },
   policy: { type: 'object', additionalProperties: false, required: ['name', 'minimumPassRate'], properties: {
-    name: { ...text, maxLength: 100 }, minimumPassRate: { type: 'number', minimum: 0, maximum: 1 }
+    name: { ...text, maxLength: 100 }, minimumPassRate: { type: 'number', minimum: 0, maximum: 1 },
+    requiresManualApproval:{type:'boolean'},manualApprovalTtlSeconds:{type:'integer',minimum:60,maximum:86400}
   } },
   run: { type: 'object', additionalProperties: false, required: ['agentVersionId', 'datasetVersionId', 'policyVersionId'], properties: {
     agentVersionId: { ...text, maxLength: 80 }, datasetVersionId: { ...text, maxLength: 80 }, policyVersionId: { ...text, maxLength: 80 },
@@ -71,6 +72,7 @@ export function validate(kind, value) {
     if (item && typeof item === 'object') for (const child of Object.values(item)) pending.push([child, depth + 1]);
   }
   if (!validators[kind]?.(value)) throw new InputError(`Invalid ${kind}: ${ajv.errorsText(validators[kind]?.errors)}`);
+  if(kind==='policy'&&value.manualApprovalTtlSeconds!==undefined&&value.requiresManualApproval!==true)throw new InputError('Approval validity requires a manual approval policy.');
   if (kind === 'agent' && (value.mode === 'https') !== (value.connectorId !== undefined && value.endpointHash !== undefined)) throw new InputError('HTTPS agents require a connectorId and endpointHash; mock agents cannot use connection fields.');
   if (kind === 'agent' && value.mode !== 'https' && (value.connectorId !== undefined || value.endpointHash !== undefined)) throw new InputError('Mock agents cannot use connection fields.');
   if (kind === 'dataset') {

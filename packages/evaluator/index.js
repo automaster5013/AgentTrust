@@ -55,7 +55,8 @@ export function evaluate(snapshot, adapter = mockAdapter) {
   else if (!rules.length || results.some(r => r.error) || rules.some(r => r.required && r.status === 'inconclusive')) gate = { decision: 'inconclusive', reason: 'Required evaluation evidence is incomplete.' };
   else if (passRate < snapshot.policy.minimumPassRate) gate = { decision: 'block', reason: 'The policy pass rate threshold was not met.' };
   else gate = { decision: 'pass', reason: 'All required rules passed and the policy threshold was met.' };
-  return { results, summary: { cases: results.length, rules: rules.length, ...counts, passRate }, gate: { ...gate, deploymentAllowed: gate.decision === 'pass' }, state: results.some(r => r.error) ? 'failed' : 'succeeded' };
+  const requiresManualApproval=snapshot.policy.requiresManualApproval===true;
+  return { results, summary: { cases: results.length, rules: rules.length, ...counts, passRate }, gate: { ...gate, deploymentAllowed: gate.decision === 'pass'&&!requiresManualApproval,...(requiresManualApproval?{evaluationPassed:gate.decision==='pass',requiresManualApproval:true}:{}) }, state: results.some(r => r.error) ? 'failed' : 'succeeded' };
 }
 
 export async function evaluateAsync(snapshot, adapter) {

@@ -7,6 +7,7 @@ import { audit,requireWrite } from './auth.js';
 import { publicRun } from './pg-store.js';
 import { loadReceiptSigner } from '../../packages/receipts/signature.js';
 import { pageResult } from './pagination.js';
+import { latestReview } from './reviews.js';
 
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
 function receiptArtifact(row){
@@ -69,11 +70,6 @@ export class CI {
     if(input.maxAgeSeconds!==undefined&&(!Number.isInteger(input.maxAgeSeconds)||input.maxAgeSeconds<1||input.maxAgeSeconds>86400))throw new InputError('maxAgeSeconds must be 1..86400.');
     for(const key of ['agentVersionId','datasetVersionId','policyVersionId'])if(input[key]!==undefined&&(typeof input[key]!=='string'||input[key].length>80))throw new InputError('Expected version identifiers of at most 80 characters.');
     return transaction(this.database,async client=>{
-      // Lock the credential for the check transaction; revocation takes effect before the next check.
-      if(context.serviceCredentialId){
-        const valid=await client.query("SELECT c.id FROM agenttrust.ci_credentials c JOIN agenttrust.memberships m ON m.id=c.created_by WHERE c.id=$1 AND c.organization_id=$2 AND c.project_id=$3 AND c.revoked_at IS NULL AND c.expires_at>clock_timestamp() AND m.active AND m.role='admin' FOR SHARE OF c",[context.serviceCredentialId,context.organizationId,context.projectId]);
-        if(!valid.rowCount)throw new InputError('CI credential expired or revoked.',401);
-      }
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,3))',[context.organizationId]);
       const principalKey=context.serviceCredentialId?`ci:${context.serviceCredentialId}`:`member:${context.membershipId}`;
       const requestHash=hash(input);
@@ -84,8 +80,15 @@ export class CI {
         if(!row)throw new InputError('Unknown run.',404);return publicRun(row);
       };
       const candidate=await read(input.candidateRunId),baseline=input.baselineRunId?await read(input.baselineRunId):undefined;
+      let review;
+      if(candidate.snapshot.policy.requiresManualApproval){await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,4))',[candidate.id]);review=await latestReview(client,context,candidate.id);}
+      // Lock the credential for the check transaction; revocation takes effect before the next check.
+      if(context.serviceCredentialId){
+        const valid=await client.query("SELECT c.id FROM agenttrust.ci_credentials c JOIN agenttrust.memberships m ON m.id=c.created_by WHERE c.id=$1 AND c.organization_id=$2 AND c.project_id=$3 AND c.revoked_at IS NULL AND c.expires_at>clock_timestamp() AND m.active AND m.role='admin' FOR SHARE OF c",[context.serviceCredentialId,context.organizationId,context.projectId]);
+        if(!valid.rowCount)throw new InputError('CI credential expired or revoked.',401);
+      }
       const now=(await client.query('SELECT clock_timestamp() AS now')).rows[0].now;
-      const result=releaseGate(candidate,input,baseline,now.getTime());
+      const result=releaseGate(candidate,input,baseline,now.getTime(),review);
       if(previous){
         if(hash(previous.result)!==hash(result))throw new InputError('Previous release check is no longer current. Use a new idempotency key.',409);
         return {...result,...receiptArtifact(previous)};

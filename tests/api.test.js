@@ -12,7 +12,7 @@ import { PgStore,incomplete } from '../apps/api/pg-store.js';
 import { WorkerEngine } from '../apps/worker/engine.js';
 import { heartbeat } from '../apps/worker/health.js';
 import { seedOrganization } from '../scripts/setup.mjs';
-import { tokenHash } from '../packages/contracts/hash.js';
+import { tokenHash,hash } from '../packages/contracts/hash.js';
 
 const headers={'Content-Type':'application/json','X-AgentTrust-Request':'local-ui'};
 async function fixture(t,{ciOptions}={}) {
@@ -381,4 +381,62 @@ test('run history pages preserve evidence summaries, filters and cursor scope',a
   const waiting=await(await f.request('/v1/runs?limit=25&state=queued&decision=inconclusive')).json();assert.equal(waiting.items.length,1);assert.equal(waiting.items[0].id,queued.id);assert.equal(waiting.items[0].gate.deploymentAllowed,false);
   for(const query of ['state=unknown','decision=allowed','state=queued&state=running','decision=pass&decision=block','limit=25&unknown=1'])assert.equal((await f.request('/v1/runs?'+query)).status,400);
   const legacy=await(await f.request('/v1/runs')).json();assert.ok(Array.isArray(legacy));assert.equal(legacy.length,6);
+});
+
+
+test('manual reviews are immutable, scoped and cannot override failed evaluation or later rejection',async t=>{
+  const f=await fixture(t),policy=await f.store.createVersion(f.contexts.admin,'policy',{name:'Manual review required',minimumPassRate:1,requiresManualApproval:true,manualApprovalTtlSeconds:60});
+  const {run}=await f.create('compliant',{policyVersionId:policy.id}),path='/v1/runs/'+run.id+'/reviews',reviewKey=randomUUID();
+  for(const role of ['editor','viewer'])assert.equal((await f.request(path,{role,method:'POST',json:{decision:'approved'},extra:{'Idempotency-Key':randomUUID()}})).status,403);
+  assert.equal((await f.request(path,{method:'POST',json:{decision:'approved'},extra:{'Idempotency-Key':randomUUID()}})).status,409);
+  const forged={state:'succeeded',results:[],gate:{decision:'pass',deploymentAllowed:true,evaluationPassed:true,requiresManualApproval:true}};
+  await assert.rejects(f.owner.query("UPDATE agenttrust.runs SET state='succeeded',outcome=$2,result_hash=$3,completed_at=now() WHERE id=$1",[run.id,forged,'a'.repeat(64)]),/Invalid deployment permission/);
+  await assert.rejects(f.owner.query("UPDATE agenttrust.runs SET state='succeeded',outcome=$2,result_hash=$3,completed_at=now() WHERE id=$1",[run.id,{state:'succeeded',results:[],gate:{decision:'pass',deploymentAllowed:false}},'a'.repeat(64)]),/Manual approval gate evidence required/);
+  await f.engine.tick();const final=await f.store.getRun(f.contexts.admin,run.id);assert.equal(final.gate.decision,'pass');assert.equal(final.gate.deploymentAllowed,false);
+  const check={candidateRunId:run.id,...f.input('compliant',{policyVersionId:policy.id})},gateKey=randomUUID();
+  const missing=await(await f.request('/v1/release-gate',{method:'POST',json:check})).json();assert.equal(missing.deploymentAllowed,false);assert.equal(missing.manualApproval.status,'missing');
+  const approvals=await Promise.all(Array.from({length:6},()=>f.request(path,{method:'POST',json:{decision:'approved',comment:'Reviewed synthetic evidence'},extra:{'Idempotency-Key':reviewKey}})));
+  assert.equal(approvals.filter(r=>r.status===201).length,1);assert.equal(approvals.filter(r=>r.status===200).length,5);const records=await Promise.all(approvals.map(r=>r.json()));assert.equal(new Set(records.map(r=>r.id)).size,1);
+  const approved=await(await f.request('/v1/release-gate',{role:'viewer',method:'POST',json:check,extra:{'Idempotency-Key':gateKey}})).json();assert.equal(approved.deploymentAllowed,true);assert.equal(approved.manualApproval.reviewId,records[0].id);
+  assert.equal((await f.request(path,{role:'other_admin'})).status,404);assert.equal((await f.request(path,{role:'other_admin',method:'POST',json:{decision:'approved'},extra:{'Idempotency-Key':randomUUID()}})).status,404);
+  assert.equal((await f.request(path,{method:'POST',json:{decision:'rejected'},extra:{'Idempotency-Key':reviewKey}})).status,409);
+  assert.equal((await f.request(path,{method:'POST',json:{decision:'approved',comment:'x'.repeat(501)},extra:{'Idempotency-Key':randomUUID()}})).status,400);
+  assert.equal((await f.request(path,{method:'POST',json:{decision:'rejected',comment:'New concern'},extra:{'Idempotency-Key':randomUUID()}})).status,201);
+  assert.equal((await f.request('/v1/release-gate',{role:'viewer',method:'POST',json:check,extra:{'Idempotency-Key':gateKey}})).status,409);
+  const rejected=await(await f.request('/v1/release-gate',{role:'viewer',method:'POST',json:check})).json();assert.equal(rejected.deploymentAllowed,false);assert.equal(rejected.manualApproval.status,'rejected');
+  await assert.rejects(f.owner.query('UPDATE agenttrust.run_reviews SET decision=$2 WHERE id=$1',[records[0].id,'rejected']),/immutable/);await assert.rejects(f.owner.query('DELETE FROM agenttrust.run_reviews WHERE id=$1',[records[0].id]),/immutable/);
+  const isolated=await transaction(f.database,c=>c.query('SELECT id FROM agenttrust.run_reviews WHERE run_id=$1',[run.id]),f.other.organizationId);assert.equal(isolated.rowCount,0);
+  const unchanged=await f.store.getRun(f.contexts.admin,run.id);assert.equal(unchanged.snapshotHash,final.snapshotHash);assert.equal(unchanged.resultHash,final.resultHash);
+  const {run:failed}=await f.create('regression',{policyVersionId:policy.id});await f.engine.tick();assert.equal((await f.request('/v1/runs/'+failed.id+'/reviews',{method:'POST',json:{decision:'approved'},extra:{'Idempotency-Key':randomUUID()}})).status,409);
+  const credential=await(await f.request('/v1/ci-credentials',{method:'POST',json:{name:'No review permission',projectId:f.first.projectId,ttlSeconds:60}})).json();assert.equal((await f.request(path,{method:'POST',json:{decision:'approved'},extra:{Authorization:'Bearer '+credential.token,'Idempotency-Key':randomUUID()}})).status,403);
+  await f.request(path,{method:'POST',json:{decision:'approved'},extra:{'Idempotency-Key':randomUUID()}});await f.owner.query('UPDATE agenttrust.memberships SET active=false WHERE id=$1',[f.contexts.admin.membershipId]);
+  const inactive=await(await f.request('/v1/release-gate',{role:'viewer',method:'POST',json:check})).json();assert.equal(inactive.manualApproval.status,'invalid');assert.equal(inactive.deploymentAllowed,false);
+});
+
+test('CI credential expiration is rechecked after a waiting release lock',async t=>{
+  const f=await fixture(t),{run}=await f.create();await f.engine.tick();
+  const credential=await(await f.request('/v1/ci-credentials',{method:'POST',json:{name:'Waiting expiry',projectId:f.first.projectId,ttlSeconds:60}})).json();
+  const client=await f.owner.connect();
+  try{
+    await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,3))',[f.first.organizationId]);
+    await f.owner.query("UPDATE agenttrust.ci_credentials SET expires_at=clock_timestamp()+interval '250 milliseconds' WHERE id=$1",[credential.id]);
+    const pending=f.request('/v1/release-gate',{method:'POST',json:{candidateRunId:run.id,...f.input()},extra:{Authorization:'Bearer '+credential.token}});
+    let waiting=false;
+    for(let i=0;i<10;i++){
+      const locks=await f.owner.query("SELECT 1 FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid WHERE l.locktype='advisory' AND NOT l.granted AND a.usename='agenttrust_api' AND a.datname=current_database() AND a.query LIKE '%hashtextextended($1,3)%'");
+      if(locks.rowCount){waiting=true;break;}await new Promise(resolve=>setTimeout(resolve,10));
+    }
+    assert.equal(waiting,true);await new Promise(resolve=>setTimeout(resolve,350));await client.query('COMMIT');assert.equal((await pending).status,401);
+  }finally{await client.query('ROLLBACK').catch(()=>{});client.release();}
+});
+
+
+test('later rejection wins over earlier approval even with an older wall-clock timestamp',async t=>{
+  const f=await fixture(t),policy=await f.store.createVersion(f.contexts.admin,'policy',{name:'Clock-safe review',minimumPassRate:1,requiresManualApproval:true});
+  const {run}=await f.create('compliant',{policyVersionId:policy.id});await f.engine.tick();
+  const path='/v1/runs/'+run.id+'/reviews',approved=await(await f.request(path,{method:'POST',json:{decision:'approved'},extra:{'Idempotency-Key':randomUUID()}})).json();
+  const {reviewHash,replay,...original}=approved,payload={...original,id:randomUUID(),decision:'rejected',comment:'Synthetic backwards-clock fixture',createdAt:new Date(Date.now()-3600000).toISOString()};
+  await f.owner.query('INSERT INTO agenttrust.run_reviews(id,organization_id,project_id,run_id,actor_id,decision,payload,review_hash,idempotency_key,request_hash,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',[payload.id,payload.organizationId,payload.projectId,payload.runId,payload.actorId,payload.decision,payload,hash(payload),randomUUID(),hash({synthetic:true}),payload.createdAt]);
+  const gate=await(await f.request('/v1/release-gate',{method:'POST',json:{candidateRunId:run.id,...f.input('compliant',{policyVersionId:policy.id})}})).json();assert.equal(gate.deploymentAllowed,false);assert.equal(gate.manualApproval.status,'rejected');assert.equal(gate.manualApproval.reviewId,payload.id);
+  const reviews=await(await f.request(path)).json();assert.equal(reviews[0].id,payload.id);
 });

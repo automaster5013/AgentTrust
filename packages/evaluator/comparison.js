@@ -1,5 +1,6 @@
 import { InputError } from '../contracts/index.js';
 import { hash } from '../contracts/hash.js';
+export const evaluationPassing=run=>run.state==='succeeded'&&run.gate.decision==='pass'&&(run.gate.deploymentAllowed===true||run.snapshot.policy.requiresManualApproval===true&&run.gate.requiresManualApproval===true&&run.gate.evaluationPassed===true);
 
 export function compareRuns(baseline, candidate) {
   if (baseline.organizationId !== candidate.organizationId || baseline.projectId !== candidate.projectId) throw new InputError('Runs must belong to the same project.');
@@ -11,20 +12,36 @@ export function compareRuns(baseline, candidate) {
   const comparable=complete(baseline)&&complete(candidate)&&before.size===after.size&&[...before.keys()].every(k=>after.has(k));
   const changes=[...before].filter(([key,status])=>after.get(key)!==status).map(([key,status])=>({caseId:JSON.parse(key)[0],ruleId:JSON.parse(key)[1],before:status,after:after.get(key)||'missing'}));
   const regressions=changes.filter(c=>c.before==='pass'&&c.after!=='pass');
-  return {baselineRunId:baseline.id,candidateRunId:candidate.id,comparable,changes,regressions,passRateDelta:candidate.summary.passRate-baseline.summary.passRate,deploymentAllowed:comparable&&candidate.gate.deploymentAllowed===true&&regressions.length===0};
+  const evaluationPassed=comparable&&evaluationPassing(candidate)&&regressions.length===0;
+  return {baselineRunId:baseline.id,candidateRunId:candidate.id,comparable,changes,regressions,passRateDelta:candidate.summary.passRate-baseline.summary.passRate,deploymentAllowed:evaluationPassed&&candidate.snapshot.policy.requiresManualApproval!==true,...(candidate.snapshot.policy.requiresManualApproval?{evaluationPassed,requiresManualApproval:true}:{})};
 }
 
-export function releaseGate(run, expected, baseline, now=Date.now()) {
+export function releaseGate(run, expected, baseline, now=Date.now(),review) {
   const reasons=[];
   for(const key of ['agentVersionId','datasetVersionId','policyVersionId']) if(!expected[key]||run[key]!==expected[key]) reasons.push(`Version mismatch: ${key}`);
   const maxAgeSeconds=expected.maxAgeSeconds??600;
   if(!Number.isInteger(maxAgeSeconds)||maxAgeSeconds<1||maxAgeSeconds>86400) throw new InputError('maxAgeSeconds must be 1..86400.');
   const age=now-Date.parse(run.completedAt);
   if(!Number.isFinite(age)||age<0||age>maxAgeSeconds*1000) reasons.push('Result is missing, stale or future-dated.');
-  if(run.state!=='succeeded'||run.gate.decision!=='pass'||run.gate.deploymentAllowed!==true) reasons.push('A completed passing evaluation is required.');
+  if(!evaluationPassing(run)) reasons.push('A completed passing evaluation is required.');
   if(run.snapshotHash!==hash(run.snapshot)||run.resultHash!==hash({results:run.results,gate:run.gate})) reasons.push('Evidence integrity verification failed.');
   if(!compareRuns(run,run).comparable) reasons.push('Evaluation coverage is incomplete.');
   const comparison=baseline?compareRuns(baseline,run):undefined;
-  if(comparison&&!comparison.deploymentAllowed) reasons.push('Baseline comparison is incomplete or regressed.');
-  return {runId:run.id,deploymentAllowed:reasons.length===0,decision:reasons.length?'block':'pass',reasons,comparison};
+  if(comparison&&!(comparison.evaluationPassed??comparison.deploymentAllowed)) reasons.push('Baseline comparison is incomplete or regressed.');
+  let manualApproval;
+  if(run.snapshot.policy.requiresManualApproval===true){
+    let status='missing';
+    if(review){
+      const age=now-Date.parse(review.createdAt);
+      const payload=Object.fromEntries(Object.entries(review).filter(([key])=>!['reviewHash','actorValid'].includes(key)));
+      if(review.reviewHash!==hash(payload)||review.organizationId!==run.organizationId||review.projectId!==run.projectId||review.runId!==run.id||review.snapshotHash!==run.snapshotHash||review.resultHash!==run.resultHash||review.actorValid!==true)status='invalid';
+      else if(review.decision==='rejected')status='rejected';
+      else if(!Number.isFinite(age)||age<0||age>(run.snapshot.policy.manualApprovalTtlSeconds??3600)*1000)status='expired';
+      else if(review.decision==='approved')status='approved';
+      else status='invalid';
+    }
+    manualApproval={required:true,status,...(review?{reviewId:review.id,reviewHash:review.reviewHash}:{})};
+    if(status!=='approved')reasons.push('A current administrator approval is required: '+status+'.');
+  }
+  return {runId:run.id,deploymentAllowed:reasons.length===0,decision:reasons.length?'block':'pass',reasons,comparison,...(manualApproval?{manualApproval}:{})};
 }

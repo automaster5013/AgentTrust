@@ -45,6 +45,7 @@ function updateButtons(){
   $('dataset-button').disabled=!writer;$('agent-create').disabled=!writer;$('policy-create').disabled=actor?.role!=='admin';
 }
 function render(run) {
+  if(currentRun?.id!==run.id){$('review-comment').value='';$('manual-gate-output').textContent='';}
   currentRun = run;
   $('comparison-result').textContent='후보 실행을 조회한 뒤 기준 실행을 선택하세요.';
   const decision = run.gate.decision;
@@ -52,7 +53,8 @@ function render(run) {
   $('gate-title').textContent = { pass: '정의된 배포 기준을 통과했습니다', block: '배포를 차단해야 합니다', inconclusive: '추가 검증이 필요합니다' }[decision];
   const reasons = { 'A required rule failed.': '필수 규칙이 실패했습니다. 사례별 근거를 확인하고 변경을 수정하세요.', 'Required evaluation evidence is incomplete.': '실행 오류 또는 필수 증거 누락으로 안전하게 판단할 수 없습니다.', 'The policy pass rate threshold was not met.': '정책에서 요구하는 규칙 통과율을 충족하지 못했습니다.', 'All required rules passed and the policy threshold was met.': '모든 필수 규칙과 통과율 조건을 충족했습니다. 판정은 해당 테스트 범위에 한정됩니다.', 'Evaluation has not completed.': '평가가 완료될 때까지 배포를 허용하지 않습니다.', 'Evaluation was cancelled.': '실행을 취소했습니다. 완료되지 않은 평가는 배포를 허용하지 않습니다.', 'Evaluation exceeded its time budget.': '설정한 시간 예산을 초과했습니다. 배포를 허용하지 않습니다.', 'Evaluation exceeded its case budget.': '설정한 사례 예산을 초과했습니다. 배포를 허용하지 않습니다.' };
   $('gate-reason').textContent = reasons[run.gate.reason] || run.gate.reason;
-  $('allowed').textContent = run.gate.deploymentAllowed ? '허용' : '허용 안 함';
+  $('allowed').textContent = run.gate.requiresManualApproval&&run.gate.evaluationPassed?'관리자 승인 필요':run.gate.deploymentAllowed ? '허용' : '허용 안 함';
+  if(run.gate.requiresManualApproval&&run.gate.evaluationPassed)$('gate-title').textContent='평가 통과 · 관리자 검토가 필요합니다';
   $('run-state').textContent = stateLabels[run.state] || run.state;
   for (const [key, id] of [['cases', 'case-count'], ['pass', 'pass-count'], ['fail', 'fail-count'], ['inconclusive', 'unknown-count']]) $(id).textContent = run.summary?.[key] ?? '—';
   $('snapshot').textContent = `실행 ${run.id}\n에이전트 ${run.snapshot.agent.name} · 데이터셋 ${run.snapshot.dataset.name} · 정책 ${run.snapshot.policy.name}\n스냅샷 SHA-256 ${run.snapshotHash}`;
@@ -90,7 +92,7 @@ async function history(append=false) {
   $('history-body').append(...page.items.map(r => {
     const row = node('tr');
     row.append(node('td', r.agentName), node('td', r.datasetName), node('td', stateLabels[r.state] || r.state));
-    const gate = node('td'); gate.append(node('span', decisionLabels[r.gate.decision], `chip ${r.gate.decision}`));
+    const gate = node('td'); gate.append(node('span', decisionLabels[r.gate.decision]+(r.gate.requiresManualApproval&&r.gate.evaluationPassed?' · 관리자 검토':''), `chip ${r.gate.decision}`));
     const action = node('td'); const button = node('button', '조회', 'secondary');
     button.addEventListener('click', () => selectRun(r.id).catch(e => message(e.message, true))); action.append(button);
     row.append(gate, node('td', new Date(r.createdAt).toLocaleString('ko-KR')), action); return row;
@@ -101,7 +103,7 @@ async function selectRun(id) {
   for (let attempt = 0; attempt < 800; attempt++) {
     const run = await api(`/v1/runs/${id}`);
     if (selectedRunId !== id) return;
-    render(run);
+    render(run);await reviewHistory(run);
     if (terminal.has(run.state)) { await history(); await auditHistory(); return; }
     await new Promise(resolve => setTimeout(resolve, 150));
   }
@@ -141,6 +143,7 @@ $('results').replaceChildren();$('history-body').replaceChildren();$('audit-list
   $('gate-badge').textContent='실행 대기';$('gate-badge').className='gate idle';$('gate-title').textContent='배포 판단을 기다립니다';
   $('gate-reason').textContent='평가를 실행하면 정책을 기준으로 결과를 표시합니다.';$('allowed').textContent='—';$('run-state').textContent='대기';
   $('snapshot').textContent='아직 선택한 실행이 없습니다.';$('dataset-json').value='';$('usage-summary').textContent='';
+  $('review-panel').hidden=true;$('review-list').replaceChildren();$('review-comment').value='';$('manual-gate-output').textContent='';
   $('operations-detail').textContent='';$('operations-alert').textContent='';
   for(const id of ['worker-signal','queue-waiting','queue-running','queue-overdue'])$(id).textContent='—';
   for(const id of ['case-count','pass-count','fail-count','unknown-count'])$(id).textContent='—';
@@ -182,7 +185,7 @@ $('logout-button').addEventListener('click',async()=>{
 });
 $('cancel-button').addEventListener('click',async()=>{
   if(!currentRun)return;$('cancel-button').disabled=true;
-  try{const run=await api(`/v1/runs/${currentRun.id}/cancel`,{method:'POST',body:'{}'});render(run);await history();await auditHistory();message('실행을 취소했습니다. 늦은 응답은 판정에 반영되지 않습니다.');}
+  try{const run=await api(`/v1/runs/${currentRun.id}/cancel`,{method:'POST',body:'{}'});render(run);await reviewHistory(run);await history();await auditHistory();message('실행을 취소했습니다. 늦은 응답은 판정에 반영되지 않습니다.');}
   catch(e){message(e.message,true);}
 });
 $('audit-refresh').addEventListener('click',()=>auditHistory().catch(e=>message(e.message,true)));
@@ -241,7 +244,7 @@ $('project-form').addEventListener('submit',async event=>{
 });
 for(const kind of ['agent','policy'])$(kind+'-form').addEventListener('submit',async event=>{
   event.preventDefault();if($(kind+'-create').disabled)return;$(kind+'-create').disabled=true;
-  try{const input=kind==='agent'?{name:$('agent-name').value,mode:$('agent-mode').value}:{name:$('policy-name').value,minimumPassRate:Number($('policy-rate').value)/100};
+  try{const input=kind==='agent'?{name:$('agent-name').value,mode:$('agent-mode').value}:{name:$('policy-name').value,minimumPassRate:Number($('policy-rate').value)/100,...($('policy-manual').checked?{requiresManualApproval:true,manualApprovalTtlSeconds:Number($('policy-review-ttl').value)}:{})};
     const version=await api('/v1/'+kind+'-versions',{method:'POST',body:JSON.stringify(input)});await catalog({[kind]:version.id});await auditHistory();message((kind==='agent'?'에이전트':'정책')+' 새 버전을 등록했습니다: '+version.name);
   }catch(e){message(e.message,true);}finally{updateButtons();}
 });
@@ -261,3 +264,29 @@ $('operations-refresh').addEventListener('click',async()=>{
 
 $('history-filter-form').addEventListener('submit',async event=>{event.preventDefault();runCursor=null;try{await history();}catch(e){message(e.message,true);}});
 $('history-more').addEventListener('click',async()=>{$('history-more').disabled=true;try{await history(true);}catch(e){message(e.message,true);$('history-more').disabled=!runCursor;}});
+
+$('policy-manual').addEventListener('change',()=>{$('policy-review-ttl').disabled=!$('policy-manual').checked;});
+async function reviewHistory(run=currentRun){
+  if(!run||!run.snapshot.policy.requiresManualApproval){$('review-panel').hidden=true;return;}
+  const reviews=await api('/v1/runs/'+run.id+'/reviews');if(selectedRunId!==run.id)return;
+  $('review-panel').hidden=false;$('review-form').hidden=actor?.role!=='admin';
+  $('review-approve').disabled=actor?.role!=='admin'||run.state!=='succeeded'||run.gate.evaluationPassed!==true;
+  $('review-reject').disabled=actor?.role!=='admin'||!terminal.has(run.state);
+  $('manual-status').textContent='정책에서 관리자 검토를 요구합니다. 승인 유효 시간 '+(run.snapshot.policy.manualApprovalTtlSeconds??3600)+'초. 최종 배포 판단은 현재 CI 게이트를 확인하세요.';
+  $('review-list').replaceChildren(...reviews.map(review=>{const row=node('div',undefined,'audit-entry');row.append(node('strong',review.decision==='approved'?'승인 ':'반려 '),node('span',new Date(review.createdAt).toLocaleString('ko-KR')+' · 검토자 '+review.actorId.slice(0,8)),node('p',review.comment||'(의견 없음)'));return row;}));
+  if(!reviews.length)$('review-list').textContent='아직 관리자 검토 기록이 없습니다.';
+}
+$('review-form').addEventListener('submit',async event=>{
+  event.preventDefault();if(!currentRun||!['approved','rejected'].includes(event.submitter?.value))return;
+  const run=currentRun,decision=event.submitter.value;$('review-approve').disabled=true;$('review-reject').disabled=true;
+  try{await api('/v1/runs/'+run.id+'/reviews',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({decision,comment:$('review-comment').value})});
+    if(selectedRunId!==run.id)return;$('review-comment').value='';$('manual-gate-output').textContent='검토 상태가 변경되었습니다. 최종 게이트를 다시 확인하세요.';await reviewHistory(run);await auditHistory();message(decision==='approved'?'관리자 승인 기록을 저장했습니다.':'반려 기록을 저장했습니다.');
+  }catch(e){message(e.message,true);await reviewHistory().catch(()=>{});}
+});
+$('review-refresh').addEventListener('click',()=>reviewHistory().catch(e=>message(e.message,true)));
+$('manual-gate-check').addEventListener('click',async()=>{
+  if(!currentRun)return;const run=currentRun;$('manual-gate-check').disabled=true;
+  try{const result=await api('/v1/release-gate',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({candidateRunId:run.id,agentVersionId:run.agentVersionId,datasetVersionId:run.datasetVersionId,policyVersionId:run.policyVersionId})});
+    if(selectedRunId!==run.id)return;$('manual-gate-output').textContent='현재 CI 게이트: '+(result.deploymentAllowed?'통과':'차단')+' · 검토 상태 '+({approved:'승인 유효',rejected:'반려',missing:'승인 대기',expired:'승인 만료',invalid:'승인 무효'}[result.manualApproval?.status]||'불필요')+'\n'+result.reasons.map(reason=>reason.startsWith('A current administrator approval')?'유효한 관리자 승인이 필요합니다.':reason).join('\n');await receiptHistory();
+  }catch(e){if(selectedRunId===run.id)$('manual-gate-output').textContent=e.message;}finally{$('manual-gate-check').disabled=false;}
+});
