@@ -4,7 +4,9 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readFile,writeFile } from 'node:fs/promises';
 import { setTimeout } from 'node:timers/promises';
-const base=localSmokeBase();
+import {readReleaseResponse} from './release-gate.mjs';
+async function main(){
+let base;try{base=localSmokeBase();}catch{console.error('A valid local smoke port is required.');process.exitCode=2;return;}
 
 const configuration=JSON.parse((await readFile('.local/credentials.json','utf8')).replace(/^\uFEFF/,''));
 const accessKey=configuration.organizations[0].credentials.find(actor=>actor.role==='admin').token;
@@ -12,8 +14,8 @@ let cookie,run,workerStopped=false;
 async function call(path,{method='GET',data,key}={}){
   const response=await fetchLocalSmoke(base,path,{method,headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui',...(cookie?{Cookie:cookie}:{}),...(key?{'Idempotency-Key':key}:{})},...(data?{body:JSON.stringify(data)}:{})});
   if(path==='/v1/auth/login')cookie=response.headers.get('set-cookie')?.split(';')[0];
-  if(!response.ok)throw new Error(`Resilience smoke request failed (${response.status}).`);
-  return response.json();
+  if(!response.ok){await response.body?.cancel();throw new Error(`Resilience smoke request failed (${response.status}).`);}
+  return readReleaseResponse(response);
 }
 async function compose(args){
   const child=spawn('docker',['compose',...args],{stdio:'ignore',windowsHide:true});
@@ -23,8 +25,8 @@ async function until(check,timeout){
   const deadline=Date.now()+timeout;
   for(;;){const value=await check();if(value)return value;if(Date.now()>=deadline)throw new Error('Resilience state did not arrive before the test deadline.');await setTimeout(100);}
 }
-await call('/v1/auth/login',{method:'POST',data:{accessKey}});
 try{
+  await call('/v1/auth/login',{method:'POST',data:{accessKey}});
   const catalog=await call('/v1/catalog');
   run=await call('/v1/runs',{method:'POST',key:randomUUID(),data:{agentVersionId:catalog.agent.find(agent=>agent.mode==='slow').id,datasetVersionId:catalog.dataset[0].id,policyVersionId:catalog.policy.find(policy=>!policy.requiresManualApproval).id,timeoutMs:120000,maxAttempts:3}});
   assert.equal(run.snapshot.policy.requiresManualApproval===true,false,'Use a policy without administrator review for worker recovery smoke.');
@@ -43,5 +45,7 @@ try{
 }finally{
   try{if(workerStopped)await compose(['up','-d','--wait','worker']);
     if(run){const current=await call('/v1/runs/'+run.id);if(['queued','running'].includes(current.state))await call('/v1/runs/'+run.id+'/cancel',{method:'POST',data:{}});}
-  }finally{await call('/v1/auth/logout',{method:'POST',data:{}});}
+  }finally{if(cookie)await call('/v1/auth/logout',{method:'POST',data:{}});}
 }
+}
+main().catch(()=>{console.error('Local resilience smoke did not complete. Check AgentTrust worker state and private records.');process.exitCode=1;});

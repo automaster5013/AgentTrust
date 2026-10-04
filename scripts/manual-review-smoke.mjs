@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFile,writeFile } from 'node:fs/promises';
 import { verifyReceipt } from '../packages/receipts/signature.js';
-const base=localSmokeBase();
+import {readReleaseResponse} from './release-gate.mjs';
+async function main(){
+let base;try{base=localSmokeBase();}catch{console.error('A valid local smoke port is required.');process.exitCode=2;return;}
 
 const config=JSON.parse((await readFile('.local/credentials.json','utf8')).replace(/^\uFEFF/,''));
 const accessKey=config.organizations[0].credentials.find(c=>c.role==='admin').token;
@@ -11,10 +13,10 @@ let cookie,run,approved=false,rejected=false;
 async function call(path,{method='GET',data,key=randomUUID()}={}){
   const response=await fetchLocalSmoke(base,path,{method,headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui','Idempotency-Key':key,...(cookie?{Cookie:cookie}:{})},...(data?{body:JSON.stringify(data)}:{})});
   if(path==='/v1/auth/login')cookie=response.headers.get('set-cookie')?.split(';')[0];
-  if(!response.ok)throw new Error(`Synthetic manual review request failed (${response.status}).`);return response.json();
+  if(!response.ok){await response.body?.cancel();throw new Error(`Synthetic manual review request failed (${response.status}).`);}return readReleaseResponse(response);
 }
-await call('/v1/auth/login',{method:'POST',data:{accessKey}});
 try{
+  await call('/v1/auth/login',{method:'POST',data:{accessKey}});
   const catalog=await call('/v1/catalog');
   const policy=await call('/v1/policy-versions',{method:'POST',data:{name:'Synthetic administrator review smoke',minimumPassRate:1,requiresManualApproval:true,manualApprovalTtlSeconds:60}});
   const expected={agentVersionId:catalog.agent.find(v=>v.mode==='compliant').id,datasetVersionId:catalog.dataset[0].id,policyVersionId:policy.id};
@@ -31,5 +33,7 @@ try{
   console.log('Docker manual review smoke: evaluation PASS -> approval required -> signed release PASS -> rejection BLOCK.');
 }finally{
   try{if(approved&&!rejected&&run)await call('/v1/runs/'+run.id+'/reviews',{method:'POST',data:{decision:'rejected',comment:'Synthetic smoke cleanup: keep this example blocked.'}});}
-  finally{await call('/v1/auth/logout',{method:'POST',data:{}});}
+  finally{if(cookie)await call('/v1/auth/logout',{method:'POST',data:{}});}
 }
+}
+main().catch(()=>{console.error('Local manual review smoke did not complete. Check private records and local state.');process.exitCode=1;});

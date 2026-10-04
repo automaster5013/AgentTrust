@@ -2,9 +2,10 @@ import {localSmokeBase,fetchLocalSmoke} from './local-smoke-http.mjs';
 import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { readFile,writeFile } from 'node:fs/promises';
-import { checkRelease,saveReleaseReceipt } from './release-gate.mjs';
+import { checkRelease,saveReleaseReceipt,readReleaseResponse } from './release-gate.mjs';
 import { verifyReceipt } from '../packages/receipts/signature.js';
-const base=localSmokeBase();
+async function main(){
+let base;try{base=localSmokeBase();}catch{console.error('A valid local smoke port is required.');process.exitCode=2;return;}
 
 const config=JSON.parse((await readFile('.local/credentials.json','utf8')).replace(/^\uFEFF/,''));
 const accessKey=config.organizations[0].credentials.find(c=>c.role==='admin').token;
@@ -13,10 +14,10 @@ let cookie,credential;
 async function call(path,{method='GET',data}={}){
   const response=await fetchLocalSmoke(base,path,{method,headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui',...(cookie?{Cookie:cookie}:{})},...(data?{body:JSON.stringify(data)}:{})});
   if(path==='/v1/auth/login')cookie=response.headers.get('set-cookie')?.split(';')[0];
-  if(!response.ok)throw new Error(`CI smoke request failed (${response.status}).`);return response.json();
+  if(!response.ok){await response.body?.cancel();throw new Error(`CI smoke request failed (${response.status}).`);}return readReleaseResponse(response);
 }
-await call('/v1/auth/login',{method:'POST',data:{accessKey}});
 try{
+  await call('/v1/auth/login',{method:'POST',data:{accessKey}});
   const run=await call(`/v1/runs/${checkpoint.id}`),me=await call('/v1/me');
   credential=await call('/v1/ci-credentials',{method:'POST',data:{name:'Temporary Docker CI smoke',projectId:me.projectId,ttlSeconds:60}});
   const trustedPublicKey=await readFile('.local/receipt-signing/public.pem','utf8');
@@ -32,5 +33,7 @@ try{
   console.log('Docker CI smoke: project key -> idempotent release approval -> verified Ed25519 signed receipt.');
 }finally{
   try{if(credential)await call(`/v1/ci-credentials/${credential.id}/revoke`,{method:'POST',data:{}});}
-  finally{await call('/v1/auth/logout',{method:'POST',data:{}});}
+  finally{if(cookie)await call('/v1/auth/logout',{method:'POST',data:{}});}
 }
+}
+main().catch(()=>{console.error('Local CI smoke did not complete. Check private records and local state.');process.exitCode=1;});
