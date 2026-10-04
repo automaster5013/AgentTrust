@@ -193,6 +193,13 @@ jobs:
           node scripts/verify-delivery.mjs .local/delivery-manifest.json
       - name: Prepare public manifest bundle
         run: node scripts/delivery-bundle.mjs
+      - name: Verify exact public bundle before upload
+        env:
+          AGENTTRUST_DELIVERY_REPOSITORY: ${{ github.repository }}
+          AGENTTRUST_DELIVERY_RUN_ID: ${{ github.run_id }}
+          AGENTTRUST_DELIVERY_RUN_ATTEMPT: ${{ github.run_attempt }}
+          AGENTTRUST_EXPECTED_REVISION: ${{ github.sha }}
+        run: node scripts/verify-delivery-bundle.mjs "delivery-artifacts/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
       - name: Save public delivery manifest and checksum
         id: delivery-artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

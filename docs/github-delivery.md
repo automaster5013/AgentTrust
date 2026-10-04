@@ -170,3 +170,10 @@ if ($actual -ne $expected) { throw 'Delivery manifest checksum mismatch' }
 ```
 
 다음으로 독립적인 기대값을 설정하고 `delivery:verify` 및 `delivery:verify:github`를 실행한다. checksum은 다운로드/복사 중 변경 감지용이며, JSON과 checksum을 함께 조작한 경우를 인증하지 않는다. 서명된 attestation·CI 출처 인증·고객 릴리스 승인·호스트 점검·실제 배포를 대체하지 않는다. 장기 보관이 필요하면 운영자가 승인된 별도 보관 정책을 적용한다.
+
+
+### 묶음의 파일 무결성과 명세 일치 검사
+
+다운로드한 ZIP을 새 전용 폴더에 풀고 `npm run delivery:verify:bundle -- <폴더>`를 실행한다. 기대값 환경 변수는 `delivery:verify`와 동일하며 명세에서 자동 추출하지 않는다. 폴더에는 `delivery-manifest.json`과 `delivery-manifest.sha256` 두 일반 파일만 있어야 한다. 추가 파일·디렉터리·심볼릭 링크, 다른 파일명을 가리키는 checksum, 과도한 파일 크기, 바이트 변경과 명세 불일치는 차단한다. JSON 64 KiB, checksum 128바이트로 제한한다. checksum 파일의 LF/CRLF는 허용하지만 JSON은 원래 바이트 그대로 해시한다.
+
+성공은 종료 코드 0, `status: passed`, `manifestChecksumVerified: true`와 `manifestSha256`을 반환한다. 실패는 종료 코드 1과 `DELIVERY_BUNDLE_INVALID` JSON을 반환하며 경로·원문·예외를 노출하지 않는다. 이 명령은 파일을 변경하거나 Docker·DB·GitHub에 접속하지 않는다. JSON과 checksum을 함께 조작한 경우의 인증은 아니며, 정상 결과에도 `ciSuccessChecked: false`, `signatureVerified: false`를 유지한다. 다음으로 `delivery:verify:github`와 호스트 사전 점검을 별도로 수행한다. CI는 공개 묶음을 업로드하기 전에 같은 명령을 실행한다. JSON 자동화 출력은 `node scripts/verify-delivery-bundle.mjs <폴더>`로 얻는다.
