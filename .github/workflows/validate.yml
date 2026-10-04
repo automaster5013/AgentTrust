@@ -60,14 +60,14 @@ jobs:
     permissions:
       contents: read
       packages: write
-    env:
-      DOCKER_CONFIG: ${{ runner.temp }}/agenttrust-docker-config
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
       - name: Choose repository image name
-        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+        run: |
+          echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/agenttrust-docker-config" >> "$GITHUB_ENV"
       - name: Authenticate to GitHub Container Registry
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
