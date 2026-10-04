@@ -234,6 +234,7 @@ $('download').addEventListener('click', () => {
   const link = node('a'); link.href = url; link.download = `agenttrust-${currentRun.id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 function clearProjectData(){
+  reviewBusy=false;
   recentBaselineRuns=[];
   $('gate-baseline-enabled').checked=false;$('gate-baseline-id').value='';$('gate-baseline-id').disabled=true;
   lookupSequence++;lookupBusy=false;$('run-lookup-button').disabled=false;$('run-lookup-id').value='';$('run-lookup-status').textContent='';
@@ -429,7 +430,7 @@ $('review-form').addEventListener('submit',async event=>{
   try{await api('/v1/runs/'+run.id+'/reviews',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({decision,comment:$('review-comment').value})});
     if(epoch!==scopeEpoch||selectedRunId!==run.id)return;$('review-comment').value='';$('manual-gate-output').textContent='검토 상태가 변경되었습니다. 최종 게이트를 다시 확인하세요.';await reviewHistory(run);await auditHistory();message(decision==='approved'?'관리자 승인 기록을 저장했습니다.':'반려 기록을 저장했습니다.');
   }catch(e){if(epoch===scopeEpoch&&selectedRunId===run.id)message(e.message,true);}
-  finally{reviewBusy=false;invalidateFinalGate('검토 요청이 종료됐습니다. 최종 게이트를 다시 확인하세요.');await reviewHistory().catch(()=>{});}
+  finally{if(epoch===scopeEpoch){reviewBusy=false;invalidateFinalGate('검토 요청이 종료됐습니다. 최종 게이트를 다시 확인하세요.');await reviewHistory().catch(()=>{});}}
 });
 $('review-refresh').addEventListener('click',()=>{invalidateFinalGate('검토 기록을 새로고침했습니다. 최종 게이트를 다시 확인하세요.');reviewHistory().catch(e=>message(e.message,true));});
 $('review-more').addEventListener('click',async()=>{const run=currentRun;if(!run)return;$('review-more').disabled=true;try{await reviewHistory(run,true);}catch(error){if(selectedRunId===run.id){message(error.message,true);$('review-more').disabled=reviewBusy||!reviewCursor;}}});

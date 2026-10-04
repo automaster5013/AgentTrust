@@ -335,3 +335,17 @@ test('malformed or contradictory final gate responses cannot show pass or enable
  }
  f.overrides.set('/v1/release-gate',()=>signed.report);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/최종 게이트: 통과/);assert.equal(f.element('current-receipt-download').disabled,false);
 });
+
+
+test('obsolete review completion cannot clear a new workspace review lock or status',async()=>{
+ const f=await fixture({manual:true}),older=deferred(),newer=deferred();let calls=0;
+ await f.view('B');f.overrides.set('/v1/runs/B/reviews',()=>++calls===1?older.promise:newer.promise);
+ const oldSubmission=f.element('review-form').fire('submit',{submitter:{value:'approved'}});await settle();
+ await f.element('logout-button').fire('click');await f.element('login-form').fire('submit');await f.view('B');
+ assert.equal(f.element('review-approve').disabled,false);
+ const newSubmission=f.element('review-form').fire('submit',{submitter:{value:'rejected'}});await settle();assert.equal(calls,2);
+ const currentText=f.element('manual-gate-output').textContent;older.resolve({});await oldSubmission;
+ assert.equal(f.element('manual-gate-output').textContent,currentText);assert.equal(f.element('review-approve').disabled,true);assert.equal(f.element('review-reject').disabled,true);assert.equal(f.element('manual-gate-check').disabled,true);
+ await f.element('review-form').fire('submit',{submitter:{value:'approved'}});assert.equal(calls,2);
+ newer.resolve({});await newSubmission;assert.equal(f.element('review-approve').disabled,false);assert.equal(f.element('manual-gate-check').disabled,false);
+});
