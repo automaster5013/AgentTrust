@@ -22,9 +22,9 @@
 
 ## 핵심 화면
 
-관리자가 반려한 뒤 최종 게이트를 다시 확인하면 배포가 차단됩니다. 아래는 **v0.107에서 촬영한 합성 시연 화면**이며 현재 실행 결과를 나타내지 않습니다.
+관리자가 반려한 뒤 최종 게이트를 다시 확인하면 배포가 차단됩니다. 아래는 **v0.112에서 촬영한 합성 시연 화면**이며 현재 실행 결과를 나타내지 않습니다.
 
-![관리자 반려 후 최종 릴리스 게이트 차단](docs/evidence/current-rejection-v107.png)
+![관리자 반려 후 최종 릴리스 게이트 차단](docs/evidence/current-rejection-v112.png)
 
 [화면 증거 모음](docs/portfolio-engineering.md#합성-시연-화면-증거)에는 비교 통과와 승인 대기의 분리(v0.51), 정확한 회귀 사례 이동(v0.52)도 포함되어 있습니다.
 
@@ -59,7 +59,7 @@ Compose 프로젝트는 `agenttrust`이며 API 4310, DB 55432 포트를 루프�
 
 ## 검증과 이미지 전달
 
-**고정 검증 기준선**: [v0.95 소스 커밋](https://github.com/automaster5013/AgentTrust/commit/0bca294c70c683adbbcd006ff0d1dccada70387b)의 [CI 실행 #37209367585](https://github.com/automaster5013/AgentTrust/actions/runs/37209367585)에서 291개 테스트와 아래 네 작업이 모두 성공했습니다. [v0.91의 기존 로컬 설치 이미지 전환](docs/github-delivery.md)은 별도 기록이며 이후 버전의 동일 점검을 의미하지 않습니다. 상단 배지는 최신 `main` 실행을 표시합니다.
+**고정 검증 기준선**: [v0.112 소스 커밋](https://github.com/automaster5013/AgentTrust/commit/82a91fc56287f55d28d55c2731bd473f64176c40)의 [CI 실행 #37229398527](https://github.com/automaster5013/AgentTrust/actions/runs/37229398527)에서 328개 테스트와 아래 네 작업이 모두 성공했습니다. 같은 커밋의 검증 이미지를 기존 로컬 DB에 연결해 근거 보존·서명 시연을 확인한 뒤 소스 컨테이너로 복귀했습니다. 상단 배지는 최신 `main` 실행을 표시합니다.
 
 1. 전체 테스트와 Docker 기반 평가·복구·시연 검증
 2. 같은 커밋의 후보 컨테이너를 GHCR에 발행
