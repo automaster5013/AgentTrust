@@ -5,6 +5,7 @@ import {randomUUID} from 'node:crypto';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {pool} from '../apps/api/database.js';
 import {verifyReceipt} from '../packages/receipts/signature.js';
+import {readReleaseResponse} from './release-gate.mjs';
 const base=localSmokeBase();
 const options={cycles:5,intervalMs:10000},seen=new Set();
 for(let i=2;i<process.argv.length;i+=2){
@@ -19,7 +20,10 @@ process.on('SIGINT',()=>{stopping=true;});process.on('SIGTERM',()=>{stopping=tru
 async function call(path,data,idempotencyKey=randomUUID()){
  const until=Date.now()+15000;
  for(;;){let r;try{r=await fetchLocalSmoke(base,path,{method:data?'POST':'GET',signal:AbortSignal.timeout(5000),headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui','Idempotency-Key':idempotencyKey,...(cookie?{Cookie:cookie}:{})},...(data?{body:JSON.stringify(data)}:{})});}catch{if(Date.now()>=until)throw new Error('Local soak transport did not recover.');report.transientRetries++;await sleep(200);continue;}
-  if(r.status===503&&Date.now()<until){report.transientRetries++;await sleep(200);continue;}assert.equal(r.ok,true,'Local soak HTTP '+r.status);const value=await r.json();if(path.endsWith('/login'))cookie=r.headers.get('set-cookie')?.split(';')[0];return value;
+  if(path==='/v1/auth/login')cookie=r.headers.get('set-cookie')?.split(';')[0]||cookie;
+  if(r.status===503&&Date.now()<until){await r.body?.cancel();report.transientRetries++;await sleep(200);continue;}
+  if(!r.ok){await r.body?.cancel();throw Error('Local soak HTTP '+r.status);}
+  return readReleaseResponse(r);
  }
 }
 async function wait(id,predicate=r=>!['queued','running'].includes(r.state)){
