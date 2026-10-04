@@ -362,22 +362,24 @@ async function auditHistory(append=false) {
   if(!append&&!page.items.length)$('audit-list').textContent='선택한 동작의 감사 기록이 없습니다.';
 }
 async function initialize() {
+  const epoch=scopeEpoch,assertCurrent=()=>{if(epoch!==scopeEpoch)throw new Error('워크스페이스가 변경되어 이전 요청의 결과를 표시하지 않습니다.');};
   $('loading-panel').hidden=false;$('workspace-ui').hidden=true;$('login-panel').hidden=true;
-  actor=await api('/v1/me');activeProjectId=actor.projectId;renderNextAction();
+  const identity=await api('/v1/me');assertCurrent();actor=identity;activeProjectId=actor.projectId;renderNextAction();
   $('workspace-project').replaceChildren(...actor.projects.map(p=>{const option=node('option',p.name);option.value=p.id;return option;}));$('workspace-project').value=activeProjectId;
   $('identity-label').textContent=`${actor.organizationName} · ${actor.name} · ${actor.role}`;
   $('audit-panel').hidden=actor.role!=='admin';
   $('ci-panel').hidden=actor.role!=='admin';$('projects').hidden=actor.role!=='admin';$('operations-panel').hidden=actor.role!=='admin';
   $('ci-project').replaceChildren(...actor.projects.map(p=>{const option=node('option',p.name);option.value=p.id;return option;}));
   $('ci-project').value=activeProjectId;
-  await ciHistory();await receiptHistory();await sessionHistory();
-  await catalog();$('dataset-json').value=JSON.stringify(await api('/v1/sample-dataset'),null,2);await history();await auditHistory();
+  for(const load of [ciHistory,receiptHistory,sessionHistory,catalog]){await load();assertCurrent();}
+  const sample=await api('/v1/sample-dataset');assertCurrent();$('dataset-json').value=JSON.stringify(sample,null,2);
+  await history();assertCurrent();await auditHistory();assertCurrent();
   updateButtons();$('loading-panel').hidden=true;$('workspace-ui').hidden=false;$('login-panel').hidden=true;
   $('nav-projects').hidden=actor.role!=='admin';$('workspace-nav').hidden=false;updateRunNavigation();updateNavigation();restorePanelLocation();
 }
 $('login-form').addEventListener('submit',async event=>{
   event.preventDefault();if($('login-button').disabled)return;const sequence=++authenticationSequence,epoch=scopeEpoch;$('login-button').disabled=true;$('login-status').textContent='';
-  try{const accessKey=$('access-key').value;await api('/v1/auth/login',{method:'POST',body:JSON.stringify({accessKey})});$('access-key').value='';await initialize();}
+  try{const accessKey=$('access-key').value;await api('/v1/auth/login',{method:'POST',body:JSON.stringify({accessKey})});if(!currentAuthentication(sequence,epoch))return;$('access-key').value='';await initialize();}
   catch(e){if(currentAuthentication(sequence,epoch,e)){showLogin();$('login-status').textContent=e.message;}}
   finally{if(currentAuthentication(sequence,epoch))$('login-button').disabled=false;}
 });
