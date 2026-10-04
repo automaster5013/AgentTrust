@@ -9,6 +9,7 @@ import { pool } from '../apps/api/database.js';
 import { hash } from '../packages/contracts/hash.js';
 import { encryptBackup,decryptBackup } from '../packages/backup/cipher.js';
 import { fingerprintRows } from '../packages/backup/fingerprint.js';
+import {validateLocalSetup} from './setup-target.mjs';
 
 const root=resolve(fileURLToPath(new URL('..',import.meta.url)));
 const backups=resolve(root,'.local','backups');
@@ -113,6 +114,7 @@ export async function verifyAuthTenantPolicies(client,organizationIds=null){
   }catch(error){await client.query('ROLLBACK').catch(()=>{});throw error;}
 }
 export async function createBackup(){
+  validateLocalSetup(process.env);
   await mkdir(backups,{recursive:true,mode:0o700});
   await mkdir(keys,{recursive:true,mode:0o700});
   const database=pool(process.env.OWNER_DATABASE_URL),client=await database.connect();
@@ -134,6 +136,7 @@ export async function createBackup(){
   finally{client.release();await database.end();}
 }
 export async function verifyBackup(name){
+  validateLocalSetup(process.env);
   const path=backupPath(name),manifest=JSON.parse(await readFile(path+'.manifest.json','utf8'));
   if(![1,2].includes(manifest.schemaVersion)||manifest.name!==name||manifest.sha256!==await fileHash(path))throw new Error('Backup manifest or checksum mismatch.');
   let restorePath=path,temporary;

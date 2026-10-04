@@ -6,11 +6,13 @@ import {resolve} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {pool} from '../apps/api/database.js';
 import {createBackup,verifyBackup,backupPath} from './recovery.mjs';
+import {validateLocalSetup} from './setup-target.mjs';
 
 const root=resolve(fileURLToPath(new URL('..',import.meta.url))),backups=resolve(root,'.local/backups'),keys=resolve(root,'.local/backup-keys');
 const recoveryDatabases=async database=>(await database.query("SELECT datname FROM pg_database WHERE datname LIKE 'agenttrust_restore_%' ORDER BY datname")).rows.map(row=>row.datname);
 const plaintextFiles=async()=> (await readdir(backups)).filter(name=>name.startsWith('authenticated-')&&name.endsWith('.partial')).sort();
 export async function recoverySmoke(){
+  validateLocalSetup(process.env);
   const database=pool(process.env.OWNER_DATABASE_URL),createdFiles=[];
   try{
     const backup=await createBackup(),source=backupPath(backup.name),manifest=JSON.parse(await readFile(source+'.manifest.json','utf8'));
