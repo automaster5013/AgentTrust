@@ -52,11 +52,13 @@ jobs:
         run: docker compose down
 
   image:
-    name: Publish verified container
+    name: Publish candidate container
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      image: ${{ steps.publish.outputs.image }}
     permissions:
       contents: read
       packages: write
@@ -73,12 +75,91 @@ jobs:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
       - name: Build and publish tested source
+        id: publish
         run: |
-          docker build --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --label "org.opencontainers.image.revision=$GITHUB_SHA" --tag "$IMAGE_NAME:sha-$GITHUB_SHA" --tag "$IMAGE_NAME:main" .
+          docker build --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --label "org.opencontainers.image.revision=$GITHUB_SHA" --tag "$IMAGE_NAME:sha-$GITHUB_SHA" .
           docker push "$IMAGE_NAME:sha-$GITHUB_SHA"
-          docker push "$IMAGE_NAME:main"
           digest=$(docker image inspect "$IMAGE_NAME:sha-$GITHUB_SHA" --format '{{index .RepoDigests 0}}')
-          printf '## Verified container\n\nCommit: `%s`\n\nImmutable image: `%s`\n\nUse this digest with compose.image.yaml; no server deployment was performed.\n' "$GITHUB_SHA" "$digest" >> "$GITHUB_STEP_SUMMARY"
+          echo "image=$digest" >> "$GITHUB_OUTPUT"
+          printf '## Candidate container\n\nCommit: `%s`\n\nImmutable image: `%s`\n\nThe digest must pass the separate registry runtime job before main promotion. No server deployment was performed.\n' "$GITHUB_SHA" "$digest" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove runner registry login
+        if: always()
+        run: docker logout ghcr.io
+
+  image-smoke:
+    name: Verify registry image runtime
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    env:
+      COMPOSE_PROJECT_NAME: agenttrust-image-${{ github.run_id }}-${{ github.run_attempt }}
+      AGENTTRUST_IMAGE: ${{ needs.image.outputs.image }}
+      AGENTTRUST_EXPECTED_REVISION: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Prepare isolated synthetic database and private signing key
+        run: |
+          npm ci --cache .cache/npm --ignore-scripts
+          npm run setup
+          echo "AGENTTRUST_API_USER=$(id -u):$(id -g)" >> "$GITHUB_ENV"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/agenttrust-docker-config" >> "$GITHUB_ENV"
+      - name: Authenticate for registry read
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Pull and start exact published digest without building
+        run: |
+          docker compose -f compose.yaml -f compose.image.yaml pull api worker
+          docker compose -f compose.yaml -f compose.image.yaml up -d --no-build --wait api worker
+          npm run smoke:image
+      - name: Verify evaluation, restart, signed gates and accounting from registry image
+        run: |
+          node --env-file-if-exists=.env scripts/smoke.mjs before
+          docker compose -f compose.yaml -f compose.image.yaml restart api worker
+          docker compose -f compose.yaml -f compose.image.yaml up -d --no-build --wait api worker
+          node --env-file-if-exists=.env scripts/smoke.mjs after
+          node --env-file-if-exists=.env scripts/ci-smoke.mjs
+          node --env-file-if-exists=.env scripts/manual-review-smoke.mjs
+          npm run smoke:sustained -- --cycles 2 --interval-ms 1000
+      - name: Stop isolated image services
+        if: always()
+        run: docker compose -f compose.yaml -f compose.image.yaml down
+      - name: Remove runner registry login
+        if: always()
+        run: docker logout ghcr.io
+
+  promote:
+    name: Promote runtime-verified main image
+    needs: [image, image-smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    env:
+      AGENTTRUST_IMAGE: ${{ needs.image.outputs.image }}
+    steps:
+      - name: Prepare private runner registry configuration
+        run: echo "DOCKER_CONFIG=$RUNNER_TEMP/agenttrust-docker-config" >> "$GITHUB_ENV"
+      - name: Authenticate to registry
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Promote the verified digest
+        run: |
+          image_name=${AGENTTRUST_IMAGE%@*}
+          docker pull "$AGENTTRUST_IMAGE"
+          docker tag "$AGENTTRUST_IMAGE" "$image_name:main"
+          docker push "$image_name:main"
+          printf '## Runtime-verified container\n\nCommit: `%s`\n\nDeployable digest: `%s`\n\nRegistry pull, image identity, isolation, evaluation, restart and signed gate verification passed. No server deployment was performed.\n' "$GITHUB_SHA" "$AGENTTRUST_IMAGE" >> "$GITHUB_STEP_SUMMARY"
       - name: Remove runner registry login
         if: always()
         run: docker logout ghcr.io

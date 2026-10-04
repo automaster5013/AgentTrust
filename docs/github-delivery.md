@@ -6,7 +6,7 @@
 
 `.github/workflows/validate.yml`의 Validate and deliver는 main push, PR, 수동 실행을 지원한다. test 작업은 구문·전체 테스트·의존성 audit, Docker 평가와 재시작 지속성, CI 서명, 관리자 승인/반려, 반복 평가, 워커 중단 복구, 백업 인증 실패와 정상 격리 복원을 검증한다. 각 runner의 Compose 프로젝트는 실행 ID로 분리하며 마지막에 해당 서비스를 종료한다. 실제 고객 데이터나 로컬 비밀을 runner에 주입하지 않는다.
 
-main의 검증이 성공하면 image 작업이 같은 commit의 소스를 빌드해 `ghcr.io/automaster5013/agenttrust:sha-<전체 commit SHA>` 및 `:main`에 저장한다. PR과 main 외 수동 실행은 이미지를 발행하지 않는다. 검증 실패 시 발행 작업은 시작하지 않는다. 작업별 contents: read, 발행 작업의 packages: write만 부여하고 내장 GITHUB_TOKEN으로 인증한다. 별도 PAT secret은 필요하지 않다. 출처·commit OCI label을 포함하며 Actions 작업 요약에 digest를 기록한다. tag는 변경될 수 있으므로 배포 시 검증된 `@sha256:<digest>`를 사용한다.
+main의 소스 검증이 성공하면 image 작업이 같은 commit을 빌드해 `ghcr.io/automaster5013/agenttrust:sha-<전체 commit SHA>` 후보로 저장한다. 별도 image-smoke runner가 새 합성 DB·비밀 키를 만들고 후보 digest를 GHCR에서 pull해 로컬 build 없이 실행한다. 실제 컨테이너의 digest·이미지 ID·출처 commit과 비관리자 사용자·loopback 포트·내부 워커 네트워크·읽기 전용 파일시스템·최소 권한·API 전용 서명 키를 확인한다. 평가와 재시작 지속성·서명 게이트·관리자 검토·반복 실행이 통과한 뒤에만 promote 작업이 같은 digest를 `:main`으로 승격한다. 후보 실행 검증 실패 시 기존 main 이미지를 유지한다. PR과 main 외 수동 실행은 이미지를 발행하지 않는다. 검증 실패 시 발행 작업은 시작하지 않는다. 작업별 최소 권한을 사용하며 후보 발행/승격에는 packages: write, 이미지 실행 검증에는 packages: read를 부여하고 내장 GITHUB_TOKEN으로 인증한다. 별도 PAT secret은 필요하지 않다. 출처·commit OCI label을 포함하며 Actions 작업 요약에 digest를 기록한다. tag는 변경될 수 있으므로 배포 시 검증된 `@sha256:<digest>`를 사용한다.
 
 GHCR 패키지 공개 여부를 이 workflow에서 변경하지 않는다. 비공개 이미지 접근이 필요한 운영자는 해당 사용자/조직의 packages:read 권한으로 별도 인증한다. GitHub의 [이미지 발행 지침](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images)을 따른다.
 
@@ -38,3 +38,9 @@ compose.image.yaml은 API의 로컬 build 설정을 제거하고 API와 워커�
 2026-10-04 [Actions 실행 37166648795](https://github.com/automaster5013/AgentTrust/actions/runs/37166648795), commit `c24a32d42d3d5a9bd53c25adbe0daf212c5efd77`에서 test와 Publish verified container가 모두 성공했다. 136개 테스트가 통과했고 재시작 지속성·서명·관리자 검토·반복 평가·워커 중단 복구·암호화 복원 단계가 모두 통과했다. 최초 검증 이미지 digest는 `ghcr.io/automaster5013/agenttrust@sha256:22de58c068c98bf5bd2f6304b43a0e0b6518d6c23a0b0e416818f6d106203732`다. 이는 해당 commit의 기록이며 최신 이미지는 이후 성공한 Actions 실행의 요약에서 확인한다.
 
 소스와 Git 이력을 업로드하기 전에 로컬 접근 키·DB 비밀번호·서명 비밀 키 포함 여부를 검사했다. `.env`·`.local`·백업/키는 저장소와 이미지에 포함하지 않는다. 이 작업에서 배포 서버에 연결하거나 LogiTrack 자산을 변경하지 않았다.
+
+## 레지스트리 이미지 실행 검증
+
+`npm run smoke:image`는 AGENTTRUST_IMAGE의 고정 GHCR digest와 AGENTTRUST_EXPECTED_REVISION의 전체 commit SHA를 요구한다. 대상 Compose의 API와 워커만 inspect하며 실제 이미지·revision·출처와 격리 설정을 검증하고 `.local/image-smoke.json`에 비밀 없는 결과를 기록한다. mutable tag, API/워커 이미지 불일치, 출처 revision 오류, 공개 포트, root 실행, 워커의 서명 키, 외부 네트워크/HTTPS 허용 목록 등은 실패한다. 이 명령은 합성·외부 연결 차단 환경의 사전 점검이며 운영 고객 연결을 활성화한 호스트에 그대로 적용하지 않는다.
+
+image-smoke와 promote는 GitHub의 별도 임시 runner에서만 수행한다. 배포 서버와 개발 장치의 Docker Desktop은 변경하지 않는다. 각 작업의 registry 로그인은 종료 시 제거하고 이미지 실행 환경은 성공/실패 모두 종료한다. private DB·키·백업은 runner 밖으로 업로드하지 않는다. 최종 수동 배포용 digest는 Promote runtime-verified main image의 작업 요약에서 확인한다.
