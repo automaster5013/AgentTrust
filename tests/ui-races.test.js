@@ -219,6 +219,18 @@ test('session refresh cannot re-enable revocation buttons while a termination is
 });
 
 
+test('run navigation follows loaded selection and hides during selection and logout',async()=>{
+ const f=await fixture({manual:true});for(const id of ['nav-evidence','nav-review','nav-release'])assert.equal(f.element(id).hidden,true);
+ await f.view('B');for(const id of ['nav-evidence','nav-review','nav-release'])assert.equal(f.element(id).hidden,false);
+ const pending=deferred();f.runs.A=execution('A','succeeded');f.overrides.set('/v1/runs/A',()=>pending.promise);const selection=f.view('A');await settle();
+ for(const id of ['nav-evidence','nav-review','nav-release'])assert.equal(f.element(id).hidden,true);
+ pending.resolve(f.runs.A);await selection;assert.equal(f.element('nav-evidence').hidden,false);assert.equal(f.element('nav-release').hidden,false);assert.equal(f.element('nav-review').hidden,true);
+ await f.element('logout-button').fire('click');for(const id of ['nav-evidence','nav-review','nav-release'])assert.equal(f.element(id).hidden,true);
+});
+test('viewer navigation exposes readable manual review without enabling administrator actions',async()=>{
+ const f=await fixture({manual:true,initialOverrides:[['/v1/me',()=>({role:'viewer',projectId:'project',organizationName:'Synthetic',name:'Viewer',projects:[{id:'project',name:'Synthetic'}]})]]});
+ await f.view('B');assert.equal(f.element('nav-review').hidden,false);assert.equal(f.element('review-form').hidden,true);assert.equal(f.element('review-approve').disabled,true);assert.equal(f.element('review-reject').disabled,true);assert.equal(f.element('nav-projects').hidden,true);
+});
 test('selecting another run blocks administrator writes to the previously rendered run before the new response arrives',async()=>{
  const f=await fixture({manual:true}),pending=deferred();await f.view('B');let writes=0;
  f.overrides.set('/v1/runs/B/reviews',()=>{writes++;return {};});f.runs.A=execution('A','succeeded',true);f.overrides.set('/v1/runs/A',()=>pending.promise);

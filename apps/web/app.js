@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const navigation=[['evaluation','nav-evaluation'],['history','nav-history'],['versions','nav-versions'],['projects','nav-projects'],['sessions-panel','nav-sessions']];
+const navigation=[['evaluation','nav-evaluation'],['history','nav-history'],['evidence','nav-evidence'],['review-panel','nav-review'],['release-check-panel','nav-release'],['versions','nav-versions'],['projects','nav-projects'],['sessions-panel','nav-sessions']];
 function updateNavigation(){
   const section=globalThis.location?.hash.slice(1)||'evaluation';
   for(const [target,id] of navigation){const link=$(id),selected=target===section;link.className=selected?'active':'';link.ariaCurrent=selected?'location':null;}
@@ -62,6 +62,11 @@ function invalidateFinalGate(text="최종 게이트를 아직 확인하지 않�
   $("manual-gate-output").textContent=text;
   $("release-check-panel").hidden=!currentRun||currentRun.id!==selectedRunId;
   $("manual-gate-check").disabled=!currentRun||currentRun.id!==selectedRunId||!terminal.has(currentRun.state)||reviewBusy;
+  updateRunNavigation();
+}
+function updateRunNavigation(){
+  const selected=!!actor&&!!currentRun&&currentRun.id===selectedRunId;
+  $('nav-evidence').hidden=!selected;$('nav-release').hidden=!selected;$('nav-review').hidden=!selected||$('review-panel').hidden;
 }
 function renderNextAction(result){
   const run=currentRun?.id===selectedRunId?currentRun:null;
@@ -226,7 +231,7 @@ async function history(append=false) {
 }
 async function selectRun(id,initialRun) {
   selectedRunId = id;const sequence=++selectedRunSequence;invalidateFinalGate();
-  reviewSequence++;$('review-panel').hidden=true;$('review-approve').disabled=true;$('review-reject').disabled=true;$('review-more').disabled=true;$('cancel-button').disabled=true;$('download').disabled=true;
+  reviewSequence++;$('review-panel').hidden=true;$('review-approve').disabled=true;$('review-reject').disabled=true;$('review-more').disabled=true;$('cancel-button').disabled=true;$('download').disabled=true;updateRunNavigation();
   for (let attempt = 0; attempt < 800; attempt++) {
     const run = attempt===0&&initialRun?initialRun:await api(`/v1/runs/${id}`);
     if (selectedRunId !== id||sequence!==selectedRunSequence) return;
@@ -321,7 +326,7 @@ async function initialize() {
   await ciHistory();await receiptHistory();await sessionHistory();
   await catalog();$('dataset-json').value=JSON.stringify(await api('/v1/sample-dataset'),null,2);await history();await auditHistory();
   updateButtons();$('loading-panel').hidden=true;$('workspace-ui').hidden=false;$('login-panel').hidden=true;
-  $('nav-projects').hidden=actor.role!=='admin';$('workspace-nav').hidden=false;updateNavigation();restorePanelLocation();
+  $('nav-projects').hidden=actor.role!=='admin';$('workspace-nav').hidden=false;updateRunNavigation();updateNavigation();restorePanelLocation();
 }
 $('login-form').addEventListener('submit',async event=>{
   event.preventDefault();$('login-button').disabled=true;$('login-status').textContent='';
@@ -451,12 +456,13 @@ $('policy-manual').addEventListener('change',()=>{$('policy-review-ttl').disable
 async function reviewHistory(run=currentRun,append=false){
   if(append&&!reviewCursor)return;
   const sequence=++reviewSequence;
-  if(!run||run.id!==selectedRunId||!run.snapshot.policy.requiresManualApproval){$('review-panel').hidden=true;return;}
+  if(!run||run.id!==selectedRunId||!run.snapshot.policy.requiresManualApproval){$('review-panel').hidden=true;updateRunNavigation();return;}
   const params=new URLSearchParams({limit:'25'});if(append)params.set('cursor',reviewCursor);
   const page=await api('/v1/runs/'+run.id+'/reviews?'+params);if(sequence!==reviewSequence||selectedRunId!==run.id)return;
   reviewCursor=page.nextCursor;$('review-more').disabled=reviewBusy||!reviewCursor;const reviews=page.items;
   if(!append)reviewShown=0;reviewShown+=reviews.length;$('review-history-status').textContent=`검토 기록 ${reviewShown}개 표시 · ${reviewCursor?'이전 기록이 있습니다.':'마지막 기록입니다.'}`;
   $('review-panel').hidden=false;$('review-form').hidden=actor?.role!=='admin';
+  updateRunNavigation();
   $('review-approve').disabled=reviewBusy||actor?.role!=='admin'||run.state!=='succeeded'||run.gate.evaluationPassed!==true;
   $('review-reject').disabled=reviewBusy||actor?.role!=='admin'||!terminal.has(run.state);
   $('manual-status').textContent='정책에서 관리자 검토를 요구합니다. 승인 유효 시간 '+(run.snapshot.policy.manualApprovalTtlSeconds??3600)+'초. 최종 배포 판단은 현재 CI 게이트를 확인하세요.';
