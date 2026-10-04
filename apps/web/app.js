@@ -641,8 +641,9 @@ async function sessionHistory(append=false){
     button.addEventListener('click',async()=>{
       if(sessionBusy)return;sessionBusy=true;sessionControls();const epoch=scopeEpoch;
       try{const result=await api(`/v1/sessions/${session.id}/revoke`,{method:'POST',body:'{}'});
+        if(epoch!==scopeEpoch)return;
         if(result.current){showLogin();$('login-status').textContent='현재 세션을 종료했습니다. 접근 키로 다시 로그인할 수 있습니다.';}
-        else{$('sessions-status').textContent='선택한 세션을 종료했습니다.';await sessionHistory();await auditHistory();}
+        else{$('sessions-status').textContent='선택한 세션을 종료했습니다.';await sessionHistory();if(epoch!==scopeEpoch)return;await auditHistory();}
       }catch(error){if(epoch===scopeEpoch)$('sessions-status').textContent=error.message;}
       finally{if(epoch===scopeEpoch){sessionBusy=false;sessionControls();if(actor)try{await sessionHistory();}catch(error){if(epoch===scopeEpoch)$('sessions-status').textContent=error.message;}}}
     });row.append(button);$('session-list').append(row);

@@ -755,3 +755,28 @@ test('final gate record request and tenant scope must match the selected fixed v
  for(const response of responses){f.overrides.set('/v1/release-gate',()=>response);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/확인 실패/);assert.equal(f.element('current-receipt-download').disabled,true);assert.equal(f.element('manual-gate-check').disabled,false);}
  f.overrides.set('/v1/release-gate',()=>valid);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/최종 게이트: 통과/);await f.element('current-receipt-download').fire('click');assert.equal(verifyReceipt(JSON.parse(await f.downloads[0].text()),signed.publicKey).signatureVerified,true);
 });
+
+
+test('session termination continuation preserves a project transition after its successful API read',async()=>{
+ for(const current of [true,false]){
+  const f=await fixture(),identity=deferred(),session={id:'old-session',name:'Synthetic',role:'admin',current,createdAt:'2026-01-01T00:00:00Z',expiresAt:'2026-01-01T01:00:00Z'};
+  f.overrides.set('/v1/sessions?limit=25',()=>({items:[session],nextCursor:null,scope:'organization'}));await f.element('sessions-refresh').fire('click');
+  let transition;const data={current},bytes=new TextEncoder().encode(JSON.stringify(data)),result=new Response(JSON.stringify(data));let read=false;
+  Object.defineProperty(result,'body',{value:{getReader:()=>({read:()=>Promise.resolve(read?{done:true}:(read=true,{done:false,value:bytes})),releaseLock:()=>queueMicrotask(()=>queueMicrotask(()=>{f.element('workspace-project').value='next-project';transition=f.element('workspace-project').fire('change');}))})}});
+  f.overrides.set('/v1/sessions/old-session/revoke',()=>result);f.overrides.set('/v1/me',()=>identity.promise);
+  await f.element('session-list').children[0].children.at(-1).fire('click');await settle();
+  assert.equal(f.element('login-panel').hidden,true);assert.equal(f.element('workspace-project').disabled,true);assert.equal(f.element('sessions-status').textContent,'');
+  identity.resolve({role:'admin',organizationId:'organization',projectId:'next-project',organizationName:'Synthetic',name:'Tester',projects:[{id:'next-project',name:'Next'}]});await transition;assert.equal(f.element('workspace-ui').hidden,false);
+ }
+});
+
+
+test('session termination list continuation does not start audit reads in a new project',async()=>{
+ const f=await fixture(),identity=deferred(),session={id:'old-session',name:'Synthetic',role:'admin',current:false,createdAt:'2026-01-01T00:00:00Z',expiresAt:'2026-01-01T01:00:00Z'};
+ const page={items:[session],nextCursor:null,scope:'organization'};f.overrides.set('/v1/sessions?limit=25',()=>page);await f.element('sessions-refresh').fire('click');
+ let transition,audits=0;const bytes=new TextEncoder().encode(JSON.stringify(page)),result=new Response(JSON.stringify(page));let read=false;
+ Object.defineProperty(result,'body',{value:{getReader:()=>({read:()=>Promise.resolve(read?{done:true}:(read=true,{done:false,value:bytes})),releaseLock:()=>queueMicrotask(()=>queueMicrotask(()=>{f.element('workspace-project').value='next-project';transition=f.element('workspace-project').fire('change');}))})}});
+ f.overrides.set('/v1/sessions/old-session/revoke',()=>({current:false}));f.overrides.set('/v1/sessions?limit=25',()=>result);f.overrides.set('/v1/me',()=>identity.promise);f.overrides.set('/v1/audit-events?limit=25',()=>{audits++;return {items:[],nextCursor:null};});
+ await f.element('session-list').children[0].children.at(-1).fire('click');await settle();assert.equal(audits,0);assert.equal(f.element('sessions-status').textContent,'');
+ f.overrides.set('/v1/sessions?limit=25',()=>({items:[],nextCursor:null,scope:'organization'}));identity.resolve({role:'admin',organizationId:'organization',projectId:'next-project',organizationName:'Synthetic',name:'Tester',projects:[{id:'next-project',name:'Next'}]});await transition;assert.equal(f.element('workspace-ui').hidden,false);assert.equal(audits,1);
+});
