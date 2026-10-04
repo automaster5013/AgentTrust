@@ -7,6 +7,7 @@ import { pool, transaction } from '../apps/api/database.js';
 import { migrate } from './migrate.mjs';
 import { hash, tokenHash } from '../packages/contracts/hash.js';
 import { sampleDataset, modes } from '../packages/contracts/samples.js';
+import { validateLocalSetup } from './setup-target.mjs';
 
 export async function seedOrganization(database,name,actors=['admin','editor','viewer']) {
   return transaction(database,client=>seedOrganizationRows(client,name,actors));
@@ -117,6 +118,7 @@ async function main() {
   if(process.platform==='win32')execFileSync('icacls',['.env','/inheritance:r','/grant:r',`${process.env.USERNAME}:(F)`,'*S-1-5-18:(F)'],{stdio:'ignore'});
   else await chmod('.env',0o600);
   process.loadEnvFile('.env');
+  validateLocalSetup(process.env);
   if(!process.env.AGENTTRUST_RECEIPT_SIGNING_KEY_FILE){
     const configuration=await readFile('.env','utf8');
     const signingPath=resolve('.local/receipt-signing/private.pem').replaceAll('\\','/');
