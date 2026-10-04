@@ -815,3 +815,40 @@ test('overall gate pass cannot contradict the selected nonpassing evaluation',as
   const f=await fixture();f.runs.B=execution('B',state);f.runs.B.gate={decision,deploymentAllowed:false};await f.view('B');f.overrides.set('/v1/release-gate',()=>signedUiReceipt().report);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/확인 실패/);assert.equal(f.element('current-receipt-download').disabled,true);assert.equal(f.element('manual-gate-check').disabled,false);await f.element('current-receipt-download').fire('click');assert.equal(f.downloads.length,0);
  }
 });
+
+ test('direct UUID lookup rejects a mismatched response before replacing the selected evidence',async()=>{
+  const f=await fixture();await f.view('B');f.overrides.set('/v1/runs/'+lookupId,()=>execution('other'));f.element('run-lookup-id').value=lookupId;await f.element('run-lookup-form').fire('submit');
+  assert.match(f.element('snapshot').textContent,/실행 B/);assert.match(f.element('run-lookup-status').textContent,/조회할 수 없습니다/);assert.equal(f.element('run-lookup-button').disabled,false);
+ });
+
+async function receiptNavigationFixture({baseline=true}={}){
+ const f=await fixture(),row={id:'00000000-0000-0000-0000-000000000456',candidate_run_id:lookupId,baseline_run_id:baseline?gateBaseline:null,created_at:'2026-01-01T00:00:00Z',decision:'pass',signing_key_id:'synthetic'};
+ f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[row],nextCursor:null}));await f.element('receipts-refresh').fire('click');
+ f.overrides.set('/v1/runs/'+lookupId,()=>execution(lookupId));f.overrides.set('/v1/runs/'+gateBaseline,()=>execution(gateBaseline));
+ const buttons=f.element('receipt-list').children[0].children.filter(c=>c.tag==='button');
+ return {...f,row,candidate:buttons.find(c=>c.textContent==='후보 평가 근거 보기'),baseline:buttons.find(c=>c.textContent==='기준 평가 근거 보기')};
+}
+test('receipt history opens authorized candidate and baseline evidence without treating a historical pass as a fresh gate',async()=>{
+ const f=await receiptNavigationFixture();let gateReads=0;f.overrides.set('/v1/release-gate',()=>{gateReads++;return signedUiReceipt().report;});
+ await f.view('B');await f.element('manual-gate-check').fire('click');assert.equal(f.element('current-receipt-download').disabled,false);
+ await f.candidate.fire('click');assert.match(f.element('snapshot').textContent,new RegExp(lookupId));assert.match(f.element('receipt-navigation-status').textContent,/과거 검증/);assert.match(f.element('receipt-navigation-status').textContent,/새로 확인/);assert.equal(f.element('current-receipt-download').disabled,true);
+ assert.ok(!f.element('manual-gate-output').textContent.includes('최종 게이트: 통과'));
+ await f.baseline.fire('click');assert.match(f.element('snapshot').textContent,new RegExp(gateBaseline));assert.equal(gateReads,1);assert.equal(f.downloads.length,0);assert.ok(f.element('receipt-list').textContent.includes(f.row.id));
+ const noBaseline=await receiptNavigationFixture({baseline:false});assert.equal(noBaseline.baseline,undefined);
+});
+test('receipt navigation failures preserve current evidence and do not disclose transport errors',async()=>{
+ const f=await receiptNavigationFixture();await f.view('B');f.overrides.set('/v1/runs/'+lookupId,()=>{throw Error('private-navigation-canary');});await f.candidate.fire('click');
+ assert.match(f.element('snapshot').textContent,/실행 B/);assert.match(f.element('receipt-navigation-status').textContent,/조회할 수 없습니다/);assert.ok(!f.element('receipt-navigation-status').textContent.includes('private-navigation-canary'));assert.equal(f.candidate.disabled,false);
+ f.overrides.set('/v1/runs/'+lookupId,()=>execution('wrong'));await f.candidate.fire('click');assert.match(f.element('snapshot').textContent,/실행 B/);
+});
+test('duplicate receipt navigation is suppressed and delayed replies cannot replace a newer evidence selection',async()=>{
+ const f=await receiptNavigationFixture(),reply=deferred();let reads=0;f.overrides.set('/v1/runs/'+lookupId,()=>{reads++;return reply.promise;});
+ const pending=f.candidate.fire('click');await settle();await f.candidate.fire('click');await f.baseline.fire('click');assert.equal(reads,1);await f.view('B');reply.resolve(execution(lookupId));await pending;
+ assert.match(f.element('snapshot').textContent,/실행 B/);assert.equal(f.candidate.disabled,false);assert.match(f.element('receipt-navigation-status').textContent,/이전 ID 조회 결과/);
+});
+test('logout invalidates receipt navigation, clears its status and rejects detached old workspace buttons',async()=>{
+ const f=await receiptNavigationFixture(),reply=deferred();let reads=0;f.overrides.set('/v1/runs/'+lookupId,()=>{reads++;return reply.promise;});
+ const pending=f.candidate.fire('click');await settle();await f.element('logout-button').fire('click');reply.resolve(execution(lookupId));await pending;
+ assert.equal(f.element('receipt-navigation-status').textContent,'');assert.equal(f.element('release-check-panel').hidden,true);
+ await f.element('login-form').fire('submit');await f.candidate.fire('click');assert.equal(reads,1);assert.equal(f.element('receipt-navigation-status').textContent,'');
+});
