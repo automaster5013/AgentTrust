@@ -118,3 +118,23 @@ registry runtime job은 실제 이미지 검사와 모든 사전 점검이 성�
 `runtime_verified`는 후보 실행 검증 완료 상태다. 승격 작업은 같은 실행·시도·revision·digest의 명세인지 먼저 확인하고, Docker push 성공 후 별도 작업 요약에 `state: promoted`, `promotedAt`을 기록한다. 이 최종 요약에서 JSON을 복사해 수동 배포 기록으로 보관할 수 있다. `serverDeployed: false`는 실제 서버 배포를 수행하지 않았음을 나타낸다. 요약은 해당 Actions 실행에 연결되며 별도 다운로드 artifact나 release를 만들지 않는다.
 
 이 명세는 workflow가 만든 운영 기록이며 서명된 attestation이나 고객 릴리스 승인 영수증이 아니다. JSON만으로 CI의 출처·성공을 증명하지 않으므로 GitHub의 해당 실행 전체 성공 상태와 명세를 함께 확인한다. 실패·재실행 시도·다른 digest의 기록을 섞지 않는다. GitHub 실행/로그 보존 정책에 따라 나중에 요약을 사용할 수 없을 수 있으므로 장기 보관은 별도 운영 정책으로 관리한다.
+
+
+### 수동 배포 명세 확인 명령
+
+`npm run delivery:verify -- <manifest.json>`은 승격 작업 요약에서 저장한 공개 명세를 읽기 전용으로 확인한다. Docker·DB·GitHub에 접속하지 않으며 파일을 수정하지 않는다. 이미지·revision·저장소·실행 ID·시도 번호를 명세와 별도로, 신뢰할 수 있는 GitHub 성공 실행에서 먼저 확인해 지정한다. 명세 자체에서 기대값을 자동 추출하지 않는다.
+
+```powershell
+$env:AGENTTRUST_DELIVERY_REPOSITORY = 'automaster5013/AgentTrust'
+$env:AGENTTRUST_IMAGE = 'ghcr.io/automaster5013/agenttrust@sha256:<검증된 digest>'
+$env:AGENTTRUST_EXPECTED_REVISION = '<검증된 commit SHA>'
+$env:AGENTTRUST_DELIVERY_RUN_ID = '<검증된 Actions 실행 ID>'
+$env:AGENTTRUST_DELIVERY_RUN_ATTEMPT = '<해당 시도 번호>'
+npm run delivery:verify -- .local/delivery-manifest.json
+```
+
+명령은 `promoted` 상태, schemaVersion 1, 저장소·commit·digest·실행·시도·URL 일치, 전체 검증 목록과 시각 순서, 미래가 아닌 승격 시각을 확인한다. 후보 상태, 누락/변경된 검사, 잘못된 JSON/UTF-8, 64 KiB 초과 파일은 종료 코드 1과 `DELIVERY_MANIFEST_INVALID` JSON으로 차단한다. 경로·원문·예외를 출력하지 않고 알 수 없는 입력 필드도 결과에서 제외한다. 정상 결과는 종료 코드 0과 `status: passed`, `identityAndStructureVerified: true`다.
+
+정상 결과에도 `ciSuccessChecked: false`, `signatureVerified: false`를 명시한다. 파일 검사는 GitHub 성공 상태 조회나 서명된 출처 확인이 아니며, 조작자가 모든 필드를 재작성하면 파일 검사만으로 이를 판별할 수 없다. 신뢰할 수 있는 GitHub 실행 전체 성공 여부를 별도로 확인하고, 기존 `deploy:preflight`로 호스트 상태도 점검한다. 명세 검사를 배포 승인이나 자동 배포로 취급하지 않는다. 오래된 정상 명세의 열람은 허용하며 최신 릴리스 선택은 운영자가 결정한다.
+
+기계적으로 결과를 읽을 때는 `node scripts/verify-delivery.mjs <manifest.json>`을 직접 사용해 npm 안내 출력 없이 JSON을 얻는다. 이 명령은 `.env`를 자동으로 읽지 않으며 위의 독립적인 기대값만 필요하다. CI 승격 작업도 최종 명세 파일을 같은 명령으로 읽어 일치를 확인한다.

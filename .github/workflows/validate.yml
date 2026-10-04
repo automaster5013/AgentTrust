@@ -180,8 +180,17 @@ jobs:
           docker tag "$AGENTTRUST_IMAGE" "$image_name:main"
           docker push "$image_name:main"
           printf '## Runtime-verified container\n\nCommit: `%s`\n\nDeployable digest: `%s`\n\nRegistry pull, image identity, isolation, evaluation, restart and signed gate verification passed. No server deployment was performed.\n' "$GITHUB_SHA" "$AGENTTRUST_IMAGE" >> "$GITHUB_STEP_SUMMARY"
-      - name: Record promoted public delivery manifest
-        run: node scripts/delivery-manifest.mjs promoted
+      - name: Record and independently parse promoted public delivery manifest
+        shell: bash
+        env:
+          AGENTTRUST_DELIVERY_REPOSITORY: ${{ github.repository }}
+          AGENTTRUST_DELIVERY_RUN_ID: ${{ github.run_id }}
+          AGENTTRUST_DELIVERY_RUN_ATTEMPT: ${{ github.run_attempt }}
+          AGENTTRUST_EXPECTED_REVISION: ${{ github.sha }}
+        run: |
+          mkdir -p .local
+          node scripts/delivery-manifest.mjs promoted | tee .local/delivery-manifest.json
+          node scripts/verify-delivery.mjs .local/delivery-manifest.json
       - name: Remove runner registry login
         if: always()
         run: docker logout ghcr.io

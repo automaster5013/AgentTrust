@@ -36,6 +36,17 @@ export function promotedDeliveryManifest(env,manifest){
   assert.ok(Date.parse(verification.preflightVerifiedAt)>=Date.parse(verification.runtimeVerifiedAt));
   return {schemaVersion:1,...identity,state:'promoted',verification,promotedAt:new Date().toISOString(),serverDeployed:false};
 }
+export function verifyPromotedDeliveryManifest(env,manifest,now=Date.now()){
+  assert.equal(manifest.state,'promoted');
+  // Reuse the producer's identity and ordered verification checks, projecting
+  // only public fields rather than returning arbitrary input JSON.
+  const projected=promotedDeliveryManifest(env,{...manifest,state:'runtime_verified'});
+  const promotedAt=timestamp(manifest.promotedAt);
+  assert.ok(Number.isFinite(now));
+  assert.ok(Date.parse(promotedAt)>=Date.parse(projected.verification.preflightVerifiedAt));
+  assert.ok(Date.parse(promotedAt)<=now);
+  return {...projected,promotedAt,identityAndStructureVerified:true,ciSuccessChecked:false,signatureVerified:false};
+}
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   try{
     let manifest;
