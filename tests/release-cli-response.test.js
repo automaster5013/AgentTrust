@@ -4,9 +4,9 @@ import {hash} from '../packages/contracts/hash.js';
 import {checkRelease} from '../scripts/release-gate.mjs';
 const id='00000000-0000-0000-0000-000000000123',baseline='00000000-0000-0000-0000-000000000456';
 const input={base:'http://127.0.0.1:4310/',accessKey:'atci_synthetic',candidateRunId:id,agentVersionId:id,datasetVersionId:id,policyVersionId:id};
-async function check(result,options={}){
+async function check(result,options={},artifactFields={}){
  const request={candidateRunId:id,agentVersionId:id,datasetVersionId:id,policyVersionId:id,...(options.baselineRunId?{baselineRunId:options.baselineRunId}:{})};
- const artifact={request,result},receipt={...result,artifact,artifactHash:hash(artifact)};
+ const artifact={request,result,...artifactFields},receipt={...result,artifact,artifactHash:hash(artifact)};
  const original=globalThis.fetch;globalThis.fetch=async()=>new Response(JSON.stringify(receipt),{headers:{'Content-Type':'application/json'}});try{return await checkRelease({...input,...options});}finally{globalThis.fetch=original;}
 }
 const passing={runId:id,decision:'pass',deploymentAllowed:true,reasons:[]};
@@ -23,4 +23,13 @@ test('manual baseline evaluation pass remains separate from overall administrato
  const comparison={baselineRunId:baseline,candidateRunId:id,comparable:true,evaluationPassed:true,deploymentAllowed:false,requiresManualApproval:true};
  assert.equal((await check({...passing,comparison},{baselineRunId:baseline})).deploymentAllowed,true);
  assert.equal((await check({...passing,decision:'block',deploymentAllowed:false,reasons:['Approval missing'],comparison},{baselineRunId:baseline})).deploymentAllowed,false);
+});
+
+test('CLI rejects missing or other project receipt even with a consistent hash',async()=>{
+ for(const projectId of [undefined,baseline])await assert.rejects(check(passing,{projectId:id},{projectId}),/requested scope/);
+ const blocked={...passing,decision:'block',deploymentAllowed:false,reasons:['Synthetic block']};await assert.rejects(check(blocked,{projectId:id},{projectId:baseline}),/requested scope/);
+});
+test('CLI accepts explicitly bound project for both passing and blocked records',async()=>{
+ assert.equal((await check(passing,{projectId:id},{projectId:id})).deploymentAllowed,true);
+ assert.equal((await check({...passing,decision:'block',deploymentAllowed:false,reasons:['Synthetic block']},{projectId:id},{projectId:id})).deploymentAllowed,false);
 });
