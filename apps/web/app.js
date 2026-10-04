@@ -426,10 +426,11 @@ async function reviewHistory(run=currentRun,append=false){
 }
 $('review-form').addEventListener('submit',async event=>{
   event.preventDefault();if(reviewBusy||!currentRun||!['approved','rejected'].includes(event.submitter?.value))return;
-  const run=currentRun,epoch=scopeEpoch,decision=event.submitter.value;reviewBusy=true;invalidateFinalGate('검토 상태 변경을 요청했습니다. 최종 게이트를 다시 확인하세요.');$('review-approve').disabled=true;$('review-reject').disabled=true;$('review-more').disabled=true;
+  const run=currentRun,epoch=scopeEpoch,selection=selectedRunSequence,decision=event.submitter.value;
+  const isCurrent=()=>epoch===scopeEpoch&&selection===selectedRunSequence&&selectedRunId===run.id;reviewBusy=true;invalidateFinalGate('검토 상태 변경을 요청했습니다. 최종 게이트를 다시 확인하세요.');$('review-approve').disabled=true;$('review-reject').disabled=true;$('review-more').disabled=true;
   try{await api('/v1/runs/'+run.id+'/reviews',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({decision,comment:$('review-comment').value})});
-    if(epoch!==scopeEpoch||selectedRunId!==run.id)return;$('review-comment').value='';$('manual-gate-output').textContent='검토 상태가 변경되었습니다. 최종 게이트를 다시 확인하세요.';await reviewHistory(run);await auditHistory();message(decision==='approved'?'관리자 승인 기록을 저장했습니다.':'반려 기록을 저장했습니다.');
-  }catch(e){if(epoch===scopeEpoch&&selectedRunId===run.id)message(e.message,true);}
+    if(!isCurrent())return;$('review-comment').value='';$('manual-gate-output').textContent='검토 상태가 변경되었습니다. 최종 게이트를 다시 확인하세요.';await reviewHistory(run);if(!isCurrent())return;await auditHistory();if(isCurrent())message(decision==='approved'?'관리자 승인 기록을 저장했습니다.':'반려 기록을 저장했습니다.');
+  }catch(e){if(isCurrent())message(e.message,true);}
   finally{if(epoch===scopeEpoch){reviewBusy=false;invalidateFinalGate('검토 요청이 종료됐습니다. 최종 게이트를 다시 확인하세요.');await reviewHistory().catch(()=>{});}}
 });
 $('review-refresh').addEventListener('click',()=>{invalidateFinalGate('검토 기록을 새로고침했습니다. 최종 게이트를 다시 확인하세요.');reviewHistory().catch(e=>message(e.message,true));});

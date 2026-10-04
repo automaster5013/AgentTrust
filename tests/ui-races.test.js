@@ -349,3 +349,11 @@ test('obsolete review completion cannot clear a new workspace review lock or sta
  await f.element('review-form').fire('submit',{submitter:{value:'approved'}});assert.equal(calls,2);
  newer.resolve({});await newSubmission;assert.equal(f.element('review-approve').disabled,false);assert.equal(f.element('manual-gate-check').disabled,false);
 });
+
+
+test('review success from an earlier selection preserves a newly drafted comment for the same run',async()=>{
+ const f=await fixture({manual:true}),reply=deferred();await f.view('B');f.overrides.set('/v1/runs/B/reviews',()=>reply.promise);
+ f.element('review-comment').value='Submitted synthetic opinion';const pending=f.element('review-form').fire('submit',{submitter:{value:'approved'}});await settle();
+ await f.view('B');f.element('review-comment').value='New synthetic draft';f.element('status').textContent='Current selection status';reply.resolve({});await pending;
+ assert.equal(f.element('review-comment').value,'New synthetic draft');assert.equal(f.element('status').textContent,'Current selection status');assert.equal(f.element('review-approve').disabled,false);
+});
