@@ -20,6 +20,8 @@ let versionBusy=false;
 let workspaceMutation=null;
 let selectedRunId = null;
 let selectedRunSequence=0;
+let cancelOperation=null;
+const cancellationPending=()=>cancelOperation?.epoch===scopeEpoch&&cancelOperation?.selection===selectedRunSequence&&cancelOperation?.runId===selectedRunId;
 let keyCursor=null,receiptCursor=null,runCursor=null;
 let historySequence=0;
 let lookupSequence=0,lookupBusy=false;
@@ -191,7 +193,7 @@ function render(run) {
   for (const [key, id] of [['cases', 'case-count'], ['pass', 'pass-count'], ['fail', 'fail-count'], ['inconclusive', 'unknown-count']]) $(id).textContent = run.summary?.[key] ?? '—';
   $('snapshot').textContent = `실행 ${run.id}\n에이전트 ${run.snapshot.agent.name} · 데이터셋 ${run.snapshot.dataset.name} · 정책 ${run.snapshot.policy.name}\n스냅샷 SHA-256 ${run.snapshotHash}`;
   $('download').disabled = !terminal.has(run.state);
-  $('cancel-button').disabled = terminal.has(run.state) || actor?.role === 'viewer';
+  $('cancel-button').disabled = terminal.has(run.state) || actor?.role === 'viewer' || cancellationPending();
   renderEvidence();
   return true;
 }
@@ -293,6 +295,7 @@ $('download').addEventListener('click', () => {
   const link = node('a'); link.href = url; link.download = `agenttrust-${currentRun.id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 function clearProjectData(){
+  cancelOperation=null;
   $('workspace-nav').hidden=true;$('nav-projects').hidden=true;
   $('operations-refresh').disabled=false;
   reviewBusy=false;loading=false;versionBusy=false;workspaceMutation=null;workspaceControls();
@@ -364,13 +367,15 @@ $('logout-button').addEventListener('click',async()=>{
   try{await api('/v1/auth/logout',{method:'POST',body:'{}'});showLogin();}catch(e){message(e.message,true);}
 });
 $('cancel-button').addEventListener('click',async()=>{
-  if(!currentRun||currentRun.id!==selectedRunId)return;const target=currentRun,epoch=scopeEpoch,selection=selectedRunSequence;
+  if(!currentRun||currentRun.id!==selectedRunId||terminal.has(currentRun.state)||actor?.role==='viewer'||cancellationPending())return;const target=currentRun,epoch=scopeEpoch,selection=selectedRunSequence;
+  const operation={epoch,selection,runId:target.id};cancelOperation=operation;
   const isCurrent=()=>epoch===scopeEpoch&&selection===selectedRunSequence&&selectedRunId===target.id;$('cancel-button').disabled=true;
   try{const run=await api(`/v1/runs/${target.id}/cancel`,{method:'POST',body:'{}'});
     if(!isCurrent())return;render(run);await reviewHistory(run);if(!isCurrent())return;
     await history();if(!isCurrent())return;await auditHistory();if(!isCurrent())return;
-    message(`실행 ${target.id.slice(0,8)}을 취소했습니다. 늦은 응답은 판정에 반영되지 않습니다.`);
+    message(run.state==='cancelled'?`실행 ${target.id.slice(0,8)}을 취소했습니다. 늦은 응답은 판정에 반영되지 않습니다.`:`실행 ${target.id.slice(0,8)}은 이미 종료되어 취소되지 않았습니다. 현재 상태: ${stateLabels[run.state]||run.state}.`);
   }catch(e){if(isCurrent())message(e.message,true);}
+  finally{if(isCurrent()&&cancelOperation===operation){cancelOperation=null;$('cancel-button').disabled=!currentRun||terminal.has(currentRun.state)||actor?.role==='viewer';}}
 });
 $('audit-action').addEventListener('change',()=>auditHistory().catch(e=>message(e.message,true)));
 $('audit-more').addEventListener('click',()=>auditHistory(true).catch(e=>message(e.message,true)));

@@ -109,6 +109,33 @@ test('same-run reselection keeps freshly read state when an older cancellation r
  for(const callback of f.timers.splice(0))callback();await viewing;
 });
 
+test('polling cannot unlock or duplicate a pending cancellation of the selected run',async()=>{
+ const f=await fixture(),reply=deferred();const viewing=f.view('A');await settle();let calls=0;
+ f.overrides.set('/v1/runs/A/cancel',()=>{calls++;return reply.promise;});const cancelling=f.element('cancel-button').fire('click');await settle();
+ for(const callback of f.timers.splice(0))callback();await settle();assert.equal(f.element('cancel-button').disabled,true);await f.element('cancel-button').fire('click');assert.equal(calls,1);
+ f.runs.A=execution('A','cancelled');reply.resolve(f.runs.A);await cancelling;assert.match(f.element('status').textContent,/취소했습니다/);assert.equal(f.element('cancel-button').disabled,true);for(const callback of f.timers.splice(0))callback();await viewing;
+});
+
+test('completion winning a cancellation race is reported as the actual terminal state',async()=>{
+ for(const state of ['succeeded','failed','timed_out']){
+  const f=await fixture(),reply=deferred(),viewing=f.view('A');await settle();f.overrides.set('/v1/runs/A/cancel',()=>reply.promise);const cancelling=f.element('cancel-button').fire('click');await settle();
+  f.runs.A=execution('A',state);reply.resolve(f.runs.A);await cancelling;assert.ok(!f.element('status').textContent.includes('취소했습니다'));assert.match(f.element('status').textContent,/이미 종료/);assert.ok(f.element('status').textContent.includes(f.element('run-state').textContent));assert.equal(f.element('cancel-button').disabled,true);for(const callback of f.timers.splice(0))callback();await viewing;
+ }
+});
+
+test('failed cancellation releases only its current lock and requires an explicit retry',async()=>{
+ const f=await fixture(),viewing=f.view('A');await settle();let calls=0;
+ f.overrides.set('/v1/runs/A/cancel',()=>{calls++;throw Error('Synthetic cancellation failure');});await f.element('cancel-button').fire('click');assert.equal(calls,1);assert.equal(f.element('cancel-button').disabled,false);assert.match(f.element('status').textContent,/기록을 조회/);
+ f.runs.A=execution('A','cancelled');f.overrides.set('/v1/runs/A/cancel',()=>{calls++;return f.runs.A;});await f.element('cancel-button').fire('click');assert.equal(calls,2);assert.equal(f.element('cancel-button').disabled,true);for(const callback of f.timers.splice(0))callback();await viewing;
+});
+
+test('an older cancellation cannot unlock a new selected execution cancellation',async()=>{
+ const f=await fixture(),older=deferred(),newer=deferred(),first=f.view('A');await settle();f.overrides.set('/v1/runs/A/cancel',()=>older.promise);const oldRequest=f.element('cancel-button').fire('click');await settle();
+ f.runs.B=execution('B','running');const second=f.view('B');await settle();f.overrides.set('/v1/runs/B/cancel',()=>newer.promise);const newRequest=f.element('cancel-button').fire('click');await settle();
+ older.resolve(execution('A','cancelled'));await oldRequest;assert.equal(f.element('cancel-button').disabled,true);
+ f.runs.B=execution('B','cancelled');newer.resolve(f.runs.B);await newRequest;assert.match(f.element('status').textContent,/실행 B을 취소/);for(const callback of f.timers.splice(0))callback();await Promise.all([first,second]);
+});
+
 test('an old execution request cannot keep a new workspace locked or clear its active request',async()=>{
  const f=await fixture(),older=deferred(),newer=deferred();let calls=0;
  f.overrides.set('/v1/runs',()=>++calls===1?older.promise:newer.promise);
