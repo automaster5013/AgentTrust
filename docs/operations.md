@@ -15,7 +15,7 @@ docker compose logs --tail 50 worker
 
 외부 HTTPS opt-in을 활성화하지 않는다. LogiTrack 컨테이너는 정지 상태를 유지하며 이미지·볼륨을 삭제하거나 Docker 전체 prune을 실행하지 않는다. API 기본 health는 DB 연결 검사이며, 워커 상태는 위 heartbeat와 프로젝트 큐를 함께 확인해야 한다.
 
-복구·키 운영 절차는 backup-recovery.md, receipt-signatures.md, ci-operations.md를 따른다. 실제 OIDC·원격 runner·배포 대상은 정해지기 전 연결하지 않는다.
+복구·키 운영 절차는 backup-recovery.md, receipt-signatures.md, ci-operations.md를 따른다. GitHub CI의 임시 검증 runner는 연결되어 있다. 실제 OIDC·고객 평가용 원격 runner·배포 대상은 해당 범위가 정해지기 전 연결하지 않는다.
 
 관리자 조직 감사 기록은 선택 프로젝트와 별도로 현재 조직 전체를 조회한다. 평가·승인·반려·CI 확인 등의 동작별 필터와 25개씩 더 보기를 제공한다. `GET /v1/audit-events?limit=25&action=run.review.approved`는 `{items,nextCursor}`를 반환하며 cursor는 조직·선택 프로젝트·동작 필터·감사 리소스에 고정된다. 다른 필터나 워크스페이스에서 재사용하면 400이다. 쿼리 없는 기존 요청은 최신 100개 배열 형식을 유지한다. 조직 관리자는 다른 프로젝트 감사 기록도 볼 수 있으며 조회자·작성자·CI 키는 이 API를 사용할 수 없다. 기록은 감사 동작·시각·리소스 ID만 화면에 표시하며 원문 의견이나 토큰을 기록하지 않는다.
 
