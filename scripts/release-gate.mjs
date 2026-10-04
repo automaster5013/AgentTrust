@@ -4,6 +4,17 @@ import { randomUUID } from 'node:crypto';
 import { hash } from '../packages/contracts/hash.js';
 import { pathToFileURL } from 'node:url';
 
+export const releaseResponseLimit=8*1024*1024;
+export async function readReleaseResponse(response){
+  if(!response.body)throw new Error('Release response body is missing.');
+  const chunks=[];let bytes=0;
+  for await(const chunk of response.body){
+    bytes+=chunk.byteLength;
+    if(bytes>releaseResponseLimit)throw new Error('Release response exceeds the size limit.');
+    chunks.push(chunk);
+  }
+  return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(chunks,bytes)));
+}
 export async function saveReleaseReceipt(path,result){
   if(typeof path!=='string'||!path.trim()||!result?.artifact||result.artifactHash!==hash(result.artifact))throw new Error('Invalid release receipt export.');
   const receipt={artifact:result.artifact,artifactHash:result.artifactHash,...(result.signature?{signature:result.signature}:{})};
@@ -28,7 +39,7 @@ export async function checkRelease({base,accessKey,candidateRunId,baselineRunId,
   };
   const check=async authorization=>{
     const response=await call('/v1/release-gate',{method:'POST',headers:{...authorization,'Idempotency-Key':checkKey},body:JSON.stringify(request)});
-    const result=await response.json();
+    const result=await readReleaseResponse(response);
     if(typeof result.deploymentAllowed!=='boolean'||!['pass','block'].includes(result.decision)||result.runId!==candidateRunId||!result.artifact||hash(result.artifact.request)!==hash(request)||result.artifactHash!==hash(result.artifact)||hash(result.artifact.result)!==hash(Object.fromEntries(Object.entries(result).filter(([k])=>!['artifact','artifactHash','signature'].includes(k)))))throw new Error('Release receipt integrity verification failed.');
     if(result.deploymentAllowed!==(result.decision==='pass')||!Array.isArray(result.reasons)||!result.reasons.every(reason=>typeof reason==='string')||(result.deploymentAllowed&&result.reasons.length>0))throw new Error('Release receipt decision is inconsistent.');
     if(baselineRunId&&(!result.comparison||result.comparison.baselineRunId!==baselineRunId||result.comparison.candidateRunId!==candidateRunId||(result.deploymentAllowed&&(result.comparison.comparable!==true||(result.comparison.evaluationPassed??result.comparison.deploymentAllowed)!==true))))throw new Error('Release baseline comparison is inconsistent.');

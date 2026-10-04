@@ -7,7 +7,7 @@ const input={base:'http://127.0.0.1:4310/',accessKey:'atci_synthetic',candidateR
 async function check(result,options={}){
  const request={candidateRunId:id,agentVersionId:id,datasetVersionId:id,policyVersionId:id,...(options.baselineRunId?{baselineRunId:options.baselineRunId}:{})};
  const artifact={request,result},receipt={...result,artifact,artifactHash:hash(artifact)};
- const original=globalThis.fetch;globalThis.fetch=async()=>({ok:true,json:async()=>receipt});try{return await checkRelease({...input,...options});}finally{globalThis.fetch=original;}
+ const original=globalThis.fetch;globalThis.fetch=async()=>new Response(JSON.stringify(receipt),{headers:{'Content-Type':'application/json'}});try{return await checkRelease({...input,...options});}finally{globalThis.fetch=original;}
 }
 const passing={runId:id,decision:'pass',deploymentAllowed:true,reasons:[]};
 test('CLI rejects hash-consistent contradictions between decision, permission and reasons',async()=>{
