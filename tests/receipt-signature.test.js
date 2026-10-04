@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
-import { ReceiptSigner,verifyReceipt,loadReceiptSigner } from '../packages/receipts/signature.js';
+import { ReceiptSigner,verifyReceipt,loadReceiptSigner,trustedReceiptKey } from '../packages/receipts/signature.js';
 import { hash } from '../packages/contracts/hash.js';
 
 test('receipt signatures require an independently trusted key and bind the full artifact',()=>{
@@ -19,4 +19,15 @@ test('receipt signatures require an independently trusted key and bind the full 
   assert.throws(()=>verifyReceipt({...receipt,signature:{...receipt.signature,algorithm:'none'}},publicKey));
   assert.throws(()=>loadReceiptSigner('C:/AgentTrust/.local/missing-signing-key.pem'));
   assert.equal(loadReceiptSigner(''),null);
+});
+
+test('trusted receipt keys accept only Ed25519 public SPKI PEM without deriving private keys',()=>{
+ const pair=generateKeyPairSync('ed25519'),privatePem=pair.privateKey.export({type:'pkcs8',format:'pem'}),signer=new ReceiptSigner(privatePem);
+ const artifact={result:{decision:'pass'}},receipt={artifact,artifactHash:hash(artifact),signature:signer.sign(artifact)};
+ const publicPem=pair.publicKey.export({type:'spki',format:'pem'});
+ assert.equal(verifyReceipt(receipt,'\n'+publicPem+'\n').signatureVerified,true);
+ for(const key of [privatePem,'',undefined,publicPem.replace('PUBLIC KEY','PRIVATE KEY'),'-----BEGIN PUBLIC KEY-----\ninvalid\n-----END PUBLIC KEY-----',generateKeyPairSync('ec',{namedCurve:'prime256v1'}).publicKey.export({type:'spki',format:'pem'}),pair.publicKey]){
+  assert.throws(()=>trustedReceiptKey(key),/valid Ed25519 trusted public key/);
+  assert.throws(()=>verifyReceipt(receipt,key),/valid Ed25519 trusted public key/);
+ }
 });

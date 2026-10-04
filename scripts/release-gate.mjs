@@ -1,7 +1,7 @@
 import { readFile,writeFile } from 'node:fs/promises';
-import { verifyReceipt } from '../packages/receipts/signature.js';
+import { verifyReceipt,trustedReceiptKey } from '../packages/receipts/signature.js';
 import { receiptFileLimit } from '../packages/receipts/limits.js';
-import { randomUUID,createPublicKey } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { hash } from '../packages/contracts/hash.js';
 import { pathToFileURL } from 'node:url';
 
@@ -34,11 +34,7 @@ export async function checkRelease({base,accessKey,candidateRunId,baselineRunId,
   if(projectId!==undefined&&!uuid(projectId))throw new Error('Invalid project UUID.');
   if(typeof checkKey!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(checkKey))throw new Error('Invalid release check key.');
   if(typeof accessKey!=='string'||!accessKey.trim())throw new Error('Release access key is required.');
-  if(trustedPublicKey!==undefined){
-    try{
-      if(typeof trustedPublicKey!=='string'||!trustedPublicKey.trim().startsWith('-----BEGIN PUBLIC KEY-----')||createPublicKey(trustedPublicKey).asymmetricKeyType!=='ed25519')throw new Error();
-    }catch{throw new Error('A valid Ed25519 trusted public key is required.');}
-  }
+  if(trustedPublicKey!==undefined)trustedReceiptKey(trustedPublicKey);
   candidateRunId=candidateRunId.toLowerCase();baselineRunId=baselineRunId?.toLowerCase();projectId=projectId?.toLowerCase();
   for(const key of ['agentVersionId','datasetVersionId','policyVersionId'])expected[key]=expected[key].toLowerCase();
   const request={candidateRunId,...(baselineRunId?{baselineRunId}:{}),...expected};

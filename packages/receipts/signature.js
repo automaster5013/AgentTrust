@@ -9,6 +9,12 @@ function publicIdentity(key){
   const der=publicKey.export({type:'spki',format:'der'});
   return {publicKey,keyId:createHash('sha256').update(der).digest('hex')};
 }
+export function trustedReceiptKey(pem){
+  try{
+    if(typeof pem!=='string'||!pem.trim().startsWith('-----BEGIN PUBLIC KEY-----'))throw new Error();
+    return publicIdentity(pem);
+  }catch{throw new Error('A valid Ed25519 trusted public key is required.');}
+}
 export class ReceiptSigner{
   constructor(pem){
     this.privateKey=createPrivateKey(pem);const identity=publicIdentity(this.privateKey);
@@ -23,7 +29,7 @@ export function loadReceiptSigner(path=process.env.AGENTTRUST_RECEIPT_SIGNING_KE
 export function verifyReceipt(receipt,trustedPem){
   const {artifact,artifactHash,signature}=receipt||{};
   if(!artifact||artifactHash!==hash(artifact)||signature?.algorithm!=='Ed25519'||typeof signature.value!=='string'||!/^[A-Za-z0-9+/]{86}==$/.test(signature.value))throw new Error('Invalid signed release receipt.');
-  const {publicKey,keyId}=publicIdentity(trustedPem);
+  const {publicKey,keyId}=trustedReceiptKey(trustedPem);
   if(signature.keyId!==keyId||!verify(null,message(artifactHash),publicKey,Buffer.from(signature.value,'base64')))throw new Error('Receipt signature does not match the trusted key.');
   return {receiptId:artifact.receiptId,organizationId:artifact.organizationId,projectId:artifact.projectId,checkedAt:artifact.checkedAt,decision:artifact.result.decision,keyId,signatureVerified:true};
 }

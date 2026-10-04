@@ -11,6 +11,18 @@ import {hash} from '../packages/contracts/hash.js';
 import {readReceiptFile,receiptFileLimit} from '../scripts/verify-receipt.mjs';
 
 const exec=promisify(execFile);
+test('offline CLI refuses a matching signing private key as its trusted public key',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'agenttrust-receipt-'));
+ try{
+  const pair=generateKeyPairSync('ed25519'),privatePem=pair.privateKey.export({type:'pkcs8',format:'pem'}),signer=new ReceiptSigner(privatePem);
+  const artifact={result:{decision:'pass'}},receipt={artifact,artifactHash:hash(artifact),signature:signer.sign(artifact)};
+  const file=join(dir,'receipt.json'),key=join(dir,'synthetic-key.pem');
+  await writeFile(file,JSON.stringify(receipt));await writeFile(key,privatePem,{mode:0o600});
+  await assert.rejects(exec(process.execPath,['scripts/verify-receipt.mjs',file,key]),error=>error.code===2&&!error.stdout&&error.stderr.includes('Signed receipt verification failed.')&&!error.stderr.includes(privatePem));
+  await writeFile(key,pair.publicKey.export({type:'spki',format:'pem'}));
+  const result=await exec(process.execPath,['scripts/verify-receipt.mjs',file,key]);assert.equal(JSON.parse(result.stdout).signatureVerified,true);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
 test('offline CLI verifies large exported receipts and rejects tampering',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'agenttrust-receipt-'));
  try{
