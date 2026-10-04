@@ -67,7 +67,7 @@ async function fixture({manual=false,initialOverrides,waitForInitialization=true
     if(path.startsWith('/v1/runs/'))return runs[path.split('/')[3]];
     return {items:[],nextCursor:null};
   };
-  const fetch=async(path,options={})=>{const handler=overrides.get(path),data=handler?await handler(options):defaultResponse(path);return {status:200,ok:true,json:async()=>data};};
+  const fetch=async(path,options={})=>{const handler=overrides.get(path),data=handler?await handler(options):defaultResponse(path);return data instanceof Response?data:new Response(JSON.stringify(data),{status:200,headers:{'Content-Type':'application/json'}});};
   const source=await readFile(new URL('../apps/web/app.js',import.meta.url),'utf8');
   const AsyncFunction=Object.getPrototypeOf(async()=>{}).constructor;
   const initialized=new AsyncFunction('document','fetch','setTimeout','crypto','URL','AbortSignal',source)(document,fetch,callback=>{timers.push(callback);},webcrypto,{createObjectURL:blob=>{downloads.push(blob);return 'blob:synthetic';},revokeObjectURL(){}},{timeout:timeoutSignal});
@@ -376,11 +376,11 @@ test('initial hydration hides interactive workspace and registers forms before t
 });
 test('failed initial hydration returns to a usable login without exposing partial workspace',async()=>{
  const f=await fixture({initialOverrides:[['/v1/ci-credentials?limit=25',()=>{throw new Error('Synthetic initialization read failed');}]]});
- assert.equal(f.element('workspace-ui').hidden,true);assert.equal(f.element('loading-panel').hidden,true);assert.equal(f.element('login-panel').hidden,false);assert.equal(f.element('login-button').disabled,false);assert.equal(f.element('login-status').textContent,'Synthetic initialization read failed');
+ assert.equal(f.element('workspace-ui').hidden,true);assert.equal(f.element('loading-panel').hidden,true);assert.equal(f.element('login-panel').hidden,false);assert.equal(f.element('login-button').disabled,false);assert.match(f.element('login-status').textContent,/서버 응답을 읽지 못했습니다/);assert.ok(!f.element('login-status').textContent.includes('Synthetic initialization read failed'));
 });
 test('data loading failure after login cannot leave the loading panel stuck',async()=>{
  const f=await fixture();await f.element('logout-button').fire('click');f.overrides.set('/v1/ci-credentials?limit=25',()=>{throw new Error('Synthetic post-login read failed');});f.element('access-key').value='synthetic-key';await f.element('login-form').fire('submit');
- assert.equal(f.element('workspace-ui').hidden,true);assert.equal(f.element('loading-panel').hidden,true);assert.equal(f.element('login-panel').hidden,false);assert.equal(f.element('login-button').disabled,false);assert.equal(f.element('access-key').value,'');assert.equal(f.element('login-status').textContent,'Synthetic post-login read failed');
+ assert.equal(f.element('workspace-ui').hidden,true);assert.equal(f.element('loading-panel').hidden,true);assert.equal(f.element('login-panel').hidden,false);assert.equal(f.element('login-button').disabled,false);assert.equal(f.element('access-key').value,'');assert.match(f.element('login-status').textContent,/서버 응답을 읽지 못했습니다/);assert.ok(!f.element('login-status').textContent.includes('Synthetic post-login read failed'));
 });
 
 const releaseResult=(allowed=true)=>({decision:allowed?'pass':'block',deploymentAllowed:allowed,reasons:allowed?[]:['A required rule failed.'],artifact:{checkedAt:'2026-01-01T00:00:00Z',receiptId:'synthetic-receipt'}});
@@ -564,4 +564,18 @@ test('final gate timeout releases its button without granting permission and can
  controllers.at(-1).abort(new DOMException('Synthetic deadline','TimeoutError'));await pending;
  assert.match(f.element('manual-gate-output').textContent,/시간이 초과/);assert.match(f.element('manual-gate-output').textContent,/처리됐을 수/);assert.equal(f.element('manual-gate-check').disabled,false);assert.equal(f.element('current-receipt-download').disabled,true);assert.equal(f.element('next-action-link').href,'#release-check-panel');
  f.overrides.set('/v1/release-gate',()=>signedUiReceipt().report);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/최종 게이트: 통과/);
+});
+
+test('malformed HTTP JSON cannot expose response fragments in the final gate error',async()=>{
+ const f=await fixture();await f.view('B');const canary='syn_key';f.overrides.set('/v1/release-gate',()=>new Response(canary));
+ await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/확인 실패/);assert.ok(!f.element('manual-gate-output').textContent.includes(canary));assert.equal(f.element('current-receipt-download').disabled,true);assert.equal(f.element('manual-gate-check').disabled,false);
+});
+
+test('invalid UTF-8 and excessive HTTP evidence cannot display a passing final gate',async()=>{
+ const f=await fixture();await f.view('B');const signed=signedUiReceipt(),json=JSON.stringify(signed.report);
+ const damaged=Buffer.concat([Buffer.from(json.slice(0,-1)+',"ignored":"'),Buffer.from([255]),Buffer.from('"}')]);
+ for(const body of [damaged,JSON.stringify({...signed.report,ignored:'x'.repeat(8*1024*1024)})]){
+  f.overrides.set('/v1/release-gate',()=>new Response(body));await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/확인 실패/);assert.ok(!f.element('manual-gate-output').textContent.includes('최종 게이트: 통과'));assert.equal(f.element('current-receipt-download').disabled,true);assert.equal(f.element('manual-gate-check').disabled,false);
+ }
+ f.overrides.set('/v1/release-gate',()=>signed.report);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/최종 게이트: 통과/);assert.equal(f.element('current-receipt-download').disabled,false);
 });

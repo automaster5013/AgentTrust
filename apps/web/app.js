@@ -100,20 +100,31 @@ const terminal = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
 const decisionLabels = { pass: '통과', block: '차단', inconclusive: '판정 불가' };
 const stateLabels = { queued: '대기 중', running: '실행 중', succeeded: '평가 완료', failed: '실행 실패', cancelled: '취소됨', timed_out: '시간 초과' };
 function message(text, error = false) { $('status').textContent = text; $('status').className = error ? 'error' : ''; }
+async function readApiResponse(response){
+  const reader=response.body?.getReader();if(!reader)throw new Error('Missing API response body.');
+  const chunks=[];let bytes=0;
+  try{
+    for(;;){const {done,value}=await reader.read();if(done)break;bytes+=value.byteLength;
+      if(bytes>8*1024*1024){await reader.cancel();throw new Error('API response exceeds size limit.');}chunks.push(value);
+    }
+  }finally{reader.releaseLock();}
+  const body=new Uint8Array(bytes);let offset=0;for(const chunk of chunks){body.set(chunk,offset);offset+=chunk.byteLength;}
+  return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(body));
+}
 async function api(path, options = {}) {
   const epoch=scopeEpoch;
   let response,data;
   try{
     response=await fetch(path,{...options,signal:AbortSignal.timeout(15000),headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui',...(activeProjectId?{'X-AgentTrust-Project':activeProjectId}:{}),...options.headers}});
-    data=await response.json();
+    data=await readApiResponse(response);
   }catch(error){
     if(epoch!==scopeEpoch)throw new Error('워크스페이스가 변경되어 이전 요청의 결과를 표시하지 않습니다.');
     if(error.name==='TimeoutError')throw new Error('요청 시간이 초과됐습니다. 서버에서 처리됐을 수 있으므로 기록을 조회한 뒤 다시 시도하세요.');
-    throw error;
+    throw new Error('서버 응답을 읽지 못했습니다. 기록을 조회한 뒤 다시 시도하세요.');
   }
   if(epoch!==scopeEpoch)throw new Error('워크스페이스가 변경되어 이전 요청의 결과를 표시하지 않습니다.');
   if (response.status === 401) showLogin();
-  if (!response.ok) throw new Error(data.error || '요청을 완료하지 못했습니다.');
+  if (!response.ok) throw new Error(typeof data?.error==='string'&&data.error.length<=500?data.error:'요청을 완료하지 못했습니다.');
   return data;
 }
 function node(tag, text, className) {
