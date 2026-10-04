@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import pg from 'pg';
+import {securityFingerprint} from '../scripts/recovery.mjs';
 import {hash} from '../packages/contracts/hash.js';
-import {revisionMigrations,verifyMigrationLedger,verifyDatabaseTarget,readAppliedMigrations} from '../scripts/deployment-schema.mjs';
+import {revisionMigrations,verifyMigrationLedger,verifyDatabaseTarget,readAppliedMigrations,readDeploymentDatabaseState} from '../scripts/deployment-schema.mjs';
 
 test('migration gate rejects missing, extra, duplicate or changed applied migrations',()=>{
   const sources=[{name:'001_initial.sql',sql:'SELECT 1;\n'},{name:'002_next.sql',sql:'\uFEFFSELECT 2;\r\n'}];
@@ -32,5 +33,27 @@ test('real database migration ledger matches committed revision using a read-onl
     await client.query('ROLLBACK');
     assert.deepEqual(await readAppliedMigrations(client),rows);
     assert.equal((await client.query('SHOW transaction_read_only')).rows[0].transaction_read_only,'off');
+  }finally{await client.end();}
+});
+
+
+test('security catalog detects unrecorded DDL, RLS and privilege changes without changing migration history',async()=>{
+  const client=new pg.Client({connectionString:process.env.TEST_OWNER_DATABASE_URL,connectionTimeoutMillis:5000,statement_timeout:5000});
+  try{
+    await client.connect();
+    const before=await readDeploymentDatabaseState(client);
+    assert.match(before.securityHash,/^[a-f0-9]{64}$/);
+    await client.query('BEGIN');
+    try{
+      // A new uncommitted test table avoids locks or changes to application tables.
+      await client.query('CREATE TABLE agenttrust.preflight_catalog_probe (id integer)');
+      const added=await securityFingerprint(client,2);assert.notEqual(added,before.securityHash);
+      await client.query('ALTER TABLE agenttrust.preflight_catalog_probe ENABLE ROW LEVEL SECURITY');
+      const isolated=await securityFingerprint(client,2);assert.notEqual(isolated,added);
+      await client.query('GRANT SELECT ON agenttrust.preflight_catalog_probe TO agenttrust_api');
+      const granted=await securityFingerprint(client,2);assert.notEqual(granted,isolated);
+      assert.deepEqual((await client.query('SELECT name,checksum FROM public.agenttrust_migrations ORDER BY name')).rows,before.rows);
+    }finally{await client.query('ROLLBACK');}
+    assert.deepEqual(await readDeploymentDatabaseState(client),before);
   }finally{await client.end();}
 });

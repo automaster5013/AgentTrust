@@ -34,6 +34,8 @@ test('read-only preflight authenticates backup and rejects stale, unbound and ta
     assert.equal((await verifyRecoveryEvidence({directory,report,now})).backupAuthenticated,true);
     assert.equal((await verifyRecoveryEvidence({directory,report,now,expectedMigrationHash:'c'.repeat(64)})).backupMigrationLedgerVerified,true);
     await assert.rejects(verifyRecoveryEvidence({directory,report,now,expectedMigrationHash:'d'.repeat(64)}));
+    assert.equal((await verifyRecoveryEvidence({directory,report,now,expectedSecurityHash:'a'.repeat(64)})).backupSecurityCatalogVerified,true);
+    await assert.rejects(verifyRecoveryEvidence({directory,report,now,expectedSecurityHash:'b'.repeat(64)}));
     assert.deepEqual(await readFile(path),ciphertext);
     for(const change of [{backup:'../../secret'},{sha256:'b'.repeat(64)},{authTenantPoliciesVerified:false},{verifiedAt:new Date(now+1000).toISOString()}])await assert.rejects(verifyRecoveryEvidence({directory,report:{...report,...change},now}));
     await assert.rejects(verifyRecoveryEvidence({directory,report,now:now+25*3600000}));

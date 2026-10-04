@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {securityFingerprint} from './recovery.mjs';
 import {hash} from '../packages/contracts/hash.js';
 
 const root=fileURLToPath(new URL('..',import.meta.url));
@@ -38,11 +39,14 @@ export function verifyDatabaseTarget(connectionString,config){
   assert.equal(decodeURIComponent(url.password),config.services.db.environment.POSTGRES_PASSWORD);
   assert.equal(url.search,'');
 }
-export async function readAppliedMigrations(client){
+export async function readDeploymentDatabaseState(client){
   await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
   try{
     assert.equal((await client.query('SHOW transaction_read_only')).rows[0].transaction_read_only,'on');
     const rows=(await client.query('SELECT name,checksum FROM public.agenttrust_migrations ORDER BY name')).rows;
-    await client.query('ROLLBACK');return rows;
+    const securityHash=await securityFingerprint(client,2);
+    await client.query('ROLLBACK');return {rows,securityHash,securityVersion:2};
   }catch(error){await client.query('ROLLBACK').catch(()=>{});throw error;}
 }
+
+export async function readAppliedMigrations(client){return (await readDeploymentDatabaseState(client)).rows;}
