@@ -32,3 +32,9 @@ Linux 호스트에서 서명 파일이 0600이면 API 사용자 UID:GID를 해�
 5. 이미지 문제를 복귀시킬 때는 직전 검증 digest를 같은 AGENTTRUST_IMAGE 변수로 지정하고 위 pull/up 절차를 수행한다. 볼륨 삭제·Docker 전체 prune·기존 서명 키 덮어쓰기를 하지 않는다. DB 변경은 별도 호환성/복원 판단이 필요하다.
 
 compose.image.yaml은 API의 로컬 build 설정을 제거하고 API와 워커에 같은 이미지를 지정한다. 기존 loopback 포트, 워커 내부 네트워크, read-only 파일시스템, 최소 권한과 API 전용 서명 키를 유지한다. Compose의 [override/reset 규칙](https://docs.docker.com/reference/compose-file/merge/)을 사용한다. 인터넷 공개용 도메인·TLS·역방향 프록시·기업 인증·서버 접속·자동 운영 배포는 별도 목표가 정해진 뒤 구성한다.
+
+## 첫 원격 실행 검증
+
+2026-10-04 [Actions 실행 37166648795](https://github.com/automaster5013/AgentTrust/actions/runs/37166648795), commit `c24a32d42d3d5a9bd53c25adbe0daf212c5efd77`에서 test와 Publish verified container가 모두 성공했다. 136개 테스트가 통과했고 재시작 지속성·서명·관리자 검토·반복 평가·워커 중단 복구·암호화 복원 단계가 모두 통과했다. 최초 검증 이미지 digest는 `ghcr.io/automaster5013/agenttrust@sha256:22de58c068c98bf5bd2f6304b43a0e0b6518d6c23a0b0e416818f6d106203732`다. 이는 해당 commit의 기록이며 최신 이미지는 이후 성공한 Actions 실행의 요약에서 확인한다.
+
+소스와 Git 이력을 업로드하기 전에 로컬 접근 키·DB 비밀번호·서명 비밀 키 포함 여부를 검사했다. `.env`·`.local`·백업/키는 저장소와 이미지에 포함하지 않는다. 이 작업에서 배포 서버에 연결하거나 LogiTrack 자산을 변경하지 않았다.
