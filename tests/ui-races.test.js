@@ -185,7 +185,7 @@ test('data loading failure after login cannot leave the loading panel stuck',asy
  assert.equal(f.element('workspace-ui').hidden,true);assert.equal(f.element('loading-panel').hidden,true);assert.equal(f.element('login-panel').hidden,false);assert.equal(f.element('login-button').disabled,false);assert.equal(f.element('access-key').value,'');assert.equal(f.element('login-status').textContent,'Synthetic post-login read failed');
 });
 
-const releaseResult=(allowed=true)=>({deploymentAllowed:allowed,reasons:allowed?[]:['A required rule failed.'],artifact:{checkedAt:'2026-01-01T00:00:00Z',receiptId:'synthetic-receipt'}});
+const releaseResult=(allowed=true)=>({decision:allowed?'pass':'block',deploymentAllowed:allowed,reasons:allowed?[]:['A required rule failed.'],artifact:{checkedAt:'2026-01-01T00:00:00Z',receiptId:'synthetic-receipt'}});
 test('completed evaluations without manual approval expose a version-bound final gate check',async()=>{
  const f=await fixture();await f.view('B');assert.equal(f.element('review-panel').hidden,true);assert.equal(f.element('release-check-panel').hidden,false);assert.equal(f.element('manual-gate-check').disabled,false);
  let input;f.overrides.set('/v1/release-gate',options=>{input=JSON.parse(options.body);return releaseResult();});await f.element('manual-gate-check').fire('click');
@@ -320,4 +320,18 @@ test('an obsolete regression link cannot restore focus after baseline change or 
 });
 test('editing ordinary evidence filters clears exact regression focus',async()=>{
  const f=await regressionFixture();await f.element('gate-regression-links').children[0].fire('click');f.element('evidence-search').value='case-10';await f.element('evidence-search').fire('input');assert.equal(f.element('evidence-focus').textContent,'');assert.equal(f.element('evidence-focus-clear').hidden,true);assert.match(f.element('results').textContent,/case-10/);
+});
+
+
+test('malformed or contradictory final gate responses cannot show pass or enable receipt export',async()=>{
+ const f=await fixture();await f.view('B');
+ const signed=signedUiReceipt();
+ const responses=[{...signed.report,deploymentAllowed:'false'},{...signed.report,deploymentAllowed:1},{...signed.report,decision:'block'},{...signed.report,decision:'inconclusive'},{...signed.report,reasons:['Synthetic blocking reason']},{...signed.report,reasons:null},{...signed.report,reasons:[9]},null];
+ for(const response of responses){
+  f.overrides.set('/v1/release-gate',()=>response);await f.element('manual-gate-check').fire('click');
+  assert.match(f.element('manual-gate-output').textContent,/확인 실패/);assert.ok(!f.element('manual-gate-output').textContent.includes('최종 게이트: 통과'));
+  assert.equal(f.element('current-receipt-download').disabled,true);assert.equal(f.element('manual-gate-check').disabled,false);assert.equal(f.element('next-action-link').href,'#release-check-panel');
+  await f.element('current-receipt-download').fire('click');assert.equal(f.downloads.length,0);
+ }
+ f.overrides.set('/v1/release-gate',()=>signed.report);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/최종 게이트: 통과/);assert.equal(f.element('current-receipt-download').disabled,false);
 });
