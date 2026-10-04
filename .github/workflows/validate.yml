@@ -43,6 +43,7 @@ jobs:
           node --env-file-if-exists=.env scripts/manual-review-smoke.mjs
       - name: Verify reproducible synthetic portfolio scenario
         run: |
+          npm run demo:preflight
           npm run demo:portfolio
           npm run demo:roles
       - name: Verify repeated synthetic outcomes and exactly-once accounting

@@ -10,6 +10,7 @@ Node.js 24와 Docker Desktop을 준비하고 저장소 루트에서 실행한다
 npm.cmd ci --cache .cache/npm --ignore-scripts
 npm.cmd run setup
 npm.cmd run docker:up
+npm.cmd run demo:preflight
 npm.cmd run demo:portfolio
 ```
 
@@ -64,3 +65,9 @@ npm.cmd run demo:roles
 명령은 정책 1개·평가 1개와 검토·게이트 기록을 보존한다. 단계 11개 중 거절 검증은 6개이며 최종 게이트 서명은 3개다. 보고서는 `.local/portfolio-roles-<UUID>.json`에 독점 저장한다. 종료 코드 0과 `status: passed`, `cleanupSucceeded: true`, `sessionsLoggedOut: true`를 함께 확인한다. 권한 거절 대신 허용되거나 서명·정리가 실패하면 종료 코드 1이다. 자체 미완료 실행을 작성자로 취소하고, 승인 시도 후 실패한 사례를 관리자로 반려하며 생성한 세션을 각각 종료한다. 통신 중단의 기록 발견 제한은 앞 절과 같다.
 
 화면에서는 역할별로 별도 브라우저 세션을 사용해 작성자의 실행 버튼, 조회자의 비활성 실행 버튼·읽기 가능한 근거, 관리자의 검토 양식을 확인할 수 있다. 이 명령은 기존 RBAC와 조직 격리를 실제 API에서 시연하며, 정책상 2인 승인이나 실사용자 역할 분리를 추가하지 않는다.
+
+## 시연 준비 상태 점검
+
+`npm run demo:preflight`는 데이터·정책·세션·보고서 파일을 만들지 않는 읽기 전용 검사다. Node.js 24와 PORT, 로컬 설정/두 조직의 역할 키 형식, Ed25519 키 쌍, 현재 Compose API·DB·워커 실행 상태와 API loopback 포트, 공개 health 응답의 DB 연결을 순서대로 확인한다. 첫 실패 단계 이후는 not_run으로 표시한다. status passed와 종료 코드 0, 또는 blocked와 종료 코드 1을 반환하며 고정 안내만 출력한다. 키·Docker 원문·오류 스택은 출력하지 않는다.
+
+Docker가 꺼져 있거나 서비스가 멈췄다면 안내에 따라 Docker Desktop과 docker:up을 실행한다. 설정/키 단계가 막히면 기존 비밀 파일을 보존하고 setup 상태를 확인한다. 명령은 시작·재시작·마이그레이션·로그인·외부 연결을 수행하지 않는다. 성공은 구조와 현재 가용성의 점검이며 키의 DB 인증 유효성·seed 버전 내용·워커 실제 평가 성공·현재 이미지의 소스 일치를 증명하지 않는다. 이어서 두 데모 명령으로 실제 평가·권한·서명을 확인한다. 운영 배포 전 검사는 별도의 deploy:preflight를 따른다.
