@@ -2,9 +2,10 @@ import { readFile } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { verifyReceipt } from '../packages/receipts/signature.js';
+import { receiptFileLimit } from '../packages/receipts/limits.js';
+export { receiptFileLimit } from '../packages/receipts/limits.js';
 
 // Pretty-printed exports may be larger than the 8 MiB API response.
-export const receiptFileLimit=16*1024*1024;
 export async function readReceiptFile(path){
   const chunks=[];let bytes=0;
   for await(const chunk of createReadStream(path)){

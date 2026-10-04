@@ -1,5 +1,6 @@
 import { readFile,writeFile } from 'node:fs/promises';
 import { verifyReceipt } from '../packages/receipts/signature.js';
+import { receiptFileLimit } from '../packages/receipts/limits.js';
 import { randomUUID,createPublicKey } from 'node:crypto';
 import { hash } from '../packages/contracts/hash.js';
 import { pathToFileURL } from 'node:url';
@@ -18,7 +19,10 @@ export async function readReleaseResponse(response){
 export async function saveReleaseReceipt(path,result){
   if(typeof path!=='string'||!path.trim()||!result?.artifact||result.artifactHash!==hash(result.artifact))throw new Error('Invalid release receipt export.');
   const receipt={artifact:result.artifact,artifactHash:result.artifactHash,...(result.signature?{signature:result.signature}:{})};
-  await writeFile(path,JSON.stringify(receipt,null,2)+'\n',{flag:'wx',mode:0o600});
+  let text=JSON.stringify(receipt,null,2)+'\n';
+  if(Buffer.byteLength(text)>receiptFileLimit)text=JSON.stringify(receipt)+'\n';
+  if(Buffer.byteLength(text)>receiptFileLimit)throw new Error('Release receipt export exceeds the size limit.');
+  await writeFile(path,text,{flag:'wx',mode:0o600});
 }
 export async function checkRelease({base,accessKey,candidateRunId,baselineRunId,checkKey=randomUUID(),projectId,trustedPublicKey,...expected}) {
   const url=new URL(base);

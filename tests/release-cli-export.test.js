@@ -6,6 +6,7 @@ import {generateKeyPairSync} from 'node:crypto';
 import {hash} from '../packages/contracts/hash.js';
 import {ReceiptSigner,verifyReceipt} from '../packages/receipts/signature.js';
 import {saveReleaseReceipt} from '../scripts/release-gate.mjs';
+import {readReceiptFile,receiptFileLimit} from '../scripts/verify-receipt.mjs';
 async function workspace(work){const dir=await mkdtemp(join(process.cwd(),'.local','receipt-export-'));try{await work(dir);}finally{await rm(dir,{recursive:true,force:true});}}
 function signed(allowed){const pair=generateKeyPairSync('ed25519'),signer=new ReceiptSigner(pair.privateKey.export({type:'pkcs8',format:'pem'})),artifact={receiptId:'synthetic',result:{decision:allowed?'pass':'block',deploymentAllowed:allowed},request:{candidateRunId:'synthetic'}};return {report:{artifact,artifactHash:hash(artifact),signature:signer.sign(artifact),accessKey:'must-not-export'},key:signer.publicMetadata().publicKey};}
 test('CI receipt export preserves signed pass and block evidence without response extras',async()=>workspace(async dir=>{
@@ -16,4 +17,23 @@ test('CI receipt export never overwrites an existing artifact',async()=>workspac
 }));
 test('invalid and unavailable exports fail without creating an artifact',async()=>workspace(async dir=>{
  const path=join(dir,'invalid.json'),report=signed(true).report;await assert.rejects(saveReleaseReceipt(path,{...report,artifactHash:'bad'}),/Invalid/);await assert.rejects(readFile(path),{code:'ENOENT'});await assert.rejects(saveReleaseReceipt('',report),/Invalid/);await assert.rejects(saveReleaseReceipt(join(dir,'missing','receipt.json'),report),{code:'ENOENT'});
+}));
+
+test('expanded JSON export falls back to compact format and remains offline verifiable',async()=>workspace(async dir=>{
+ const {report}=signed(true);let evidence=Array(400000).fill(0);
+ for(let i=0;i<24;i++)evidence={nested:evidence};
+ report.artifact.result.evidence=evidence;
+ // Re-sign the complete synthetic artifact after adding evidence.
+ const pair=generateKeyPairSync('ed25519'),signer=new ReceiptSigner(pair.privateKey.export({type:'pkcs8',format:'pem'}));
+ report.artifactHash=hash(report.artifact);report.signature=signer.sign(report.artifact);
+ assert.ok(Buffer.byteLength(JSON.stringify({artifact:report.artifact,artifactHash:report.artifactHash,signature:report.signature},null,2))>receiptFileLimit);
+ const path=join(dir,'compact.json');await saveReleaseReceipt(path,report);
+ const text=await readFile(path,'utf8');assert.ok(Buffer.byteLength(text)<=receiptFileLimit);assert.equal(text.split('\n').length,2);
+ const receipt=await readReceiptFile(path);assert.equal(receipt.artifactHash,report.artifactHash);assert.equal(verifyReceipt(receipt,signer.publicMetadata().publicKey).signatureVerified,true);
+}));
+
+test('oversized UTF-8 export fails before creating or modifying files',async()=>workspace(async dir=>{
+ const {report}=signed(true);report.artifact.result.evidence='합'.repeat(Math.floor(receiptFileLimit/3)+1);report.artifactHash=hash(report.artifact);
+ const path=join(dir,'oversized.json');await assert.rejects(saveReleaseReceipt(path,report),/size limit/);await assert.rejects(readFile(path),{code:'ENOENT'});
+ await writeFile(path,'previous artifact');await assert.rejects(saveReleaseReceipt(path,report),/size limit/);assert.equal(await readFile(path,'utf8'),'previous artifact');
 }));
