@@ -24,7 +24,7 @@
 
 관리자가 반려한 뒤 최종 게이트를 다시 확인하면 배포가 차단됩니다. 아래는 **v0.91에서 촬영한 합성 시연 화면**이며 현재 실행 결과를 나타내지 않습니다.
 
-![관리자 반려 후 최종 릴리스 게이트 차단](docs/evidence/current-rejection-v091.png)
+![관리자 반려 후 최종 릴리스 게이트 차단](docs/evidence/current-rejection-v107.png)
 
 [화면 증거 모음](docs/portfolio-engineering.md#합성-시연-화면-증거)에는 비교 통과와 승인 대기의 분리(v0.51), 정확한 회귀 사례 이동(v0.52)도 포함되어 있습니다.
 
