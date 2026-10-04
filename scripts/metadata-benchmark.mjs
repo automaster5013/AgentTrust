@@ -12,14 +12,14 @@ async function call(path,data){
   return readReleaseResponse(response);
 }
 try{
-  const samples=parseMetadataBenchmarkArgs(process.argv.slice(2));base=localSmokeBase();
+  const options=parseMetadataBenchmarkArgs(process.argv.slice(2));base=localSmokeBase();
   const config=JSON.parse((await readFile('.local/credentials.json','utf8')).replace(/^\uFEFF/,''));
   const key=config.organizations[0].credentials.find(c=>c.role==='viewer')?.token;
   if(!key)throw new Error('Local viewer setup is missing.');
   const startedAt=new Date().toISOString();await call('/v1/auth/login',{accessKey:key});
   if(!cookie)throw new Error('Local viewer session is missing.');
   if((await call('/v1/me')).role!=='viewer')throw new Error('Expected a local viewer session.');
-  report={...await runMetadataBenchmark({call,samples}),startedAt,finishedAt:new Date().toISOString(),syntheticLocalSetup:true};
+  report={...await runMetadataBenchmark({call,...options}),startedAt,finishedAt:new Date().toISOString(),syntheticLocalSetup:true};
 }catch{report.completed=false;report.failed=true;}
 finally{
   report.sessionLoggedOut=!cookie;

@@ -9,8 +9,10 @@ import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 const exec=promisify(execFile);
 test('metadata sample arguments are bounded and unambiguous',()=>{
- assert.equal(parseMetadataBenchmarkArgs([]),20);assert.equal(parseMetadataBenchmarkArgs(['--samples','100']),100);
+ assert.deepEqual(parseMetadataBenchmarkArgs([]),{samples:20,concurrency:1});assert.deepEqual(parseMetadataBenchmarkArgs(['--samples','100']),{samples:100,concurrency:1});
+ assert.deepEqual(parseMetadataBenchmarkArgs(['--concurrency','8','--samples','7']),{samples:7,concurrency:8});
  for(const args of [['--samples','0'],['--samples','101'],['--samples','01'],['--samples','1\n'],['--samples'],['--unknown','5'],['--samples','5','--samples','5']])assert.throws(()=>parseMetadataBenchmarkArgs(args));
+ for(const args of [['--concurrency','0'],['--concurrency','9'],['--concurrency','01'],['--concurrency'],['--concurrency','2','--concurrency','3']])assert.throws(()=>parseMetadataBenchmarkArgs(args));
 });
 test('metadata percentiles use sorted nearest ranks without mutating samples',()=>{
  const values=[10,2,7,1,5];assert.deepEqual(summarizeDurations(values),{samples:5,minMs:1,p50Ms:5,p95Ms:10,maxMs:10});assert.deepEqual(values,[10,2,7,1,5]);
@@ -27,12 +29,33 @@ test('failed or invalid timing samples cannot produce a successful benchmark',as
  let time=0;await assert.rejects(runMetadataBenchmark({samples:1,call:async()=>{},now:()=>time--}),/timing/);
 });
 
+test('parallel metadata waves respect the bound and drain failures before returning',async()=>{
+ let active=0,peak=0,calls=0;
+ const report=await runMetadataBenchmark({samples:7,concurrency:3,call:async()=>{
+  calls++;active++;peak=Math.max(peak,active);await new Promise(r=>setTimeout(r,5));active--;
+ }});
+ assert.equal(calls,36);assert.equal(active,0);assert.equal(peak,3);assert.equal(report.maximumInFlightRequests,3);
+ assert.equal(report.concurrency,3);assert.equal(report.oneViewerSession,true);assert.equal(report.requests,36);
+ assert.ok(report.results.every(result=>result.samples===7));
+ calls=0;active=0;let settled=0;
+ await assert.rejects(runMetadataBenchmark({samples:7,concurrency:3,call:async()=>{
+  const index=++calls;if(index<=2)return;
+  active++;
+  try{if(index===3)throw Error('Synthetic measured failure');await new Promise(r=>setTimeout(r,20));}
+  finally{active--;settled++;}
+ }}),/Synthetic measured failure/);
+ assert.equal(calls,5);assert.equal(active,0);assert.equal(settled,3);
+ for(const concurrency of [0,9,1.5,NaN]){
+  let attempted=0;await assert.rejects(runMetadataBenchmark({concurrency,call:async()=>attempted++}));assert.equal(attempted,0);
+ }
+});
+
 test('actual metadata command measures fixed viewer reads and cleans sessions on success and failure',async t=>{
  const repository=process.cwd(),dir=await mkdtemp(join(repository,'.local','metadata-test-'));
  await mkdir(join(dir,'.local'));
  const secret='synthetic-metadata-key-canary',session='synthetic-metadata-cookie-canary';
  await writeFile(join(dir,'.local','credentials.json'),JSON.stringify({organizations:[{credentials:[{role:'viewer',token:secret}]}]}));
- let failure='',calls=[],logout=0;
+ let failure='',calls=[],logout=0,parallel=false,active=0,peak=0,identityReads=0,failMeasured=false,logoutWithPending=false;
  const server=createServer(async(req,res)=>{
   calls.push([req.method,req.url]);res.setHeader('Content-Type','application/json');
   if(req.url==='/v1/auth/login'){
@@ -41,7 +64,15 @@ test('actual metadata command measures fixed viewer reads and cleans sessions on
    res.setHeader('Set-Cookie',session+'=value; HttpOnly');res.end('{}');return;
   }
   if(req.headers.cookie!==session+'=value'){res.writeHead(401);res.end('{}');return;}
-  if(req.url==='/v1/auth/logout')logout++;
+  if(req.url==='/v1/auth/logout'){logout++;if(active)logoutWithPending=true;}
+  if(req.method==='GET'&&parallel){
+   active++;peak=Math.max(peak,active);
+   if(req.url==='/v1/me')identityReads++;
+   try{
+    if(failMeasured&&req.url==='/v1/me'&&identityReads===4){res.writeHead(500);res.end('{}');return;}
+    await new Promise(r=>setTimeout(r,30));
+   }finally{active--;}
+  }
   if(req.url===failure){res.writeHead(500);res.end('{}');return;}
   res.end(JSON.stringify(req.url==='/v1/me'?{role:'viewer'}:{}));
  });server.listen(0,'127.0.0.1');await once(server,'listening');
@@ -62,6 +93,15 @@ test('actual metadata command measures fixed viewer reads and cleans sessions on
  failure='/v1/auth/logout';result=await run(['--samples','1']);checked=await inspect(result);
  assert.equal(result.code,1);assert.equal(checked.report.sessionLoggedOut,false);assert.equal(checked.output.status,'blocked');
  const previousCalls=calls.length;result=await run(['--samples','101']);checked=await inspect(result);assert.equal(result.code,1);assert.equal(calls.length,previousCalls);assert.equal(checked.report.completed,false);
+ failure='';parallel=true;identityReads=0;peak=0;
+ result=await run(['--samples','7','--concurrency','3']);checked=await inspect(result);
+ assert.equal(result.code,0);assert.equal(checked.report.requests,36);assert.equal(checked.report.maximumInFlightRequests,3);assert.equal(peak,3);assert.equal(active,0);assert.equal(logoutWithPending,false);
+ failMeasured=true;identityReads=0;const failedStart=calls.length;
+ result=await run(['--concurrency','3','--samples','7']);checked=await inspect(result);
+ assert.equal(result.code,1);assert.equal(checked.report.completed,false);assert.equal(checked.report.sessionLoggedOut,true);
+ assert.equal(active,0);assert.equal(logoutWithPending,false);assert.equal(calls.slice(failedStart).filter(([method])=>method==='GET').length,6);
+ const invalidStart=calls.length;result=await run(['--concurrency','9']);checked=await inspect(result);
+ assert.equal(result.code,1);assert.equal(calls.length,invalidStart);assert.equal(checked.report.completed,false);
 });
 
 function requireSeparator(){return process.platform==='win32'?'\\':'/';}
