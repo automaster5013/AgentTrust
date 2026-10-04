@@ -183,3 +183,11 @@ if ($actual -ne $expected) { throw 'Delivery manifest checksum mismatch' }
 [검증된 v0.79 실행](https://github.com/automaster5013/AgentTrust/actions/runs/37201321361)의 실제 artifact ZIP을 로컬로 내려받았다. ZIP SHA-256은 GitHub artifact metadata의 digest와 일치했고, 내부 두 파일의 manifest checksum은 CI에서 확인한 값과 일치했다. 선택한 image/revision/repository/run ID를 별도로 지정해 `delivery:verify:bundle`도 통과했다. API 인증 헤더는 artifact 저장소 리디렉션에 전달하지 않았으며 내려받기·추출 크기와 파일 이름을 제한했다. 상세 파일은 private .local에 보관한다.
 
 같은 검증 image digest를 pull해 캐시하고 `deploy:preflight`를 읽기 전용으로 실행했다. 이미지 revision/source·non-root 사용자와 Compose 설정, 기존 서명 키 쌍, 정확한 소스 revision의 DB 마이그레이션 목록, 인증된 백업의 마이그레이션/보안 카탈로그와 이전 격리 복원 증거를 확인했다. 사전 점검에는 현재 포트 가용성·검사 이후 변경·별도 스테이징·운영 배포가 포함되지 않는다. 레지스트리 이미지를 새 서버에 기동하거나 운영 DB를 마이그레이션하지 않았다. 이 기록은 해당 v0.79의 근거이며 이후 main 변경에는 새 전달 검증이 필요하다.
+
+## 검증 이미지의 기존 로컬 설치 실행 — v0.91
+
+[소스 76d7a3c](https://github.com/automaster5013/AgentTrust/commit/76d7a3cb872c6cf7201d93a32b6d16f853e8a5b1)와 [CI #37206618620](https://github.com/automaster5013/AgentTrust/actions/runs/37206618620)의 네 작업 성공 및 최종 승격 로그를 확인했다. 전달 대상은 `ghcr.io/automaster5013/agenttrust@sha256:874382518262addaad095321f76945c7abc0865143267e38ceba8a09838fff40`이다. 실제 artifact ZIP의 digest와 두 파일의 checksum을 비교하고 독립적인 기대값으로 명세·온라인 CI 검사를 통과했다. checksum과 CI 성공 조회는 서명된 이미지 출처 인증을 대신하지 않는다.
+
+2026-10-04 13:53 UTC에 이 digest를 `compose.image.yaml`로 기존 **agenttrust 로컬 프로젝트의 API·워커에만** 적용했다. 기존 DB·볼륨·서명 키·loopback 포트를 유지했다. 실제 실행 컨테이너의 digest·revision·격리 설정을 확인하고, 전환 전 생성한 합성 실행과 사용량·감사 기록이 전환 뒤 보존되는지 검사했다. 같은 이미지에서 합성 승인 전 차단·승인 후 서명 검증·반려 후 차단 시연과 자체 세션 정리도 통과했다. 마지막에는 소스 빌드로 API·워커를 복원하고 준비 점검을 통과했다. LogiTrack 자산은 변경하지 않았다.
+
+이는 같은 버전·마이그레이션 이력의 기존 로컬 설치 전환 점검이다. 새 서버 배포, 고객 데이터, 이전 스키마로의 롤백, 무중단 전환, 운영 SLA/RPO/RTO는 검증하지 않았다. 점검 중 API·워커를 재생성했으므로 무중단 절차로 사용하지 않는다. 상세 증거와 전달 파일은 private `.local`에 보관하며 이후 revision에는 새 CI·digest 검증이 필요하다.
