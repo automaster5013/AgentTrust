@@ -226,6 +226,7 @@ async function history(append=false) {
 }
 async function selectRun(id,initialRun) {
   selectedRunId = id;const sequence=++selectedRunSequence;invalidateFinalGate();
+  reviewSequence++;$('review-panel').hidden=true;$('review-approve').disabled=true;$('review-reject').disabled=true;$('review-more').disabled=true;$('cancel-button').disabled=true;$('download').disabled=true;
   for (let attempt = 0; attempt < 800; attempt++) {
     const run = attempt===0&&initialRun?initialRun:await api(`/v1/runs/${id}`);
     if (selectedRunId !== id||sequence!==selectedRunSequence) return;
@@ -257,7 +258,7 @@ $('dataset-form').addEventListener('submit', async event => {
   finally { if(epoch===scopeEpoch){versionBusy=false;updateButtons();} }
 });
 $('download').addEventListener('click', () => {
-  if (!currentRun) return;
+  if (!currentRun||currentRun.id!==selectedRunId||!terminal.has(currentRun.state)) return;
   const url = URL.createObjectURL(new Blob([JSON.stringify(currentRun, null, 2)], { type: 'application/json' }));
   const link = node('a'); link.href = url; link.download = `agenttrust-${currentRun.id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
@@ -332,7 +333,7 @@ $('logout-button').addEventListener('click',async()=>{
   try{await api('/v1/auth/logout',{method:'POST',body:'{}'});showLogin();}catch(e){message(e.message,true);}
 });
 $('cancel-button').addEventListener('click',async()=>{
-  if(!currentRun)return;const target=currentRun,epoch=scopeEpoch,selection=selectedRunSequence;
+  if(!currentRun||currentRun.id!==selectedRunId)return;const target=currentRun,epoch=scopeEpoch,selection=selectedRunSequence;
   const isCurrent=()=>epoch===scopeEpoch&&selection===selectedRunSequence&&selectedRunId===target.id;$('cancel-button').disabled=true;
   try{const run=await api(`/v1/runs/${target.id}/cancel`,{method:'POST',body:'{}'});
     if(!isCurrent())return;render(run);await reviewHistory(run);if(!isCurrent())return;
@@ -450,7 +451,7 @@ $('policy-manual').addEventListener('change',()=>{$('policy-review-ttl').disable
 async function reviewHistory(run=currentRun,append=false){
   if(append&&!reviewCursor)return;
   const sequence=++reviewSequence;
-  if(!run||!run.snapshot.policy.requiresManualApproval){$('review-panel').hidden=true;return;}
+  if(!run||run.id!==selectedRunId||!run.snapshot.policy.requiresManualApproval){$('review-panel').hidden=true;return;}
   const params=new URLSearchParams({limit:'25'});if(append)params.set('cursor',reviewCursor);
   const page=await api('/v1/runs/'+run.id+'/reviews?'+params);if(sequence!==reviewSequence||selectedRunId!==run.id)return;
   reviewCursor=page.nextCursor;$('review-more').disabled=reviewBusy||!reviewCursor;const reviews=page.items;
@@ -464,7 +465,7 @@ async function reviewHistory(run=currentRun,append=false){
   if(!append&&!reviews.length)$('review-list').textContent='아직 관리자 검토 기록이 없습니다.';
 }
 $('review-form').addEventListener('submit',async event=>{
-  event.preventDefault();if(reviewBusy||!currentRun||!['approved','rejected'].includes(event.submitter?.value))return;
+  event.preventDefault();if(reviewBusy||!currentRun||currentRun.id!==selectedRunId||!['approved','rejected'].includes(event.submitter?.value))return;
   const run=currentRun,epoch=scopeEpoch,selection=selectedRunSequence,decision=event.submitter.value;
   const isCurrent=()=>epoch===scopeEpoch&&selection===selectedRunSequence&&selectedRunId===run.id;reviewBusy=true;invalidateFinalGate('검토 상태 변경을 요청했습니다. 최종 게이트를 다시 확인하세요.');$('review-approve').disabled=true;$('review-reject').disabled=true;$('review-more').disabled=true;
   try{await api('/v1/runs/'+run.id+'/reviews',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({decision,comment:$('review-comment').value})});

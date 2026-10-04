@@ -219,6 +219,20 @@ test('session refresh cannot re-enable revocation buttons while a termination is
 });
 
 
+test('selecting another run blocks administrator writes to the previously rendered run before the new response arrives',async()=>{
+ const f=await fixture({manual:true}),pending=deferred();await f.view('B');let writes=0;
+ f.overrides.set('/v1/runs/B/reviews',()=>{writes++;return {};});f.runs.A=execution('A','succeeded',true);f.overrides.set('/v1/runs/A',()=>pending.promise);
+ const selection=f.view('A');await settle();const blocked=f.element('review-approve').disabled&&f.element('review-reject').disabled&&f.element('review-panel').hidden;
+ await f.element('review-form').fire('submit',{submitter:{value:'approved'}});pending.resolve(f.runs.A);await selection;
+ assert.equal(writes,0);assert.equal(blocked,true);assert.equal(f.element('review-panel').hidden,false);assert.equal(f.element('review-approve').disabled,false);
+});
+test('selecting another run blocks cancellation and download of previously rendered evidence',async()=>{
+ const f=await fixture(),pending=deferred();f.view('A');await settle();let writes=0;
+ f.overrides.set('/v1/runs/A/cancel',()=>{writes++;return execution('A','cancelled');});f.overrides.set('/v1/runs/B',()=>pending.promise);
+ const selection=f.view('B');await settle();const blocked=f.element('cancel-button').disabled&&f.element('download').disabled;
+ await f.element('cancel-button').fire('click');await f.element('download').fire('click');pending.resolve(f.runs.B);await selection;
+ assert.equal(writes,0);assert.equal(f.downloads.length,0);assert.equal(blocked,true);assert.equal(f.element('download').disabled,false);
+});
 test('late CI key revocation cannot overwrite the newly signed-in workspace status',async()=>{
  const f=await fixture(),pending=deferred(),key={id:'synthetic-ci-key',name:'Synthetic',project_id:'project',revoked_at:null,expires_at:'2100-01-01T00:00:00Z'};
  f.overrides.set('/v1/ci-credentials?limit=25',()=>({items:[key],nextCursor:null}));await f.element('ci-refresh').fire('click');
