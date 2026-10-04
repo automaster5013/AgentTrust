@@ -113,14 +113,15 @@ export class CI {
       return {...result,artifact,artifactHash,...(signature?{signature}:{})};
     },context.organizationId);
   }
-  async receipts(context,page){
+  async receipts(context,{page,filters,cursorContext}){
     return transaction(this.database,async client=>{
       const rows=(await client.query(`SELECT id,candidate_run_id,baseline_run_id,created_at,artifact_hash,result->>'decision' AS decision,signature->>'keyId' AS signing_key_id,
         to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
         FROM agenttrust.release_receipts WHERE organization_id=$1 AND project_id=$2
         AND ($3::timestamptz IS NULL OR (created_at,id)<($3::timestamptz,$4::uuid))
-        ORDER BY created_at DESC,id DESC LIMIT $5`,[context.organizationId,context.projectId,page?.cursor?.time||null,page?.cursor?.id||null,page?page.limit+1:100])).rows;
-      return page?pageResult(rows,page,context):rows.map(({cursor_time,...row})=>row);
+        AND ($6::text IS NULL OR result->>'decision'=$6) AND ($7::uuid IS NULL OR candidate_run_id=$7)
+        ORDER BY created_at DESC,id DESC LIMIT $5`,[context.organizationId,context.projectId,page?.cursor?.time||null,page?.cursor?.id||null,page?page.limit+1:100,filters.decision,filters.candidateRunId])).rows;
+      return page?pageResult(rows,page,cursorContext):rows.map(({cursor_time,...row})=>row);
     },context.organizationId);
   }
   async receipt(context,id){

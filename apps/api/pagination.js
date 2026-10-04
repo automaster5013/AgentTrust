@@ -54,3 +54,11 @@ export function sequencePageResult(rows,page,context){
   const more=rows.length>page.limit,selected=rows.slice(0,page.limit),last=selected.at(-1);
   return {items:selected.map(({cursor_order,...row})=>row),nextCursor:more?Buffer.from(JSON.stringify({organizationId:context.organizationId,projectId:context.projectId,scope:context.cursorScope,order:String(last.cursor_order)})).toString('base64url'):null};
 }
+
+
+export function receiptPagination(query,context){
+  const decision=query.get('decision'),rawCandidate=query.get('candidateRunId');
+  if(query.getAll('decision').length>1||query.getAll('candidateRunId').length>1||decision!==null&&!['pass','block'].includes(decision)||rawCandidate!==null&&!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(rawCandidate))throw new InputError('Invalid release receipt filters.');
+  const filters={decision,candidateRunId:rawCandidate?.toLowerCase()??null},cursorContext={...context,cursorScope:hash({resource:'release-receipts',filters})},pageQuery=new URLSearchParams(query);
+  pageQuery.delete('decision');pageQuery.delete('candidateRunId');return {filters,cursorContext,page:pagination(pageQuery,cursorContext)};
+}

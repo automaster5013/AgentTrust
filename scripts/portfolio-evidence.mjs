@@ -96,7 +96,7 @@ async function readBounded(path,limit){
     assert.ok(used>0&&used<=limit);return bytes.subarray(0,used);
   }finally{await file.close();}
 }
-export async function readPortfolioEvidence(directory,trustedPem,expectedManifestSha256){
+export async function loadPortfolioEvidence(directory,trustedPem,expectedManifestSha256){
   if(expectedManifestSha256!==undefined)assert.ok(sha(expectedManifestSha256));
   const expected=new Set(['manifest.json',...Array.from({length:6},(_,index)=>`receipt-${index+1}.json`)]);
   assert.ok((await lstat(directory)).isDirectory());
@@ -114,5 +114,9 @@ export async function readPortfolioEvidence(directory,trustedPem,expectedManifes
     assert.equal(digest(file),manifest.receipts[index].sha256);
     const receipt=parse(file);verifyReceipt(receipt,trustedPem);receipts.push(receipt);
   }
-  return {...verifyPortfolioEvidence(manifest,receipts,trustedPem),manifestSha256,expectedManifestDigestMatched:expectedManifestSha256!==undefined};
+  return {manifest,receipts,verification:{...verifyPortfolioEvidence(manifest,receipts,trustedPem),manifestSha256,expectedManifestDigestMatched:expectedManifestSha256!==undefined}};
+}
+
+export async function readPortfolioEvidence(directory,trustedPem,expectedManifestSha256){
+  return (await loadPortfolioEvidence(directory,trustedPem,expectedManifestSha256)).verification;
 }

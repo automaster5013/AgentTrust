@@ -37,6 +37,7 @@ let lookupSequence=0,lookupBusy=false;
 let auditCursor=null,auditSequence=0;
 let inspectionSequence=0,comparisonSequence=0,keyHistorySequence=0,receiptHistorySequence=0,reviewSequence=0;
 let receiptInspectionSequence=0;
+let receiptFilters={decision:'',candidateRunId:''},receiptShown=0;
 let reviewBusy=false,reviewCursor=null,reviewShown=0;
 let finalGateSequence=0,finalGateBusy=false,currentReceipt=null;
 let recentBaselineRuns=[];
@@ -380,6 +381,7 @@ function clearProjectData(){
   currentRun=null;invalidateFinalGate();renderEvidence();selectedRunId=null;selectedRunSequence++;historySequence++;runCursor=null;$('history-more').disabled=true;$('history-state').value='';$('history-decision').value='';message('');$('run-button').disabled=true;$('dataset-button').disabled=true;
   for(const id of ['agent-name','policy-name','project-name'])$(id).value='';
   for(const id of ['agent','dataset-select','policy'])$(id).replaceChildren();
+  receiptFilters={decision:'',candidateRunId:''};receiptShown=0;$('receipt-decision').value='';$('receipt-candidate-id').value='';$('receipt-filter-status').textContent='';
   keyCursor=null;receiptCursor=null;$('ci-more').disabled=true;$('receipts-more').disabled=true;
   clearIssuedKey();clearReceiptInspection();$('ci-key-list').replaceChildren();$('receipt-list').replaceChildren();$('ci-project').replaceChildren();$('ci-name').value='';$('ci-status').textContent='';
   $('baseline-run').replaceChildren();$('comparison-result').textContent='';
@@ -483,8 +485,14 @@ async function ciHistory(append=false){
 async function receiptHistory(append=false){
   if(!actor)return;
   if(append&&!receiptCursor)return;
-  const sequence=++receiptHistorySequence;
-  const page=await api('/v1/release-receipts?limit=25'+(append?'&cursor='+encodeURIComponent(receiptCursor):''));if(sequence!==receiptHistorySequence)return;receiptCursor=page.nextCursor;$('receipts-more').disabled=!receiptCursor;
+  const sequence=++receiptHistorySequence,params=new URLSearchParams({limit:'25'});
+  for(const [key,value] of Object.entries(receiptFilters))if(value)params.set(key,value);
+  if(append)params.set('cursor',receiptCursor);
+  $('receipt-filter-status').textContent='적용한 조건의 검증 기록을 불러오고 있습니다.';
+  let page;try{page=await api('/v1/release-receipts?'+params.toString());}catch(error){if(sequence===receiptHistorySequence)$('receipt-filter-status').textContent='검증 기록을 불러오지 못했습니다. 다시 시도하세요.';throw error;}
+  if(sequence!==receiptHistorySequence)return;receiptCursor=page.nextCursor;$('receipts-more').disabled=!receiptCursor;
+  receiptShown=(append?receiptShown:0)+page.items.length;
+  $('receipt-filter-status').textContent=`조회 조건: ${decisionLabels[receiptFilters.decision]||'모든 판정'} · ${receiptFilters.candidateRunId?'후보 '+receiptFilters.candidateRunId:'모든 후보 실행'} · ${receiptShown}개 표시${receiptShown?'':' (일치하는 검증 기록이 없습니다.)'}`;
   if(!append)$('receipt-list').replaceChildren();
   $('receipt-list').append(...page.items.map(receipt=>{
     const epoch=scopeEpoch;
@@ -537,6 +545,18 @@ $('ci-key-copy').addEventListener('click',async()=>{
 $('ci-refresh').addEventListener('click',()=>listAction(()=>ciHistory(),()=>keyHistorySequence,e=>{$('ci-status').textContent=e.message;}));
 $('receipt-inspection-close').addEventListener('click',clearReceiptInspection);
 $('receipts-refresh').addEventListener('click',()=>listAction(()=>receiptHistory(),()=>receiptHistorySequence));
+function applyReceiptFilters(filters){
+  receiptHistorySequence++;receiptCursor=null;receiptFilters=filters;receiptShown=0;$('receipts-more').disabled=true;$('receipt-list').replaceChildren();clearReceiptInspection();
+  return listAction(()=>receiptHistory(),()=>receiptHistorySequence);
+}
+$('receipt-filter-form').addEventListener('submit',event=>{
+  event.preventDefault();if(!actor)return;
+  const candidateRunId=$('receipt-candidate-id').value.trim().toLowerCase(),decision=$('receipt-decision').value;
+  if(candidateRunId&&!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(candidateRunId)||!['','pass','block'].includes(decision)){$('receipt-filter-status').textContent='유효한 후보 실행 UUID와 판정을 선택하세요. 기존 조회 조건을 유지합니다.';return;}
+  $('receipt-candidate-id').value=candidateRunId;return applyReceiptFilters({decision,candidateRunId});
+});
+$('receipt-filter-reset').addEventListener('click',()=>{if(!actor)return;$('receipt-candidate-id').value='';$('receipt-decision').value='';return applyReceiptFilters({decision:'',candidateRunId:''});});
+
 
 $('workspace-project').addEventListener('change',async()=>{
   const previous=activeProjectId;let epoch=++scopeEpoch;activeProjectId=$('workspace-project').value;clearProjectData();$('workspace-project').disabled=true;

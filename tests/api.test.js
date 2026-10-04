@@ -798,3 +798,25 @@ test('manual review pages use insertion order across backwards clocks and bind t
  assert.equal((await f.request(path+'?cursor='+encodeURIComponent(first.nextCursor),{extra:{'X-AgentTrust-Project':project.id}})).status,400);
  for(const query of ['limit=101','limit=1&limit=2','cursor=%%%','limit=1&sort=clock'])assert.equal((await f.request(path+'?'+query)).status,400);
 });
+
+
+test('receipt filters page exact decisions and candidates without including full evidence',async t=>{
+ const f=await fixture(t),first=await f.create(),second=await f.create('regression');await f.engine.tick();await f.engine.tick();
+ for(const run of [first.run,second.run])for(let i=0;i<3;i++)assert.equal((await f.request('/v1/release-gate',{method:'POST',json:{candidateRunId:run.id,...f.input(run.id===first.run.id?'compliant':'regression')},extra:{'Idempotency-Key':randomUUID()}})).status,200);
+ for(const [decision,run] of [['pass',first.run],['block',second.run]]){
+  let cursor;const ids=[];do{const response=await f.request('/v1/release-receipts?limit=2&decision='+decision+'&candidateRunId='+run.id.toUpperCase()+(cursor?'&cursor='+cursor:''),{role:'viewer'});assert.equal(response.status,200);const page=await response.json();for(const row of page.items){assert.equal(row.decision,decision);assert.equal(row.candidate_run_id,run.id);for(const key of ['artifact','request','result','evidence','snapshot','signature'])assert.equal(Object.hasOwn(row,key),false);}ids.push(...page.items.map(r=>r.id));cursor=page.nextCursor;}while(cursor);assert.equal(ids.length,3);assert.equal(new Set(ids).size,3);
+ }
+ const legacy=await(await f.request('/v1/release-receipts?decision=block')).json();assert.ok(Array.isArray(legacy));assert.equal(legacy.length,3);
+ const empty=await(await f.request('/v1/release-receipts?limit=2&candidateRunId='+randomUUID())).json();assert.deepEqual(empty,{items:[],nextCursor:null});
+ const foreign=await(await f.request('/v1/release-receipts?limit=2&candidateRunId='+first.run.id,{role:'other_admin'})).json();assert.deepEqual(foreign,{items:[],nextCursor:null});
+});
+
+test('receipt filter cursors cannot be reused for another decision, candidate or resource',async t=>{
+ const f=await fixture(t),{run}=await f.create();await f.engine.tick();
+ for(let i=0;i<3;i++){await f.request('/v1/release-gate',{method:'POST',json:{candidateRunId:run.id,...f.input()},extra:{'Idempotency-Key':randomUUID()}});await f.request('/v1/ci-credentials',{method:'POST',json:{name:'Filter key '+i,projectId:f.first.projectId,ttlSeconds:60}});}
+ const page=await(await f.request('/v1/release-receipts?limit=1&decision=pass&candidateRunId='+run.id)).json();assert.ok(page.nextCursor);
+ for(const query of ['limit=1','limit=1&decision=block&candidateRunId='+run.id,'limit=1&decision=pass&candidateRunId='+randomUUID()])assert.equal((await f.request('/v1/release-receipts?'+query+'&cursor='+page.nextCursor)).status,400);
+ assert.equal((await f.request('/v1/ci-credentials?limit=1&cursor='+page.nextCursor)).status,400);
+ const keyPage=await(await f.request('/v1/ci-credentials?limit=1')).json();assert.equal((await f.request('/v1/release-receipts?limit=1&cursor='+keyPage.nextCursor)).status,400);
+ for(const query of ['decision=inconclusive','decision=pass&decision=block','decision=','candidateRunId=','candidateRunId=bad','candidateRunId='+run.id+'&candidateRunId='+run.id,'decision=pass&unknown=1'])assert.equal((await f.request('/v1/release-receipts?'+query)).status,400);
+});

@@ -1,6 +1,6 @@
 import { CI } from './ci.js';
 import { Reviews,reviewPageContext } from './reviews.js';
-import { pagination,runPagination,auditPagination,sequencePagination } from './pagination.js';
+import { pagination,runPagination,auditPagination,sequencePagination,receiptPagination } from './pagination.js';
 import { compareRuns } from '../../packages/evaluator/comparison.js';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -73,7 +73,7 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
         if(context.role==='ci'?selectedProject!==context.projectId:!context.projects.some(p=>p.id===selectedProject))throw new InputError('Unknown project.',404);
         context.projectId=selectedProject;
       }
-      if(req.method==='GET'&&path==='/v1/release-receipts')return send(200,await ci.receipts(context,pagination(requestUrl.searchParams,context)));
+      if(req.method==='GET'&&path==='/v1/release-receipts')return send(200,await ci.receipts(context,receiptPagination(requestUrl.searchParams,context)));
       const receiptMatch=/^\/v1\/release-receipts\/([a-zA-Z0-9-]+)$/.exec(path);
       if(req.method==='GET'&&receiptMatch)return send(200,await ci.receipt(context,receiptMatch[1]));
       if(req.method==='GET'&&path==='/v1/ci-credentials')return send(200,await ci.list(context,pagination(requestUrl.searchParams,context)));

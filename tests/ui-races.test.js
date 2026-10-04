@@ -931,3 +931,31 @@ test('historical inspection displays exact regression rules as text and rejects 
   const text=f.element('receipt-inspection-output').textContent;if(mismatch)assert.match(text,/확인하지 못했습니다/);else{assert.match(text,/회귀 비교: 차단/);assert.ok(text.includes('사례 <case> · 규칙 required · pass → fail'));}assert.equal(f.element('current-receipt-download').disabled,true);
  }
 });
+
+
+test('receipt filtering applies normalized conditions and pagination keeps them despite changed drafts',async()=>{
+ const f=await fixture(),sample=historicalReceiptSample(),id='00000000-0000-0000-0000-00000000ABCD',requests=[];
+ f.element('receipt-decision').value='block';f.element('receipt-candidate-id').value=' '+id+' ';
+ const path='/v1/release-receipts?limit=25&decision=block&candidateRunId='+id.toLowerCase();f.overrides.set(path,()=>{requests.push(path);return {items:[sample.row],nextCursor:'next'};});f.overrides.set(path+'&cursor=next',()=>{requests.push(path+'&cursor=next');return {items:[sample.row],nextCursor:null};});
+ await f.element('receipt-filter-form').fire('submit');assert.equal(f.element('receipt-candidate-id').value,id.toLowerCase());assert.equal(f.element('receipt-list').children.length,1);assert.match(f.element('receipt-filter-status').textContent,/차단.*1개 표시/);
+ f.element('receipt-decision').value='pass';f.element('receipt-candidate-id').value='draft';await f.element('receipts-more').fire('click');assert.equal(requests.length,2);assert.equal(f.element('receipt-list').children.length,2);assert.match(f.element('receipt-filter-status').textContent,/차단.*2개 표시/);
+});
+
+test('invalid receipt filter drafts retain the applied results without issuing a filtered request',async()=>{
+ const f=await receiptInspectionFixture();f.element('receipt-candidate-id').value='not-a-uuid';await f.element('receipt-filter-form').fire('submit');assert.equal(f.element('receipt-list').children.length,1);assert.match(f.element('receipt-filter-status').textContent,/유효한 후보 실행 UUID/);await f.element('receipts-refresh').fire('click');assert.equal(f.element('receipt-list').children.length,1);assert.match(f.element('receipt-filter-status').textContent,/모든 후보 실행/);
+});
+
+test('resetting receipt filters clears prior details and cannot be overwritten by an older filtered response',async()=>{
+ const f=await receiptInspectionFixture(),reply=deferred();await f.inspect.fire('click');assert.equal(f.element('receipt-inspection').hidden,false);f.element('receipt-decision').value='block';f.overrides.set('/v1/release-receipts?limit=25&decision=block',()=>reply.promise);
+ const pending=f.element('receipt-filter-form').fire('submit');await settle();assert.equal(f.element('receipt-inspection').hidden,true);assert.equal(f.element('receipt-list').children.length,0);await f.element('receipt-filter-reset').fire('click');reply.resolve({items:[],nextCursor:'obsolete'});await pending;
+ assert.equal(f.element('receipt-list').children.length,1);assert.equal(f.element('receipt-decision').value,'');assert.equal(f.element('receipts-more').disabled,true);assert.match(f.element('receipt-filter-status').textContent,/모든 판정/);
+});
+
+test('a filtered receipt failure cannot leave rows or a page cursor from the prior condition',async()=>{
+ const f=await receiptInspectionFixture();f.element('receipt-decision').value='block';f.overrides.set('/v1/release-receipts?limit=25&decision=block',()=>{throw Error('Synthetic filter failure');});await f.element('receipt-filter-form').fire('submit');assert.equal(f.element('receipt-list').children.length,0);assert.equal(f.element('receipts-more').disabled,true);assert.match(f.element('receipt-filter-status').textContent,/불러오지 못했습니다/);
+});
+
+test('logout clears receipt filters and prevents a pending condition from restoring its results',async()=>{
+ const f=await fixture(),reply=deferred();f.element('receipt-decision').value='pass';f.element('receipt-candidate-id').value='00000000-0000-0000-0000-000000000abc';f.overrides.set('/v1/release-receipts?limit=25&decision=pass&candidateRunId=00000000-0000-0000-0000-000000000abc',()=>reply.promise);
+ const pending=f.element('receipt-filter-form').fire('submit');await settle();await f.element('logout-button').fire('click');reply.resolve({items:[historicalReceiptSample(true).row],nextCursor:'old'});await pending;assert.equal(f.element('receipt-candidate-id').value,'');assert.equal(f.element('receipt-decision').value,'');assert.equal(f.element('receipt-filter-status').textContent,'');assert.equal(f.element('receipt-list').children.length,0);
+});
