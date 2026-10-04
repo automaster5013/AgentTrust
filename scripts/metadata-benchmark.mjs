@@ -1,6 +1,7 @@
 import {readFile,writeFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {localSmokeBase,fetchLocalSmoke} from './local-smoke-http.mjs';
+import {readReleaseResponse} from './release-gate.mjs';
 import {parseMetadataBenchmarkArgs,runMetadataBenchmark} from './metadata-benchmark-scenario.mjs';
 const reportPath='.local/metadata-benchmark-'+randomUUID()+'.json';
 let cookie,base,report={schemaVersion:1,completed:false,readOnlyMetadata:true,serverDeployed:false};
@@ -8,7 +9,7 @@ async function call(path,data){
   const response=await fetchLocalSmoke(base,path,{method:data?'POST':'GET',headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui',...(cookie?{Cookie:cookie}:{})},...(data?{body:JSON.stringify(data)}:{})});
   if(path==='/v1/auth/login')cookie=response.headers.get('set-cookie')?.split(';')[0];
   if(!response.ok){await response.body?.cancel();throw new Error('Local metadata request failed.');}
-  return response.json();
+  return readReleaseResponse(response);
 }
 try{
   const samples=parseMetadataBenchmarkArgs(process.argv.slice(2));base=localSmokeBase();

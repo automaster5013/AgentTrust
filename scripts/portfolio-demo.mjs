@@ -4,13 +4,14 @@ import {setTimeout as sleep} from 'node:timers/promises';
 import {verifyReceipt} from '../packages/receipts/signature.js';
 import {runPortfolioScenario} from './portfolio-scenario.mjs';
 import {localSmokeBase,fetchLocalSmoke} from './local-smoke-http.mjs';
+import {readReleaseResponse} from './release-gate.mjs';
 
 const reportPath='.local/portfolio-demo-'+randomUUID()+'.json';
 let cookie,report={schemaVersion:1,completed:false,synthetic:true,serverDeployed:false},base;
 async function call(path,data){
   const response=await fetchLocalSmoke(base,path,{method:data?'POST':'GET',headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui','Idempotency-Key':randomUUID(),...(cookie?{Cookie:cookie}:{})},...(data?{body:JSON.stringify(data)}:{})});
   if(path==='/v1/auth/login')cookie=response.headers.get('set-cookie')?.split(';')[0];
-  if(!response.ok){await response.body?.cancel();throw new Error('Local demo request failed');}return response.json();
+  if(!response.ok){await response.body?.cancel();throw new Error('Local demo request failed');}return readReleaseResponse(response);
 }
 try{
   if(process.argv.length!==2)throw new Error('No arguments accepted');
