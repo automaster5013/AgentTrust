@@ -270,6 +270,7 @@ $('download').addEventListener('click', () => {
 });
 function clearProjectData(){
   $('workspace-nav').hidden=true;$('nav-projects').hidden=true;
+  $('operations-refresh').disabled=false;
   reviewBusy=false;loading=false;versionBusy=false;workspaceMutation=null;workspaceControls();
   recentBaselineRuns=[];
   $('gate-baseline-enabled').checked=false;$('gate-baseline-id').value='';$('gate-baseline-id').disabled=true;
@@ -383,7 +384,7 @@ async function receiptHistory(append=false){
   if(!append)$('receipt-list').replaceChildren();
   $('receipt-list').append(...page.items.map(receipt=>{
     const row=node('div',undefined,'audit-entry');row.append(node('strong',`${decisionLabels[receipt.decision]} `),node('span',`${new Date(receipt.created_at).toLocaleString('ko-KR')} · 실행 ${receipt.candidate_run_id.slice(0,8)} · ${receipt.signing_key_id?'서명 포함':'기존 서명 없음'} `));
-    const button=node('button','기록 JSON 저장','secondary');button.addEventListener('click',async()=>{try{const data=await api(`/v1/release-receipts/${receipt.id}`);const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=node('a');link.href=url;link.download=`agenttrust-receipt-${receipt.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){message(e.message,true);}});row.append(button);return row;
+    const button=node('button','기록 JSON 저장','secondary');button.addEventListener('click',async()=>{if(button.disabled)return;const epoch=scopeEpoch;button.disabled=true;try{const data=await api(`/v1/release-receipts/${receipt.id}`);if(epoch!==scopeEpoch)return;const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=node('a');link.href=url;link.download=`agenttrust-receipt-${receipt.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){if(epoch===scopeEpoch)message(e.message,true);}finally{if(epoch===scopeEpoch)button.disabled=false;}});row.append(button);return row;
   }));
   if(!append&&!page.items.length)$('receipt-list').textContent='아직 CI 검증 기록이 없습니다.';
 }
@@ -437,7 +438,8 @@ function renderOperations(data){
   $('operations-alert').textContent=(data.worker.state!=='recent'?'최근 워커 신호가 없습니다. Docker 워커와 DB 연결을 확인하세요. ':'')+(data.queue.overdue||data.queue.expiredLeases?'처리가 지연된 실행이 있습니다. 실행 기록의 상태와 워커 복구를 확인하세요.':'');
 }
 $('operations-refresh').addEventListener('click',async()=>{
-  $('operations-refresh').disabled=true;try{renderOperations(await api('/v1/operations'));}catch(e){message(e.message,true);}finally{$('operations-refresh').disabled=false;}
+  if($('operations-refresh').disabled)return;const epoch=scopeEpoch;
+  $('operations-refresh').disabled=true;try{const data=await api('/v1/operations');if(epoch===scopeEpoch)renderOperations(data);}catch(e){if(epoch===scopeEpoch)message(e.message,true);}finally{if(epoch===scopeEpoch)$('operations-refresh').disabled=false;}
 });
 
 $('run-lookup-form').addEventListener('submit',async event=>{
@@ -540,12 +542,12 @@ for(const [kind,selector] of [['agent','agent'],['dataset','dataset-select'],['p
   });
 }
 $('dataset-copy').addEventListener('click',async()=>{
-  const id=$('dataset-select').value,draft=$('dataset-json').value;$('dataset-copy').disabled=true;
-  try{const version=await api('/v1/versions/'+id);if($('dataset-select').value!==id)return;
+  if($('dataset-copy').disabled)return;const id=$('dataset-select').value,draft=$('dataset-json').value,epoch=scopeEpoch;$('dataset-copy').disabled=true;
+  try{const version=await api('/v1/versions/'+id);if(epoch!==scopeEpoch||$('dataset-select').value!==id)return;
     if($('dataset-json').value!==draft){message('초안이 수정되어 불러온 내용으로 덮어쓰지 않았습니다.');return;}
     $('dataset-json').value=JSON.stringify({...version.data,name:version.data.name.slice(0,95)+' 복사'},null,2);
     message('선택한 데이터셋을 새 버전 초안으로 불러왔습니다. 수정 후 등록하면 새로운 버전이 생성됩니다.');
-  }catch(error){message(error.message,true);}finally{updateButtons();}
+  }catch(error){if(epoch===scopeEpoch)message(error.message,true);}finally{if(epoch===scopeEpoch)updateButtons();}
 });
 
 function sessionControls(){

@@ -19,6 +19,32 @@ class Element{
 }
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return {promise,resolve};};
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
+
+test('obsolete dataset copy failure preserves a new workspace draft and status',async()=>{
+ const f=await fixture(),reply=deferred();f.overrides.set('/v1/versions/dataset',async()=>{await reply.promise;throw Error('Old synthetic copy failure');});
+ const pending=f.element('dataset-copy').fire('click');await settle();await f.element('logout-button').fire('click');await f.element('login-form').fire('submit');
+ f.element('dataset-json').value='New workspace draft';f.element('status').textContent='New workspace status';reply.resolve();await pending;
+ assert.equal(f.element('dataset-json').value,'New workspace draft');assert.equal(f.element('status').textContent,'New workspace status');
+ f.overrides.set('/v1/versions/dataset',()=>({data:{name:'Current synthetic dataset',cases:[]}}));await f.element('dataset-copy').fire('click');assert.equal(JSON.parse(f.element('dataset-json').value).name,'Current synthetic dataset 복사');assert.equal(f.element('dataset-copy').disabled,false);
+});
+
+test('obsolete operations failure cannot unlock a new workspace refresh',async()=>{
+ const f=await fixture(),older=deferred(),newer=deferred();let calls=0;
+ f.overrides.set('/v1/operations',async()=>{const call=++calls;if(call===1){await older.promise;throw Error('Old synthetic operation failure');}return newer.promise;});
+ const oldRequest=f.element('operations-refresh').fire('click');await settle();await f.element('logout-button').fire('click');f.overrides.delete('/v1/operations');await f.element('login-form').fire('submit');f.overrides.set('/v1/operations',()=>{calls++;return newer.promise;});
+ const newRequest=f.element('operations-refresh').fire('click');await settle();assert.equal(calls,2);f.element('status').textContent='Current operation status';older.resolve();await oldRequest;
+ assert.equal(f.element('operations-refresh').disabled,true);assert.equal(f.element('status').textContent,'Current operation status');
+ newer.resolve({worker:{state:'recent',lastSeen:null},queue:{queued:2,running:0,overdue:0,expiredLeases:0},recent:{completed24h:2,errors24h:0},observedAt:'2026-01-01T00:00:00Z'});await newRequest;
+ assert.equal(f.element('operations-refresh').disabled,false);assert.equal(f.element('queue-waiting').textContent,'2');
+});
+
+test('obsolete historical receipt download failure cannot replace new workspace status',async()=>{
+ const f=await fixture(),reply=deferred();f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[{id:'synthetic-receipt',decision:'block',created_at:'2026-01-01T00:00:00Z',candidate_run_id:'synthetic-run',signing_key_id:'synthetic'}],nextCursor:null}));
+ await f.element('receipts-refresh').fire('click');const button=f.element('receipt-list').children[0].children.at(-1);
+ f.overrides.set('/v1/release-receipts/synthetic-receipt',async()=>{await reply.promise;throw Error('Old synthetic receipt failure');});const pending=button.fire('click');await settle();await f.element('logout-button').fire('click');await f.element('login-form').fire('submit');
+ f.element('status').textContent='New receipt workspace';reply.resolve();await pending;assert.equal(f.element('status').textContent,'New receipt workspace');assert.equal(f.downloads.length,0);
+ const currentButton=f.element('receipt-list').children[0].children.at(-1);f.overrides.set('/v1/release-receipts/synthetic-receipt',()=>({id:'synthetic-receipt',synthetic:true}));await currentButton.fire('click');assert.equal(f.downloads.length,1);assert.equal(JSON.parse(await f.downloads[0].text()).synthetic,true);assert.equal(currentButton.disabled,false);
+});
 function execution(id,state='succeeded',manual=false){return {id,state,createdAt:'2026-01-01T00:00:00Z',snapshotHash:'synthetic-'+id,
   snapshot:{agent:{name:'Run '+id},dataset:{name:'Synthetic dataset'},policy:{name:'Synthetic policy',requiresManualApproval:manual}},
   agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy',results:[],summary:{cases:0,pass:0,fail:0,inconclusive:0},
