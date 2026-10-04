@@ -125,6 +125,40 @@ test('obsolete version registration cannot change new workspace status or releas
  newer.resolve({id:'agent',name:'Current agent'});await newRequest;assert.equal(f.element('agent-create').disabled,false);assert.match(f.element('status').textContent,/Current agent/);
 });
 
+test('CI credential issuance excludes overlapping workspace mutations and duplicate issuance',async()=>{
+ const f=await fixture(),issuance=deferred();let keys=0,projects=0;
+ f.overrides.set('/v1/ci-credentials',()=>{keys++;return issuance.promise;});f.overrides.set('/v1/projects',()=>{projects++;return {id:'project'};});
+ const pending=f.element('ci-key-form').fire('submit');await settle();assert.equal(f.element('ci-create').disabled,true);assert.equal(f.element('project-create').disabled,true);
+ await f.element('ci-key-form').fire('submit');await f.element('project-form').fire('submit');assert.equal(keys,1);assert.equal(projects,0);
+ issuance.resolve({token:'synthetic-issued-key'});await pending;assert.equal(f.element('ci-issued-key').value,'synthetic-issued-key');assert.equal(f.element('ci-create').disabled,false);assert.equal(f.element('project-create').disabled,false);
+});
+
+test('obsolete CI issuance cannot release a new workspace operation or display an old token',async()=>{
+ const f=await fixture(),older=deferred(),newer=deferred();let calls=0;
+ f.overrides.set('/v1/ci-credentials',()=>++calls===1?older.promise:newer.promise);
+ const oldRequest=f.element('ci-key-form').fire('submit');await settle();await f.element('logout-button').fire('click');await f.element('login-form').fire('submit');
+ const newRequest=f.element('ci-key-form').fire('submit');await settle();assert.equal(calls,2);f.element('ci-status').textContent='Current issuance status';
+ older.resolve({token:'obsolete-synthetic-key'});await oldRequest;assert.equal(f.element('ci-status').textContent,'Current issuance status');assert.equal(f.element('ci-create').disabled,true);assert.equal(f.element('logout-button').disabled,true);assert.equal(f.element('ci-issued-key').value,'');
+ newer.resolve({token:'current-synthetic-key'});await newRequest;assert.equal(f.element('ci-issued-key').value,'current-synthetic-key');assert.equal(f.element('ci-create').disabled,false);
+});
+
+test('project creation retains the workspace lock throughout its own initialization',async()=>{
+ const f=await fixture(),hydration=deferred();let keys=0;
+ f.overrides.set('/v1/projects',()=>({id:'project'}));f.overrides.set('/v1/me',()=>hydration.promise);f.overrides.set('/v1/ci-credentials',()=>{keys++;return {token:'synthetic-key'};});
+ const pending=f.element('project-form').fire('submit');await settle();assert.equal(f.element('project-create').disabled,true);assert.equal(f.element('ci-create').disabled,true);
+ await f.element('ci-key-form').fire('submit');assert.equal(keys,0);
+ hydration.resolve({role:'admin',projectId:'project',organizationName:'Synthetic',name:'Tester',projects:[{id:'project',name:'Synthetic'}]});await pending;
+ assert.equal(f.element('ci-create').disabled,false);assert.equal(f.element('project-create').disabled,false);assert.equal(f.element('workspace-project').disabled,false);
+});
+
+test('obsolete project creation preserves a newer CI issuance lock and project draft',async()=>{
+ const f=await fixture(),project=deferred(),key=deferred();f.overrides.set('/v1/projects',()=>project.promise);
+ const oldRequest=f.element('project-form').fire('submit');await settle();await f.element('logout-button').fire('click');await f.element('login-form').fire('submit');
+ f.overrides.set('/v1/ci-credentials',()=>key.promise);const newRequest=f.element('ci-key-form').fire('submit');await settle();f.element('project-name').value='New project draft';f.element('status').textContent='Current workspace status';
+ project.resolve({id:'project'});await oldRequest;assert.equal(f.element('project-name').value,'New project draft');assert.equal(f.element('status').textContent,'Current workspace status');assert.equal(f.element('ci-create').disabled,true);assert.equal(f.element('logout-button').disabled,true);
+ key.resolve({token:'synthetic-key'});await newRequest;assert.equal(f.element('ci-create').disabled,false);
+});
+
 test('late comparison result cannot replace a changed baseline selection',async()=>{
   const f=await fixture(),comparison=deferred();await f.view('B');f.overrides.set('/v1/compare',()=>comparison.promise);
   const pending=f.element('compare-form').fire('submit');await settle();

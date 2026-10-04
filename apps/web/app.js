@@ -7,6 +7,7 @@ let activeProjectId = null;
 let scopeEpoch = 0;
 let loading = false;
 let versionBusy=false;
+let workspaceMutation=null;
 let selectedRunId = null;
 let selectedRunSequence=0;
 let keyCursor=null,receiptCursor=null,runCursor=null;
@@ -120,11 +121,17 @@ async function catalog(selectedDataset) {
   updateButtons();
 }
 function updateButtons(){
+  workspaceControls();
   const writer=actor&&actor.role!=='viewer';
   for(const [kind,id] of [['agent','agent'],['dataset','dataset-select'],['policy','policy']])$('inspect-'+kind).disabled=!$(id).value;
   $('dataset-copy').disabled=!writer||!$('dataset-select').value;
   $('run-button').disabled=!writer||loading||!$('agent').value||!$('dataset-select').value||!$('policy').value;
   $('dataset-button').disabled=!writer||versionBusy;$('agent-create').disabled=!writer||versionBusy;$('policy-create').disabled=actor?.role!=='admin'||versionBusy;
+}
+function workspaceControls(){
+  const busy=workspaceMutation!==null;
+  $('workspace-project').disabled=busy;$('logout-button').disabled=busy;
+  for(const id of ['ci-create','project-create'])$(id).disabled=busy||actor?.role!=='admin';
 }
 function render(run) {
   if(currentRun?.id===run.id&&terminal.has(currentRun.state)&&!terminal.has(run.state))return false;
@@ -245,7 +252,7 @@ $('download').addEventListener('click', () => {
   const link = node('a'); link.href = url; link.download = `agenttrust-${currentRun.id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 function clearProjectData(){
-  reviewBusy=false;loading=false;versionBusy=false;
+  reviewBusy=false;loading=false;versionBusy=false;workspaceMutation=null;workspaceControls();
   recentBaselineRuns=[];
   $('gate-baseline-enabled').checked=false;$('gate-baseline-id').value='';$('gate-baseline-id').disabled=true;
   lookupSequence++;lookupBusy=false;$('run-lookup-button').disabled=false;$('run-lookup-id').value='';$('run-lookup-status').textContent='';
@@ -362,8 +369,12 @@ async function receiptHistory(append=false){
   if(!append&&!page.items.length)$('receipt-list').textContent='아직 CI 검증 기록이 없습니다.';
 }
 $('ci-key-form').addEventListener('submit',async event=>{
-  event.preventDefault();$('workspace-project').disabled=true;$('logout-button').disabled=true;$('ci-create').disabled=true;$('ci-status').textContent='';$('ci-issued-key').value='';$('ci-key-box').hidden=true;
-  try{const key=await api('/v1/ci-credentials',{method:'POST',body:JSON.stringify({name:$('ci-name').value,projectId:$('ci-project').value,ttlSeconds:Number($('ci-ttl').value)})});$('ci-issued-key').value=key.token;$('ci-key-box').hidden=false;await ciHistory();$('ci-status').textContent='CI 키를 발급했습니다. 안전하게 보관한 뒤 키 창을 닫으세요.';}catch(e){$('ci-status').textContent=e.message;}finally{$('ci-create').disabled=false;$('workspace-project').disabled=false;$('logout-button').disabled=false;}
+  event.preventDefault();if(workspaceMutation||actor?.role!=='admin')return;
+  const operation={},epoch=scopeEpoch;workspaceMutation=operation;workspaceControls();$('ci-status').textContent='';$('ci-issued-key').value='';$('ci-key-box').hidden=true;
+  const isCurrent=()=>epoch===scopeEpoch&&workspaceMutation===operation;
+  try{const key=await api('/v1/ci-credentials',{method:'POST',body:JSON.stringify({name:$('ci-name').value,projectId:$('ci-project').value,ttlSeconds:Number($('ci-ttl').value)})});if(!isCurrent())return;
+    $('ci-issued-key').value=key.token;$('ci-key-box').hidden=false;await ciHistory();if(isCurrent())$('ci-status').textContent='CI 키를 발급했습니다. 안전하게 보관한 뒤 키 창을 닫으세요.';
+  }catch(e){if(isCurrent())$('ci-status').textContent=e.message;}finally{if(isCurrent()){workspaceMutation=null;workspaceControls();}}
 });
 $('ci-key-hide').addEventListener('click',()=>{$('ci-issued-key').value='';$('ci-key-box').hidden=true;});
 $('ci-key-copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('ci-issued-key').value);$('ci-status').textContent='키를 복사했습니다. CI 비밀 저장소에 보관하세요.';}catch{$('ci-status').textContent='클립보드에 접근할 수 없습니다.';}});
@@ -378,10 +389,12 @@ $('workspace-project').addEventListener('change',async()=>{
 });
 
 $('project-form').addEventListener('submit',async event=>{
-  event.preventDefault();if($('project-create').disabled)return;$('project-create').disabled=true;$('workspace-project').disabled=true;$('logout-button').disabled=true;
+  event.preventDefault();if(workspaceMutation||$('project-create').disabled)return;
+  const operation={};let epoch=scopeEpoch;workspaceMutation=operation;workspaceControls();const isCurrent=()=>epoch===scopeEpoch&&workspaceMutation===operation;
   try{const project=await api('/v1/projects',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({name:$('project-name').value})});
-    scopeEpoch++;activeProjectId=project.id;clearProjectData();await initialize();$('project-name').value='';message('새 프로젝트를 만들었습니다. 평가에 사용할 세 가지 버전을 등록하세요.');
-  }catch(e){message(e.message,true);}finally{$('project-create').disabled=false;$('workspace-project').disabled=false;$('logout-button').disabled=false;}
+    if(!isCurrent())return;scopeEpoch++;epoch=scopeEpoch;activeProjectId=project.id;clearProjectData();workspaceMutation=operation;workspaceControls();await initialize();if(!isCurrent())return;
+    $('project-name').value='';message('새 프로젝트를 만들었습니다. 평가에 사용할 세 가지 버전을 등록하세요.');
+  }catch(e){if(isCurrent())message(e.message,true);}finally{if(isCurrent()){workspaceMutation=null;workspaceControls();}}
 });
 for(const kind of ['agent','policy'])$(kind+'-form').addEventListener('submit',async event=>{
   event.preventDefault();if(versionBusy||$(kind+'-create').disabled)return;const epoch=scopeEpoch;versionBusy=true;updateButtons();
