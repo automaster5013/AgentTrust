@@ -8,6 +8,12 @@ export async function checkRelease({base,accessKey,candidateRunId,baselineRunId,
   const url=new URL(base);
   if(url.protocol!=='http:'||url.hostname!=='127.0.0.1'||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw new Error('CI bridge requires a loopback API URL.');
   if(expected.maxAgeSeconds!==undefined&&(!Number.isInteger(expected.maxAgeSeconds)||expected.maxAgeSeconds<1||expected.maxAgeSeconds>86400))throw new Error('Invalid result validity window.');
+  const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
+  if(![candidateRunId,expected.agentVersionId,expected.datasetVersionId,expected.policyVersionId].every(uuid))throw new Error('Release gate requires valid execution and version UUIDs.');
+  if(baselineRunId!==undefined&&(!uuid(baselineRunId)||baselineRunId.toLowerCase()===candidateRunId.toLowerCase()))throw new Error('Baseline requires a distinct execution UUID.');
+  if(projectId!==undefined&&!uuid(projectId))throw new Error('Invalid project UUID.');
+  if(typeof checkKey!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(checkKey))throw new Error('Invalid release check key.');
+  if(typeof accessKey!=='string'||!accessKey.trim())throw new Error('Release access key is required.');
   const request={candidateRunId,...(baselineRunId?{baselineRunId}:{}),...expected};
   const headers={'Content-Type':'application/json','X-AgentTrust-Request':'local-ui',...(projectId?{'X-AgentTrust-Project':projectId}:{})};
   const call=async(path,options={})=>{
