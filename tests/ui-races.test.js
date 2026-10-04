@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { webcrypto } from 'node:crypto';
+import { webcrypto,generateKeyPairSync } from 'node:crypto';
+import {ReceiptSigner,verifyReceipt} from '../packages/receipts/signature.js';
+import {hash} from '../packages/contracts/hash.js';
 
 // Execute the actual UI handlers with deferred HTTP responses, without a browser
 // dependency or a real network. Only DOM operations used by this UI are modeled.
@@ -239,4 +241,24 @@ test('a delayed direct lookup cannot replace a run selected from history and sup
 });
 test('logout clears direct lookup state and an older response cannot restore it',async()=>{
  const f=await fixture(),older=deferred();f.overrides.set('/v1/runs/'+lookupId,()=>older.promise);f.element('run-lookup-id').value=lookupId;const pending=f.element('run-lookup-form').fire('submit');await settle();await f.element('logout-button').fire('click');older.resolve(execution(lookupId));await pending;assert.equal(f.element('run-lookup-id').value,'');assert.equal(f.element('run-lookup-status').textContent,'');assert.equal(f.element('release-check-panel').hidden,true);
+});
+
+function signedUiReceipt(runId='B',allowed=true){
+ const pair=generateKeyPairSync('ed25519'),signer=new ReceiptSigner(pair.privateKey.export({type:'pkcs8',format:'pem'}));
+ const artifact={schemaVersion:1,receiptId:'00000000-0000-0000-0000-000000000456',checkedAt:'2026-01-01T00:00:00Z',request:{candidateRunId:runId},result:{decision:allowed?'pass':'block',deploymentAllowed:allowed},evidence:{candidate:{runId,snapshotHash:'synthetic',resultHash:'synthetic'}}};
+ return {report:{...releaseResult(allowed),artifact,artifactHash:hash(artifact),signature:signer.sign(artifact)},publicKey:signer.publicMetadata().publicKey};
+}
+test('current signed gate exports the exact artifact hash and signature for offline verification',async()=>{
+ const f=await fixture(),signed=signedUiReceipt();await f.view('B');f.overrides.set('/v1/release-gate',()=>signed.report);f.overrides.set('/v1/release-receipts?limit=25',()=>{throw Error('Synthetic list refresh failure');});await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/최종 게이트: 통과/);assert.equal(f.element('current-receipt-download').disabled,false);await f.element('current-receipt-download').fire('click');
+ const downloaded=JSON.parse(await f.downloads[0].text());assert.deepEqual(downloaded,{artifact:signed.report.artifact,artifactHash:signed.report.artifactHash,signature:signed.report.signature});assert.equal(verifyReceipt(downloaded,signed.publicKey).signatureVerified,true);
+});
+test('blocked gate records can be downloaded without changing deployment permission',async()=>{
+ const f=await fixture(),signed=signedUiReceipt('B',false);await f.view('B');f.overrides.set('/v1/release-gate',()=>signed.report);await f.element('manual-gate-check').fire('click');await f.element('current-receipt-download').fire('click');const downloaded=JSON.parse(await f.downloads[0].text());assert.equal(downloaded.artifact.result.deploymentAllowed,false);assert.equal(verifyReceipt(downloaded,signed.publicKey).decision,'block');
+});
+test('rechecking, refreshing review and selecting another run invalidate the downloadable current receipt',async()=>{
+ const f=await fixture({manual:true}),signed=signedUiReceipt();await f.view('B');f.overrides.set('/v1/release-gate',()=>signed.report);await f.element('manual-gate-check').fire('click');await f.element('review-refresh').fire('click');assert.equal(f.element('current-receipt-download').disabled,true);await f.element('current-receipt-download').fire('click');assert.equal(f.downloads.length,0);
+ await f.element('manual-gate-check').fire('click');const older=deferred();f.overrides.set('/v1/release-gate',()=>older.promise);const pending=f.element('manual-gate-check').fire('click');await settle();assert.equal(f.element('current-receipt-download').disabled,true);const viewing=f.view('A');await settle();older.resolve(signed.report);await pending;assert.equal(f.element('current-receipt-download').disabled,true);await f.view('B');for(const callback of f.timers.splice(0))callback();await viewing;
+});
+test('a receipt bound to another execution cannot enable current-record download',async()=>{
+ const f=await fixture(),signed=signedUiReceipt('other-run');await f.view('B');f.overrides.set('/v1/release-gate',()=>signed.report);await f.element('manual-gate-check').fire('click');assert.equal(f.element('current-receipt-download').disabled,true);await f.element('current-receipt-download').fire('click');assert.equal(f.downloads.length,0);
 });

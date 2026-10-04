@@ -14,9 +14,9 @@ let lookupSequence=0,lookupBusy=false;
 let auditCursor=null,auditSequence=0;
 let inspectionSequence=0,comparisonSequence=0,keyHistorySequence=0,receiptHistorySequence=0,reviewSequence=0;
 let reviewBusy=false,reviewCursor=null,reviewShown=0;
-let finalGateSequence=0,finalGateBusy=false;
+let finalGateSequence=0,finalGateBusy=false,currentReceipt=null;
 function invalidateFinalGate(text="최종 게이트를 아직 확인하지 않았습니다."){
-  finalGateSequence++;finalGateBusy=false;renderNextAction();
+  finalGateSequence++;finalGateBusy=false;currentReceipt=null;$('current-receipt-download').disabled=true;renderNextAction();
   $("manual-gate-output").textContent=text;
   $("release-check-panel").hidden=!currentRun||currentRun.id!==selectedRunId;
   $("manual-gate-check").disabled=!currentRun||currentRun.id!==selectedRunId||!terminal.has(currentRun.state)||reviewBusy;
@@ -401,16 +401,27 @@ $('manual-gate-check').addEventListener('click',async()=>{
   if(!currentRun||currentRun.id!==selectedRunId||!terminal.has(currentRun.state)||reviewBusy||finalGateBusy)return;
   const run=currentRun,selection=selectedRunSequence,epoch=scopeEpoch,sequence=++finalGateSequence;
   const isCurrent=()=>sequence===finalGateSequence&&selection===selectedRunSequence&&epoch===scopeEpoch&&selectedRunId===run.id;
-  finalGateBusy=true;$('manual-gate-check').disabled=true;$('manual-gate-output').textContent='최종 게이트를 확인하고 있습니다…';
+  currentReceipt=null;$('current-receipt-download').disabled=true;finalGateBusy=true;$('manual-gate-check').disabled=true;$('manual-gate-output').textContent='최종 게이트를 확인하고 있습니다…';
   try{
     const result=await api('/v1/release-gate',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({candidateRunId:run.id,agentVersionId:run.agentVersionId,datasetVersionId:run.datasetVersionId,policyVersionId:run.policyVersionId})});
     if(!isCurrent())return;
     const approval={approved:'승인 유효',rejected:'반려',missing:'승인 대기',expired:'승인 만료',invalid:'승인 무효'}[result.manualApproval?.status]||'불필요';
     $('manual-gate-output').textContent='확인 시점의 최종 게이트: '+(result.deploymentAllowed?'통과':'차단')+' · 관리자 검토 '+approval+'\n실행 '+run.id+'\n'+(result.artifact?.checkedAt?'확인 시각 '+new Date(result.artifact.checkedAt).toLocaleString('ko-KR')+'\n':'')+(result.artifact?.receiptId?'검증 기록 '+result.artifact.receiptId+'\n':'')+result.reasons.map(releaseReason).join('\n');
     renderNextAction(result);
-    await receiptHistory();
+    if(result.artifact?.request?.candidateRunId===run.id&&result.artifact?.evidence?.candidate?.runId===run.id&&typeof result.artifact.receiptId==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(result.artifact.receiptId)&&/^[a-f0-9]{64}$/.test(result.artifactHash||'')){
+      currentReceipt={runId:run.id,selection,epoch,sequence,data:{artifact:result.artifact,artifactHash:result.artifactHash,...(result.signature?{signature:result.signature}:{})}};
+      $('current-receipt-download').disabled=false;
+    }
+    await receiptHistory().catch(()=>{if(isCurrent())message('최종 게이트 기록은 저장됐지만 기록 목록을 새로고침하지 못했습니다.',true);});
   }catch(e){if(isCurrent()){$('manual-gate-output').textContent='최종 게이트 확인 실패: '+e.message;renderNextAction();$('next-action-title').textContent='최종 게이트 확인을 다시 요청하세요';$('next-action-detail').textContent='확인을 완료하지 못했습니다. 성공 판정으로 사용할 수 없습니다.';$('next-action-link').href='#release-check-panel';$('next-action-link').textContent='최종 게이트 보기';}}
   finally{if(isCurrent()){finalGateBusy=false;$('manual-gate-check').disabled=reviewBusy;}}
+});
+
+$('current-receipt-download').addEventListener('click',()=>{
+  const receipt=currentReceipt;
+  if(!receipt||receipt.runId!==selectedRunId||receipt.selection!==selectedRunSequence||receipt.epoch!==scopeEpoch||receipt.sequence!==finalGateSequence||finalGateBusy)return;
+  const url=URL.createObjectURL(new Blob([JSON.stringify(receipt.data,null,2)],{type:'application/json'}));
+  const link=node('a');link.href=url;link.download='agenttrust-receipt-'+receipt.data.artifact.receiptId+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
 
 for(const [kind,selector] of [['agent','agent'],['dataset','dataset-select'],['policy','policy']]){
