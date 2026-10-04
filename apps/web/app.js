@@ -400,10 +400,14 @@ $('ci-refresh').addEventListener('click',()=>ciHistory().catch(e=>{$('ci-status'
 $('receipts-refresh').addEventListener('click',()=>receiptHistory().catch(e=>message(e.message,true)));
 
 $('workspace-project').addEventListener('change',async()=>{
-  const previous=activeProjectId;scopeEpoch++;activeProjectId=$('workspace-project').value;clearProjectData();$('workspace-project').disabled=true;
-  try{await initialize();message('프로젝트를 전환했습니다.');}
-  catch(e){if(actor){scopeEpoch++;activeProjectId=previous;try{await initialize();}catch{showLogin();}}message(e.message,true);}
-  finally{$('workspace-project').disabled=false;}
+  const previous=activeProjectId;let epoch=++scopeEpoch;activeProjectId=$('workspace-project').value;clearProjectData();$('workspace-project').disabled=true;
+  try{await initialize();if(epoch===scopeEpoch)message('프로젝트를 전환했습니다.');}
+  catch(e){
+    if(epoch!==scopeEpoch)return;
+    if(actor){epoch=++scopeEpoch;activeProjectId=previous;try{await initialize();}catch{if(epoch===scopeEpoch)showLogin();}}
+    if(epoch===scopeEpoch)message(e.message,true);
+  }
+  finally{if(epoch===scopeEpoch)$('workspace-project').disabled=false;}
 });
 
 $('project-form').addEventListener('submit',async event=>{

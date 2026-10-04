@@ -219,6 +219,26 @@ test('session refresh cannot re-enable revocation buttons while a termination is
 });
 
 
+test('obsolete project initialization cannot roll back a newly signed-in workspace',async()=>{
+ const f=await fixture(),pending=deferred();let fresh=false;
+ const me={role:'viewer',projectId:'fresh-project',organizationName:'Fresh synthetic',name:'Viewer',projects:[{id:'fresh-project',name:'Fresh'}]};
+ f.overrides.set('/v1/me',options=>{
+  const project=options.headers['X-AgentTrust-Project'];if(project==='pending-project')return pending.promise;
+  if(fresh&&project&&project!=='fresh-project')throw Error('Synthetic foreign project rejected');return me;
+ });
+ f.element('workspace-project').value='pending-project';const old=f.element('workspace-project').fire('change');await settle();
+ await f.element('logout-button').fire('click');fresh=true;await f.element('login-form').fire('submit');f.element('status').textContent='Fresh workspace status';
+ pending.resolve(me);await old;assert.equal(f.element('workspace-ui').hidden,false);assert.equal(f.element('workspace-project').value,'fresh-project');assert.equal(f.element('status').textContent,'Fresh workspace status');
+});
+test('obsolete project finally cannot unlock a newer project initialization',async()=>{
+ const f=await fixture(),older=deferred(),newer=deferred();const me={role:'admin',projectId:'fresh-project',organizationName:'Synthetic',name:'Admin',projects:[{id:'fresh-project',name:'Fresh'}]};
+ f.overrides.set('/v1/me',options=>{const project=options.headers['X-AgentTrust-Project'];if(project==='old-project')return older.promise;if(project==='new-project')return newer.promise;return me;});
+ f.element('workspace-project').value='old-project';const old=f.element('workspace-project').fire('change');await settle();await f.element('logout-button').fire('click');await f.element('login-form').fire('submit');
+ f.element('workspace-project').value='new-project';const next=f.element('workspace-project').fire('change');await settle();assert.equal(f.element('workspace-project').disabled,true);
+ older.resolve(me);await old;const protectedLock=f.element('workspace-project').disabled;
+ newer.resolve({...me,projectId:'new-project',projects:[{id:'new-project',name:'New'}]});await next;
+ assert.equal(protectedLock,true);assert.equal(f.element('workspace-project').value,'new-project');assert.equal(f.element('workspace-project').disabled,false);
+});
 test('run navigation follows loaded selection and hides during selection and logout',async()=>{
  const f=await fixture({manual:true});for(const id of ['nav-evidence','nav-review','nav-release'])assert.equal(f.element(id).hidden,true);
  await f.view('B');for(const id of ['nav-evidence','nav-review','nav-release'])assert.equal(f.element(id).hidden,false);
