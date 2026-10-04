@@ -45,7 +45,7 @@ test('obsolete historical receipt download failure cannot replace new workspace 
  f.element('status').textContent='New receipt workspace';reply.resolve();await pending;assert.equal(f.element('status').textContent,'New receipt workspace');assert.equal(f.downloads.length,0);
  const currentButton=f.element('receipt-list').children[0].children.at(-1);f.overrides.set('/v1/release-receipts/synthetic-receipt',()=>({id:'synthetic-receipt',synthetic:true}));await currentButton.fire('click');assert.equal(f.downloads.length,1);assert.equal(JSON.parse(await f.downloads[0].text()).synthetic,true);assert.equal(currentButton.disabled,false);
 });
-function execution(id,state='succeeded',manual=false){return {id,state,createdAt:'2026-01-01T00:00:00Z',snapshotHash:'synthetic-'+id,
+function execution(id,state='succeeded',manual=false){return {id,state,createdAt:'2026-01-01T00:00:00Z',snapshotHash:'synthetic-'+id,resultHash:'synthetic-result-'+id,
   snapshot:{agent:{name:'Run '+id},dataset:{name:'Synthetic dataset'},policy:{name:'Synthetic policy',requiresManualApproval:manual}},
   agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy',results:[],summary:{cases:0,pass:0,fail:0,inconclusive:0},
   gate:{decision:state==='succeeded'?'pass':'inconclusive',deploymentAllowed:state==='succeeded'&&!manual,...(manual?{requiresManualApproval:true,evaluationPassed:state==='succeeded'}:{})}};}
@@ -57,7 +57,7 @@ async function fixture({manual=false,initialOverrides,waitForInitialization=true
   element('timeout-ms').value='30000';element('case-budget').value='100';
   const runs={A:execution('A','running'),B:execution('B','succeeded',manual)};
   const defaultResponse=path=>{
-    if(path==='/v1/me')return {role:'admin',projectId:'project',organizationName:'Synthetic',name:'Tester',projects:[{id:'project',name:'Synthetic'}]};
+    if(path==='/v1/me')return {role:'admin',organizationId:'organization',projectId:'project',organizationName:'Synthetic',name:'Tester',projects:[{id:'project',name:'Synthetic'}]};
     if(path==='/v1/catalog')return {agent:[{id:'agent',name:'Agent',mode:'compliant'}],dataset:[{id:'dataset',name:'Dataset',cases:1}],policy:[{id:'policy',name:'Policy',minimumPassRate:1}]};
     if(path==='/v1/sample-dataset')return {name:'Synthetic',cases:[]};
     if(path.startsWith('/v1/runs?'))return {items:Object.values(runs).map(run=>({id:run.id,agentName:'Run '+run.id,datasetName:'Dataset',state:run.state,gate:run.gate,createdAt:run.createdAt})),nextCursor:null};
@@ -434,7 +434,7 @@ test('data loading failure after login cannot leave the loading panel stuck',asy
  assert.equal(f.element('workspace-ui').hidden,true);assert.equal(f.element('loading-panel').hidden,true);assert.equal(f.element('login-panel').hidden,false);assert.equal(f.element('login-button').disabled,false);assert.equal(f.element('access-key').value,'');assert.match(f.element('login-status').textContent,/서버 응답을 읽지 못했습니다/);assert.ok(!f.element('login-status').textContent.includes('Synthetic post-login read failed'));
 });
 
-const releaseResult=(allowed=true,baselineRunId,extra={})=>{const result={runId:'B',decision:allowed?'pass':'block',deploymentAllowed:allowed,reasons:allowed?[]:['A required rule failed.'],...extra};return {...result,artifact:{checkedAt:'2026-01-01T00:00:00Z',receiptId:'synthetic-receipt',request:{candidateRunId:'B',...(baselineRunId?{baselineRunId}:{})},result:structuredClone(result),evidence:{candidate:{runId:'B'},...(baselineRunId?{baseline:{runId:baselineRunId}}:{})}}};};
+const releaseResult=(allowed=true,baselineRunId,extra={})=>{const result={runId:'B',decision:allowed?'pass':'block',deploymentAllowed:allowed,reasons:allowed?[]:['A required rule failed.'],...extra};return {...result,artifact:{organizationId:'organization',projectId:'project',checkedAt:'2026-01-01T00:00:00Z',receiptId:'synthetic-receipt',request:{candidateRunId:'B',agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy',...(baselineRunId?{baselineRunId}:{})},result:structuredClone(result),evidence:{candidate:{runId:'B',snapshotHash:'synthetic-B',resultHash:'synthetic-result-B'},...(baselineRunId?{baseline:{runId:baselineRunId}}:{})}}};};
 test('completed evaluations without manual approval expose a version-bound final gate check',async()=>{
  const f=await fixture();await f.view('B');assert.equal(f.element('review-panel').hidden,true);assert.equal(f.element('release-check-panel').hidden,false);assert.equal(f.element('manual-gate-check').disabled,false);
  let input;f.overrides.set('/v1/release-gate',options=>{input=JSON.parse(options.body);return releaseResult();});await f.element('manual-gate-check').fire('click');
@@ -467,7 +467,7 @@ test('passing evaluation guides final checking and invalidation removes prior re
  await f.view('B');assert.equal(f.element('next-action-link').href,'#release-check-panel');assert.ok(!f.element('next-action-title').textContent.includes('기록을 보관'));
 });
 test('viewer approval guidance respects role and expired results require reevaluation',async()=>{
- const f=await fixture({manual:true,initialOverrides:[['/v1/me',()=>({role:'viewer',projectId:'project',name:'Viewer',organizationName:'Synthetic',projects:[{id:'project',name:'Synthetic'}]})]]});assert.equal(f.element('next-action-link').href,'#history');await f.view('B');
+ const f=await fixture({manual:true,initialOverrides:[['/v1/me',()=>({role:'viewer',organizationId:'organization',projectId:'project',name:'Viewer',organizationName:'Synthetic',projects:[{id:'project',name:'Synthetic'}]})]]});assert.equal(f.element('next-action-link').href,'#history');await f.view('B');
  f.overrides.set('/v1/release-gate',()=>releaseResult(false,undefined,{manualApproval:{status:'expired'}}));await f.element('manual-gate-check').fire('click');assert.match(f.element('next-action-title').textContent,/승인을 다시 요청/);assert.match(f.element('next-action-detail').textContent,/작성할 수 없습니다/);assert.equal(f.element('next-action-link').href,'#review-panel');
  f.overrides.set('/v1/release-gate',()=>releaseResult(false,undefined,{reasons:['Result is missing, stale or future-dated.'],manualApproval:{status:'approved'}}));await f.element('manual-gate-check').fire('click');assert.equal(f.element('next-action-link').href,'#evaluation');assert.match(f.element('manual-gate-output').textContent,/유효 시간이 지났/);
 });
@@ -494,7 +494,7 @@ test('logout clears direct lookup state and an older response cannot restore it'
 
 function signedUiReceipt(runId='B',allowed=true){
  const pair=generateKeyPairSync('ed25519'),signer=new ReceiptSigner(pair.privateKey.export({type:'pkcs8',format:'pem'}));
- const artifact={schemaVersion:1,receiptId:'00000000-0000-0000-0000-000000000456',checkedAt:'2026-01-01T00:00:00Z',request:{candidateRunId:runId},result:{runId,decision:allowed?'pass':'block',deploymentAllowed:allowed,reasons:allowed?[]:['A required rule failed.']},evidence:{candidate:{runId,snapshotHash:'synthetic',resultHash:'synthetic'}}};
+ const artifact={schemaVersion:1,organizationId:'organization',projectId:'project',receiptId:'00000000-0000-0000-0000-000000000456',checkedAt:'2026-01-01T00:00:00Z',request:{candidateRunId:runId,agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy'},result:{runId,decision:allowed?'pass':'block',deploymentAllowed:allowed,reasons:allowed?[]:['A required rule failed.']},evidence:{candidate:{runId,snapshotHash:'synthetic-'+runId,resultHash:'synthetic-result-'+runId}}};
  return {report:{...releaseResult(allowed),runId,artifact,artifactHash:hash(artifact),signature:signer.sign(artifact)},publicKey:signer.publicMetadata().publicKey};
 }
 test('current signed gate exports the exact artifact hash and signature for offline verification',async()=>{
@@ -647,4 +647,11 @@ test('gate record comparison is bounded and preserves supported large regression
  let nested={value:true};for(let i=0;i<70;i++)nested={child:nested};
  for(const extra of [nested,Array.from({length:100001},()=>true)]){f.overrides.set('/v1/release-gate',()=>releaseResult(true,undefined,{unexpected:extra}));await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/확인 실패/);assert.equal(f.element('current-receipt-download').disabled,true);assert.equal(f.element('manual-gate-check').disabled,false);}
  f.overrides.set('/v1/release-gate',()=>releaseResult());await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/최종 게이트: 통과/);
+});
+
+test('final gate record request and tenant scope must match the selected fixed versions',async()=>{
+ const f=await fixture();await f.view('B');const signed=signedUiReceipt(),valid=signed.report;
+ const responses=[...['snapshotHash','resultHash'].flatMap(key=>[undefined,'other-hash'].map(value=>({...valid,artifact:{...valid.artifact,evidence:{...valid.artifact.evidence,candidate:{...valid.artifact.evidence.candidate,[key]:value}}}}))),...['agentVersionId','datasetVersionId','policyVersionId'].flatMap(key=>[undefined,'other-version'].map(value=>({...valid,artifact:{...valid.artifact,request:{...valid.artifact.request,[key]:value}}}))),{...valid,artifact:{...valid.artifact,request:{...valid.artifact.request,maxAgeSeconds:86400}}},...['organizationId','projectId'].flatMap(key=>[undefined,'other-scope'].map(value=>({...valid,artifact:{...valid.artifact,[key]:value}})))];
+ for(const response of responses){f.overrides.set('/v1/release-gate',()=>response);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/확인 실패/);assert.equal(f.element('current-receipt-download').disabled,true);assert.equal(f.element('manual-gate-check').disabled,false);}
+ f.overrides.set('/v1/release-gate',()=>valid);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/최종 게이트: 통과/);await f.element('current-receipt-download').fire('click');assert.equal(verifyReceipt(JSON.parse(await f.downloads[0].text()),signed.publicKey).signatureVerified,true);
 });

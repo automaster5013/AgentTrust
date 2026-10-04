@@ -540,13 +540,17 @@ $('manual-gate-check').addEventListener('click',async()=>{
     invalidateFinalGate('후보와 다른 유효한 기준 실행 UUID를 입력하세요.');return;
   }
   const run=currentRun,selection=selectedRunSequence,epoch=scopeEpoch,sequence=++finalGateSequence;
+  const request={candidateRunId:run.id,agentVersionId:run.agentVersionId,datasetVersionId:run.datasetVersionId,policyVersionId:run.policyVersionId,...(baselineRunId?{baselineRunId}:{})};
+  const projectId=activeProjectId,organizationId=actor?.organizationId;
   const isCurrent=()=>sequence===finalGateSequence&&selection===selectedRunSequence&&epoch===scopeEpoch&&selectedRunId===run.id;
   currentReceipt=null;$('gate-regression-links').replaceChildren();$('current-receipt-download').disabled=true;finalGateBusy=true;$('manual-gate-check').disabled=true;$('manual-gate-output').textContent='최종 게이트를 확인하고 있습니다…';
   try{
-    const result=await api('/v1/release-gate',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({candidateRunId:run.id,agentVersionId:run.agentVersionId,datasetVersionId:run.datasetVersionId,policyVersionId:run.policyVersionId,...(baselineRunId?{baselineRunId}:{})})});
+    const result=await api('/v1/release-gate',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify(request)});
     if(!isCurrent())return;
     if(typeof result?.deploymentAllowed!=='boolean'||!['pass','block'].includes(result.decision)||result.deploymentAllowed!==(result.decision==='pass')||!Array.isArray(result.reasons)||!result.reasons.every(reason=>typeof reason==='string')||(result.deploymentAllowed&&result.reasons.length))throw new Error('최종 게이트 응답의 판정과 허용 여부가 일치하지 않습니다.');
     if(result.runId!==run.id||result.artifact?.request?.candidateRunId!==run.id||result.artifact?.evidence?.candidate?.runId!==run.id||(result.artifact?.request?.baselineRunId??null)!==baselineRunId||(baselineRunId&&result.artifact?.evidence?.baseline?.runId!==baselineRunId))throw new Error('최종 게이트 응답이 선택한 실행과 기준 근거에 연결되지 않습니다.');
+    if(!sameReleaseJson(request,result.artifact.request)||result.artifact.projectId!==projectId||result.artifact.organizationId!==organizationId||!organizationId)throw new Error('최종 게이트 검증 기록의 고정 버전과 조직·프로젝트 범위가 요청과 일치하지 않습니다.');
+    if(result.artifact.evidence.candidate.snapshotHash!==run.snapshotHash||result.artifact.evidence.candidate.resultHash!==run.resultHash)throw new Error('최종 게이트 검증 기록이 조회한 평가 근거의 해시와 일치하지 않습니다.');
     const displayed=Object.fromEntries(Object.entries(result).filter(([key])=>!['artifact','artifactHash','signature'].includes(key)));
     if(!sameReleaseJson(displayed,result.artifact.result))throw new Error('최종 게이트 판정과 저장된 검증 기록의 내용이 일치하지 않습니다.');
     const approval={approved:'승인 유효',rejected:'반려',missing:'승인 대기',expired:'승인 만료',invalid:'승인 무효'}[result.manualApproval?.status]||'불필요';
