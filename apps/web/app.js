@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const navigation=[['evaluation','nav-evaluation'],['history','nav-history'],['evidence','nav-evidence'],['review-panel','nav-review'],['release-check-panel','nav-release'],['versions','nav-versions'],['projects','nav-projects'],['sessions-panel','nav-sessions']];
+const navigation=[['evaluation','nav-evaluation'],['history','nav-history'],['evidence','nav-evidence'],['review-panel','nav-review'],['release-check-panel','nav-release'],['receipts-panel','nav-receipts'],['versions','nav-versions'],['projects','nav-projects'],['sessions-panel','nav-sessions']];
 function updateNavigation(){
   const section=globalThis.location?.hash.slice(1)||'evaluation';
   for(const [target,id] of navigation){const link=$(id),selected=target===section;link.className=selected?'active':'';link.ariaCurrent=selected?'location':null;}
@@ -284,7 +284,7 @@ async function history(append=false) {
   }));
 }
 async function selectRun(id,initialRun) {
-  selectedRunId = id;const sequence=++selectedRunSequence;invalidateFinalGate();
+  selectedRunId = id;const sequence=++selectedRunSequence;$('receipt-navigation-status').textContent='';invalidateFinalGate();
   reviewSequence++;$('review-panel').hidden=true;$('review-approve').disabled=true;$('review-reject').disabled=true;$('review-more').disabled=true;$('cancel-button').disabled=true;$('download').disabled=true;updateRunNavigation();
   for (let attempt = 0; attempt < 800; attempt++) {
     const run = attempt===0&&initialRun?initialRun:await api(`/v1/runs/${id}`);
@@ -445,8 +445,8 @@ async function receiptHistory(append=false){
   if(!append)$('receipt-list').replaceChildren();
   $('receipt-list').append(...page.items.map(receipt=>{
     const epoch=scopeEpoch;
-    const row=node('div',undefined,'audit-entry');row.append(node('strong',`${decisionLabels[receipt.decision]} `),node('span',`${new Date(receipt.created_at).toLocaleString('ko-KR')} · 실행 ${receipt.candidate_run_id.slice(0,8)} · ${receipt.signing_key_id?'서명 포함':'기존 서명 없음'} `));
-    row.append(node('span','검증 기록 '+receipt.id));
+    const row=node('div',undefined,'audit-entry receipt-entry'),metadata=node('div',undefined,'receipt-metadata');
+    metadata.append(node('strong',decisionLabels[receipt.decision]),node('span',`${new Date(receipt.created_at).toLocaleString('ko-KR')} · 실행 ${receipt.candidate_run_id.slice(0,8)} · ${receipt.signing_key_id?'서명 포함':'기존 서명 없음'}`),node('code','검증 기록 '+receipt.id));row.append(metadata);
     for(const [label,id] of [['후보 평가 근거 보기',receipt.candidate_run_id],...(receipt.baseline_run_id?[['기준 평가 근거 보기',receipt.baseline_run_id]]:[])]){
       const open=node('button',label,'secondary');
       open.addEventListener('click',async()=>{

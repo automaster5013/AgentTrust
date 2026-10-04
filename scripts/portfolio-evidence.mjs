@@ -106,11 +106,13 @@ export async function readPortfolioEvidence(directory,trustedPem,expectedManifes
   if(expectedManifestSha256!==undefined)assert.equal(manifestSha256,expectedManifestSha256);
   const parse=value=>JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(value));
   const manifest=parse(bytes),receipts=[];
+  assert.equal(manifest.keyId,trustedReceiptKey(trustedPem).keyId);
   assert.ok(Array.isArray(manifest.receipts)&&manifest.receipts.length===6);
   for(let index=0;index<6;index++){
     assert.equal(manifest.receipts[index].file,`receipt-${index+1}.json`);
     const file=await readBounded(join(directory,`receipt-${index+1}.json`),receiptFileLimit);
-    assert.equal(digest(file),manifest.receipts[index].sha256);receipts.push(parse(file));
+    assert.equal(digest(file),manifest.receipts[index].sha256);
+    const receipt=parse(file);verifyReceipt(receipt,trustedPem);receipts.push(receipt);
   }
   return {...verifyPortfolioEvidence(manifest,receipts,trustedPem),manifestSha256,expectedManifestDigestMatched:expectedManifestSha256!==undefined};
 }

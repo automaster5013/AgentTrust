@@ -72,3 +72,13 @@ test('offline evidence CLI verifies six signatures without API access and emits 
   await assert.rejects(exec(process.execPath,['scripts/verify-portfolio-evidence.mjs',f.directory,key,f.manifestSha256]),error=>error.code===2&&!error.stdout&&!error.stderr.includes(bad.privateCanary));
   for(const args of [[],[f.directory,key,'bad-sha'],[f.directory,key,f.manifestSha256,'extra']])await assert.rejects(exec(process.execPath,['scripts/verify-portfolio-evidence.mjs',...args]),error=>error.code===2&&!error.stdout);
 });
+
+test('offline bundle readers reject an unauthenticated first receipt before parsing later bodies',async t=>{
+ const f=await bundle(t);f.receipts[0].signature.value='A'.repeat(86)+'==';const first=Buffer.from(JSON.stringify(f.receipts[0])),second=Buffer.from([255]);
+ await writeFile(join(f.directory,'receipt-1.json'),first);await writeFile(join(f.directory,'receipt-2.json'),second);f.manifest.receipts[0].sha256=sha(first);f.manifest.receipts[1].sha256=sha(second);await writeFile(join(f.directory,'manifest.json'),JSON.stringify(f.manifest));
+ await assert.rejects(readPortfolioEvidence(f.directory,f.trustedPem),/Receipt signature/);
+});
+test('an inventory naming another trusted key is rejected before reading receipt bodies',async t=>{
+ const f=await bundle(t),bytes=Buffer.from([255]);f.manifest.keyId='f'.repeat(64);f.manifest.receipts[0].sha256=sha(bytes);await writeFile(join(f.directory,'receipt-1.json'),bytes);await writeFile(join(f.directory,'manifest.json'),JSON.stringify(f.manifest));
+ await assert.rejects(readPortfolioEvidence(f.directory,f.trustedPem),error=>error instanceof assert.AssertionError);
+});

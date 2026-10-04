@@ -852,3 +852,8 @@ test('logout invalidates receipt navigation, clears its status and rejects detac
  assert.equal(f.element('receipt-navigation-status').textContent,'');assert.equal(f.element('release-check-panel').hidden,true);
  await f.element('login-form').fire('submit');await f.candidate.fire('click');assert.equal(reads,1);assert.equal(f.element('receipt-navigation-status').textContent,'');
 });
+
+test('selecting another run clears the completed historical receipt navigation notice',async()=>{
+ const f=await receiptNavigationFixture();await f.candidate.fire('click');assert.match(f.element('receipt-navigation-status').textContent,/과거 검증에 연결된 실행/);
+ await f.view('B');assert.equal(f.element('receipt-navigation-status').textContent,'');assert.match(f.element('snapshot').textContent,/실행 B/);
+});
