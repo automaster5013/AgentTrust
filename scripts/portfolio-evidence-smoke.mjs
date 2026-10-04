@@ -11,7 +11,7 @@ try{
   assert.match(directory,/^\.local[/\\]portfolio-evidence-[a-f0-9-]{36}$/);assert.match(manifestSha256,/^[a-f0-9]{64}$/);
   const result=await exec(process.execPath,['scripts/verify-portfolio-evidence.mjs',directory,'.local/receipt-signing/public.pem',manifestSha256],{timeout:30000,maxBuffer:65536,windowsHide:true});
   const verification=JSON.parse(result.stdout.trim());
-  assert.equal(verification.bundleVerified,true);assert.equal(verification.manifestDigestIndependentlyExpected,true);
+  assert.equal(verification.bundleVerified,true);assert.equal(verification.expectedManifestDigestMatched,true);
   console.log(JSON.stringify({status:'passed',directory,manifestSha256,...verification}));
 }catch{
   console.error('Synthetic portfolio evidence export or offline verification did not complete.');process.exitCode=1;

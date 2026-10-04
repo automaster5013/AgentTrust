@@ -14,7 +14,7 @@ for(const [script,args] of [['portfolio-demo.mjs',[]],['portfolio-demo.mjs',['--
   const repository=process.cwd(),dir=await mkdtemp(join(repository,'.local','demo-response-test-'));
   await mkdir(join(dir,'.local','receipt-signing'),{recursive:true});
   const key='synthetic-demo-key-canary',cookie='synthetic-demo-cookie-canary';
-  await writeFile(join(dir,'.local','credentials.json'),JSON.stringify({organizations:[{projectId:'synthetic',credentials:['admin','editor','viewer'].map(role=>({role,token:key}))}]}));
+  await writeFile(join(dir,'.local','credentials.json'),JSON.stringify({organizations:[{organizationId:'00000000-0000-0000-0000-000000000001',projectId:'00000000-0000-0000-0000-000000000002',credentials:['admin','editor','viewer'].map(role=>({role,token:key}))}]}));
   await writeFile(join(dir,'.local','receipt-signing','public.pem'),generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'}));
   let body,reads=0,logout=0;
   const server=createServer(async(req,res)=>{

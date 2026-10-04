@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {runRoleScenario} from '../scripts/portfolio-roles-scenario.mjs';
 
-function fixture({waitFails=false,denyFails=false,checkFails=false,cleanupFails=false,changeReceipt=()=>{}}={}){
+function fixture({waitFails=false,denyFails=false,checkFails=false,cleanupFails=false,changeReceipt=()=>{},changeRun=()=>{}}={}){
   const calls=[];let review='missing',checks=0;
-  const completed={id:'synthetic-run',state:'succeeded',snapshotHash:'synthetic-hash',resultHash:'synthetic-result',gate:{decision:'pass',evaluationPassed:true,deploymentAllowed:false}};
+  const completed={id:'synthetic-run',agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy',state:'succeeded',snapshotHash:'synthetic-hash',resultHash:'synthetic-result',gate:{decision:'pass',evaluationPassed:true,deploymentAllowed:false}};
   const call=async(role,path,data,expected)=>{
     calls.push({role,path,data,expected});
     if(expected){if(denyFails)throw Error('Authorization was unexpectedly allowed');return;}
@@ -21,7 +21,7 @@ function fixture({waitFails=false,denyFails=false,checkFails=false,cleanupFails=
     }
     return completed;
   };
-  return {calls,dependencies:{call,wait:async()=>{if(waitFails)throw Error('Synthetic wait failure');return completed;},verify:()=>({signatureVerified:true})}};
+  return {calls,dependencies:{call,wait:async()=>{if(waitFails)throw Error('Synthetic wait failure');const run=structuredClone(completed);changeRun(run);return run;},verify:()=>({signatureVerified:true})}};
 }
 test('role demo separates editor creation, viewer checks, admin reviews and organization denials',async()=>{
   const f=fixture(),r=await runRoleScenario(f.dependencies);assert.equal(r.completed,true);assert.equal(r.cleanupSucceeded,true);assert.equal(r.steps.length,11);
@@ -49,3 +49,9 @@ test('failed signed approval check triggers admin rejection and reports cleanup 
   const f=fixture({changeReceipt:(r,n)=>{if(n===2)r.artifact.result.manualApproval.status='missing';}}),r=await runRoleScenario(f.dependencies);
   assert.equal(r.completed,false);assert.equal(r.cleanupSucceeded,true);assert.equal(f.calls.at(-1).data.decision,'rejected');
  });
+
+test('role polling cannot replace the editor-created ID or versions and cancels only that created execution',async()=>{
+ for(const changeRun of [r=>{r.id='other';},r=>{r.agentVersionId='other';},r=>{r.datasetVersionId='other';},r=>{r.policyVersionId='other';}]){
+  const f=fixture({changeRun}),r=await runRoleScenario(f.dependencies);assert.equal(r.completed,false);assert.equal(r.cleanupSucceeded,true);assert.equal(f.calls.at(-1).path,'/v1/runs/synthetic-run/cancel');assert.equal(f.calls.at(-1).role,'editor');
+ }
+});

@@ -32,8 +32,8 @@ async function bundle(t,compare=false){
 test('completed default and comparison demos export six independently signed receipts and pin their inventory digest',async t=>{
   for(const compare of [false,true]){
     const f=await bundle(t,compare),verified=await readPortfolioEvidence(f.directory,f.trustedPem,f.manifestSha256);
-    assert.equal(verified.bundleVerified,true);assert.equal(verified.cryptographicSignaturesVerified,6);assert.equal(verified.withBaselineComparison,compare);assert.equal(verified.manifestDigestIndependentlyExpected,true);assert.equal(verified.currentReleasePermissionVerified,false);
-    assert.equal((await readPortfolioEvidence(f.directory,f.trustedPem)).manifestDigestIndependentlyExpected,false);
+    assert.equal(verified.bundleVerified,true);assert.equal(verified.cryptographicSignaturesVerified,6);assert.equal(verified.withBaselineComparison,compare);assert.equal(verified.expectedManifestDigestMatched,true);assert.equal(verified.currentReleasePermissionVerified,false);
+    assert.equal((await readPortfolioEvidence(f.directory,f.trustedPem)).expectedManifestDigestMatched,false);
   }
 });
 test('uncompleted scenarios, failed cleanup or logout and mismatched scenario steps cannot publish a bundle',async()=>{

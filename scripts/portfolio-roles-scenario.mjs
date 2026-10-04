@@ -20,7 +20,10 @@ export async function runRoleScenario({call,wait,verify,onStep=()=>{}}){
     const policy=await call('admin','/v1/policy-versions',{name:'Portfolio synthetic role boundaries',minimumPassRate:1,requiresManualApproval:true,manualApprovalTtlSeconds:3600});
     input={agentVersionId:agent.id,datasetVersionId:dataset.id,policyVersionId:policy.id};
     run=await call('editor','/v1/runs',{...input,timeoutMs:30000,caseBudget:100});
-    run=await wait(run.id);assert.equal(run.state,'succeeded');assert.equal(run.gate.evaluationPassed,true);assert.equal(run.gate.deploymentAllowed,false);
+    const completed=await wait(run.id);assert.equal(completed.id,run.id);
+    for(const key of ['agentVersionId','datasetVersionId','policyVersionId'])assert.equal(completed[key],input[key]);
+    assert.equal(completed.state,'succeeded');assert.equal(completed.gate.evaluationPassed,true);assert.equal(completed.gate.deploymentAllowed,false);
+    run=completed;
     step('editor_evaluation',{role:'editor',runId:run.id,state:run.state,decision:run.gate.decision});
     const viewed=await call('viewer','/v1/runs/'+run.id);assert.equal(viewed.id,run.id);assert.equal(viewed.snapshotHash,run.snapshotHash);
     step('viewer_evidence',{role:'viewer',runId:run.id,httpStatus:200});

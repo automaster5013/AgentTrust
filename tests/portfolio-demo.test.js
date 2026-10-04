@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {runPortfolioScenario} from '../scripts/portfolio-scenario.mjs';
 
-function fixture({failCheck=0,failWait=false,failCleanup=false,changeReceipt=()=>{}}={}){
+function fixture({failCheck=0,failWait=false,failCleanup=false,changeReceipt=()=>{},changeRun=()=>{}}={}){
   const calls=[],runs=new Map();let review='missing',checks=0,verified=0;
   const call=async(path,data)=>{
     calls.push({path,data});
@@ -10,7 +10,7 @@ function fixture({failCheck=0,failWait=false,failCleanup=false,changeReceipt=()=
     if(path==='/v1/policy-versions')return {id:'manual'};
     if(path==='/v1/runs'){
       const id='run-'+(runs.size+1),decision={compliant:'pass',regression:'block',missing_evidence:'inconclusive'}[data.agentVersionId];
-      const run={id,state:'succeeded',snapshotHash:'snapshot-'+id,resultHash:'result-'+id,gate:{decision,evaluationPassed:decision==='pass',deploymentAllowed:decision==='pass'&&data.policyVersionId!=='manual'}};runs.set(id,run);return run;
+      const run={id,agentVersionId:data.agentVersionId,datasetVersionId:data.datasetVersionId,policyVersionId:data.policyVersionId,state:'succeeded',snapshotHash:'snapshot-'+id,resultHash:'result-'+id,gate:{decision,evaluationPassed:decision==='pass',deploymentAllowed:decision==='pass'&&data.policyVersionId!=='manual'}};runs.set(id,run);return run;
     }
     if(path.endsWith('/reviews')){if(failCleanup&&data.decision==='rejected')throw Error('Synthetic cleanup failure');review=data.decision;return {};}
     if(path.endsWith('/cancel'))return {};
@@ -25,7 +25,7 @@ function fixture({failCheck=0,failWait=false,failCleanup=false,changeReceipt=()=
     }
     throw Error('Unexpected path');
   };
-  return {calls,get verified(){return verified;},dependencies:{call,wait:async id=>{if(failWait)throw Error('Synthetic wait failure');return runs.get(id);},verify:()=>{verified++;return {signatureVerified:true};}}};
+  return {calls,get verified(){return verified;},dependencies:{call,wait:async id=>{if(failWait)throw Error('Synthetic wait failure');const run=structuredClone(runs.get(id));changeRun(run);return run;},verify:()=>{verified++;return {signatureVerified:true};}}};
 }
 test('portfolio scenario demonstrates four evaluations and six independently signed release decisions',async()=>{
   const f=fixture(),r=await runPortfolioScenario(f.dependencies);
@@ -79,3 +79,9 @@ test('comparison failure after approval still rejects the demonstration and an u
     assert.equal(r.completed,false);assert.equal(r.cleanupSucceeded,true);
   }
  });
+
+test('portfolio polling cannot substitute another execution or fixed version and cleanup cancels the created ID',async()=>{
+ for(const changeRun of [r=>{r.id='other';},r=>{r.agentVersionId='other';},r=>{r.datasetVersionId='other';},r=>{r.policyVersionId='other';}])for(const compare of [false,true]){
+  const f=fixture({changeRun}),r=await runPortfolioScenario({...f.dependencies,compare});assert.equal(r.completed,false);assert.equal(r.cleanupSucceeded,true);assert.equal(f.calls.at(-1).path,'/v1/runs/run-1/cancel');
+ }
+});

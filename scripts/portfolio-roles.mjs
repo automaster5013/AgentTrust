@@ -6,6 +6,7 @@ import {runRoleScenario} from './portfolio-roles-scenario.mjs';
 import {localSmokeBase,fetchLocalSmoke} from './local-smoke-http.mjs';
 import {readReleaseResponse} from './release-gate.mjs';
 import {readTrustedReceiptKey} from './trusted-receipt-key.mjs';
+import {seededDemoScope,assertDemoSessionScope} from './demo-session-scope.mjs';
 
 const reportPath='.local/portfolio-roles-'+randomUUID()+'.json',sessions=new Map();
 let base,report={schemaVersion:1,synthetic:true,completed:false,serverDeployed:false};
@@ -23,9 +24,9 @@ try{
   const publicKey=await readTrustedReceiptKey('.local/receipt-signing/public.pem');
   for(const role of ['admin','editor','viewer','outsider']){
     const organization=config.organizations[role==='outsider'?1:0],actualRole=role==='outsider'?'viewer':role;
-    sessions.set(role,{projectId:organization.projectId});
+    const scope=seededDemoScope(organization);sessions.set(role,{...scope});
     await call(role,'/v1/auth/login',{accessKey:organization.credentials.find(c=>c.role===actualRole).token});
-    const me=await call(role,'/v1/me');if(me.role!==actualRole)throw Error('Local role mismatch');
+    assertDemoSessionScope(await call(role,'/v1/me'),scope,actualRole);
   }
   report=await runRoleScenario({call,verify:r=>verifyReceipt(r,publicKey),onStep:s=>console.log(JSON.stringify(s)),wait:async id=>{
     const deadline=Date.now()+45000;while(Date.now()<deadline){const r=await call('editor','/v1/runs/'+id);if(!['queued','running'].includes(r.state))return r;await sleep(100);}throw Error('Local role evaluation timeout');

@@ -112,5 +112,5 @@ export async function readPortfolioEvidence(directory,trustedPem,expectedManifes
     const file=await readBounded(join(directory,`receipt-${index+1}.json`),receiptFileLimit);
     assert.equal(digest(file),manifest.receipts[index].sha256);receipts.push(parse(file));
   }
-  return {...verifyPortfolioEvidence(manifest,receipts,trustedPem),manifestSha256,manifestDigestIndependentlyExpected:expectedManifestSha256!==undefined};
+  return {...verifyPortfolioEvidence(manifest,receipts,trustedPem),manifestSha256,expectedManifestDigestMatched:expectedManifestSha256!==undefined};
 }

@@ -47,7 +47,9 @@ export async function runPortfolioScenario({call,wait,verify,onStep=()=>{},compa
       const agent=catalog.agent.find(a=>a.mode===mode);assert.ok(agent);
       const input={agentVersionId:agent.id,datasetVersionId:dataset.id,policyVersionId};
       const created=await call('/v1/runs',{...input,timeoutMs:30000,caseBudget:100});active.add(created.id);
-      const run=await wait(created.id);assert.equal(run.state,state);assert.equal(run.gate.decision,decision);active.delete(run.id);
+      const run=await wait(created.id);assert.equal(run.id,created.id);
+      for(const key of ['agentVersionId','datasetVersionId','policyVersionId'])assert.equal(run[key],input[key]);
+      assert.equal(run.state,state);assert.equal(run.gate.decision,decision);active.delete(run.id);
       step(prefix+mode,{runId:run.id,state:run.state,decision:run.gate.decision});return {run,input};
     };
     if(compare)baselines.set(policy.id,(await execute('compliant',policy.id,'succeeded','pass','baseline_')).run);
