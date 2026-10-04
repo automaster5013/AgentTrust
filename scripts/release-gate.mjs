@@ -41,7 +41,10 @@ export async function checkRelease({base,accessKey,candidateRunId,baselineRunId,
   const headers={'Content-Type':'application/json','X-AgentTrust-Request':'local-ui',...(projectId?{'X-AgentTrust-Project':projectId}:{})};
   const call=async(path,options={})=>{
     const response=await fetch(new URL(path,url),{...options,headers:{...headers,...options.headers},redirect:'error',signal:AbortSignal.timeout(10000)});
-    if(!response.ok)throw new Error(`AgentTrust API rejected request (${response.status}).`);
+    if(!response.ok){
+      await response.body?.cancel();
+      throw new Error(`AgentTrust API rejected request (${response.status}).`);
+    }
     return response;
   };
   const check=async authorization=>{
@@ -57,11 +60,15 @@ export async function checkRelease({base,accessKey,candidateRunId,baselineRunId,
   if(typeof accessKey==='string'&&accessKey.startsWith('atci_'))return check({Authorization:`Bearer ${accessKey}`});
   const login=await call('/v1/auth/login',{method:'POST',body:JSON.stringify({accessKey})});
   const cookie=login.headers.get('set-cookie')?.split(';')[0];
-  if(!cookie)throw new Error('Session is missing.');
   try {
+    await login.body?.cancel();
+    if(!cookie)throw new Error('Session is missing.');
     return await check({Cookie:cookie});
   } finally {
-    await call('/v1/auth/logout',{method:'POST',headers:{Cookie:cookie},body:'{}'});
+    if(cookie){
+      const logout=await call('/v1/auth/logout',{method:'POST',headers:{Cookie:cookie},body:'{}'});
+      await logout.body?.cancel();
+    }
   }
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
