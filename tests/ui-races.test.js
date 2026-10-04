@@ -39,11 +39,11 @@ test('obsolete operations failure cannot unlock a new workspace refresh',async()
 });
 
 test('obsolete historical receipt download failure cannot replace new workspace status',async()=>{
- const f=await fixture(),reply=deferred();f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[{id:'synthetic-receipt',decision:'block',created_at:'2026-01-01T00:00:00Z',candidate_run_id:'synthetic-run',signing_key_id:'synthetic'}],nextCursor:null}));
+ const f=await fixture(),reply=deferred(),sample=historicalReceiptSample();f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[sample.row],nextCursor:null}));
  await f.element('receipts-refresh').fire('click');const button=f.element('receipt-list').children[0].children.at(-1);
- f.overrides.set('/v1/release-receipts/synthetic-receipt',async()=>{await reply.promise;throw Error('Old synthetic receipt failure');});const pending=button.fire('click');await settle();await f.element('logout-button').fire('click');await f.element('login-form').fire('submit');
+ f.overrides.set('/v1/release-receipts/'+sample.row.id,async()=>{await reply.promise;throw Error('Old synthetic receipt failure');});const pending=button.fire('click');await settle();await f.element('logout-button').fire('click');await f.element('login-form').fire('submit');
  f.element('status').textContent='New receipt workspace';reply.resolve();await pending;assert.equal(f.element('status').textContent,'New receipt workspace');assert.equal(f.downloads.length,0);
- const currentButton=f.element('receipt-list').children[0].children.at(-1);f.overrides.set('/v1/release-receipts/synthetic-receipt',()=>({id:'synthetic-receipt',synthetic:true}));await currentButton.fire('click');assert.equal(f.downloads.length,1);assert.equal(JSON.parse(await f.downloads[0].text()).synthetic,true);assert.equal(currentButton.disabled,false);
+ const currentButton=f.element('receipt-list').children[0].children.at(-1);f.overrides.set('/v1/release-receipts/'+sample.row.id,()=>sample.data);await currentButton.fire('click');assert.equal(f.downloads.length,1);assert.deepEqual(JSON.parse(await f.downloads[0].text()),sample.data);assert.equal(currentButton.disabled,false);
 });
 function execution(id,state='succeeded',manual=false){return {id,state,createdAt:'2026-01-01T00:00:00Z',snapshotHash:'synthetic-'+id,resultHash:'synthetic-result-'+id,
   snapshot:{agent:{name:'Run '+id},dataset:{name:'Synthetic dataset'},policy:{name:'Synthetic policy',requiresManualApproval:manual}},
@@ -574,11 +574,29 @@ test('logout clears direct lookup state and an older response cannot restore it'
  const f=await fixture(),older=deferred();f.overrides.set('/v1/runs/'+lookupId,()=>older.promise);f.element('run-lookup-id').value=lookupId;const pending=f.element('run-lookup-form').fire('submit');await settle();await f.element('logout-button').fire('click');older.resolve(execution(lookupId));await pending;assert.equal(f.element('run-lookup-id').value,'');assert.equal(f.element('run-lookup-status').textContent,'');assert.equal(f.element('release-check-panel').hidden,true);
 });
 
-function signedUiReceipt(runId='B',allowed=true){
+function signedUiReceipt(runId='B',allowed=true,baselineRunId){
  const pair=generateKeyPairSync('ed25519'),signer=new ReceiptSigner(pair.privateKey.export({type:'pkcs8',format:'pem'}));
  const artifact={schemaVersion:1,organizationId:'organization',projectId:'project',receiptId:'00000000-0000-0000-0000-000000000456',checkedAt:'2026-01-01T00:00:00Z',request:{candidateRunId:runId,agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy'},result:{runId,decision:allowed?'pass':'block',deploymentAllowed:allowed,reasons:allowed?[]:['A required rule failed.']},evidence:{candidate:{runId,snapshotHash:'synthetic-'+runId,resultHash:'synthetic-result-'+runId}}};
+ if(baselineRunId){artifact.request.baselineRunId=baselineRunId;artifact.evidence.baseline={runId:baselineRunId,snapshotHash:'synthetic-baseline',resultHash:'synthetic-baseline-result'};}
  return {report:{...releaseResult(allowed),runId,artifact,artifactHash:hash(artifact),signature:signer.sign(artifact)},publicKey:signer.publicMetadata().publicKey};
 }
+function historicalReceiptSample(allowed=false,baselineRunId){
+ const signed=signedUiReceipt('B',allowed,baselineRunId),{artifact,artifactHash,signature}=signed.report;
+ return {data:{artifact,artifactHash,signature},publicKey:signed.publicKey,row:{id:artifact.receiptId,candidate_run_id:'B',baseline_run_id:baselineRunId??null,created_at:artifact.checkedAt,artifact_hash:artifactHash,decision:artifact.result.decision,signing_key_id:signature.keyId}};
+}
+test('historical receipt export is bound to its list record and active tenant',async()=>{
+ const mutations=[d=>{d.artifact.receiptId='other';},d=>{d.artifact.organizationId='other';},d=>{d.artifact.projectId='other';},d=>{d.artifact.request.candidateRunId='other';},d=>{d.artifact.result.runId='other';},d=>{d.artifact.evidence.candidate.runId='other';},d=>{d.artifact.result.decision='pass';},d=>{d.artifact.result.deploymentAllowed=true;},d=>{d.artifactHash='f'.repeat(64);},d=>{d.signature.keyId='f'.repeat(64);},d=>{delete d.signature;},d=>{d.artifact.checkedAt='2026-01-02T00:00:00Z';},d=>{d.artifact.request.baselineRunId='other';},d=>{d.artifact.evidence.baseline={runId:'other'};}];
+ for(const mutate of mutations){
+  const sample=historicalReceiptSample(),f=await fixture();f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[sample.row],nextCursor:null}));await f.element('receipts-refresh').fire('click');const button=f.element('receipt-list').children[0].children.at(-1),bad=structuredClone(sample.data);mutate(bad);f.overrides.set('/v1/release-receipts/'+sample.row.id,()=>bad);await button.fire('click');assert.equal(f.downloads.length,0);assert.match(f.element('status').textContent,/검증 기록/);assert.equal(button.disabled,false);
+  f.overrides.set('/v1/release-receipts/'+sample.row.id,()=>sample.data);await button.fire('click');assert.equal(f.downloads.length,1);const exported=JSON.parse(await f.downloads[0].text());assert.deepEqual(exported,sample.data);assert.equal(verifyReceipt(exported,sample.publicKey).decision,'block');
+ }
+});
+test('historical receipt export preserves signed pass and legacy unsigned records exactly',async()=>{
+ for(const unsigned of [false,true])for(const baseline of [undefined,'00000000-0000-0000-0000-000000000789']){
+  const sample=historicalReceiptSample(true,baseline);if(unsigned){sample.row.signing_key_id=null;delete sample.data.signature;}
+  const f=await fixture();f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[sample.row],nextCursor:null}));f.overrides.set('/v1/release-receipts/'+sample.row.id,()=>sample.data);await f.element('receipts-refresh').fire('click');await f.element('receipt-list').children[0].children.at(-1).fire('click');assert.equal(f.downloads.length,1);const exported=JSON.parse(await f.downloads[0].text());assert.deepEqual(exported,sample.data);if(!unsigned)assert.equal(verifyReceipt(exported,sample.publicKey).signatureVerified,true);
+ }
+});
 test('current signed gate exports the exact artifact hash and signature for offline verification',async()=>{
  const f=await fixture(),signed=signedUiReceipt();await f.view('B');f.overrides.set('/v1/release-gate',()=>signed.report);f.overrides.set('/v1/release-receipts?limit=25',()=>{throw Error('Synthetic list refresh failure');});await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/최종 게이트: 통과/);assert.equal(f.element('current-receipt-download').disabled,false);await f.element('current-receipt-download').fire('click');
  const downloaded=JSON.parse(await f.downloads[0].text());assert.deepEqual(downloaded,{artifact:signed.report.artifact,artifactHash:signed.report.artifactHash,signature:signed.report.signature});assert.equal(verifyReceipt(downloaded,signed.publicKey).signatureVerified,true);

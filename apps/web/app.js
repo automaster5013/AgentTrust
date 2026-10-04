@@ -119,6 +119,16 @@ function sameReleaseJson(left,right){
   }
   return true;
 }
+function matchesHistoricalReceipt(data,record,organizationId,projectId){
+  const artifact=data?.artifact,baseline=record.baseline_run_id??null,signature=data?.signature;
+  const checked=Date.parse(artifact?.checkedAt),listed=Date.parse(record.created_at);
+  return !!organizationId&&artifact?.schemaVersion===1&&artifact.receiptId===record.id&&artifact.organizationId===organizationId&&artifact.projectId===projectId&&
+    /^[a-f0-9]{64}$/.test(record.artifact_hash||'')&&data.artifactHash===record.artifact_hash&&Number.isFinite(checked)&&checked===listed&&
+    artifact.request?.candidateRunId===record.candidate_run_id&&artifact.result?.runId===record.candidate_run_id&&artifact.evidence?.candidate?.runId===record.candidate_run_id&&
+    (artifact.request?.baselineRunId??null)===baseline&&(baseline?artifact.evidence?.baseline?.runId===baseline:!Object.hasOwn(artifact.evidence??{},'baseline'))&&
+    ['pass','block'].includes(record.decision)&&artifact.result.decision===record.decision&&artifact.result.deploymentAllowed===(record.decision==='pass')&&
+    (record.signing_key_id?signature?.keyId===record.signing_key_id&&signature.algorithm==='Ed25519'&&/^[A-Za-z0-9+/]{86}==$/.test(signature.value||''):signature===undefined);
+}
 let sessionCursor=null,sessionSequence=0,sessionBusy=false,sessionButtons=[];
 const terminal = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
 const decisionLabels = { pass: '통과', block: '차단', inconclusive: '판정 불가' };
@@ -435,7 +445,7 @@ async function receiptHistory(append=false){
   if(!append)$('receipt-list').replaceChildren();
   $('receipt-list').append(...page.items.map(receipt=>{
     const row=node('div',undefined,'audit-entry');row.append(node('strong',`${decisionLabels[receipt.decision]} `),node('span',`${new Date(receipt.created_at).toLocaleString('ko-KR')} · 실행 ${receipt.candidate_run_id.slice(0,8)} · ${receipt.signing_key_id?'서명 포함':'기존 서명 없음'} `));
-    const button=node('button','기록 JSON 저장','secondary');button.addEventListener('click',async()=>{if(button.disabled)return;const epoch=scopeEpoch;button.disabled=true;try{const data=await api(`/v1/release-receipts/${receipt.id}`);if(epoch!==scopeEpoch)return;const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=node('a');link.href=url;link.download=`agenttrust-receipt-${receipt.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){if(epoch===scopeEpoch)message(e.message,true);}finally{if(epoch===scopeEpoch)button.disabled=false;}});row.append(button);return row;
+    const button=node('button','기록 JSON 저장','secondary');button.addEventListener('click',async()=>{if(button.disabled)return;const epoch=scopeEpoch,organizationId=actor?.organizationId,projectId=activeProjectId;button.disabled=true;try{const data=await api(`/v1/release-receipts/${receipt.id}`);if(epoch!==scopeEpoch)return;if(!matchesHistoricalReceipt(data,receipt,organizationId,projectId))throw new Error('검증 기록이 선택한 기록과 현재 조직·프로젝트 범위에 일치하지 않습니다.');const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=node('a');link.href=url;link.download=`agenttrust-receipt-${receipt.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){if(epoch===scopeEpoch)message(e.message,true);}finally{if(epoch===scopeEpoch)button.disabled=false;}});row.append(button);return row;
   }));
   if(!append&&!page.items.length)$('receipt-list').textContent='아직 CI 검증 기록이 없습니다.';
 }
