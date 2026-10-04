@@ -13,6 +13,13 @@ let historySequence=0;
 let auditCursor=null,auditSequence=0;
 let inspectionSequence=0,comparisonSequence=0,keyHistorySequence=0,receiptHistorySequence=0,reviewSequence=0;
 let reviewBusy=false,reviewCursor=null,reviewShown=0;
+let finalGateSequence=0,finalGateBusy=false;
+function invalidateFinalGate(text="최종 게이트를 아직 확인하지 않았습니다."){
+  finalGateSequence++;finalGateBusy=false;
+  $("manual-gate-output").textContent=text;
+  $("release-check-panel").hidden=!currentRun||currentRun.id!==selectedRunId;
+  $("manual-gate-check").disabled=!currentRun||currentRun.id!==selectedRunId||!terminal.has(currentRun.state)||reviewBusy;
+}
 let sessionCursor=null,sessionSequence=0,sessionBusy=false,sessionButtons=[];
 const terminal = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
 const decisionLabels = { pass: '통과', block: '차단', inconclusive: '판정 불가' };
@@ -59,6 +66,7 @@ function render(run) {
   comparisonSequence++;
   if(currentRun?.id!==run.id){reviewCursor=null;reviewShown=0;$('review-history-status').textContent='';$('review-more').disabled=true;$('review-comment').value='';$('manual-gate-output').textContent='';evidencePage=0;$('evidence-search').value='';$('evidence-filter').value='';}
   currentRun = run;
+  invalidateFinalGate();
   $('comparison-result').textContent='후보 실행을 조회한 뒤 기준 실행을 선택하세요.';
   const decision = run.gate.decision;
   $('gate-badge').textContent = decision.toUpperCase(); $('gate-badge').className = `gate ${decision}`;
@@ -131,7 +139,7 @@ async function history(append=false) {
   }));
 }
 async function selectRun(id) {
-  selectedRunId = id;const sequence=++selectedRunSequence;
+  selectedRunId = id;const sequence=++selectedRunSequence;invalidateFinalGate();
   for (let attempt = 0; attempt < 800; attempt++) {
     const run = await api(`/v1/runs/${id}`);
     if (selectedRunId !== id||sequence!==selectedRunSequence) return;
@@ -170,7 +178,7 @@ function clearProjectData(){
   comparisonSequence++;keyHistorySequence++;receiptHistorySequence++;reviewSequence++;reviewCursor=null;reviewShown=0;$('review-history-status').textContent='';$('review-more').disabled=true;
   inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전의 고정된 내용과 해시를 확인할 수 있습니다.';
   auditSequence++;auditCursor=null;$('audit-more').disabled=true;$('audit-action').value='';
-  currentRun=null;renderEvidence();selectedRunId=null;selectedRunSequence++;historySequence++;runCursor=null;$('history-more').disabled=true;$('history-state').value='';$('history-decision').value='';message('');$('run-button').disabled=true;$('dataset-button').disabled=true;
+  currentRun=null;invalidateFinalGate();renderEvidence();selectedRunId=null;selectedRunSequence++;historySequence++;runCursor=null;$('history-more').disabled=true;$('history-state').value='';$('history-decision').value='';message('');$('run-button').disabled=true;$('dataset-button').disabled=true;
   for(const id of ['agent-name','policy-name','project-name'])$(id).value='';
   for(const id of ['agent','dataset-select','policy'])$(id).replaceChildren();
   keyCursor=null;receiptCursor=null;$('ci-more').disabled=true;$('receipts-more').disabled=true;
@@ -339,19 +347,27 @@ async function reviewHistory(run=currentRun,append=false){
 }
 $('review-form').addEventListener('submit',async event=>{
   event.preventDefault();if(reviewBusy||!currentRun||!['approved','rejected'].includes(event.submitter?.value))return;
-  const run=currentRun,epoch=scopeEpoch,decision=event.submitter.value;reviewBusy=true;$('review-approve').disabled=true;$('review-reject').disabled=true;$('review-more').disabled=true;
+  const run=currentRun,epoch=scopeEpoch,decision=event.submitter.value;reviewBusy=true;invalidateFinalGate('검토 상태 변경을 요청했습니다. 최종 게이트를 다시 확인하세요.');$('review-approve').disabled=true;$('review-reject').disabled=true;$('review-more').disabled=true;
   try{await api('/v1/runs/'+run.id+'/reviews',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({decision,comment:$('review-comment').value})});
     if(epoch!==scopeEpoch||selectedRunId!==run.id)return;$('review-comment').value='';$('manual-gate-output').textContent='검토 상태가 변경되었습니다. 최종 게이트를 다시 확인하세요.';await reviewHistory(run);await auditHistory();message(decision==='approved'?'관리자 승인 기록을 저장했습니다.':'반려 기록을 저장했습니다.');
   }catch(e){if(epoch===scopeEpoch&&selectedRunId===run.id)message(e.message,true);}
-  finally{reviewBusy=false;await reviewHistory().catch(()=>{});}
+  finally{reviewBusy=false;invalidateFinalGate('검토 요청이 종료됐습니다. 최종 게이트를 다시 확인하세요.');await reviewHistory().catch(()=>{});}
 });
-$('review-refresh').addEventListener('click',()=>reviewHistory().catch(e=>message(e.message,true)));
+$('review-refresh').addEventListener('click',()=>{invalidateFinalGate('검토 기록을 새로고침했습니다. 최종 게이트를 다시 확인하세요.');reviewHistory().catch(e=>message(e.message,true));});
 $('review-more').addEventListener('click',async()=>{const run=currentRun;if(!run)return;$('review-more').disabled=true;try{await reviewHistory(run,true);}catch(error){if(selectedRunId===run.id){message(error.message,true);$('review-more').disabled=reviewBusy||!reviewCursor;}}});
 $('manual-gate-check').addEventListener('click',async()=>{
-  if(!currentRun)return;const run=currentRun;$('manual-gate-check').disabled=true;
-  try{const result=await api('/v1/release-gate',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({candidateRunId:run.id,agentVersionId:run.agentVersionId,datasetVersionId:run.datasetVersionId,policyVersionId:run.policyVersionId})});
-    if(selectedRunId!==run.id)return;$('manual-gate-output').textContent='현재 CI 게이트: '+(result.deploymentAllowed?'통과':'차단')+' · 검토 상태 '+({approved:'승인 유효',rejected:'반려',missing:'승인 대기',expired:'승인 만료',invalid:'승인 무효'}[result.manualApproval?.status]||'불필요')+'\n'+result.reasons.map(reason=>reason.startsWith('A current administrator approval')?'유효한 관리자 승인이 필요합니다.':reason).join('\n');await receiptHistory();
-  }catch(e){if(selectedRunId===run.id)$('manual-gate-output').textContent=e.message;}finally{$('manual-gate-check').disabled=false;}
+  if(!currentRun||currentRun.id!==selectedRunId||!terminal.has(currentRun.state)||reviewBusy||finalGateBusy)return;
+  const run=currentRun,selection=selectedRunSequence,epoch=scopeEpoch,sequence=++finalGateSequence;
+  const isCurrent=()=>sequence===finalGateSequence&&selection===selectedRunSequence&&epoch===scopeEpoch&&selectedRunId===run.id;
+  finalGateBusy=true;$('manual-gate-check').disabled=true;$('manual-gate-output').textContent='최종 게이트를 확인하고 있습니다…';
+  try{
+    const result=await api('/v1/release-gate',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({candidateRunId:run.id,agentVersionId:run.agentVersionId,datasetVersionId:run.datasetVersionId,policyVersionId:run.policyVersionId})});
+    if(!isCurrent())return;
+    const approval={approved:'승인 유효',rejected:'반려',missing:'승인 대기',expired:'승인 만료',invalid:'승인 무효'}[result.manualApproval?.status]||'불필요';
+    $('manual-gate-output').textContent='확인 시점의 최종 게이트: '+(result.deploymentAllowed?'통과':'차단')+' · 관리자 검토 '+approval+'\n실행 '+run.id+'\n'+(result.artifact?.checkedAt?'확인 시각 '+new Date(result.artifact.checkedAt).toLocaleString('ko-KR')+'\n':'')+(result.artifact?.receiptId?'검증 기록 '+result.artifact.receiptId+'\n':'')+result.reasons.map(reason=>reason.startsWith('A current administrator approval')?'유효한 관리자 승인이 필요합니다.':reason).join('\n');
+    await receiptHistory();
+  }catch(e){if(isCurrent())$('manual-gate-output').textContent='최종 게이트 확인 실패: '+e.message;}
+  finally{if(isCurrent()){finalGateBusy=false;$('manual-gate-check').disabled=reviewBusy;}}
 });
 
 for(const [kind,selector] of [['agent','agent'],['dataset','dataset-select'],['policy','policy']]){

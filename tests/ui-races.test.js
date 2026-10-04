@@ -182,3 +182,26 @@ test('data loading failure after login cannot leave the loading panel stuck',asy
  const f=await fixture();await f.element('logout-button').fire('click');f.overrides.set('/v1/ci-credentials?limit=25',()=>{throw new Error('Synthetic post-login read failed');});f.element('access-key').value='synthetic-key';await f.element('login-form').fire('submit');
  assert.equal(f.element('workspace-ui').hidden,true);assert.equal(f.element('loading-panel').hidden,true);assert.equal(f.element('login-panel').hidden,false);assert.equal(f.element('login-button').disabled,false);assert.equal(f.element('access-key').value,'');assert.equal(f.element('login-status').textContent,'Synthetic post-login read failed');
 });
+
+const releaseResult=(allowed=true)=>({deploymentAllowed:allowed,reasons:allowed?[]:['A required rule failed.'],artifact:{checkedAt:'2026-01-01T00:00:00Z',receiptId:'synthetic-receipt'}});
+test('completed evaluations without manual approval expose a version-bound final gate check',async()=>{
+ const f=await fixture();await f.view('B');assert.equal(f.element('review-panel').hidden,true);assert.equal(f.element('release-check-panel').hidden,false);assert.equal(f.element('manual-gate-check').disabled,false);
+ let input;f.overrides.set('/v1/release-gate',options=>{input=JSON.parse(options.body);return releaseResult();});await f.element('manual-gate-check').fire('click');
+ assert.deepEqual(input,{candidateRunId:'B',agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy'});assert.match(f.element('manual-gate-output').textContent,/확인 시점의 최종 게이트: 통과/);assert.match(f.element('manual-gate-output').textContent,/synthetic-receipt/);
+});
+test('running evaluations cannot request the final gate and blocked results remain blocked',async()=>{
+ const f=await fixture();let requests=0;f.overrides.set('/v1/release-gate',()=>{requests++;return releaseResult(false);});const pending=f.view('A');await settle();assert.equal(f.element('manual-gate-check').disabled,true);await f.element('manual-gate-check').fire('click');assert.equal(requests,0);
+ await f.view('B');for(const callback of f.timers.splice(0))callback();await pending;await f.element('manual-gate-check').fire('click');assert.equal(requests,1);assert.match(f.element('manual-gate-output').textContent,/최종 게이트: 차단/);
+});
+test('a late final gate cannot survive switching away and reselecting the same run',async()=>{
+ const f=await fixture(),older=deferred();f.runs.A=execution('A');await f.view('B');f.overrides.set('/v1/release-gate',()=>older.promise);const pending=f.element('manual-gate-check').fire('click');await settle();await f.view('A');await f.view('B');older.resolve(releaseResult());await pending;
+ assert.equal(f.element('manual-gate-output').textContent,'최종 게이트를 아직 확인하지 않았습니다.');assert.equal(f.element('manual-gate-check').disabled,false);
+});
+test('duplicate final gate clicks are suppressed and failed checks can be retried',async()=>{
+ const f=await fixture(),pending=deferred();await f.view('B');let requests=0;f.overrides.set('/v1/release-gate',()=>{requests++;return pending.promise;});const checking=f.element('manual-gate-check').fire('click');await settle();await f.element('manual-gate-check').fire('click');assert.equal(requests,1);
+ pending.resolve(Promise.reject(new Error('Synthetic gate failure')));await checking;assert.match(f.element('manual-gate-output').textContent,/확인 실패/);assert.equal(f.element('manual-gate-check').disabled,false);f.overrides.set('/v1/release-gate',()=>releaseResult());await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/최종 게이트: 통과/);
+});
+test('review refresh invalidates an in-flight final gate even when the run stays selected',async()=>{
+ const f=await fixture({manual:true}),older=deferred();await f.view('B');f.overrides.set('/v1/release-gate',()=>older.promise);const pending=f.element('manual-gate-check').fire('click');await settle();await f.element('review-refresh').fire('click');older.resolve(releaseResult());await pending;
+ assert.match(f.element('manual-gate-output').textContent,/다시 확인하세요/);assert.equal(f.element('manual-gate-check').disabled,false);
+});
