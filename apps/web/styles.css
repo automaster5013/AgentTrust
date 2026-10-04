@@ -16,3 +16,5 @@
 .case pre{max-height:240px;overflow:auto}
 
 .next-action{border-top:1px solid var(--line);margin-top:18px;padding-top:18px}.next-action h3{font-size:15px;line-height:1.5;margin:8px 0}.gate-panel .next-action p{min-height:0;line-height:1.7}.next-action a{display:inline-block;font-size:12px;font-weight:600;color:#146540;margin-top:6px}
+
+.run-lookup{display:grid;grid-template-columns:1fr auto;gap:15px;align-items:end}.run-lookup input{font-family:Consolas,monospace}@media(max-width:650px){.run-lookup{grid-template-columns:1fr}}

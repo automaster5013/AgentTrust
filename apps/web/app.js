@@ -10,6 +10,7 @@ let selectedRunId = null;
 let selectedRunSequence=0;
 let keyCursor=null,receiptCursor=null,runCursor=null;
 let historySequence=0;
+let lookupSequence=0,lookupBusy=false;
 let auditCursor=null,auditSequence=0;
 let inspectionSequence=0,comparisonSequence=0,keyHistorySequence=0,receiptHistorySequence=0,reviewSequence=0;
 let reviewBusy=false,reviewCursor=null,reviewShown=0;
@@ -164,10 +165,10 @@ async function history(append=false) {
     row.append(gate, node('td', new Date(r.createdAt).toLocaleString('ko-KR')), action); return row;
   }));
 }
-async function selectRun(id) {
+async function selectRun(id,initialRun) {
   selectedRunId = id;const sequence=++selectedRunSequence;invalidateFinalGate();
   for (let attempt = 0; attempt < 800; attempt++) {
-    const run = await api(`/v1/runs/${id}`);
+    const run = attempt===0&&initialRun?initialRun:await api(`/v1/runs/${id}`);
     if (selectedRunId !== id||sequence!==selectedRunSequence) return;
     if(!render(run))return;await reviewHistory(run);
     if (terminal.has(run.state)) { await history(); await auditHistory(); return; }
@@ -199,6 +200,7 @@ $('download').addEventListener('click', () => {
   const link = node('a'); link.href = url; link.download = `agenttrust-${currentRun.id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 function clearProjectData(){
+  lookupSequence++;lookupBusy=false;$('run-lookup-button').disabled=false;$('run-lookup-id').value='';$('run-lookup-status').textContent='';
   evidencePage=0;$('evidence-search').value='';$('evidence-filter').value='';
   sessionSequence++;sessionCursor=null;sessionButtons=[];$('session-list').replaceChildren();$('sessions-status').textContent='';$('sessions-more').disabled=true;
   comparisonSequence++;keyHistorySequence++;receiptHistorySequence++;reviewSequence++;reviewCursor=null;reviewShown=0;$('review-history-status').textContent='';$('review-more').disabled=true;
@@ -351,6 +353,20 @@ $('operations-refresh').addEventListener('click',async()=>{
   $('operations-refresh').disabled=true;try{renderOperations(await api('/v1/operations'));}catch(e){message(e.message,true);}finally{$('operations-refresh').disabled=false;}
 });
 
+$('run-lookup-form').addEventListener('submit',async event=>{
+  event.preventDefault();if(lookupBusy)return;
+  const id=$('run-lookup-id').value.trim().toLowerCase();
+  if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id)){$('run-lookup-status').textContent='유효한 실행 UUID를 입력하세요.';return;}
+  const sequence=++lookupSequence,epoch=scopeEpoch;let selection=selectedRunSequence,loaded=false;
+  const isCurrent=()=>sequence===lookupSequence&&epoch===scopeEpoch&&selection===selectedRunSequence;
+  lookupBusy=true;$('run-lookup-button').disabled=true;$('run-lookup-status').textContent='현재 프로젝트에서 실행을 확인하고 있습니다…';
+  try{
+    const run=await api('/v1/runs/'+id);if(!isCurrent())return;
+    loaded=true;selection=selectedRunSequence+1;await selectRun(id,run);
+    if(isCurrent())$('run-lookup-status').textContent='실행 '+id+'의 근거를 불러왔습니다. 사례별 근거와 최종 게이트를 확인하세요.';
+  }catch{if(isCurrent())$('run-lookup-status').textContent=loaded?'실행 조회 후 관련 기록을 모두 불러오지 못했습니다. 실행 상태와 연결을 확인하고 다시 조회하세요.':'실행을 조회할 수 없습니다. ID와 현재 프로젝트·접근 권한을 확인하세요. 기존 선택은 유지됩니다.';}
+  finally{if(sequence===lookupSequence){lookupBusy=false;$('run-lookup-button').disabled=false;if(!isCurrent())$('run-lookup-status').textContent='다른 실행을 선택하여 이전 ID 조회 결과를 표시하지 않습니다.';}}
+});
 $('history-filter-form').addEventListener('submit',async event=>{event.preventDefault();runCursor=null;try{await history();}catch(e){message(e.message,true);}});
 $('history-more').addEventListener('click',async()=>{$('history-more').disabled=true;try{await history(true);}catch(e){message(e.message,true);$('history-more').disabled=!runCursor;}});
 

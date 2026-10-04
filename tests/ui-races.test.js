@@ -224,3 +224,19 @@ test('failed final check gives retry guidance and late success cannot overwrite 
  const f=await fixture({manual:true});await f.view('B');f.overrides.set('/v1/release-gate',()=>{throw Error('Synthetic check failed');});await f.element('manual-gate-check').fire('click');assert.match(f.element('next-action-title').textContent,/다시 요청/);assert.match(f.element('next-action-detail').textContent,/성공 판정으로 사용할 수 없습니다/);
  const older=deferred();f.overrides.set('/v1/release-gate',()=>older.promise);const pending=f.element('manual-gate-check').fire('click');await settle();await f.element('review-refresh').fire('click');older.resolve(releaseResult());await pending;assert.equal(f.element('next-action-link').href,'#review-panel');assert.ok(!f.element('next-action-title').textContent.includes('기록을 보관'));
 });
+
+const lookupId='00000000-0000-0000-0000-000000000123';
+test('direct run lookup accepts normalized UUID and reuses the authorized response',async()=>{
+ const f=await fixture();let reads=0;f.overrides.set('/v1/runs/'+lookupId,()=>{reads++;return execution(lookupId);});f.element('run-lookup-id').value=' '+lookupId.toUpperCase()+' ';f.element('history-state').value='failed';await f.element('run-lookup-form').fire('submit');
+ assert.equal(reads,1);assert.match(f.element('snapshot').textContent,new RegExp(lookupId));assert.match(f.element('run-lookup-status').textContent,/불러왔습니다/);assert.equal(f.element('history-state').value,'failed');assert.equal(f.element('run-lookup-button').disabled,false);
+});
+test('invalid and inaccessible direct IDs preserve the selected run without exposing errors',async()=>{
+ const f=await fixture();await f.view('B');let reads=0;f.overrides.set('/v1/runs/'+lookupId,()=>{reads++;throw Error('private-canary');});f.element('run-lookup-id').value='../private';await f.element('run-lookup-form').fire('submit');assert.equal(reads,0);assert.match(f.element('run-lookup-status').textContent,/UUID/);
+ f.element('run-lookup-id').value=lookupId;await f.element('run-lookup-form').fire('submit');assert.equal(reads,1);assert.match(f.element('snapshot').textContent,/실행 B/);assert.ok(!f.element('run-lookup-status').textContent.includes('private-canary'));assert.equal(f.element('run-lookup-button').disabled,false);
+});
+test('a delayed direct lookup cannot replace a run selected from history and suppresses duplicates',async()=>{
+ const f=await fixture(),older=deferred();let reads=0;f.overrides.set('/v1/runs/'+lookupId,()=>{reads++;return older.promise;});f.element('run-lookup-id').value=lookupId;const pending=f.element('run-lookup-form').fire('submit');await settle();await f.element('run-lookup-form').fire('submit');assert.equal(reads,1);await f.view('B');older.resolve(execution(lookupId));await pending;assert.match(f.element('snapshot').textContent,/실행 B/);assert.equal(f.element('run-lookup-button').disabled,false);
+});
+test('logout clears direct lookup state and an older response cannot restore it',async()=>{
+ const f=await fixture(),older=deferred();f.overrides.set('/v1/runs/'+lookupId,()=>older.promise);f.element('run-lookup-id').value=lookupId;const pending=f.element('run-lookup-form').fire('submit');await settle();await f.element('logout-button').fire('click');older.resolve(execution(lookupId));await pending;assert.equal(f.element('run-lookup-id').value,'');assert.equal(f.element('run-lookup-status').textContent,'');assert.equal(f.element('release-check-panel').hidden,true);
+});
