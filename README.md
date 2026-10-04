@@ -11,6 +11,8 @@ AI 에이전트의 품질과 보안을 평가하고, 검증 증거를 바탕으�
 
 `npm run demo:portfolio`로 합성 평가 4개와 최종 게이트 6개를 재현한다. 통과·차단·증거 누락과 관리자 승인 대기→승인→반려, 서명 검증을 확인한다. [설치와 화면 시연 절차](docs/portfolio-demo.md)를 따른다. `npm run demo:roles`는 작성자의 평가 생성, 조회자의 근거·게이트 확인, 관리자의 승인·반려와 권한·조직 경계 거절을 재현한다. 실제 배포는 수행하지 않는다.
 
+[기술 설명과 검증 근거](docs/portfolio-engineering.md)에서 설계 선택·재현 명령·코드와 테스트 위치·남은 제한을 확인할 수 있다. [실제 아키텍처](docs/architecture.md)는 구현된 평가·승인·이미지 전달 흐름을 설명한다.
+
 ## 설계 문서
 
 - [GitHub CI와 Docker 이미지 전달·수동 배포 준비](docs/github-delivery.md)

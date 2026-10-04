@@ -1,61 +1,105 @@
-# 시스템 아키텍처
+# 구현된 시스템 아키텍처
 
-## 초기 기술 선택: 검증 전 제안
+v0.45 기준. 실제 코드와 로컬 Docker·GitHub CI에서 검증한 구조를 설명한다. 초기의 TypeScript·독립 객체 저장소·서명 웹훅 제안은 현재 구현에 포함되지 않는다. 제품 목표는 [제품 문서](product.md), 시연은 [포트폴리오 시연](portfolio-demo.md), 설계 판단과 검증 근거는 [기술 설명](portfolio-engineering.md)을 따른다.
 
-TypeScript 기반 웹 UI와 API, PostgreSQL 영속 저장소, DB 기반 작업 큐, 별도 워커, S3 호환 증거 저장소를 제안한다. 초기에는 모듈형 단일 API와 독립 워커로 시작한다. 패키지와 버전은 구현 착수 때 공식 문서·지원 상태를 확인하고 고정한다.
+## 실행 구성과 경계
 
 ```mermaid
 flowchart LR
-  U[사용자 / CI] --> W[웹 UI]
-  U --> A[인증된 API]
-  W --> A
-  A --> D[(PostgreSQL)]
-  D --> R[평가 워커]
-  R --> P[정책 / 규칙 판정]
-  R --> E[통제된 어댑터]
-  E --> M[모의 에이전트 / 허용된 원격 대상]
-  R --> O[(증거 저장소)]
-  A --> O
-  A --> H[서명된 웹훅 발송]
+  User[관리자 / 작성자 / 조회자] --> Web[웹 UI: JavaScript]
+  Web --> API[인증된 Node.js API]
+  CI[프로젝트 범위 CI 키] --> API
+  API --> DB[(PostgreSQL 17: 버전 / 실행 / 근거 / 검토 / 감사)]
+  DB --> Worker[독립 Node.js 워커]
+  Worker --> Thread[평가 스레드: 예산과 규칙]
+  Thread --> Mock[결정적 모의 어댑터]
+  Thread -. 명시적 opt-in .-> HTTPS[허용된 HTTPS 대상]
+  Worker --> DB
+  API --> Sign[Ed25519 서명: API 전용 로컬 키]
+  Sign --> Receipt[불변 릴리스 검증 기록]
 ```
 
-## 서비스 책임
+런타임은 Node.js 24, 웹은 HTML/CSS/JavaScript ESM이다. [Compose](../compose.yaml)는 API·DB·워커 세 서비스를 실행한다. API와 DB의 호스트 포트는 기본적으로 loopback에만 노출된다. 워커는 internal backend 네트워크만 사용하며 기본 외부 연결이 없다. 원격 HTTPS 어댑터는 [통제 조건과 opt-in 절차](release-integration.md)를 따르며 실제 고객 대상 호출은 검증하지 않았다.
 
-API: 인증·조직 권한·입력 검증·버전 관리·실행 요청·결과 조회. 외부 모델 호출은 워커에 위임한다.
-워커: 작업 lease/heartbeat, 자원 예산, 어댑터 호출, 마스킹, 규칙 평가, 결과 확정. 전역 관리자 권한 없이 필요한 실행 자격만 사용한다.
-정책 엔진: 저장된 실행/규칙 스냅샷만 입력으로 사용한다. 필수 규칙 실패는 block, 실행/판정 오류 또는 필수 증거 부족은 inconclusive, 모든 필수 검증 완료와 통과 조건 충족만 pass다. pass만 기본 배포 허용으로 해석한다.
-증거 저장소: 원문 저장은 별도 정책을 따른다. 객체 키는 조직/실행별로 분리하고 다운로드는 API 권한 확인 이후에만 허용한다.
+API는 로그인·조직/프로젝트 범위·역할·입력 계약·불변 버전·평가 요청·결과 조회·검토·최종 게이트를 처리한다. 워커가 평가 결과를 확정하고 API가 임의의 평가 결과를 통과로 저장하지 않는다. 평가 근거는 현재 PostgreSQL JSONB에 저장한다. 독립 객체 저장소와 임의 코드 실행은 없다.
 
-## 도메인 모델
+DB 소유자 역할은 준비·마이그레이션에 사용한다. API 역할은 조직 RLS와 제한된 권한을 적용하며 인증 전에는 제한된 함수로 인증 상태를 조회한다. 워커는 조직을 가로지르는 큐 처리를 위해 별도 BYPASSRLS 역할을 사용하되 필요한 테이블·작업 권한으로 제한한다. 워커가 조직 RLS로 격리된다는 의미는 아니다. 역할·프로젝트 검사와 DB 제약을 함께 사용한다.
 
-- Organization, Membership, Project: 소유권과 역할 경계.
-- AgentVersion: 설정 참조, 버전 식별자, 설정 해시. 비밀 값 대신 비밀 참조를 저장한다.
-- DatasetVersion, Case: 입력, 기대값, 규칙, 위험 태그, 콘텐츠 해시.
-- PolicyVersion: 필수 규칙, 임계치, 예산, 승인 예외 권한.
-- Run: 조직/프로젝트, 세 버전 참조, 실행 스냅샷, 상태, 예산, idempotency key.
-- CaseAttempt, RuleResult, Artifact: 시도별 결과, 판정 근거, 마스킹된 증거와 해시.
-- GateDecision, ExceptionApproval, AuditEvent, UsageEvent: 정책 결정과 예외, 행위 감사, 멱등 계량.
+## 평가와 결과 확정
 
-조직 소유 행에는 organization_id를 두고 부모 참조도 동일 조직인지 검증한다. 버전은 게시 이후 수정하지 않는다. 삭제 정책은 원문 제거와 최소 감사 메타데이터 보존의 관계를 명시해야 한다.
+```mermaid
+sequenceDiagram
+  participant Dev as 작성자
+  participant API as API
+  participant DB as PostgreSQL
+  participant W as 워커
+  Dev->>API: POST /v1/runs + 고정 버전 + Idempotency-Key
+  API->>DB: 권한 확인, 버전 스냅샷과 queued 실행 저장
+  API-->>Dev: 실행 ID
+  W->>DB: SKIP LOCKED 점유, lease token 발급
+  W->>W: 예산 내 모의 평가와 규칙 판정
+  W->>DB: 유효한 lease token으로 결과 / 감사 / 사용량 확정
+  Dev->>API: GET /v1/runs/{id}
+  API->>DB: 조직 / 프로젝트 범위 결과 조회
+  API-->>Dev: 상태, pass / block / inconclusive, 사례별 근거
+```
 
-## 실행 계약과 복구
+상태는 queued → running → succeeded/failed/cancelled/timed_out이다. 대기 상태에서 직접 취소·시간 초과로 종료될 수도 있다. succeeded는 처리 완료이며 규칙 통과를 뜻하지 않는다. 필수 규칙 실패는 block, 필수 근거 누락·실행 오류는 inconclusive이며 이미 확인된 필수 실패는 block을 유지한다.
 
-상태: queued → running → succeeded / failed / cancelled / timed_out. 게이트 판정은 실행 상태와 별개다. 실행 succeeded에도 규칙 실패로 block이 가능하다.
-API는 작업 생성과 실행 스냅샷 저장을 하나의 트랜잭션으로 처리한다. 워커는 lease가 있는 작업만 수행하고 중복 전달을 전제로 설계한다. 동일 시도 결과의 중복 반영과 계량을 unique 제약으로 막는다. 실패한 워커의 lease 만료 후 재시도는 예산과 시도 상한 안에서만 허용한다.
-취소 요청은 지속 저장하고 워커가 사례 실행 전후 확인한다. 전송된 외부 요청은 취소가 보장되지 않으므로 늦은 응답을 최종 판정에 반영하지 않고 실제 발생 비용을 별도 기록한다.
+실행 생성과 스냅샷 저장은 한 트랜잭션이다. 동일 조직·프로젝트의 같은 멱등성 키와 같은 본문은 동일 실행을 반환하고 다른 본문은 충돌한다. 워커 lease가 만료되면 시도·시간 예산 안에서 다시 점유할 수 있다. 이전 token의 늦은 응답은 최종 확정에 사용할 수 없다. 결과와 완료 감사·사용량을 함께 확정하며 저장 제약으로 중복 계량을 막는다. 이는 외부 모델 호출 자체가 한 번만 수행된다는 보장이 아니다.
 
-## API 초안
+## 관리자 검토와 현재 최종 게이트
 
-`POST /v1/projects`, `POST /v1/agent-versions`, `POST /v1/dataset-versions`, `POST /v1/policy-versions`, `POST /v1/runs`, `GET /v1/runs/{id}`, `GET /v1/runs/{id}/results`, `POST /v1/runs/{id}/cancel`, `GET /v1/runs/{id}/gate`.
-모든 접근에 조직 권한 검사를 적용한다. 생성 요청은 크기 제한과 스키마 검증을 요구한다. 실행 생성은 멱등성 키를 받으며 다른 본문으로 같은 키를 재사용하면 충돌을 반환한다. 오류에는 추적 ID를 포함하고 비밀·스택은 노출하지 않는다.
+```mermaid
+sequenceDiagram
+  participant Reader as 사용자 / 프로젝트 CI
+  participant Admin as 관리자
+  participant API as API
+  participant DB as PostgreSQL
+  Reader->>API: POST /v1/release-gate + 실행과 기대 버전
+  API->>DB: 실행 / 근거 / 최신 검토 / 현재 권한 확인
+  API-->>Reader: 승인 대기인 경우 차단 + 서명 기록
+  Admin->>API: POST /v1/runs/{id}/reviews: approved
+  API->>DB: 근거 결합 승인과 감사 기록 추가
+  Reader->>API: 새 최종 게이트 확인
+  API->>DB: 버전, 완전성, 해시, 유효 시간, 검토자 상태 검사
+  API-->>Reader: 조건 충족 시 허용 + 서명 기록
+  Admin->>API: rejected 기록 추가
+  Reader->>API: 새 최종 게이트 확인
+  API-->>Reader: 최신 반려에 따라 차단 + 서명 기록
+```
 
-## 배포와 관측성
+관리자 검토 정책에서는 평가 pass여도 자동 배포 허용은 false다. 현재 최종 게이트가 완료된 통과 평가·기대 버전·근거 무결성/완전성·결과 유효 시간·현재 유효한 관리자 승인을 함께 검사한다. 기준 실행을 요청하면 같은 데이터셋·정책의 비교도 확인한다. 평가의 inconclusive가 최종 게이트에서는 배포 차단으로 반환될 수 있다.
 
-개발/스테이징/운영의 DB·비밀·저장소를 분리한다. 운영은 TLS, 최소 권한, 마이그레이션 절차, 백업과 복원 훈련을 필요로 한다. 워커의 외부 연결은 통제된 egress 경로만 사용한다.
-큐 대기시간, 실행시간, 오류율, 예산 초과, 조직별 사용량과 인증 실패를 측정한다. 추적 ID는 API→작업→판정에 전달한다. 알림 임계치는 파일럿에서 측정한 기준으로 결정한다.
+검토와 게이트는 실행 잠금과 현재 자격 재검증을 사용한다. 최신 검토는 시각이 아닌 DB 순서 번호로 선택한다. 만료·철회·역할 변경·반려를 재확인하며, 과거 멱등 요청의 통과 결과가 현재 결과와 다르면 재사용을 거절한다. 검토와 릴리스 기록은 append-only로 보존한다. [관리자 검토](manual-review.md)와 [서명 운영](receipt-signatures.md)을 따른다.
 
-## v0.2 구현 상태 — 2026-10-04
+Ed25519 서명은 신뢰 공개키에 대한 기록의 무결성을 확인한다. 과거 기록이 지금도 유효한 배포 권한임을 뜻하지 않는다. UI 안내는 서버 권한을 대신하지 않으며 배포 직전에 새 게이트를 확인해야 한다.
 
-현재는 JavaScript ESM API/웹 UI와 PostgreSQL 17 영속 큐, 별도 Docker 워커를 구현했다. DB 역할은 준비/마이그레이션 소유자, 조직 RLS를 적용하는 API, 전 조직 큐를 처리하는 제한된 워커로 분리했다. 로컬 접근 키와 DB 세션으로 인증하고 admin/editor/viewer 역할을 적용한다.
+## 복구와 소스 전달
 
-버전·실행·결과·감사·사용량은 DB에 저장한다. 작업 lease와 시도별 fencing token, DB 트랜잭션으로 취소/종료/계량을 확정한다. 증거는 현재 JSONB에 저장하며 독립 객체 저장소·OIDC·서명 웹훅은 아직 도입하지 않았다. 자세한 실제 계약과 제한은 development.md를 따른다.
+백업은 별도 로컬 키를 사용하는 AES-256-GCM 인증 암호화를 제공한다. 복원은 격리된 DB에서 데이터 지문과 RLS·역할·트리거·제약 등 보안 카탈로그를 검사한다. 백업 키·서명 키·DB 비밀은 저장소와 CI 공개 artifact에 포함하지 않는다. 실제 RPO/RTO 계약이나 상용 복구 SLA를 측정한 것은 아니다. [백업·복원 검증](backup-recovery.md)을 따른다.
+
+GitHub 소스 전달은 제품의 릴리스 게이트와 별도의 흐름이다.
+
+```mermaid
+flowchart LR
+  Commit[main 커밋] --> Test[테스트 / 합성 시연 / 복구]
+  Test --> Candidate[GHCR 후보 digest 게시]
+  Candidate --> Runtime[별도 runner에서 동일 digest 실행 검증]
+  Runtime --> Promote[검증된 digest를 main으로 승격]
+  Promote --> Bundle[공개 manifest / 체크섬 검사와 artifact 보관]
+```
+
+전체 workflow 성공 후 전달 명세의 커밋·run·attempt를 GitHub 조회로 확인할 수 있다. 묶음 체크섬과 manifest는 서명된 공급망 증명으로 해석하지 않는다. 실제 서버 배포는 없으며 운영자가 신뢰한 digest를 사용해 사전 점검과 수동 배포를 준비하는 범위다. [GitHub 전달 문서](github-delivery.md)를 따른다.
+
+## 구현 위치와 다음 범위
+
+| 책임 | 실제 코드 |
+|---|---|
+| API와 역할 검사 | [server.js](../apps/api/server.js), [auth.js](../apps/api/auth.js), [role-guard.js](../apps/api/role-guard.js) |
+| 실행 저장과 워커 확정 | [pg-store.js](../apps/api/pg-store.js), [engine.js](../apps/worker/engine.js), [finalize.js](../apps/worker/finalize.js) |
+| 규칙·근거·최종 판단 | [evaluator](../packages/evaluator/index.js), [integrity.js](../packages/evaluator/integrity.js), [comparison.js](../packages/evaluator/comparison.js) |
+| 검토·서명 기록 | [reviews.js](../apps/api/reviews.js), [ci.js](../apps/api/ci.js), [signature.js](../packages/receipts/signature.js) |
+| 복구·소스 전달 | [recovery.mjs](../scripts/recovery.mjs), [workflow](../.github/workflows/validate.yml) |
+
+SSO/OIDC·실제 고객 모델·고객 데이터 보존/삭제 정책·독립 객체 저장소·2인 승인・상용 서버 운영은 다음 범위다. 구체적인 외부 대상과 운영 요구가 정해진 뒤 구현과 검증을 분리해 진행한다.
