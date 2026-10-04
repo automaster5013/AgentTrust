@@ -19,7 +19,8 @@ function fixture({failCheck=0,failWait=false,failCleanup=false,changeReceipt=()=
       const decision=runs.get(data.candidateRunId).gate.decision,manual=data.policyVersionId==='manual';
       const allowed=decision==='pass'&&(!manual||review==='approved'),baseline=runs.get(data.baselineRunId);
       const candidate=runs.get(data.candidateRunId);
-      const receipt={decision:baseline?(allowed?'pass':'block'):decision,deploymentAllowed:allowed,...(manual?{manualApproval:{status:review}}:{}),artifact:{receiptId:'receipt-'+checks,...(baseline?{request:{...data},evidence:{baseline:{runId:baseline.id,snapshotHash:baseline.snapshotHash,resultHash:baseline.resultHash},candidate:{runId:candidate.id,snapshotHash:candidate.snapshotHash,resultHash:candidate.resultHash}}}:{})},...(baseline?{comparison:{baselineRunId:baseline.id,candidateRunId:data.candidateRunId,comparable:decision!=='inconclusive',evaluationPassed:decision==='pass',regressions:decision==='pass'?[]:[{caseId:'synthetic',ruleId:'required'}]}}:{})};
+      const receipt={decision:allowed?'pass':'block',deploymentAllowed:allowed,...(manual?{manualApproval:{status:review}}:{}),runId:candidate.id,reasons:allowed?[]:['synthetic block'],artifact:{receiptId:'receipt-'+checks,request:{...data},evidence:{candidate:{runId:candidate.id,snapshotHash:candidate.snapshotHash,resultHash:candidate.resultHash},...(baseline?{baseline:{runId:baseline.id,snapshotHash:baseline.snapshotHash,resultHash:baseline.resultHash}}:{})}},...(baseline?{comparison:{baselineRunId:baseline.id,candidateRunId:data.candidateRunId,comparable:decision!=='inconclusive',evaluationPassed:decision==='pass',regressions:decision==='pass'?[]:[{caseId:'synthetic',ruleId:'required'}]}}:{})};
+      receipt.artifact.result=structuredClone(Object.fromEntries(Object.entries(receipt).filter(([k])=>k!=='artifact')));
       changeReceipt(receipt,checks);return receipt;
     }
     throw Error('Unexpected path');
@@ -71,3 +72,10 @@ test('comparison failure after approval still rejects the demonstration and an u
   const pending=fixture({failWait:true}),unfinished=await runPortfolioScenario({...pending.dependencies,compare:true});
   assert.equal(unfinished.completed,false);assert.equal(unfinished.cleanupSucceeded,true);assert.match(pending.calls.at(-1).path,/\/cancel$/);
 });
+
+ test('default demo rejects a valid signature attached to unrelated evidence or unsigned decision fields',async()=>{
+  for(const change of [r=>{r.artifact.request.candidateRunId='wrong';},r=>{r.artifact.request.policyVersionId='wrong';},r=>{r.artifact.evidence.candidate.resultHash='wrong';},r=>{r.artifact.evidence.candidate.runId='wrong';},r=>{r.artifact.result.deploymentAllowed=false;},r=>{r.artifact.result.decision='block';},r=>{r.runId='wrong';}]){
+    const f=fixture({changeReceipt:change}),r=await runPortfolioScenario(f.dependencies);
+    assert.equal(r.completed,false);assert.equal(r.cleanupSucceeded,true);
+  }
+ });

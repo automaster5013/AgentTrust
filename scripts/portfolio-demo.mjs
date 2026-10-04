@@ -5,6 +5,7 @@ import {verifyReceipt} from '../packages/receipts/signature.js';
 import {runPortfolioScenario} from './portfolio-scenario.mjs';
 import {localSmokeBase,fetchLocalSmoke} from './local-smoke-http.mjs';
 import {readReleaseResponse} from './release-gate.mjs';
+import {readTrustedReceiptKey} from './trusted-receipt-key.mjs';
 
 const reportPath='.local/portfolio-demo-'+randomUUID()+'.json';
 let cookie,report={schemaVersion:1,completed:false,synthetic:true,serverDeployed:false},base;
@@ -20,7 +21,7 @@ try{
   base=localSmokeBase();
   const config=JSON.parse((await readFile('.local/credentials.json','utf8')).replace(/^\uFEFF/,''));
   const key=config.organizations[0].credentials.find(c=>c.role==='admin').token;
-  const publicKey=await readFile('.local/receipt-signing/public.pem','utf8');
+  const publicKey=await readTrustedReceiptKey('.local/receipt-signing/public.pem');
   await call('/v1/auth/login',{accessKey:key});
   report=await runPortfolioScenario({call,compare,verify:receipt=>verifyReceipt(receipt,publicKey),onStep:item=>console.log(JSON.stringify(item)),wait:async id=>{
     const deadline=Date.now()+45000;

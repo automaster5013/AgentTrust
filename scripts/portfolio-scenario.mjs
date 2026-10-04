@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {assertDemoReceiptBinding} from './demo-receipt-binding.mjs';
 
 // The scenario uses only the seeded synthetic dataset and deterministic mocks.
 export async function runPortfolioScenario({call,wait,verify,onStep=()=>{},compare=false}){
@@ -10,10 +11,12 @@ export async function runPortfolioScenario({call,wait,verify,onStep=()=>{},compa
   const check=async(name,run,input,allowed,status)=>{
     const baseline=baselines.get(input.policyVersionId);
     if(compare)assert.ok(baseline&&baseline.id!==run.id);
-    const receipt=await call('/v1/release-gate',{candidateRunId:run.id,...input,...(compare?{baselineRunId:baseline.id}:{})});
+    const request={candidateRunId:run.id,...input,...(compare?{baselineRunId:baseline.id}:{})};
+    const receipt=await call('/v1/release-gate',request);
     assert.equal(receipt.deploymentAllowed,allowed);
     if(status)assert.equal(receipt.manualApproval?.status,status);
     assert.equal(verify(receipt).signatureVerified,true);
+    assertDemoReceiptBinding(receipt,request,run,compare?baseline:undefined);
     if(compare){
       assert.equal(receipt.artifact.request.candidateRunId,run.id);
       for(const key of ['agentVersionId','datasetVersionId','policyVersionId'])assert.equal(receipt.artifact.request[key],input[key]);

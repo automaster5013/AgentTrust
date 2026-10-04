@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {assertDemoReceiptBinding} from './demo-receipt-binding.mjs';
 
 export async function runRoleScenario({call,wait,verify,onStep=()=>{}}){
   const report={schemaVersion:1,synthetic:true,serverDeployed:false,steps:[]};
@@ -6,9 +7,11 @@ export async function runRoleScenario({call,wait,verify,onStep=()=>{}}){
   const step=(name,data)=>{const entry={name,...data};report.steps.push(entry);onStep(entry);};
   const denied=async(name,role,path,data,status=403)=>{await call(role,path,data,status);step(name,{role,httpStatus:status});};
   const check=async(name,allowed,status)=>{
-    const receipt=await call('viewer','/v1/release-gate',{candidateRunId:run.id,...input});
+    const request={candidateRunId:run.id,...input};
+    const receipt=await call('viewer','/v1/release-gate',request);
     assert.equal(receipt.deploymentAllowed,allowed);assert.equal(receipt.manualApproval?.status,status);
     assert.equal(verify(receipt).signatureVerified,true);
+    assertDemoReceiptBinding(receipt,request,run);
     step(name,{role:'viewer',runId:run.id,deploymentAllowed:allowed,manualApproval:status,receiptId:receipt.artifact.receiptId,signatureVerified:true});
   };
   try{

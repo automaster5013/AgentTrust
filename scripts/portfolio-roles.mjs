@@ -5,6 +5,7 @@ import {verifyReceipt} from '../packages/receipts/signature.js';
 import {runRoleScenario} from './portfolio-roles-scenario.mjs';
 import {localSmokeBase,fetchLocalSmoke} from './local-smoke-http.mjs';
 import {readReleaseResponse} from './release-gate.mjs';
+import {readTrustedReceiptKey} from './trusted-receipt-key.mjs';
 
 const reportPath='.local/portfolio-roles-'+randomUUID()+'.json',sessions=new Map();
 let base,report={schemaVersion:1,synthetic:true,completed:false,serverDeployed:false};
@@ -19,7 +20,7 @@ try{
   if(process.argv.length!==2)throw Error('No arguments accepted');
   base=localSmokeBase();
   const config=JSON.parse((await readFile('.local/credentials.json','utf8')).replace(/^\uFEFF/,''));
-  const publicKey=await readFile('.local/receipt-signing/public.pem','utf8');
+  const publicKey=await readTrustedReceiptKey('.local/receipt-signing/public.pem');
   for(const role of ['admin','editor','viewer','outsider']){
     const organization=config.organizations[role==='outsider'?1:0],actualRole=role==='outsider'?'viewer':role;
     sessions.set(role,{projectId:organization.projectId});

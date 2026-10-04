@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
+import {generateKeyPairSync} from 'node:crypto';
 import {once} from 'node:events';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -14,7 +15,7 @@ for(const [script,args] of [['portfolio-demo.mjs',[]],['portfolio-demo.mjs',['--
   await mkdir(join(dir,'.local','receipt-signing'),{recursive:true});
   const key='synthetic-demo-key-canary',cookie='synthetic-demo-cookie-canary';
   await writeFile(join(dir,'.local','credentials.json'),JSON.stringify({organizations:[{projectId:'synthetic',credentials:['admin','editor','viewer'].map(role=>({role,token:key}))}]}));
-  await writeFile(join(dir,'.local','receipt-signing','public.pem'),'unused-synthetic-public-key');
+  await writeFile(join(dir,'.local','receipt-signing','public.pem'),generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'}));
   let body,reads=0,logout=0;
   const server=createServer(async(req,res)=>{
    res.setHeader('Content-Type','application/json');
