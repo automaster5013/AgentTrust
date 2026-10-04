@@ -1,9 +1,14 @@
-import { readFile } from 'node:fs/promises';
+import { readFile,writeFile } from 'node:fs/promises';
 import { verifyReceipt } from '../packages/receipts/signature.js';
 import { randomUUID } from 'node:crypto';
 import { hash } from '../packages/contracts/hash.js';
 import { pathToFileURL } from 'node:url';
 
+export async function saveReleaseReceipt(path,result){
+  if(typeof path!=='string'||!path.trim()||!result?.artifact||result.artifactHash!==hash(result.artifact))throw new Error('Invalid release receipt export.');
+  const receipt={artifact:result.artifact,artifactHash:result.artifactHash,...(result.signature?{signature:result.signature}:{})};
+  await writeFile(path,JSON.stringify(receipt,null,2)+'\n',{flag:'wx',mode:0o600});
+}
 export async function checkRelease({base,accessKey,candidateRunId,baselineRunId,checkKey=randomUUID(),projectId,trustedPublicKey,...expected}) {
   const url=new URL(base);
   if(url.protocol!=='http:'||url.hostname!=='127.0.0.1'||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw new Error('CI bridge requires a loopback API URL.');
@@ -46,6 +51,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
       trustedPublicKey:process.env.AGENTTRUST_RECEIPT_PUBLIC_KEY_FILE?await readFile(process.env.AGENTTRUST_RECEIPT_PUBLIC_KEY_FILE,'utf8'):undefined,projectId:process.env.AGENTTRUST_PROJECT_ID,checkKey:process.env.AGENTTRUST_CHECK_KEY,candidateRunId:process.env.AGENTTRUST_RUN_ID,baselineRunId:process.env.AGENTTRUST_BASELINE_RUN_ID,
       agentVersionId:process.env.AGENTTRUST_AGENT_VERSION_ID,datasetVersionId:process.env.AGENTTRUST_DATASET_VERSION_ID,
       policyVersionId:process.env.AGENTTRUST_POLICY_VERSION_ID,maxAgeSeconds:Number(process.env.AGENTTRUST_MAX_AGE_SECONDS||600)});
+    if(process.env.AGENTTRUST_RECEIPT_OUTPUT_FILE!==undefined)await saveReleaseReceipt(process.env.AGENTTRUST_RECEIPT_OUTPUT_FILE,result);
     console.log(JSON.stringify(result));process.exitCode=result.deploymentAllowed?0:1;
   } catch { console.error('AgentTrust release gate could not verify approval.');process.exitCode=2; }
 }

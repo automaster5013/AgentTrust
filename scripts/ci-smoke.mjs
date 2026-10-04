@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { readFile,writeFile } from 'node:fs/promises';
-import { checkRelease } from './release-gate.mjs';
+import { checkRelease,saveReleaseReceipt } from './release-gate.mjs';
 import { verifyReceipt } from '../packages/receipts/signature.js';
 
 const config=JSON.parse((await readFile('.local/credentials.json','utf8')).replace(/^\uFEFF/,''));
@@ -24,6 +24,9 @@ try{
   const replay=await checkRelease(options);assert.equal(replay.artifactHash,result.artifactHash);
   assert.equal(result.deploymentAllowed,true);
   const receipt=await call(`/v1/release-receipts/${result.artifact.receiptId}`);assert.equal(receipt.artifactHash,result.artifactHash);assert.equal(verifyReceipt(receipt,trustedPublicKey).signatureVerified,true);
+  const exportPath='.local/ci-export-'+result.artifact.receiptId+'.json';
+  await saveReleaseReceipt(exportPath,result);
+  const exported=JSON.parse(await readFile(exportPath,'utf8'));assert.equal(exported.artifactHash,result.artifactHash);assert.equal(verifyReceipt(exported,trustedPublicKey).signatureVerified,true);
   await writeFile('.local/ci-smoke-receipt.json',JSON.stringify(receipt,null,2)+'\n',{mode:0o600});
   console.log('Docker CI smoke: project key -> idempotent release approval -> verified Ed25519 signed receipt.');
 }finally{
