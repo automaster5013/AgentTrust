@@ -177,3 +177,9 @@ if ($actual -ne $expected) { throw 'Delivery manifest checksum mismatch' }
 다운로드한 ZIP을 새 전용 폴더에 풀고 `npm run delivery:verify:bundle -- <폴더>`를 실행한다. 기대값 환경 변수는 `delivery:verify`와 동일하며 명세에서 자동 추출하지 않는다. 폴더에는 `delivery-manifest.json`과 `delivery-manifest.sha256` 두 일반 파일만 있어야 한다. 추가 파일·디렉터리·심볼릭 링크, 다른 파일명을 가리키는 checksum, 과도한 파일 크기, 바이트 변경과 명세 불일치는 차단한다. JSON 64 KiB, checksum 128바이트로 제한한다. checksum 파일의 LF/CRLF는 허용하지만 JSON은 원래 바이트 그대로 해시한다.
 
 성공은 종료 코드 0, `status: passed`, `manifestChecksumVerified: true`와 `manifestSha256`을 반환한다. 실패는 종료 코드 1과 `DELIVERY_BUNDLE_INVALID` JSON을 반환하며 경로·원문·예외를 노출하지 않는다. 이 명령은 파일을 변경하거나 Docker·DB·GitHub에 접속하지 않는다. JSON과 checksum을 함께 조작한 경우의 인증은 아니며, 정상 결과에도 `ciSuccessChecked: false`, `signatureVerified: false`를 유지한다. 다음으로 `delivery:verify:github`와 호스트 사전 점검을 별도로 수행한다. CI는 공개 묶음을 업로드하기 전에 같은 명령을 실행한다. JSON 자동화 출력은 `node scripts/verify-delivery-bundle.mjs <폴더>`로 얻는다.
+
+## 실제 전달 묶음 내려받기와 로컬 사전 점검 기록 — v0.79
+
+[검증된 v0.79 실행](https://github.com/automaster5013/AgentTrust/actions/runs/37201321361)의 실제 artifact ZIP을 로컬로 내려받았다. ZIP SHA-256은 GitHub artifact metadata의 digest와 일치했고, 내부 두 파일의 manifest checksum은 CI에서 확인한 값과 일치했다. 선택한 image/revision/repository/run ID를 별도로 지정해 `delivery:verify:bundle`도 통과했다. API 인증 헤더는 artifact 저장소 리디렉션에 전달하지 않았으며 내려받기·추출 크기와 파일 이름을 제한했다. 상세 파일은 private .local에 보관한다.
+
+같은 검증 image digest를 pull해 캐시하고 `deploy:preflight`를 읽기 전용으로 실행했다. 이미지 revision/source·non-root 사용자와 Compose 설정, 기존 서명 키 쌍, 정확한 소스 revision의 DB 마이그레이션 목록, 인증된 백업의 마이그레이션/보안 카탈로그와 이전 격리 복원 증거를 확인했다. 사전 점검에는 현재 포트 가용성·검사 이후 변경·별도 스테이징·운영 배포가 포함되지 않는다. 레지스트리 이미지를 새 서버에 기동하거나 운영 DB를 마이그레이션하지 않았다. 이 기록은 해당 v0.79의 근거이며 이후 main 변경에는 새 전달 검증이 필요하다.

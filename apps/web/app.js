@@ -4,6 +4,10 @@ function updateNavigation(){
   const section=globalThis.location?.hash.slice(1)||'evaluation';
   for(const [target,id] of navigation){const link=$(id),selected=target===section;link.className=selected?'active':'';link.ariaCurrent=selected?'location':null;}
 }
+function restorePanelLocation(){
+  const id=globalThis.location?.hash.slice(1),target=id&&$(id);
+  if(target?.getClientRects?.().length)target.scrollIntoView({block:'start'});
+}
 globalThis.addEventListener?.('hashchange',updateNavigation);updateNavigation();
 let currentRun = null;
 let evidencePage=0,evidenceCaseId=null;
@@ -316,7 +320,7 @@ async function initialize() {
   await ciHistory();await receiptHistory();await sessionHistory();
   await catalog();$('dataset-json').value=JSON.stringify(await api('/v1/sample-dataset'),null,2);await history();await auditHistory();
   updateButtons();$('loading-panel').hidden=true;$('workspace-ui').hidden=false;$('login-panel').hidden=true;
-  $('nav-projects').hidden=actor.role!=='admin';$('workspace-nav').hidden=false;updateNavigation();
+  $('nav-projects').hidden=actor.role!=='admin';$('workspace-nav').hidden=false;updateNavigation();restorePanelLocation();
 }
 $('login-form').addEventListener('submit',async event=>{
   event.preventDefault();$('login-button').disabled=true;$('login-status').textContent='';
