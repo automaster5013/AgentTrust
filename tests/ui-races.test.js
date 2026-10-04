@@ -780,3 +780,13 @@ test('session termination list continuation does not start audit reads in a new 
  await f.element('session-list').children[0].children.at(-1).fire('click');await settle();assert.equal(audits,0);assert.equal(f.element('sessions-status').textContent,'');
  f.overrides.set('/v1/sessions?limit=25',()=>({items:[],nextCursor:null,scope:'organization'}));identity.resolve({role:'admin',organizationId:'organization',projectId:'next-project',organizationName:'Synthetic',name:'Tester',projects:[{id:'next-project',name:'Next'}]});await transition;assert.equal(f.element('workspace-ui').hidden,false);assert.equal(audits,1);
 });
+
+
+test('catalog continuation cannot restore old project choices after a successful API read',async()=>{
+ const f=await fixture(),identity=deferred();f.element('dataset-json').value=JSON.stringify({name:'Synthetic',cases:[]});f.overrides.set('/v1/dataset-versions',()=>({id:'old-dataset',name:'Old synthetic dataset'}));
+ const data={agent:[{id:'old-agent',name:'Old agent',mode:'compliant'}],dataset:[{id:'old-dataset',name:'Old dataset',cases:1}],policy:[{id:'old-policy',name:'Old policy',minimumPassRate:1}]},bytes=new TextEncoder().encode(JSON.stringify(data)),result=new Response(JSON.stringify(data));let read=false,transition;
+ Object.defineProperty(result,'body',{value:{getReader:()=>({read:()=>Promise.resolve(read?{done:true}:(read=true,{done:false,value:bytes})),releaseLock:()=>queueMicrotask(()=>queueMicrotask(()=>{f.element('workspace-project').value='next-project';transition=f.element('workspace-project').fire('change');}))})}});
+ f.overrides.set('/v1/catalog',()=>result);f.overrides.set('/v1/me',()=>identity.promise);await f.element('dataset-form').fire('submit');await settle();
+ for(const id of ['agent','dataset-select','policy'])assert.equal(f.element(id).children.length,0,id);assert.equal(f.element('run-button').disabled,true);assert.equal(f.element('version-inspection-output').textContent,'');
+ f.overrides.set('/v1/catalog',()=>({agent:[],dataset:[],policy:[]}));identity.resolve({role:'admin',organizationId:'organization',projectId:'next-project',organizationName:'Synthetic',name:'Tester',projects:[{id:'next-project',name:'Next'}]});await transition;assert.equal(f.element('workspace-ui').hidden,false);assert.equal(f.element('run-button').disabled,true);
+});

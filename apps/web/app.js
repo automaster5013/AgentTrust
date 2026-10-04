@@ -176,7 +176,7 @@ function node(tag, text, className) {
   return element;
 }
 async function catalog(selectedDataset) {
-  const data = await api('/v1/catalog');
+  const epoch=scopeEpoch,data=await api('/v1/catalog');if(epoch!==scopeEpoch)return;
   inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전의 고정된 내용과 해시를 확인할 수 있습니다.';
   for (const [kind, id] of [['agent', 'agent'], ['dataset', 'dataset-select'], ['policy', 'policy']]) {
     const select = $(id); const previous = typeof selectedDataset==='object' && selectedDataset?.[kind] ? selectedDataset[kind] : kind === 'dataset' && typeof selectedDataset==='string' ? selectedDataset : select.value;
