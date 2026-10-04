@@ -7,6 +7,7 @@ import {Writable} from 'node:stream';
 import {resolve} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import pg from 'pg';
+import {preflightDiagnostic} from './preflight-diagnostic.mjs';
 import {revisionMigrations,verifyMigrationLedger,verifyDatabaseTarget,readDeploymentDatabaseState} from './deployment-schema.mjs';
 import {decryptBackup} from '../packages/backup/cipher.js';
 
@@ -76,8 +77,11 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
     const expectedImage=process.env.AGENTTRUST_IMAGE,revision=process.env.AGENTTRUST_EXPECTED_REVISION;
     assert.match(expectedImage||'',/^ghcr\.io\/[a-z0-9_.-]+\/[a-z0-9_.-]+@sha256:[a-f0-9]{64}$/);assert.match(revision||'',/^[a-f0-9]{40}$/);
     const inspect=(...args)=>JSON.parse(execFileSync('docker',args,{cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout:30000,maxBuffer:4194304}));
-    stage='configuration-and-cached-image';
+    const maxAgeHours=Number(process.env.AGENTTRUST_BACKUP_MAX_AGE_HOURS??24);
+    assert.ok(Number.isFinite(maxAgeHours)&&maxAgeHours>0&&maxAgeHours<=168);
+    stage='compose-config';
     const config=inspect('compose','-f','compose.yaml','-f','compose.image.yaml','config','--format','json');
+    stage='cached-image';
     const image=inspect('image','inspect',expectedImage)[0];
     const configuration=verifyDeploymentConfig(config,image,expectedImage,revision);
     stage='signing-key-pair';
@@ -86,15 +90,19 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
     const publicKey=createPublicKey(await readFile(resolve(root,'.local/receipt-signing/public.pem')));
     assert.equal(privateKey.asymmetricKeyType,'ed25519');
     assert.deepEqual(createPublicKey(privateKey).export({type:'spki',format:'der'}),publicKey.export({type:'spki',format:'der'}));
-    stage='database-migration-ledger';
+    stage='database-target';
     verifyDatabaseTarget(process.env.OWNER_DATABASE_URL,config);
+    stage='database-migration-ledger';
     const client=new pg.Client({connectionString:process.env.OWNER_DATABASE_URL,connectionTimeoutMillis:5000,statement_timeout:5000,query_timeout:10000,application_name:'agenttrust-deployment-preflight'});
     let schema,state;
     try{await client.connect();state=await readDeploymentDatabaseState(client);schema=verifyMigrationLedger(state.rows,revisionMigrations(revision));}
     finally{await client.end();}
     stage='backup-and-prior-restore';
     const report=JSON.parse(await readFile(resolve(root,'.local/recovery-smoke.json'),'utf8'));
-    const recovery=await verifyRecoveryEvidence({report,expectedMigrationHash:schema.migrationHash,expectedSecurityHash:state.securityHash,maxAgeHours:Number(process.env.AGENTTRUST_BACKUP_MAX_AGE_HOURS??24)});
-    console.log(JSON.stringify({...configuration,...schema,...recovery,securityCatalogVersion:state.securityVersion,signingKeyPairVerified:true,readOnly:true,checkedAt:new Date().toISOString(),scope:'configuration, cached image, exact revision/database/backup migration ledger, database security catalog matching authenticated backup and prior local restore evidence; no deployment, port availability, security correctness independent of backup, changes after inspection, rollback compatibility or offsite recovery verification'}));
-  }catch{console.error(`Deployment preflight blocked at ${stage}. No deployment performed; inspect private configuration and recovery artifacts.`);process.exitCode=1;}
+    const recovery=await verifyRecoveryEvidence({report,expectedMigrationHash:schema.migrationHash,expectedSecurityHash:state.securityHash,maxAgeHours});
+    console.log(JSON.stringify({...preflightDiagnostic(),...configuration,...schema,...recovery,securityCatalogVersion:state.securityVersion,signingKeyPairVerified:true,readOnly:true,checkedAt:new Date().toISOString(),scope:'configuration, cached image, exact revision/database/backup migration ledger, database security catalog matching authenticated backup and prior local restore evidence; no deployment, port availability, security correctness independent of backup, changes after inspection, rollback compatibility or offsite recovery verification'}));
+  }catch{
+    const diagnostic=preflightDiagnostic(stage);console.log(JSON.stringify(diagnostic));
+    console.error(`Deployment preflight blocked: ${diagnostic.code}. No deployment performed.`);process.exitCode=1;
+  }
 }

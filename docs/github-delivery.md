@@ -79,3 +79,33 @@ npm run deploy:preflight
 현재 지문이 GCM 인증을 통과한 백업 메타데이터의 `securityHash`와 다르면 `backup-and-prior-restore` 단계에서 차단한다. 성공은 `backupSecurityCatalogVerified: true`, `securityCatalogVersion: 2`로 표시한다. 변경을 자동 복구하거나 새 백업을 만들어 차이를 무시하지 않는다. 차이가 있으면 원인을 확인한 뒤 승인된 변경인지 판단하고, 필요한 경우 별도 백업·격리 복원 검증을 수행한다.
 
 이 검사는 검증된 백업과의 일치를 확인하며 보안 설정 자체의 완전한 감사를 대체하지 않는다. 백업 생성 전에 이미 존재한 문제, 검사 후 변경, 지문에 포함되지 않는 객체·인덱스·DB 설정과 외부 인증, 역할의 실제 비밀번호, 운영 데이터 최신성, 원격 복원, 롤백 안전성은 보증하지 않는다. 백업과 복원 보고서는 신뢰할 수 있는 운영자가 관리해야 한다.
+
+
+### 실패 진단과 자동화 출력
+
+사전 점검은 성공·실패 모두 표준 출력에 JSON 보고서를 출력한다. 기존 성공 필드는 유지하며 `schemaVersion: 1`, `status: passed|blocked`, 검사별 `checks`를 추가한다. 실패는 종료 코드 1과 `failedCheck`, 고정된 `code`, 비밀 없는 `guidance`를 반환한다. 실패 전 완료 단계만 `passed`, 실패 단계는 `blocked`, 이후 수행하지 않은 단계는 `not_run`이다. 부분 통과를 배포 허용으로 취급하지 않는다. 성공은 종료 코드 0이며 모든 단계가 `passed`다.
+
+| 검사 | 실패 코드 |
+| --- | --- |
+| 입력 digest·revision·백업 시간 한도 | `PREFLIGHT_INPUTS` |
+| Compose 설정 해석 | `PREFLIGHT_COMPOSE` |
+| 캐시 이미지와 격리 설정 | `PREFLIGHT_IMAGE` |
+| 서명 키 쌍 | `PREFLIGHT_SIGNING` |
+| 대상 DB 연결 설정 | `PREFLIGHT_DATABASE_TARGET` |
+| DB 읽기 전용 상태·Git revision·마이그레이션 이력 | `PREFLIGHT_DATABASE_STATE` |
+| 백업 인증·복원 기록·DB 이력 및 보안 지문 일치 | `PREFLIGHT_RECOVERY` |
+
+정확한 예외·assertion 내용, Docker stderr, DB 접속 문자열, 비밀번호, 키와 원문 카탈로그를 출력하지 않는다. 코드별 안내는 점검할 범위를 설명하며 세부 실패 원인을 추측하거나 자동 수정하지 않는다. 특히 복원 증거 실패는 원인을 조사한 후 필요한 별도 작업을 선택한다.
+
+기계적으로 JSON을 읽을 때는 npm의 안내 출력을 피하고 Node 명령을 직접 사용한다. 아래는 메모리에만 결과를 보관하는 PowerShell 예시다. 이미지/revision 환경 변수와 필요한 준비 조건은 위 절차와 같다.
+
+```powershell
+$json = & node --env-file-if-exists=.env scripts/deploy-preflight.mjs
+$preflightExitCode = $LASTEXITCODE
+$report = $json | ConvertFrom-Json
+if ($preflightExitCode -ne 0 -or $report.status -ne 'passed') {
+    throw ('Preflight blocked: ' + $report.code)
+}
+```
+
+검사 실패 시 stderr에는 고정 코드만 별도로 표시한다. 보고서를 저장하거나 수집하는 운영 자동화도 종료 코드와 `status`를 함께 확인해야 한다. 이 보고서는 서명된 배포 승인 증명이 아니며, 점검의 기존 범위와 제한은 그대로 적용된다.
