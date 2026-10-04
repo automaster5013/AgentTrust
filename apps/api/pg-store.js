@@ -140,11 +140,13 @@ export class PgStore {
       const rows=(await client.query(`SELECT id,state,created_at,outcome->'gate' AS gate,outcome->'summary' AS summary,
         snapshot->'agent'->>'name' AS agent_name,snapshot->'dataset'->>'name' AS dataset_name,
         to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
-        FROM agenttrust.runs WHERE organization_id=$1 AND project_id=$2
+        FROM (SELECT id,state,created_at,outcome,snapshot FROM agenttrust.runs
+        WHERE organization_id=$1 AND project_id=$2
         AND ($3::timestamptz IS NULL OR (created_at,id)<($3::timestamptz,$4::uuid))
         AND ($5::text IS NULL OR state=$5)
         AND ($6::text IS NULL OR coalesce(outcome->'gate'->>'decision','inconclusive')=$6)
-        ORDER BY created_at DESC,id DESC LIMIT $7`,[context.organizationId,context.projectId,page?.cursor?.time||null,page?.cursor?.id||null,filters.state||null,filters.decision||null,page?page.limit+1:100])).rows.map(row=>{
+        ORDER BY created_at DESC,id DESC LIMIT $7) AS recent
+        ORDER BY created_at DESC,id DESC`,[context.organizationId,context.projectId,page?.cursor?.time||null,page?.cursor?.id||null,filters.state||null,filters.decision||null,page?page.limit+1:100])).rows.map(row=>{
           const fallback=incomplete(row.state,'Evaluation has not completed.');
           return {id:row.id,state:row.state,createdAt:row.created_at.toISOString(),gate:row.gate||fallback.gate,summary:row.summary||fallback.summary,agentName:row.agent_name,datasetName:row.dataset_name,cursor_time:row.cursor_time};
         });
