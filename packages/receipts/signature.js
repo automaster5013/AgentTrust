@@ -11,7 +11,7 @@ function publicIdentity(key){
 }
 export function trustedReceiptKey(pem){
   try{
-    if(typeof pem!=='string'||!pem.trim().startsWith('-----BEGIN PUBLIC KEY-----'))throw new Error();
+    if(typeof pem!=='string'||pem.length>1024||!/^[ \t\r\n]*-----BEGIN PUBLIC KEY-----\r?\n[A-Za-z0-9+/=\r\n]+-----END PUBLIC KEY-----[ \t\r\n]*$/.test(pem))throw new Error();
     return publicIdentity(pem);
   }catch{throw new Error('A valid Ed25519 trusted public key is required.');}
 }

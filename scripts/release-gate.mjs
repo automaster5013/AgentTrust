@@ -1,4 +1,5 @@
-import { readFile,writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
+import {readTrustedReceiptKey} from './trusted-receipt-key.mjs';
 import { verifyReceipt,trustedReceiptKey } from '../packages/receipts/signature.js';
 import { receiptFileLimit } from '../packages/receipts/limits.js';
 import { randomUUID } from 'node:crypto';
@@ -74,7 +75,7 @@ export async function checkRelease({base,accessKey,candidateRunId,baselineRunId,
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   try {
     const result=await checkRelease({base:process.env.AGENTTRUST_URL||'http://127.0.0.1:4310/',accessKey:process.env.AGENTTRUST_ACCESS_KEY,
-      trustedPublicKey:process.env.AGENTTRUST_RECEIPT_PUBLIC_KEY_FILE?await readFile(process.env.AGENTTRUST_RECEIPT_PUBLIC_KEY_FILE,'utf8'):undefined,projectId:process.env.AGENTTRUST_PROJECT_ID,checkKey:process.env.AGENTTRUST_CHECK_KEY,candidateRunId:process.env.AGENTTRUST_RUN_ID,baselineRunId:process.env.AGENTTRUST_BASELINE_RUN_ID,
+      trustedPublicKey:process.env.AGENTTRUST_RECEIPT_PUBLIC_KEY_FILE?await readTrustedReceiptKey(process.env.AGENTTRUST_RECEIPT_PUBLIC_KEY_FILE):undefined,projectId:process.env.AGENTTRUST_PROJECT_ID,checkKey:process.env.AGENTTRUST_CHECK_KEY,candidateRunId:process.env.AGENTTRUST_RUN_ID,baselineRunId:process.env.AGENTTRUST_BASELINE_RUN_ID,
       agentVersionId:process.env.AGENTTRUST_AGENT_VERSION_ID,datasetVersionId:process.env.AGENTTRUST_DATASET_VERSION_ID,
       policyVersionId:process.env.AGENTTRUST_POLICY_VERSION_ID,maxAgeSeconds:Number(process.env.AGENTTRUST_MAX_AGE_SECONDS||600)});
     if(process.env.AGENTTRUST_RECEIPT_OUTPUT_FILE!==undefined)await saveReleaseReceipt(process.env.AGENTTRUST_RECEIPT_OUTPUT_FILE,result);

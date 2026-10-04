@@ -26,7 +26,7 @@ test('trusted receipt keys accept only Ed25519 public SPKI PEM without deriving 
  const artifact={result:{decision:'pass'}},receipt={artifact,artifactHash:hash(artifact),signature:signer.sign(artifact)};
  const publicPem=pair.publicKey.export({type:'spki',format:'pem'});
  assert.equal(verifyReceipt(receipt,'\n'+publicPem+'\n').signatureVerified,true);
- for(const key of [privatePem,'',undefined,publicPem.replace('PUBLIC KEY','PRIVATE KEY'),'-----BEGIN PUBLIC KEY-----\ninvalid\n-----END PUBLIC KEY-----',generateKeyPairSync('ec',{namedCurve:'prime256v1'}).publicKey.export({type:'spki',format:'pem'}),pair.publicKey]){
+ for(const key of [privatePem,'',undefined,publicPem+privatePem,publicPem+publicPem,publicPem+'synthetic trailing text',' '.repeat(1025)+publicPem,publicPem.replace('PUBLIC KEY','PRIVATE KEY'),'-----BEGIN PUBLIC KEY-----\ninvalid\n-----END PUBLIC KEY-----',generateKeyPairSync('ec',{namedCurve:'prime256v1'}).publicKey.export({type:'spki',format:'pem'}),pair.publicKey]){
   assert.throws(()=>trustedReceiptKey(key),/valid Ed25519 trusted public key/);
   assert.throws(()=>verifyReceipt(receipt,key),/valid Ed25519 trusted public key/);
  }

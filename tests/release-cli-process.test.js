@@ -29,3 +29,11 @@ test('actual release command exits two and preserves existing file when export f
 test('actual release command never exports inconsistent response or requests malformed input',async()=>fixture(async f=>{
  const path=join(f.dir,'invalid.json');f.setMode('invalid');let result=await f.run({AGENTTRUST_RECEIPT_OUTPUT_FILE:path});assert.equal(result.code,2);await assert.rejects(readFile(path),{code:'ENOENT'});const calls=f.calls();result=await f.run({AGENTTRUST_RUN_ID:'invalid',AGENTTRUST_RECEIPT_OUTPUT_FILE:path});assert.equal(result.code,2);assert.equal(f.calls(),calls);assert.equal(result.stdout,'');
 }));
+
+test('actual release command rejects ambiguous and oversized trusted key files before authentication',async()=>fixture(async f=>{
+ const path=join(f.dir,'invalid-trust.pem'),privatePem=generateKeyPairSync('ed25519').privateKey.export({type:'pkcs8',format:'pem'});
+ for(const text of [f.key+privatePem,f.key+f.key,f.key+'synthetic-canary',' '.repeat(1025)+f.key]){
+  await writeFile(path,text);const before=f.calls(),result=await f.run({AGENTTRUST_RECEIPT_PUBLIC_KEY_FILE:path});assert.equal(result.code,2);assert.equal(result.stdout,'');assert.equal(f.calls(),before);assert.ok(!result.stderr.includes('synthetic-canary'));assert.ok(!result.stderr.includes(privatePem));
+ }
+ const result=await f.run();assert.equal(result.code,0);assert.equal(f.calls(),1);
+}));
