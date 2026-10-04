@@ -15,7 +15,16 @@ let auditCursor=null,auditSequence=0;
 let inspectionSequence=0,comparisonSequence=0,keyHistorySequence=0,receiptHistorySequence=0,reviewSequence=0;
 let reviewBusy=false,reviewCursor=null,reviewShown=0;
 let finalGateSequence=0,finalGateBusy=false,currentReceipt=null;
+let recentBaselineRuns=[];
+function renderBaselineChoices(){
+  const selected=$('gate-baseline-id').value.trim().toLowerCase();
+  const placeholder=node('option','최근 완료 실행에서 선택 (최대 100개)');placeholder.value='';
+  $('gate-baseline-recent').replaceChildren(placeholder,...recentBaselineRuns.filter(r=>r.state==='succeeded'&&r.id!==selectedRunId).map(r=>{const option=node('option',`${r.agentName} · ${r.datasetName} · ${new Date(r.createdAt).toLocaleString('ko-KR')} · ${r.id.slice(0,8)}`);option.value=r.id;return option;}));
+  if(recentBaselineRuns.some(r=>r.id===selected&&r.id!==selectedRunId))$('gate-baseline-recent').value=selected;
+  $('gate-baseline-recent').disabled=!$('gate-baseline-enabled').checked;
+}
 function invalidateFinalGate(text="최종 게이트를 아직 확인하지 않았습니다."){
+  renderBaselineChoices();
   finalGateSequence++;finalGateBusy=false;currentReceipt=null;$('current-receipt-download').disabled=true;renderNextAction();
   $("manual-gate-output").textContent=text;
   $("release-check-panel").hidden=!currentRun||currentRun.id!==selectedRunId;
@@ -150,7 +159,7 @@ async function history(append=false) {
   if(sequence!==historySequence)return;
   runCursor=page.nextCursor;$('history-more').disabled=!runCursor;
   if(!append){
-  const runs=baselines.items;
+  const runs=baselines.items;recentBaselineRuns=runs;renderBaselineChoices();
   const previous=$('baseline-run').value;
   $('baseline-run').replaceChildren(...runs.map(r=>{const option=node('option',`${r.agentName} · ${stateLabels[r.state]} · ${r.id.slice(0,8)}`);option.value=r.id;return option;}));
   if(runs.some(r=>r.id===previous))$('baseline-run').value=previous;
@@ -200,6 +209,7 @@ $('download').addEventListener('click', () => {
   const link = node('a'); link.href = url; link.download = `agenttrust-${currentRun.id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 function clearProjectData(){
+  recentBaselineRuns=[];
   $('gate-baseline-enabled').checked=false;$('gate-baseline-id').value='';$('gate-baseline-id').disabled=true;
   lookupSequence++;lookupBusy=false;$('run-lookup-button').disabled=false;$('run-lookup-id').value='';$('run-lookup-status').textContent='';
   evidencePage=0;$('evidence-search').value='';$('evidence-filter').value='';
@@ -401,6 +411,12 @@ $('review-more').addEventListener('click',async()=>{const run=currentRun;if(!run
 $('gate-baseline-enabled').addEventListener('change',()=>{
   $('gate-baseline-id').disabled=!$('gate-baseline-enabled').checked;
   invalidateFinalGate('비교 포함 여부가 변경됐습니다. 최종 게이트를 다시 확인하세요.');
+});
+$('gate-baseline-recent').addEventListener('change',()=>{
+  if(!$('gate-baseline-enabled').checked||!$('gate-baseline-recent').value)return;
+  const id=$('gate-baseline-recent').value;
+  if(!recentBaselineRuns.some(r=>r.id===id&&r.state==='succeeded'&&r.id!==selectedRunId))return;
+  $('gate-baseline-id').value=id;invalidateFinalGate('기준 실행이 변경됐습니다. 최종 게이트를 다시 확인하세요.');
 });
 $('gate-baseline-id').addEventListener('input',()=>invalidateFinalGate('기준 실행이 변경됐습니다. 최종 게이트를 다시 확인하세요.'));
 $('manual-gate-check').addEventListener('click',async()=>{

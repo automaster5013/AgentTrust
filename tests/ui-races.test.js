@@ -24,7 +24,7 @@ function execution(id,state='succeeded',manual=false){return {id,state,createdAt
   agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy',results:[],summary:{cases:0,pass:0,fail:0,inconclusive:0},
   gate:{decision:state==='succeeded'?'pass':'inconclusive',deploymentAllowed:state==='succeeded'&&!manual,...(manual?{requiresManualApproval:true,evaluationPassed:state==='succeeded'}:{})}};}
 async function fixture({manual=false,initialOverrides,waitForInitialization=true}={}){
-  const nodes=new Map(),selects=new Set(['agent','dataset-select','policy','workspace-project','ci-project','baseline-run','history-state','history-decision','audit-action','agent-mode']);
+  const nodes=new Map(),selects=new Set(['agent','dataset-select','policy','workspace-project','ci-project','baseline-run','gate-baseline-recent','history-state','history-decision','audit-action','agent-mode']);
   const element=id=>{if(!nodes.has(id))nodes.set(id,new Element(selects.has(id)?'select':'div'));return nodes.get(id);};
   const document={getElementById:element,createElement:tag=>new Element(tag)},timers=[],overrides=new Map(initialOverrides||[]),downloads=[];
   element('workspace-ui').hidden=true;element('login-panel').hidden=true;element('loading-panel').hidden=false;element('login-button').disabled=true;
@@ -285,4 +285,14 @@ test('baseline-bound signed receipt exports unchanged and mismatched baseline ca
  const pair=generateKeyPairSync('ed25519'),signer=new ReceiptSigner(pair.privateKey.export({type:'pkcs8',format:'pem'}));signed.report.artifactHash=hash(artifact);signed.report.signature=signer.sign(artifact);signed.report.comparison={deploymentAllowed:true};
  f.overrides.set('/v1/release-gate',()=>signed.report);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/회귀 비교: 통과/);await f.element('current-receipt-download').fire('click');const downloaded=JSON.parse(await f.downloads[0].text());assert.deepEqual(downloaded.artifact,artifact);assert.equal(verifyReceipt(downloaded,signer.publicMetadata().publicKey).signatureVerified,true);
  await enableBaseline(f,lookupId);assert.equal(f.element('current-receipt-download').disabled,true);await f.element('manual-gate-check').fire('click');assert.equal(f.element('current-receipt-download').disabled,true);
+});
+
+test('recent baseline choices exclude candidate and incomplete runs and preserve manually entered IDs',async()=>{
+ const f=await fixture();await f.view('B');assert.equal(f.element('gate-baseline-recent').children.length,1);assert.equal(f.element('gate-baseline-recent').disabled,true);
+ f.runs.A=execution('a');await f.element('history-filter-form').fire('submit');await enableBaseline(f,gateBaseline);assert.equal(f.element('gate-baseline-recent').disabled,false);assert.deepEqual(f.element('gate-baseline-recent').children.map(x=>x.value),['','a']);assert.equal(f.element('gate-baseline-id').value,gateBaseline);
+ f.element('gate-baseline-recent').value='a';await f.element('gate-baseline-recent').fire('change');assert.equal(f.element('gate-baseline-id').value,'a');assert.match(f.element('manual-gate-output').textContent,/다시 확인/);await f.element('history-filter-form').fire('submit');assert.equal(f.element('gate-baseline-id').value,'a');assert.equal(f.element('gate-baseline-recent').value,'a');
+});
+test('recent baseline selection revokes a prior receipt and workspace clearing removes cached choices',async()=>{
+ const f=await fixture();f.runs.A=execution('a');await f.element('history-filter-form').fire('submit');await f.view('B');f.overrides.set('/v1/release-gate',()=>signedUiReceipt().report);await f.element('manual-gate-check').fire('click');assert.equal(f.element('current-receipt-download').disabled,false);
+ await enableBaseline(f);f.element('gate-baseline-recent').value='a';await f.element('gate-baseline-recent').fire('change');assert.equal(f.element('current-receipt-download').disabled,true);await f.element('logout-button').fire('click');assert.equal(f.element('gate-baseline-recent').children.length,1);assert.equal(f.element('gate-baseline-recent').disabled,true);
 });
