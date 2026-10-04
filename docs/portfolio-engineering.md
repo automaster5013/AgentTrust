@@ -1,6 +1,6 @@
 # AgentTrust 기술 설명과 검증 근거
 
-기업 개발팀이 에이전트 변경의 평가 근거를 확인하고 릴리스 여부를 결정하는 로컬 프로토타입이다. v0.45의 구현을 기준으로 설명하며 고객 파일럿이나 상용 배포 성과를 주장하지 않는다. [실행 시연](portfolio-demo.md) → [실제 아키텍처](architecture.md) → 아래 검증 근거 순서로 살펴볼 수 있다.
+기업 개발팀이 에이전트 변경의 평가 근거를 확인하고 릴리스 여부를 결정하는 로컬 프로토타입이다. v0.57의 구현을 기준으로 설명하며 고객 파일럿이나 상용 배포 성과를 주장하지 않는다. [실행 시연](portfolio-demo.md) → [실제 아키텍처](architecture.md) → 아래 검증 근거 순서로 살펴볼 수 있다.
 
 ## 해결하려는 문제
 
@@ -29,19 +29,29 @@
 
 조회자는 게이트를 확인할 수 있지만 승인할 수 없다. 작성자는 평가를 만들 수 있지만 정책이나 승인 기록을 만들 수 없다. `npm run demo:roles`는 이 역할 구분과 다른 조직 접근 거절을 실제 로컬 API에서 재현한다. 관리자 본인의 실행 승인은 현재 허용되므로 2인 승인 체계로 소개하지 않는다.
 
+## 최근 릴리스 흐름의 구현
+
+[화면 핸들러](../apps/web/app.js)는 최종 게이트에 선택적 기준 실행을 포함한다. 최근 완료 목록은 후보 자신을 제외하지만 호환성이나 통과를 보장하지 않는다. 서버는 같은 프로젝트와 데이터셋·정책 내용, 완료된 전체 근거를 확인한다. 기준·옵션·검토 상태 변경은 이전 판단과 원본 기록 저장을 무효화하고 늦은 응답을 차단한다.
+
+관리자 검토 정책에서는 `comparison.evaluationPassed`와 전체 `deploymentAllowed`를 구분한다. 따라서 회귀 비교가 통과해도 승인 대기이면 최종 게이트는 차단이다. 회귀 규칙 링크는 후보의 정확한 사례 ID를 선택하고, 검색·필터 또는 선택 해제로 전체 탐색에 복귀한다. 사례 선택은 전체 평가 요약·판정·원본 JSON을 바꾸지 않는다.
+
+[릴리스 CLI](../scripts/release-gate.mjs)는 필수·선택 UUID와 검증 키·유효 시간·빈 접근 키를 인증 요청 전에 검사한다. 응답은 최대 8 MiB로 읽고 UTF-8·JSON, 요청/해시/응답 결합과 판정 의미를 확인한다. 선택적 신뢰 공개키는 서명을 검증한다. `AGENTTRUST_RECEIPT_OUTPUT_FILE`을 지정하면 원본 artifact·해시·서명만 독점 생성하며 기존 파일을 덮어쓰지 않는다. 저장이나 검증 오류는 종료 코드 2이고, 정상 차단은 1, 허용은 0이다. 신뢰 공개키를 생략한 검사는 암호학적 출처 인증으로 설명하지 않는다.
+
 ## 재현 가능한 검증
 
 | 검증 대상 | 저장소의 근거 | 해석할 범위 |
 |---|---|---|
 | 결정적 규칙과 최종 게이트 | [evaluator 테스트](../tests/evaluator.test.js), [release 테스트](../tests/release.test.js) | 고정 합성 사례와 계약의 통과/차단/판정 불가 |
 | 권한·조직·프로젝트·승인·잠금 경계 | [API 통합 테스트](../tests/api.test.js), [역할 검사](../tests/role-guard.test.js) | 테스트한 API·DB 경계이며 외부 보안 감사는 아님 |
-| 늦은 UI 응답·실행 전환·다음 행동 | [UI 테스트](../tests/ui-races.test.js) | 실제 핸들러에 지연 응답을 주입한 검증과 별도 브라우저 확인 |
+| 늦은 UI 응답·기준 변경·원본 저장·정확한 회귀 사례 이동 | [UI 테스트](../tests/ui-races.test.js) | 실제 핸들러에 지연 응답을 주입한 검증과 별도 브라우저 확인 |
+| CI 입력·응답·스트림 제한 | [입력 테스트](../tests/release-cli-input.test.js), [응답 테스트](../tests/release-cli-response.test.js), [응답 읽기 테스트](../tests/release-cli-body.test.js) | 잘못된 설정의 요청 거절과 해시가 일치해도 모순인 응답의 거절 |
+| 실제 CLI 파일·종료 코드 | [프로세스 테스트](../tests/release-cli-process.test.js), [내보내기 테스트](../tests/release-cli-export.test.js), [Docker CI smoke](../scripts/ci-smoke.mjs) | 합성 루프백 서버의 자식 프로세스 및 Docker 게이트 기록 저장·서명 재검증 |
 | 재시작과 lease 복구 | [restart smoke](../scripts/smoke.mjs), [resilience smoke](../scripts/resilience-smoke.mjs) | 독립 Docker API/워커와 영속 데이터의 복구 |
 | 서명과 백업 복구 | [서명 테스트](../tests/receipt-signature.test.js), [recovery smoke](../scripts/recovery-smoke.mjs) | 신뢰 로컬 키의 기록 검증과 격리 DB 복원 |
 | 사용자·권한 시연 | [portfolio scenario](../scripts/portfolio-scenario.mjs), [role scenario](../scripts/portfolio-roles-scenario.mjs) | 합성 평가·승인·거절과 자체 세션 정리 |
 | 이미지와 배포 묶음 | [GitHub workflow](../.github/workflows/validate.yml), [전달 안내](github-delivery.md) | 후보 digest 실행·승격·공개 묶음 저장과 사후 CI 조회 |
 
-문서 작성 기준선은 커밋 `46a2ff8d0497c011ac0b140f3910094f3a4038d5`의 [GitHub CI 실행](https://github.com/automaster5013/AgentTrust/actions/runs/37178511479)이다. 이 실행의 테스트 178개와 네 작업이 성공했다. 이 링크는 해당 커밋의 근거이며 미래 변경의 성공을 의미하지 않는다. 현재 main은 저장소의 CI 배지와 해당 실행에서 확인한다.
+문서 작성 기준선은 커밋 `f1ba43dfa8d400a8dbd4e0967741380fe4bc0c39`의 [GitHub CI 실행](https://github.com/automaster5013/AgentTrust/actions/runs/37187594381)이다. 이 실행의 테스트 218개와 네 작업이 성공했다. 이 링크는 해당 커밋의 근거이며 미래 변경의 성공을 의미하지 않는다. 현재 main은 저장소의 CI 배지와 해당 실행에서 확인한다.
 
 실행은 [시연 안내](portfolio-demo.md)의 설치 절차를 따른다. `npm run demo:portfolio`와 `npm run demo:roles`는 각각 10단계·11단계의 결과를 출력한다. 자체 세션을 종료하고 관리자 사례를 반려로 남기며 기존 감사·평가 기록을 삭제하지 않는다. 보고서는 `.local`에 저장한다. 보고서·스크린샷을 공유하기 전에는 로컬 정보와 민감 데이터 포함 여부를 확인해야 한다. 접근 키·백업 키·서명 private key는 공유하지 않는다.
 

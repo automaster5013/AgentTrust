@@ -1,6 +1,6 @@
 # 구현된 시스템 아키텍처
 
-v0.45 기준. 실제 코드와 로컬 Docker·GitHub CI에서 검증한 구조를 설명한다. 초기의 TypeScript·독립 객체 저장소·서명 웹훅 제안은 현재 구현에 포함되지 않는다. 제품 목표는 [제품 문서](product.md), 시연은 [포트폴리오 시연](portfolio-demo.md), 설계 판단과 검증 근거는 [기술 설명](portfolio-engineering.md)을 따른다.
+v0.57 기준. 실제 코드와 로컬 Docker·GitHub CI에서 검증한 구조를 설명한다. 초기의 TypeScript·독립 객체 저장소·서명 웹훅 제안은 현재 구현에 포함되지 않는다. 제품 목표는 [제품 문서](product.md), 시연은 [포트폴리오 시연](portfolio-demo.md), 설계 판단과 검증 근거는 [기술 설명](portfolio-engineering.md)을 따른다.
 
 ## 실행 구성과 경계
 
