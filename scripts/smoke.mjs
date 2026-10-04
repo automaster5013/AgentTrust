@@ -1,12 +1,13 @@
+import {localSmokeBase,fetchLocalSmoke} from './local-smoke-http.mjs';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFile,writeFile } from 'node:fs/promises';
+const base=localSmokeBase();
 const config=JSON.parse((await readFile('.local/credentials.json','utf8')).replace(/^\uFEFF/,''));
 const accessKey=config.organizations[0].credentials.find(c=>c.role==='admin').token;
-const base=`http://127.0.0.1:${process.env.PORT || 4310}`;
 let cookie;
 async function request(path,{method='GET',data,key}={}) {
-  const response=await fetch(base+path,{method,headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui',...(cookie?{Cookie:cookie}:{}),...(key?{'Idempotency-Key':key}:{})},...(data?{body:JSON.stringify(data)}:{})});
+  const response=await fetchLocalSmoke(base,path,{method,headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui',...(cookie?{Cookie:cookie}:{}),...(key?{'Idempotency-Key':key}:{})},...(data?{body:JSON.stringify(data)}:{})});
   if(path==='/v1/auth/login')cookie=response.headers.get('set-cookie')?.split(';')[0];
   if(!response.ok)throw new Error(`Smoke request failed (${response.status}).`);return response.json();
 }

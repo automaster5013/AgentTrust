@@ -1,15 +1,16 @@
+import {localSmokeBase,fetchLocalSmoke} from './local-smoke-http.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readFile,writeFile } from 'node:fs/promises';
 import { setTimeout } from 'node:timers/promises';
+const base=localSmokeBase();
 
 const configuration=JSON.parse((await readFile('.local/credentials.json','utf8')).replace(/^\uFEFF/,''));
 const accessKey=configuration.organizations[0].credentials.find(actor=>actor.role==='admin').token;
-const base=`http://127.0.0.1:${process.env.PORT||4310}`;
 let cookie,run,workerStopped=false;
 async function call(path,{method='GET',data,key}={}){
-  const response=await fetch(base+path,{method,headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui',...(cookie?{Cookie:cookie}:{}),...(key?{'Idempotency-Key':key}:{})},...(data?{body:JSON.stringify(data)}:{})});
+  const response=await fetchLocalSmoke(base,path,{method,headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui',...(cookie?{Cookie:cookie}:{}),...(key?{'Idempotency-Key':key}:{})},...(data?{body:JSON.stringify(data)}:{})});
   if(path==='/v1/auth/login')cookie=response.headers.get('set-cookie')?.split(';')[0];
   if(!response.ok)throw new Error(`Resilience smoke request failed (${response.status}).`);
   return response.json();

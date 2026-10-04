@@ -1,9 +1,11 @@
+import {localSmokeBase,fetchLocalSmoke} from './local-smoke-http.mjs';
 import assert from 'node:assert/strict';
 import {readFile,writeFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {pool} from '../apps/api/database.js';
 import {verifyReceipt} from '../packages/receipts/signature.js';
+const base=localSmokeBase();
 const options={cycles:5,intervalMs:10000},seen=new Set();
 for(let i=2;i<process.argv.length;i+=2){
  const flag=process.argv[i],value=process.argv[i+1],name=flag==='--cycles'?'cycles':flag==='--interval-ms'?'intervalMs':null;
@@ -12,11 +14,11 @@ for(let i=2;i<process.argv.length;i+=2){
 }
 if(options.cycles>30||options.intervalMs<1000||options.intervalMs>60000){console.error('Use --cycles 1..30 and --interval-ms 1000..60000 once each.');process.exit(2);}
 const reportPath='.local/sustained-smoke-'+randomUUID()+'.json';
-const key=JSON.parse(await readFile('.local/credentials.json','utf8')).organizations[0].credentials.find(k=>k.role==='admin').token,publicKey=await readFile('.local/receipt-signing/public.pem','utf8'),base=`http://127.0.0.1:${process.env.PORT||4310}`,owner=pool(process.env.OWNER_DATABASE_URL),started=Date.now(),active=new Set(),report={startedAt:new Date().toISOString(),targetCycles:options.cycles,intervalMs:options.intervalMs,cycles:0,runs:[],transientRetries:0};let cookie,stopping=false;
+const key=JSON.parse(await readFile('.local/credentials.json','utf8')).organizations[0].credentials.find(k=>k.role==='admin').token,publicKey=await readFile('.local/receipt-signing/public.pem','utf8'),owner=pool(process.env.OWNER_DATABASE_URL),started=Date.now(),active=new Set(),report={startedAt:new Date().toISOString(),targetCycles:options.cycles,intervalMs:options.intervalMs,cycles:0,runs:[],transientRetries:0};let cookie,stopping=false;
 process.on('SIGINT',()=>{stopping=true;});process.on('SIGTERM',()=>{stopping=true;});
 async function call(path,data,idempotencyKey=randomUUID()){
  const until=Date.now()+15000;
- for(;;){let r;try{r=await fetch(base+path,{method:data?'POST':'GET',signal:AbortSignal.timeout(5000),headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui','Idempotency-Key':idempotencyKey,...(cookie?{Cookie:cookie}:{})},...(data?{body:JSON.stringify(data)}:{})});}catch{if(Date.now()>=until)throw new Error('Local soak transport did not recover.');report.transientRetries++;await sleep(200);continue;}
+ for(;;){let r;try{r=await fetchLocalSmoke(base,path,{method:data?'POST':'GET',signal:AbortSignal.timeout(5000),headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui','Idempotency-Key':idempotencyKey,...(cookie?{Cookie:cookie}:{})},...(data?{body:JSON.stringify(data)}:{})});}catch{if(Date.now()>=until)throw new Error('Local soak transport did not recover.');report.transientRetries++;await sleep(200);continue;}
   if(r.status===503&&Date.now()<until){report.transientRetries++;await sleep(200);continue;}assert.equal(r.ok,true,'Local soak HTTP '+r.status);const value=await r.json();if(path.endsWith('/login'))cookie=r.headers.get('set-cookie')?.split(';')[0];return value;
  }
 }

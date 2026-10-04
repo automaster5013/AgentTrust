@@ -1,14 +1,15 @@
+import {localSmokeBase,fetchLocalSmoke} from './local-smoke-http.mjs';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFile,writeFile } from 'node:fs/promises';
 import { verifyReceipt } from '../packages/receipts/signature.js';
+const base=localSmokeBase();
 
 const config=JSON.parse((await readFile('.local/credentials.json','utf8')).replace(/^\uFEFF/,''));
 const accessKey=config.organizations[0].credentials.find(c=>c.role==='admin').token;
-const base=`http://127.0.0.1:${process.env.PORT||4310}/`;
 let cookie,run,approved=false,rejected=false;
 async function call(path,{method='GET',data,key=randomUUID()}={}){
-  const response=await fetch(new URL(path,base),{method,headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui','Idempotency-Key':key,...(cookie?{Cookie:cookie}:{})},...(data?{body:JSON.stringify(data)}:{})});
+  const response=await fetchLocalSmoke(base,path,{method,headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui','Idempotency-Key':key,...(cookie?{Cookie:cookie}:{})},...(data?{body:JSON.stringify(data)}:{})});
   if(path==='/v1/auth/login')cookie=response.headers.get('set-cookie')?.split(';')[0];
   if(!response.ok)throw new Error(`Synthetic manual review request failed (${response.status}).`);return response.json();
 }
