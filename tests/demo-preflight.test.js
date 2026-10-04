@@ -20,3 +20,10 @@ test('demo readiness rejects unavailable worker and API port mismatches',()=>{
 test('actual CLI rejects malformed secret-bearing PORT before accessing Docker or local files',()=>{
   const canary='private-port-canary';const result=spawnSync(process.execPath,['scripts/demo-preflight.mjs'],{encoding:'utf8',timeout:10000,env:{...process.env,PORT:canary}});assert.equal(result.status,1);const report=JSON.parse(result.stdout);assert.equal(report.failedCheck,'inputs');assert.ok(!result.stdout.includes(canary));assert.equal(result.stderr,'');
 });
+
+test('actual demo readiness refuses API-incompatible ports at the inputs stage',()=>{
+ for(const port of ['80','1023','65536','04310']){
+  const result=spawnSync(process.execPath,['scripts/demo-preflight.mjs'],{encoding:'utf8',timeout:10000,windowsHide:true,env:{...process.env,PORT:port}});
+  assert.equal(result.status,1);const report=JSON.parse(result.stdout);assert.equal(report.failedCheck,'inputs');assert.ok(report.checks.slice(1).every(c=>c.status==='not_run'));
+ }
+});

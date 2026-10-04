@@ -3,18 +3,18 @@ import {randomUUID} from 'node:crypto';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {verifyReceipt} from '../packages/receipts/signature.js';
 import {runPortfolioScenario} from './portfolio-scenario.mjs';
+import {localSmokeBase,fetchLocalSmoke} from './local-smoke-http.mjs';
 
 const reportPath='.local/portfolio-demo-'+randomUUID()+'.json';
 let cookie,report={schemaVersion:1,completed:false,synthetic:true,serverDeployed:false},base;
 async function call(path,data){
-  const response=await fetch(base+path,{method:data?'POST':'GET',redirect:'error',signal:AbortSignal.timeout(10000),headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui','Idempotency-Key':randomUUID(),...(cookie?{Cookie:cookie}:{})},...(data?{body:JSON.stringify(data)}:{})});
+  const response=await fetchLocalSmoke(base,path,{method:data?'POST':'GET',headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui','Idempotency-Key':randomUUID(),...(cookie?{Cookie:cookie}:{})},...(data?{body:JSON.stringify(data)}:{})});
   if(path==='/v1/auth/login')cookie=response.headers.get('set-cookie')?.split(';')[0];
-  if(!response.ok)throw new Error('Local demo request failed');return response.json();
+  if(!response.ok){await response.body?.cancel();throw new Error('Local demo request failed');}return response.json();
 }
 try{
   if(process.argv.length!==2)throw new Error('No arguments accepted');
-  const port=process.env.PORT||'4310';if(!/^[1-9][0-9]{0,4}$/.test(port)||Number(port)>65535)throw new Error('Invalid local port');
-  base='http://127.0.0.1:'+port;
+  base=localSmokeBase();
   const config=JSON.parse((await readFile('.local/credentials.json','utf8')).replace(/^\uFEFF/,''));
   const key=config.organizations[0].credentials.find(c=>c.role==='admin').token;
   const publicKey=await readFile('.local/receipt-signing/public.pem','utf8');

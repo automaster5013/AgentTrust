@@ -3,19 +3,20 @@ import {randomUUID} from 'node:crypto';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {verifyReceipt} from '../packages/receipts/signature.js';
 import {runRoleScenario} from './portfolio-roles-scenario.mjs';
+import {localSmokeBase,fetchLocalSmoke} from './local-smoke-http.mjs';
 
 const reportPath='.local/portfolio-roles-'+randomUUID()+'.json',sessions=new Map();
 let base,report={schemaVersion:1,synthetic:true,completed:false,serverDeployed:false};
 async function call(role,path,data,expected){
   const session=sessions.get(role);if(!session)throw Error('Missing local session');
-  const response=await fetch(base+path,{method:data?'POST':'GET',redirect:'error',signal:AbortSignal.timeout(10000),headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui','X-AgentTrust-Project':session.projectId,'Idempotency-Key':randomUUID(),...(session.cookie?{Cookie:session.cookie}:{})},...(data?{body:JSON.stringify(data)}:{})});
+  const response=await fetchLocalSmoke(base,path,{method:data?'POST':'GET',headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui','X-AgentTrust-Project':session.projectId,'Idempotency-Key':randomUUID(),...(session.cookie?{Cookie:session.cookie}:{})},...(data?{body:JSON.stringify(data)}:{})});
   if(path==='/v1/auth/login')session.cookie=response.headers.get('set-cookie')?.split(';')[0];
   if(expected){if(response.status!==expected)throw Error('Unexpected authorization status');await response.body?.cancel();return;}
-  if(!response.ok)throw Error('Local role demonstration request failed');return response.json();
+  if(!response.ok){await response.body?.cancel();throw Error('Local role demonstration request failed');}return response.json();
 }
 try{
   if(process.argv.length!==2)throw Error('No arguments accepted');
-  const port=process.env.PORT||'4310';if(!/^[1-9][0-9]{0,4}$/.test(port)||Number(port)>65535)throw Error('Invalid local port');base='http://127.0.0.1:'+port;
+  base=localSmokeBase();
   const config=JSON.parse((await readFile('.local/credentials.json','utf8')).replace(/^\uFEFF/,''));
   const publicKey=await readFile('.local/receipt-signing/public.pem','utf8');
   for(const role of ['admin','editor','viewer','outsider']){
