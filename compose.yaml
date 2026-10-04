@@ -18,6 +18,8 @@ services:
     networks: [backend, host-access]
     restart: unless-stopped
   api:
+    # Linux hosts may match the secret-file owner with an unprivileged UID:GID.
+    user: ${AGENTTRUST_API_USER:-node}
     build: .
     image: agenttrust-app:local
     environment:

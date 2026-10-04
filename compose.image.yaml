@@ -1,0 +1,10 @@
+# Use only after selecting a verified image digest and preparing this host.
+# Example: AGENTTRUST_IMAGE=ghcr.io/automaster5013/agenttrust@sha256:<digest>
+services:
+  api:
+    build: !reset null
+    image: ${AGENTTRUST_IMAGE:?Set the verified GHCR image digest}
+    pull_policy: always
+  worker:
+    image: ${AGENTTRUST_IMAGE:?Set the verified GHCR image digest}
+    pull_policy: always

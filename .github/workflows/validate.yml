@@ -1,10 +1,18 @@
-name: Validate
-on: [push, pull_request]
+name: Validate and deliver
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: agenttrust-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       COMPOSE_PROJECT_NAME: agenttrust-ci-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
@@ -20,6 +28,8 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm audit --audit-level=high --cache .cache/npm
+      - name: Match API user to private signing-file owner
+        run: echo "AGENTTRUST_API_USER=$(id -u):$(id -g)" >> "$GITHUB_ENV"
       - run: docker compose up --build -d --wait api worker
       - name: Verify independent Docker evaluation and persisted evidence
         run: |
@@ -40,3 +50,35 @@ jobs:
       - name: Stop temporary CI services
         if: always()
         run: docker compose down
+
+  image:
+    name: Publish verified container
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    env:
+      DOCKER_CONFIG: ${{ runner.temp }}/agenttrust-docker-config
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Choose repository image name
+        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+      - name: Authenticate to GitHub Container Registry
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Build and publish tested source
+        run: |
+          docker build --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --label "org.opencontainers.image.revision=$GITHUB_SHA" --tag "$IMAGE_NAME:sha-$GITHUB_SHA" --tag "$IMAGE_NAME:main" .
+          docker push "$IMAGE_NAME:sha-$GITHUB_SHA"
+          docker push "$IMAGE_NAME:main"
+          digest=$(docker image inspect "$IMAGE_NAME:sha-$GITHUB_SHA" --format '{{index .RepoDigests 0}}')
+          printf '## Verified container\n\nCommit: `%s`\n\nImmutable image: `%s`\n\nUse this digest with compose.image.yaml; no server deployment was performed.\n' "$GITHUB_SHA" "$digest" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove runner registry login
+        if: always()
+        run: docker logout ghcr.io

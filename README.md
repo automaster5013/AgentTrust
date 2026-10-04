@@ -7,6 +7,7 @@ AI 에이전트의 품질과 보안을 평가하고, 검증 증거를 바탕으�
 
 ## 설계 문서
 
+- [GitHub CI와 Docker 이미지 전달·수동 배포 준비](docs/github-delivery.md)
 - [6시간 자율 개발 결과와 인수인계](docs/autonomous-development.md)
 - [제품 비전과 범위](docs/product.md)
 - [위협 모델](docs/threat-model.md)
