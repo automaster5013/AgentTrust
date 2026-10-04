@@ -191,3 +191,10 @@ if ($actual -ne $expected) { throw 'Delivery manifest checksum mismatch' }
 2026-10-04 13:53 UTC에 이 digest를 `compose.image.yaml`로 기존 **agenttrust 로컬 프로젝트의 API·워커에만** 적용했다. 기존 DB·볼륨·서명 키·loopback 포트를 유지했다. 실제 실행 컨테이너의 digest·revision·격리 설정을 확인하고, 전환 전 생성한 합성 실행과 사용량·감사 기록이 전환 뒤 보존되는지 검사했다. 같은 이미지에서 합성 승인 전 차단·승인 후 서명 검증·반려 후 차단 시연과 자체 세션 정리도 통과했다. 마지막에는 소스 빌드로 API·워커를 복원하고 준비 점검을 통과했다. LogiTrack 자산은 변경하지 않았다.
 
 이는 같은 버전·마이그레이션 이력의 기존 로컬 설치 전환 점검이다. 새 서버 배포, 고객 데이터, 이전 스키마로의 롤백, 무중단 전환, 운영 SLA/RPO/RTO는 검증하지 않았다. 점검 중 API·워커를 재생성했으므로 무중단 절차로 사용하지 않는다. 상세 증거와 전달 파일은 private `.local`에 보관하며 이후 revision에는 새 CI·digest 검증이 필요하다.
+
+
+## 비교 시연을 포함한 기존 설치 이미지 검증 — v0.113
+
+[고정 CI 실행 37232066978](https://github.com/automaster5013/AgentTrust/actions/runs/37232066978)의 커밋 `0ce3e74bd597544c66b7d2e68c10d57e5efe5353`에서 333개 테스트·후보 발행·이미지 실행·승격이 모두 성공했다. 실제 전달 ZIP 체크섬과 오프라인 묶음, 독립 지정한 저장소·revision·실행/시도·digest의 온라인 GitHub 기록을 대조했다. 이미지 서명이나 독립 provenance 인증을 했다고 주장하지 않는다.
+
+검증 digest `ghcr.io/automaster5013/agenttrust@sha256:c44ef96aa21b89c85205dfd05140142c9d9e531023ae71d077182679b7841cd5`를 기존 agenttrust API·워커에만 적용했다. 실제 이미지 식별·격리, 전환 전후 저장 근거 보존과 기본 10단계·기준 비교 12단계의 서명 시연·정리를 확인하고 소스 컨테이너로 복귀했다. LogiTrack은 변경하지 않았다. 같은 스키마의 로컬 기존 설치 점검이며 새 설치·이전 스키마 롤백·무중단·상용 서버 배포·SLA 검증이 아니다. 보고서와 키는 비공개 `.local`에 보관한다.
