@@ -434,6 +434,48 @@ test('data loading failure after login cannot leave the loading panel stuck',asy
  assert.equal(f.element('workspace-ui').hidden,true);assert.equal(f.element('loading-panel').hidden,true);assert.equal(f.element('login-panel').hidden,false);assert.equal(f.element('login-button').disabled,false);assert.equal(f.element('access-key').value,'');assert.match(f.element('login-status').textContent,/서버 응답을 읽지 못했습니다/);assert.ok(!f.element('login-status').textContent.includes('Synthetic post-login read failed'));
 });
 
+test('obsolete initial hydration failure cannot hide a newly authenticated workspace',async()=>{
+ const reply=deferred(),f=await fixture({initialOverrides:[['/v1/ci-credentials?limit=25',async()=>{await reply.promise;throw Error('Old hydration');}]],waitForInitialization:false});await settle();
+ await f.element('logout-button').fire('click');f.overrides.delete('/v1/ci-credentials?limit=25');await f.element('login-form').fire('submit');
+ f.element('status').textContent='New authenticated workspace';reply.resolve();await f.initialized;
+ assert.equal(f.element('workspace-ui').hidden,false);assert.equal(f.element('login-panel').hidden,true);assert.equal(f.element('status').textContent,'New authenticated workspace');
+});
+
+test('obsolete login hydration failure cannot clear a newer login lock or status',async()=>{
+ const f=await fixture(),older=deferred(),newer=deferred();await f.element('logout-button').fire('click');
+ f.overrides.set('/v1/ci-credentials?limit=25',async()=>{await older.promise;throw Error('Old login hydration');});
+ const old=f.element('login-form').fire('submit');await settle();await f.element('logout-button').fire('click');
+ f.overrides.set('/v1/ci-credentials?limit=25',()=>newer.promise);const current=f.element('login-form').fire('submit');await settle();
+ f.element('login-status').textContent='Current login status';older.resolve();await old;
+ assert.equal(f.element('login-button').disabled,true);assert.equal(f.element('login-status').textContent,'Current login status');assert.equal(f.element('loading-panel').hidden,false);
+ newer.resolve({items:[],nextCursor:null});await current;assert.equal(f.element('workspace-ui').hidden,false);assert.equal(f.element('login-button').disabled,false);
+});
+
+test('pending login cannot issue duplicate authentication requests',async()=>{
+ const f=await fixture(),reply=deferred();await f.element('logout-button').fire('click');let requests=0;
+ f.overrides.set('/v1/auth/login',()=>{requests++;return reply.promise;});const first=f.element('login-form').fire('submit');await settle();
+ const duplicate=f.element('login-form').fire('submit');await settle();assert.equal(requests,1);reply.resolve({});await Promise.all([first,duplicate]);assert.equal(f.element('workspace-ui').hidden,false);
+});
+
+test('current rejected access key preserves a usable login and its safe error',async()=>{
+ const f=await fixture();await f.element('logout-button').fire('click');f.overrides.set('/v1/auth/login',()=>new Response(JSON.stringify({error:'Authentication required.'}),{status:401}));
+ await f.element('login-form').fire('submit');assert.equal(f.element('login-panel').hidden,false);assert.equal(f.element('login-button').disabled,false);assert.match(f.element('login-status').textContent,/Authentication required/);
+});
+
+test('pending logout cannot duplicate requests or overwrite a later authenticated scope',async()=>{
+ const f=await fixture(),reply=deferred();let requests=0;
+ f.overrides.set('/v1/auth/logout',async()=>{requests++;await reply.promise;throw Error('Old logout failure');});
+ const old=f.element('logout-button').fire('click');await settle();await f.element('logout-button').fire('click');assert.equal(requests,1);
+ f.overrides.set('/v1/runs?limit=25',()=>new Response(JSON.stringify({error:'Authentication required.'}),{status:401}));
+ await f.element('history-filter-form').fire('submit');f.overrides.delete('/v1/runs?limit=25');await f.element('login-form').fire('submit');
+ f.element('status').textContent='New scope after expiry';reply.resolve();await old;assert.equal(f.element('workspace-ui').hidden,false);assert.equal(f.element('status').textContent,'New scope after expiry');assert.equal(f.element('logout-button').disabled,false);
+});
+
+test('expired session during current login hydration still returns a usable safe login',async()=>{
+ const f=await fixture();await f.element('logout-button').fire('click');f.overrides.set('/v1/ci-credentials?limit=25',()=>new Response(JSON.stringify({error:'Authentication required.'}),{status:401}));
+ await f.element('login-form').fire('submit');assert.equal(f.element('loading-panel').hidden,true);assert.equal(f.element('workspace-ui').hidden,true);assert.equal(f.element('login-panel').hidden,false);assert.equal(f.element('login-button').disabled,false);assert.match(f.element('login-status').textContent,/Authentication required/);
+});
+
 const releaseResult=(allowed=true,baselineRunId,extra={})=>{const result={runId:'B',decision:allowed?'pass':'block',deploymentAllowed:allowed,reasons:allowed?[]:['A required rule failed.'],...extra};return {...result,artifact:{organizationId:'organization',projectId:'project',checkedAt:'2026-01-01T00:00:00Z',receiptId:'synthetic-receipt',request:{candidateRunId:'B',agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy',...(baselineRunId?{baselineRunId}:{})},result:structuredClone(result),evidence:{candidate:{runId:'B',snapshotHash:'synthetic-B',resultHash:'synthetic-result-B'},...(baselineRunId?{baseline:{runId:baselineRunId}}:{})}}};};
 test('completed evaluations without manual approval expose a version-bound final gate check',async()=>{
  const f=await fixture();await f.view('B');assert.equal(f.element('review-panel').hidden,true);assert.equal(f.element('release-check-panel').hidden,false);assert.equal(f.element('manual-gate-check').disabled,false);

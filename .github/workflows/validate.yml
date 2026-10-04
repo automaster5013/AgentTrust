@@ -47,7 +47,9 @@ jobs:
           npm run demo:portfolio
           npm run demo:roles
       - name: Verify bounded viewer metadata measurements
-        run: npm run benchmark:metadata -- --samples 5
+        run: |
+          npm run benchmark:metadata -- --samples 5
+          npm run benchmark:metadata -- --samples 5 --concurrency 4
       - name: Verify bounded parallel synthetic creation
         run: npm run smoke:burst -- --runs 6
       - name: Verify repeated synthetic outcomes and exactly-once accounting

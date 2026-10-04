@@ -15,6 +15,11 @@ const evidencePageSize=10;
 let actor = null;
 let activeProjectId = null;
 let scopeEpoch = 0;
+let authenticationSequence=0;
+let logoutOperation=null;
+function currentAuthentication(sequence,epoch,error){
+  return sequence===authenticationSequence&&epoch===scopeEpoch||error?.authenticationSequence===authenticationSequence&&error?.authenticationEpoch===scopeEpoch;
+}
 let loading = false;
 let versionBusy=false;
 let workspaceMutation=null;
@@ -143,8 +148,11 @@ async function api(path, options = {}) {
     throw new Error('서버 응답을 읽지 못했습니다. 기록을 조회한 뒤 다시 시도하세요.');
   }
   if(epoch!==scopeEpoch)throw new Error('워크스페이스가 변경되어 이전 요청의 결과를 표시하지 않습니다.');
-  if (response.status === 401) showLogin();
-  if (!response.ok) throw new Error(typeof data?.error==='string'&&data.error.length<=500?data.error:'요청을 완료하지 못했습니다.');
+  if (!response.ok){
+    const error=new Error(typeof data?.error==='string'&&data.error.length<=500?data.error:'요청을 완료하지 못했습니다.');
+    if(response.status===401){showLogin();error.authenticationSequence=authenticationSequence;error.authenticationEpoch=scopeEpoch;}
+    throw error;
+  }
   return data;
 }
 function node(tag, text, className) {
@@ -177,7 +185,7 @@ function updateButtons(){
 }
 function workspaceControls(){
   const busy=workspaceMutation!==null;
-  $('workspace-project').disabled=busy;$('logout-button').disabled=busy;
+  $('workspace-project').disabled=busy;$('logout-button').disabled=busy||logoutOperation!==null;
   for(const id of ['ci-create','project-create'])$(id).disabled=busy||actor?.role!=='admin';
 }
 function render(run) {
@@ -329,6 +337,7 @@ $('results').replaceChildren();$('history-body').replaceChildren();$('audit-list
   $('download').disabled=true;$('cancel-button').disabled=true;
 }
 function showLogin(){
+  authenticationSequence++;logoutOperation=null;$('login-button').disabled=false;$('logout-button').disabled=false;
   scopeEpoch++;activeProjectId=null;actor=null;clearProjectData();
   $('workspace-project').replaceChildren();$('access-key').value='';$('loading-panel').hidden=true;$('workspace-ui').hidden=true;$('login-panel').hidden=false;
 }
@@ -363,13 +372,15 @@ async function initialize() {
   $('nav-projects').hidden=actor.role!=='admin';$('workspace-nav').hidden=false;updateRunNavigation();updateNavigation();restorePanelLocation();
 }
 $('login-form').addEventListener('submit',async event=>{
-  event.preventDefault();$('login-button').disabled=true;$('login-status').textContent='';
+  event.preventDefault();if($('login-button').disabled)return;const sequence=++authenticationSequence,epoch=scopeEpoch;$('login-button').disabled=true;$('login-status').textContent='';
   try{const accessKey=$('access-key').value;await api('/v1/auth/login',{method:'POST',body:JSON.stringify({accessKey})});$('access-key').value='';await initialize();}
-  catch(e){showLogin();$('login-status').textContent=e.message;}
-  finally{$('login-button').disabled=false;}
+  catch(e){if(currentAuthentication(sequence,epoch,e)){showLogin();$('login-status').textContent=e.message;}}
+  finally{if(currentAuthentication(sequence,epoch))$('login-button').disabled=false;}
 });
 $('logout-button').addEventListener('click',async()=>{
-  try{await api('/v1/auth/logout',{method:'POST',body:'{}'});showLogin();}catch(e){message(e.message,true);}
+  if(logoutOperation)return;const epoch=scopeEpoch,operation={};logoutOperation=operation;$('logout-button').disabled=true;
+  try{await api('/v1/auth/logout',{method:'POST',body:'{}'});if(epoch===scopeEpoch)showLogin();}catch(e){if(epoch===scopeEpoch)message(e.message,true);}
+  finally{if(epoch===scopeEpoch&&logoutOperation===operation){logoutOperation=null;workspaceControls();}}
 });
 $('cancel-button').addEventListener('click',async()=>{
   if(!currentRun||currentRun.id!==selectedRunId||terminal.has(currentRun.state)||actor?.role==='viewer'||cancellationPending())return;const target=currentRun,epoch=scopeEpoch,selection=selectedRunSequence;
@@ -620,5 +631,6 @@ $('sessions-more').addEventListener('click',()=>listAction(()=>sessionHistory(tr
 
 
 $('login-button').disabled=true;
-try{await initialize();}catch(e){showLogin();$('login-status').textContent=e.message==='Authentication required.'?'접근 키를 입력해 주세요.':e.message;}
-finally{$('login-button').disabled=false;}
+const initialAuthentication=authenticationSequence,initialEpoch=scopeEpoch;
+try{await initialize();}catch(e){if(currentAuthentication(initialAuthentication,initialEpoch,e)){showLogin();$('login-status').textContent=e.message==='Authentication required.'?'접근 키를 입력해 주세요.':e.message;}}
+finally{if(currentAuthentication(initialAuthentication,initialEpoch))$('login-button').disabled=false;}
