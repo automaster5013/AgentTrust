@@ -18,7 +18,8 @@ function fixture({failCheck=0,failWait=false,failCleanup=false,changeReceipt=()=
       if(++checks===failCheck)throw Error('Synthetic check failure');
       const decision=runs.get(data.candidateRunId).gate.decision,manual=data.policyVersionId==='manual';
       const allowed=decision==='pass'&&(!manual||review==='approved'),baseline=runs.get(data.baselineRunId);
-      const receipt={decision:baseline?(allowed?'pass':'block'):decision,deploymentAllowed:allowed,...(manual?{manualApproval:{status:review}}:{}),artifact:{receiptId:'receipt-'+checks,...(baseline?{request:{baselineRunId:baseline.id},evidence:{baseline:{runId:baseline.id,snapshotHash:baseline.snapshotHash,resultHash:baseline.resultHash}}}:{})},...(baseline?{comparison:{baselineRunId:baseline.id,candidateRunId:data.candidateRunId,comparable:decision!=='inconclusive',evaluationPassed:decision==='pass',regressions:decision==='pass'?[]:[{caseId:'synthetic',ruleId:'required'}]}}:{})};
+      const candidate=runs.get(data.candidateRunId);
+      const receipt={decision:baseline?(allowed?'pass':'block'):decision,deploymentAllowed:allowed,...(manual?{manualApproval:{status:review}}:{}),artifact:{receiptId:'receipt-'+checks,...(baseline?{request:{...data},evidence:{baseline:{runId:baseline.id,snapshotHash:baseline.snapshotHash,resultHash:baseline.resultHash},candidate:{runId:candidate.id,snapshotHash:candidate.snapshotHash,resultHash:candidate.resultHash}}}:{})},...(baseline?{comparison:{baselineRunId:baseline.id,candidateRunId:data.candidateRunId,comparable:decision!=='inconclusive',evaluationPassed:decision==='pass',regressions:decision==='pass'?[]:[{caseId:'synthetic',ruleId:'required'}]}}:{})};
       changeReceipt(receipt,checks);return receipt;
     }
     throw Error('Unexpected path');
@@ -58,7 +59,7 @@ test('comparison demo binds six signed decisions to two distinct policy baseline
 });
 
 test('comparison demo rejects wrong baseline evidence or comparison semantics even when signature verification succeeds',async()=>{
-  for(const change of [r=>{r.artifact.request.baselineRunId='wrong';},r=>{r.artifact.evidence.baseline.resultHash='wrong';},r=>{r.comparison.candidateRunId='wrong';},r=>{r.comparison.regressions=[{}];},r=>{r.comparison.comparable=false;},r=>{r.comparison.evaluationPassed=false;}]){
+  for(const change of [r=>{r.artifact.request.candidateRunId='wrong';},r=>{r.artifact.request.agentVersionId='wrong';},r=>{r.artifact.evidence.candidate.runId='wrong';},r=>{r.artifact.evidence.candidate.resultHash='wrong';},r=>{r.artifact.request.baselineRunId='wrong';},r=>{r.artifact.evidence.baseline.resultHash='wrong';},r=>{r.comparison.candidateRunId='wrong';},r=>{r.comparison.regressions=[{}];},r=>{r.comparison.comparable=false;},r=>{r.comparison.evaluationPassed=false;}]){
     const f=fixture({changeReceipt:change}),r=await runPortfolioScenario({...f.dependencies,compare:true});
     assert.equal(r.completed,false);assert.equal(r.cleanupSucceeded,true);assert.equal(f.verified,1);
   }

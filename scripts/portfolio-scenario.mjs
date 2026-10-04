@@ -15,6 +15,11 @@ export async function runPortfolioScenario({call,wait,verify,onStep=()=>{},compa
     if(status)assert.equal(receipt.manualApproval?.status,status);
     assert.equal(verify(receipt).signatureVerified,true);
     if(compare){
+      assert.equal(receipt.artifact.request.candidateRunId,run.id);
+      for(const key of ['agentVersionId','datasetVersionId','policyVersionId'])assert.equal(receipt.artifact.request[key],input[key]);
+      assert.equal(receipt.artifact.evidence.candidate.runId,run.id);
+      assert.equal(receipt.artifact.evidence.candidate.snapshotHash,run.snapshotHash);
+      assert.equal(receipt.artifact.evidence.candidate.resultHash,run.resultHash);
       assert.equal(receipt.artifact.request.baselineRunId,baseline.id);
       assert.equal(receipt.artifact.evidence.baseline.runId,baseline.id);
       assert.equal(receipt.artifact.evidence.baseline.snapshotHash,baseline.snapshotHash);
