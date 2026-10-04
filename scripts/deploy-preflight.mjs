@@ -6,6 +6,8 @@ import {createHash,createPrivateKey,createPublicKey} from 'node:crypto';
 import {Writable} from 'node:stream';
 import {resolve} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
+import pg from 'pg';
+import {revisionMigrations,verifyMigrationLedger,verifyDatabaseTarget,readAppliedMigrations} from './deployment-schema.mjs';
 import {decryptBackup} from '../packages/backup/cipher.js';
 
 const root=resolve(fileURLToPath(new URL('..',import.meta.url)));
@@ -39,7 +41,7 @@ export function verifyDeploymentConfig(config,image,expectedImage,revision){
   assert.equal(api.volumes?.length||0,0);
   return {image:expectedImage,revision,configurationVerified:true,cachedImageVerified:true};
 }
-export async function verifyRecoveryEvidence({directory=root,report,now=Date.now(),maxAgeHours=24}){
+export async function verifyRecoveryEvidence({directory=root,report,now=Date.now(),maxAgeHours=24,expectedMigrationHash}){
   assert.ok(Number.isFinite(maxAgeHours)&&maxAgeHours>0&&maxAgeHours<=168);
   assert.match(report.backup||'',/^agenttrust-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.dump$/);
   assert.equal(report.schemaVersion,1);
@@ -58,7 +60,11 @@ export async function verifyRecoveryEvidence({directory=root,report,now=Date.now
   const {sha256,encryption,...metadata}=manifest;
   // Authenticate the full ciphertext and metadata while discarding plaintext in memory.
   await decryptBackup(createReadStream(path),new Writable({write(_chunk,_encoding,done){done();}}),key,metadata,encryption);
-  return {backup:report.backup,backupAuthenticated:true,priorRestoreEvidenceVerified:true,backupCreatedAt:manifest.createdAt,restoreVerifiedAt:report.verifiedAt};
+  if(expectedMigrationHash!==undefined){
+    assert.match(expectedMigrationHash,/^[a-f0-9]{64}$/);
+    assert.equal(manifest.tables?.migrations?.hash,expectedMigrationHash);
+  }
+  return {backupMigrationLedgerVerified:expectedMigrationHash!==undefined,backup:report.backup,backupAuthenticated:true,priorRestoreEvidenceVerified:true,backupCreatedAt:manifest.createdAt,restoreVerifiedAt:report.verifiedAt};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   let stage='inputs';
@@ -76,9 +82,15 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
     const publicKey=createPublicKey(await readFile(resolve(root,'.local/receipt-signing/public.pem')));
     assert.equal(privateKey.asymmetricKeyType,'ed25519');
     assert.deepEqual(createPublicKey(privateKey).export({type:'spki',format:'der'}),publicKey.export({type:'spki',format:'der'}));
+    stage='database-migration-ledger';
+    verifyDatabaseTarget(process.env.OWNER_DATABASE_URL,config);
+    const client=new pg.Client({connectionString:process.env.OWNER_DATABASE_URL,connectionTimeoutMillis:5000,statement_timeout:5000,query_timeout:10000,application_name:'agenttrust-deployment-preflight'});
+    let schema;
+    try{await client.connect();schema=verifyMigrationLedger(await readAppliedMigrations(client),revisionMigrations(revision));}
+    finally{await client.end();}
     stage='backup-and-prior-restore';
     const report=JSON.parse(await readFile(resolve(root,'.local/recovery-smoke.json'),'utf8'));
-    const recovery=await verifyRecoveryEvidence({report,maxAgeHours:Number(process.env.AGENTTRUST_BACKUP_MAX_AGE_HOURS??24)});
-    console.log(JSON.stringify({...configuration,...recovery,signingKeyPairVerified:true,readOnly:true,checkedAt:new Date().toISOString(),scope:'configuration, cached image, authenticated backup and prior local restore evidence; no deployment, port availability, live database compatibility or offsite recovery verification'}));
+    const recovery=await verifyRecoveryEvidence({report,expectedMigrationHash:schema.migrationHash,maxAgeHours:Number(process.env.AGENTTRUST_BACKUP_MAX_AGE_HOURS??24)});
+    console.log(JSON.stringify({...configuration,...schema,...recovery,signingKeyPairVerified:true,readOnly:true,checkedAt:new Date().toISOString(),scope:'configuration, cached image, exact revision/database/backup migration ledger, authenticated backup and prior local restore evidence; no deployment, port availability, live schema drift, rollback compatibility or offsite recovery verification'}));
   }catch{console.error(`Deployment preflight blocked at ${stage}. No deployment performed; inspect private configuration and recovery artifacts.`);process.exitCode=1;}
 }

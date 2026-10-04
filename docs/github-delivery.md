@@ -60,4 +60,13 @@ npm run deploy:preflight
 
 복원 기록은 `.local/recovery-smoke.json`을 사용한다. 기록과 백업 생성 시점은 기본 24시간 이내여야 한다. `AGENTTRUST_BACKUP_MAX_AGE_HOURS`로 0 초과 168 이하의 시간 한도를 지정할 수 있다. 새 증거가 필요하면 별도 작업인 `npm run smoke:recovery`로 백업과 격리 복원 검증을 수행한다. 이 작업은 사전 점검과 달리 백업 파일과 복원 데이터베이스를 생성한다.
 
-성공은 명시된 정적 설정·캐시 이미지·인증된 백업·기존 로컬 복원 기록의 확인이다. 실제 포트 사용 가능 여부, 현재 운영 DB와 새 이미지의 마이그레이션 호환성, 새 호스트에서의 복원, 원격 보관, CI 승인 출처를 증명하지 않는다. 로컬 JSON 복원 기록은 서명된 증명서가 아니므로 신뢰할 수 있는 운영자가 보관해야 한다. 배포 전에 별도로 확인해야 한다. GitHub의 registry runtime job은 격리 환경에서 새 복원 검증을 수행한 뒤 이 명령까지 통과해야 `main` 이미지 승격을 허용한다.
+성공은 명시된 정적 설정·캐시 이미지·인증된 백업·기존 로컬 복원 기록의 확인이다. 실제 포트 사용 가능 여부, 적용 이력 밖의 실제 스키마 변경이나 롤백 호환성, 새 호스트에서의 복원, 원격 보관, CI 승인 출처를 증명하지 않는다. 로컬 JSON 복원 기록은 서명된 증명서가 아니므로 신뢰할 수 있는 운영자가 보관해야 한다. 배포 전에 별도로 확인해야 한다. GitHub의 registry runtime job은 격리 환경에서 새 복원 검증을 수행한 뒤 이 명령까지 통과해야 `main` 이미지 승격을 허용한다.
+
+
+### 이미지 revision·DB·백업의 마이그레이션 일치
+
+사전 점검은 지정한 `AGENTTRUST_EXPECTED_REVISION`의 마이그레이션 SQL을 로컬 Git 객체에서 읽는다. 해당 commit이 로컬 checkout에 있어야 하며 수정된 작업 트리 SQL을 검증 기준으로 사용하지 않는다. DB의 적용 이력은 `OWNER_DATABASE_URL`에 REPEATABLE READ / READ ONLY 트랜잭션으로 접속해 조회하고 항상 rollback한다. URL은 Compose에 지정된 127.0.0.1 포트·DB 이름·소유자·비밀번호와 일치해야 하며 추가 URL 옵션은 허용하지 않는다. 비밀은 출력하지 않는다.
+
+이미지 revision의 SQL 파일 목록과 DB 적용 목록이 정확히 같고 모든 체크섬이 기존 migrate 명령의 정규화 규칙에 맞아야 통과한다. 누락·추가·중복·변경된 migration은 `database-migration-ledger` 단계에서 차단된다. 이후 인증된 백업의 migration fingerprint도 현재 DB 이력과 같아야 한다. 마이그레이션 적용 후 이전 백업을 계속 사용하는 경우 새 백업과 격리 복원 검증을 별도로 준비해야 한다. 명령은 마이그레이션을 적용하거나 복원하지 않는다.
+
+성공 JSON의 `migrationLedgerVerified`, `migrationCount`, `migrationHash`, `backupMigrationLedgerVerified`는 이 세 이력의 일치만 나타낸다. 이력 테이블을 변경하지 않은 수동 DDL, 실행 중 변경, 이미지 애플리케이션의 모든 DB 동작, 이전 버전 롤백 안전성은 이 검사로 증명되지 않는다. 운영자는 배포 시점의 변경 통제와 실제 기능 검증을 별도로 수행한다.

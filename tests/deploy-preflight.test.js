@@ -24,7 +24,7 @@ test('read-only preflight authenticates backup and rejects stale, unbound and ta
   try{
     await mkdir(join(directory,'.local/backups'),{recursive:true});await mkdir(join(directory,'.local/backup-keys'));
     const backup='agenttrust-11111111-1111-1111-1111-111111111111.dump',path=join(directory,'.local/backups',backup),now=Date.now();
-    const metadata={schemaVersion:2,name:backup,createdAt:new Date(now-1000).toISOString(),securityVersion:2,securityHash:'a'.repeat(64),tables:{}};
+    const metadata={schemaVersion:2,name:backup,createdAt:new Date(now-1000).toISOString(),securityVersion:2,securityHash:'a'.repeat(64),tables:{migrations:{hash:"c".repeat(64)}}};
     const key=randomBytes(32),chunks=[];
     const encryption=await encryptBackup(Readable.from(['synthetic backup']),new Writable({write(chunk,_encoding,done){chunks.push(chunk);done();}}),key,metadata);
     const ciphertext=Buffer.concat(chunks),sha256=createHash('sha256').update(ciphertext).digest('hex');
@@ -32,6 +32,8 @@ test('read-only preflight authenticates backup and rejects stale, unbound and ta
     await writeFile(path,ciphertext);await writeFile(path+'.manifest.json',JSON.stringify(manifest));await writeFile(join(directory,'.local/backup-keys',backup+'.key'),key);
     const report={schemaVersion:1,backup,sha256,restoredDatabase:'agenttrust_restore_'+'a'.repeat(32),verifiedAt:new Date(now).toISOString(),dataFingerprintsMatch:true,securityCatalogMatch:true,tenantPoliciesVerified:true,authTenantPoliciesVerified:true,applicationConnectionsDisabled:true};
     assert.equal((await verifyRecoveryEvidence({directory,report,now})).backupAuthenticated,true);
+    assert.equal((await verifyRecoveryEvidence({directory,report,now,expectedMigrationHash:'c'.repeat(64)})).backupMigrationLedgerVerified,true);
+    await assert.rejects(verifyRecoveryEvidence({directory,report,now,expectedMigrationHash:'d'.repeat(64)}));
     assert.deepEqual(await readFile(path),ciphertext);
     for(const change of [{backup:'../../secret'},{sha256:'b'.repeat(64)},{authTenantPoliciesVerified:false},{verifiedAt:new Date(now+1000).toISOString()}])await assert.rejects(verifyRecoveryEvidence({directory,report:{...report,...change},now}));
     await assert.rejects(verifyRecoveryEvidence({directory,report,now:now+25*3600000}));
