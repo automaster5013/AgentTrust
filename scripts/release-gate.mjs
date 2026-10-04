@@ -25,6 +25,8 @@ export async function checkRelease({base,accessKey,candidateRunId,baselineRunId,
     const response=await call('/v1/release-gate',{method:'POST',headers:{...authorization,'Idempotency-Key':checkKey},body:JSON.stringify(request)});
     const result=await response.json();
     if(typeof result.deploymentAllowed!=='boolean'||!['pass','block'].includes(result.decision)||result.runId!==candidateRunId||!result.artifact||hash(result.artifact.request)!==hash(request)||result.artifactHash!==hash(result.artifact)||hash(result.artifact.result)!==hash(Object.fromEntries(Object.entries(result).filter(([k])=>!['artifact','artifactHash','signature'].includes(k)))))throw new Error('Release receipt integrity verification failed.');
+    if(result.deploymentAllowed!==(result.decision==='pass')||!Array.isArray(result.reasons)||!result.reasons.every(reason=>typeof reason==='string')||(result.deploymentAllowed&&result.reasons.length>0))throw new Error('Release receipt decision is inconsistent.');
+    if(baselineRunId&&(!result.comparison||result.comparison.baselineRunId!==baselineRunId||result.comparison.candidateRunId!==candidateRunId||(result.deploymentAllowed&&(result.comparison.comparable!==true||(result.comparison.evaluationPassed??result.comparison.deploymentAllowed)!==true))))throw new Error('Release baseline comparison is inconsistent.');
     if(trustedPublicKey)verifyReceipt(result,trustedPublicKey);
     return result;
   };
