@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {generateKeyPairSync} from 'node:crypto';
 import {checkRelease} from '../scripts/release-gate.mjs';
 const id='00000000-0000-0000-0000-000000000123';
 const valid={base:'http://127.0.0.1:4310/',accessKey:'synthetic-only',candidateRunId:id,agentVersionId:id,datasetVersionId:id,policyVersionId:id};
@@ -16,4 +17,12 @@ test('release CLI refuses empty credentials and invalid validity windows without
  for(const accessKey of [undefined,'','   '])await assert.rejects(checkRelease({...valid,accessKey}),/access key is required/);
  for(const maxAgeSeconds of [0,86401,NaN,1.5])await assert.rejects(checkRelease({...valid,maxAgeSeconds}),/validity window/);
  await assert.rejects(checkRelease({...valid,candidateRunId:'private-canary'}),error=>!error.message.includes('private-canary'));
+}));
+
+test('release CLI rejects empty or damaged trusted key before authenticating',async()=>withoutNetwork(async()=>{
+ for(const trustedPublicKey of ['',null,'private-canary','-----BEGIN PUBLIC KEY-----\ninvalid\n-----END PUBLIC KEY-----'])await assert.rejects(checkRelease({...valid,trustedPublicKey}),error=>error.message==='A valid Ed25519 trusted public key is required.');
+}));
+test('release CLI refuses unsupported public keys and private-key input without network',async()=>withoutNetwork(async()=>{
+ const ec=generateKeyPairSync('ec',{namedCurve:'prime256v1'}),ed=generateKeyPairSync('ed25519');
+ for(const trustedPublicKey of [ec.publicKey.export({type:'spki',format:'pem'}),ed.privateKey.export({type:'pkcs8',format:'pem'})])await assert.rejects(checkRelease({...valid,trustedPublicKey}),/Ed25519 trusted public key/);
 }));
