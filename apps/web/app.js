@@ -219,12 +219,15 @@ async function selectRun(id,initialRun) {
 }
 $('run-form').addEventListener('submit', async event => {
   event.preventDefault(); if (loading) return;
+  const epoch=scopeEpoch;let selection=selectedRunSequence;
+  const isCurrent=()=>epoch===scopeEpoch&&selection===selectedRunSequence;
   loading = true; $('run-button').disabled = true; message('평가 실행을 요청했습니다…');
   try {
     const run = await api('/v1/runs', { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ agentVersionId: $('agent').value, datasetVersionId: $('dataset-select').value, policyVersionId: $('policy').value, timeoutMs: Number($('timeout-ms').value), caseBudget: Number($('case-budget').value) }) });
-    await selectRun(run.id); message('평가가 종료되었습니다. 게이트 판정과 근거를 확인하세요.');
-  } catch (e) { message(e.message, true); }
-  finally { loading = false; updateButtons(); }
+    if(!isCurrent())return;selection=selectedRunSequence+1;
+    await selectRun(run.id);if(isCurrent())message('평가가 종료되었습니다. 게이트 판정과 근거를 확인하세요.');
+  } catch (e) { if(isCurrent())message(e.message, true); }
+  finally { if(epoch===scopeEpoch){loading = false; updateButtons();} }
 });
 $('dataset-form').addEventListener('submit', async event => {
   event.preventDefault(); $('dataset-button').disabled = true;
@@ -241,7 +244,7 @@ $('download').addEventListener('click', () => {
   const link = node('a'); link.href = url; link.download = `agenttrust-${currentRun.id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 function clearProjectData(){
-  reviewBusy=false;
+  reviewBusy=false;loading=false;
   recentBaselineRuns=[];
   $('gate-baseline-enabled').checked=false;$('gate-baseline-id').value='';$('gate-baseline-id').disabled=true;
   lookupSequence++;lookupBusy=false;$('run-lookup-button').disabled=false;$('run-lookup-id').value='';$('run-lookup-status').textContent='';

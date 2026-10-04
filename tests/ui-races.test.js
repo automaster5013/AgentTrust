@@ -83,6 +83,28 @@ test('same-run reselection keeps freshly read state when an older cancellation r
  for(const callback of f.timers.splice(0))callback();await viewing;
 });
 
+test('an old execution request cannot keep a new workspace locked or clear its active request',async()=>{
+ const f=await fixture(),older=deferred(),newer=deferred();let calls=0;
+ f.overrides.set('/v1/runs',()=>++calls===1?older.promise:newer.promise);
+ const oldRequest=f.element('run-form').fire('submit');await settle();
+ await f.element('logout-button').fire('click');await f.element('login-form').fire('submit');assert.equal(f.element('run-button').disabled,false);
+ const newRequest=f.element('run-form').fire('submit');await settle();assert.equal(calls,2);const status=f.element('status').textContent;
+ older.resolve(execution('A'));await oldRequest;assert.equal(f.element('status').textContent,status);assert.equal(f.element('run-button').disabled,true);
+ newer.resolve(execution('B'));await newRequest;assert.equal(f.element('run-button').disabled,false);assert.match(f.element('snapshot').textContent,/실행 B/);
+});
+
+test('switching selected runs during execution polling does not announce an obsolete completion',async()=>{
+ const f=await fixture();f.overrides.set('/v1/runs',()=>execution('A','running'));
+ const pending=f.element('run-form').fire('submit');await settle();await f.view('B');f.element('status').textContent='Current selected run status';
+ for(const callback of f.timers.splice(0))callback();await pending;assert.equal(f.element('status').textContent,'Current selected run status');assert.equal(f.element('run-button').disabled,false);
+});
+
+test('a pending execution creation preserves an explicit newer run selection',async()=>{
+ const f=await fixture(),creation=deferred();f.overrides.set('/v1/runs',()=>creation.promise);
+ const pending=f.element('run-form').fire('submit');await settle();await f.view('B');f.element('status').textContent='Explicit current selection';
+ creation.resolve(execution('A'));await pending;assert.match(f.element('snapshot').textContent,/실행 B/);assert.equal(f.element('status').textContent,'Explicit current selection');assert.equal(f.element('run-button').disabled,false);
+});
+
 test('late comparison result cannot replace a changed baseline selection',async()=>{
   const f=await fixture(),comparison=deferred();await f.view('B');f.overrides.set('/v1/compare',()=>comparison.promise);
   const pending=f.element('compare-form').fire('submit');await settle();
