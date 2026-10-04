@@ -10,6 +10,7 @@ import pg from 'pg';
 import {preflightDiagnostic} from './preflight-diagnostic.mjs';
 import {revisionMigrations,verifyMigrationLedger,verifyDatabaseTarget,readDeploymentDatabaseState} from './deployment-schema.mjs';
 import {decryptBackup} from '../packages/backup/cipher.js';
+import {readTrustedReceiptKey} from './trusted-receipt-key.mjs';
 
 const root=resolve(fileURLToPath(new URL('..',import.meta.url)));
 export function verifyDeploymentConfig(config,image,expectedImage,revision){
@@ -87,7 +88,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
     stage='signing-key-pair';
     assert.equal(resolve(config.secrets['receipt-signing-key'].file),resolve(root,'.local/receipt-signing/private.pem'));
     const privateKey=createPrivateKey(await readFile(resolve(root,'.local/receipt-signing/private.pem')));
-    const publicKey=createPublicKey(await readFile(resolve(root,'.local/receipt-signing/public.pem')));
+    const publicKey=createPublicKey(await readTrustedReceiptKey(resolve(root,'.local/receipt-signing/public.pem')));
     assert.equal(privateKey.asymmetricKeyType,'ed25519');
     assert.deepEqual(createPublicKey(privateKey).export({type:'spki',format:'der'}),publicKey.export({type:'spki',format:'der'}));
     stage='database-target';
