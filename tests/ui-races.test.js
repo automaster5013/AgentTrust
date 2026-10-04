@@ -438,7 +438,7 @@ test('a receipt bound to another execution cannot enable current-record download
 const gateBaseline='00000000-0000-0000-0000-000000000789';
 async function enableBaseline(f,id=gateBaseline){f.element('gate-baseline-enabled').checked=true;await f.element('gate-baseline-enabled').fire('change');f.element('gate-baseline-id').value=id;await f.element('gate-baseline-id').fire('input');}
 test('optional baseline is normalized and regression blocks final release',async()=>{
- const f=await fixture();await f.view('B');await enableBaseline(f,' '+gateBaseline.toUpperCase()+' ');let input;
+ const f=await fixture();await f.view('B');assert.equal(f.element('gate-comparison-inputs').hidden,true);await enableBaseline(f,' '+gateBaseline.toUpperCase()+' ');assert.equal(f.element('gate-comparison-inputs').hidden,false);let input;
  f.overrides.set('/v1/release-gate',options=>{input=JSON.parse(options.body);return {...releaseResult(false),comparison:{comparable:true,deploymentAllowed:false},reasons:['Baseline comparison is incomplete or regressed.']};});await f.element('manual-gate-check').fire('click');
  assert.equal(input.baselineRunId,gateBaseline);assert.match(f.element('manual-gate-output').textContent,/회귀 비교: 차단/);assert.match(f.element('manual-gate-output').textContent,new RegExp(gateBaseline));assert.match(f.element('next-action-title').textContent,/차단 사유/);
 });
@@ -450,7 +450,7 @@ test('changing baseline invalidates receipt and late response even after restori
  const f=await fixture(),older=deferred();await f.view('B');await enableBaseline(f);f.overrides.set('/v1/release-gate',()=>older.promise);const pending=f.element('manual-gate-check').fire('click');await settle();
  f.element('gate-baseline-id').value=lookupId;await f.element('gate-baseline-id').fire('input');f.element('gate-baseline-id').value=gateBaseline;await f.element('gate-baseline-id').fire('input');older.resolve(releaseResult());await pending;
  assert.match(f.element('manual-gate-output').textContent,/다시 확인/);assert.equal(f.element('current-receipt-download').disabled,true);assert.equal(f.element('manual-gate-check').disabled,false);
- f.element('gate-baseline-enabled').checked=false;await f.element('gate-baseline-enabled').fire('change');let input;f.overrides.set('/v1/release-gate',options=>{input=JSON.parse(options.body);return releaseResult();});await f.element('manual-gate-check').fire('click');assert.ok(!('baselineRunId' in input));await f.element('logout-button').fire('click');assert.equal(f.element('gate-baseline-id').value,'');assert.equal(f.element('gate-baseline-enabled').checked,false);
+ f.element('gate-baseline-enabled').checked=false;await f.element('gate-baseline-enabled').fire('change');assert.equal(f.element('gate-comparison-inputs').hidden,true);let input;f.overrides.set('/v1/release-gate',options=>{input=JSON.parse(options.body);return releaseResult();});await f.element('manual-gate-check').fire('click');assert.ok(!('baselineRunId' in input));await f.element('logout-button').fire('click');assert.equal(f.element('gate-baseline-id').value,'');assert.equal(f.element('gate-baseline-enabled').checked,false);assert.equal(f.element('gate-comparison-inputs').hidden,true);
 });
 test('baseline-bound signed receipt exports unchanged and mismatched baseline cannot enable download',async()=>{
  const f=await fixture();await f.view('B');await enableBaseline(f);const signed=signedUiReceipt(),artifact=signed.report.artifact;artifact.request.baselineRunId=gateBaseline;artifact.evidence.baseline={runId:gateBaseline};

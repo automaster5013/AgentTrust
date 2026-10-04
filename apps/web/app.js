@@ -29,6 +29,7 @@ let reviewBusy=false,reviewCursor=null,reviewShown=0;
 let finalGateSequence=0,finalGateBusy=false,currentReceipt=null;
 let recentBaselineRuns=[];
 function renderBaselineChoices(){
+  $('gate-comparison-inputs').hidden=!$('gate-baseline-enabled').checked;
   const selected=$('gate-baseline-id').value.trim().toLowerCase();
   const placeholder=node('option','최근 완료 실행에서 선택 (최대 100개)');placeholder.value='';
   $('gate-baseline-recent').replaceChildren(placeholder,...recentBaselineRuns.filter(r=>r.state==='succeeded'&&r.id!==selectedRunId).map(r=>{const option=node('option',`${r.agentName} · ${r.datasetName} · ${new Date(r.createdAt).toLocaleString('ko-KR')} · ${r.id.slice(0,8)}`);option.value=r.id;return option;}));
