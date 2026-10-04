@@ -219,6 +219,32 @@ test('session refresh cannot re-enable revocation buttons while a termination is
 });
 
 
+test('late CI key revocation cannot overwrite the newly signed-in workspace status',async()=>{
+ const f=await fixture(),pending=deferred(),key={id:'synthetic-ci-key',name:'Synthetic',project_id:'project',revoked_at:null,expires_at:'2100-01-01T00:00:00Z'};
+ f.overrides.set('/v1/ci-credentials?limit=25',()=>({items:[key],nextCursor:null}));await f.element('ci-refresh').fire('click');
+ f.overrides.set('/v1/ci-credentials/synthetic-ci-key/revoke',()=>pending.promise);
+ const old=f.element('ci-key-list').children[0].children.at(-1).fire('click');await settle();
+ await f.element('logout-button').fire('click');await f.element('login-form').fire('submit');f.element('ci-status').textContent='New workspace status';
+ pending.resolve({revoked:true});await old;assert.equal(f.element('ci-status').textContent,'New workspace status');
+});
+test('late current-session revocation cannot log out a newly signed-in workspace',async()=>{
+ const f=await fixture(),pending=deferred(),session={id:'old-session',name:'Synthetic',role:'admin',current:true,createdAt:'2026-01-01T00:00:00Z',expiresAt:'2026-01-01T01:00:00Z'};
+ f.overrides.set('/v1/sessions?limit=25',()=>({items:[session],nextCursor:null,scope:'organization'}));await f.element('sessions-refresh').fire('click');
+ f.overrides.set('/v1/sessions/old-session/revoke',()=>pending.promise);
+ const old=f.element('session-list').children[0].children.at(-1).fire('click');await settle();
+ await f.element('logout-button').fire('click');await f.element('login-form').fire('submit');assert.equal(f.element('workspace-ui').hidden,false);
+ pending.resolve({current:true});await old;assert.equal(f.element('workspace-ui').hidden,false);assert.equal(f.element('login-panel').hidden,true);
+});
+test('old session revocation cannot overwrite or unlock a newer workspace termination',async()=>{
+ const f=await fixture(),older=deferred(),newer=deferred();let id='old-session';
+ f.overrides.set('/v1/sessions?limit=25',()=>({items:[{id,name:'Synthetic',role:'admin',current:false,createdAt:'2026-01-01T00:00:00Z',expiresAt:'2026-01-01T01:00:00Z'}],nextCursor:null,scope:'organization'}));await f.element('sessions-refresh').fire('click');
+ f.overrides.set('/v1/sessions/old-session/revoke',()=>older.promise);f.overrides.set('/v1/sessions/new-session/revoke',()=>newer.promise);
+ const old=f.element('session-list').children[0].children.at(-1).fire('click');await settle();
+ await f.element('logout-button').fire('click');id='new-session';await f.element('login-form').fire('submit');
+ const next=f.element('session-list').children[0].children.at(-1).fire('click');await settle();assert.equal(f.element('sessions-refresh').disabled,true);
+ older.resolve({current:false});await old;assert.equal(f.element('sessions-status').textContent,'');assert.equal(f.element('sessions-refresh').disabled,true);
+ newer.resolve({current:false});await next;assert.equal(f.element('sessions-refresh').disabled,false);assert.equal(f.element('sessions-status').textContent,'선택한 세션을 종료했습니다.');
+});
 const evidenceCase=(index,status='pass')=>({caseId:'case-'+index,input:'Synthetic input '+index,evidence:{output:'Synthetic output',toolEvents:[]},rules:[{ruleId:'rule',required:true,status,reason:'Synthetic reason'}]});
 test('evidence pagination bounds rendered cases while retaining whole-run totals and selection',async()=>{
  const f=await fixture();f.runs.B.results=Array.from({length:25},(_,i)=>evidenceCase(i));f.runs.B.summary={cases:25,pass:25,fail:0,inconclusive:0};await f.view('B');

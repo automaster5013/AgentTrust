@@ -268,7 +268,7 @@ function clearProjectData(){
   $('gate-baseline-enabled').checked=false;$('gate-baseline-id').value='';$('gate-baseline-id').disabled=true;
   lookupSequence++;lookupBusy=false;$('run-lookup-button').disabled=false;$('run-lookup-id').value='';$('run-lookup-status').textContent='';
   evidencePage=0;evidenceCaseId=null;$('evidence-search').value='';$('evidence-filter').value='';
-  sessionSequence++;sessionCursor=null;sessionButtons=[];$('session-list').replaceChildren();$('sessions-status').textContent='';$('sessions-more').disabled=true;
+  sessionSequence++;sessionBusy=false;sessionCursor=null;sessionButtons=[];$('session-list').replaceChildren();$('sessions-status').textContent='';$('sessions-more').disabled=true;sessionControls();
   comparisonSequence++;keyHistorySequence++;receiptHistorySequence++;reviewSequence++;reviewCursor=null;reviewShown=0;$('review-history-status').textContent='';$('review-more').disabled=true;
   inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전의 고정된 내용과 해시를 확인할 수 있습니다.';
   auditSequence++;auditCursor=null;$('audit-more').disabled=true;$('audit-action').value='';
@@ -365,7 +365,7 @@ async function ciHistory(append=false){
   $('ci-key-list').append(...page.items.map(key=>{
     const row=node('div',undefined,'audit-entry');const expired=Date.parse(key.expires_at)<=Date.now();
     row.append(node('strong',key.name+' '),node('span',`${key.project_id.slice(0,8)} · ${key.revoked_at?'철회됨':expired?'만료됨':'활성'} · 만료 ${new Date(key.expires_at).toLocaleString('ko-KR')}`));
-    if(!key.revoked_at&&!expired){const button=node('button','철회','secondary');button.addEventListener('click',async()=>{button.disabled=true;try{await api(`/v1/ci-credentials/${key.id}/revoke`,{method:'POST',body:'{}'});await ciHistory();$('ci-status').textContent='키를 철회했습니다.';}catch(e){$('ci-status').textContent=e.message;button.disabled=false;}});row.append(button);}return row;
+    if(!key.revoked_at&&!expired){const button=node('button','철회','secondary');button.addEventListener('click',async()=>{const epoch=scopeEpoch;button.disabled=true;try{await api(`/v1/ci-credentials/${key.id}/revoke`,{method:'POST',body:'{}'});if(epoch!==scopeEpoch)return;await ciHistory();if(epoch===scopeEpoch)$('ci-status').textContent='키를 철회했습니다.';}catch(e){if(epoch===scopeEpoch){$('ci-status').textContent=e.message;button.disabled=false;}}});row.append(button);}return row;
   }));
 }
 async function receiptHistory(append=false){
@@ -555,7 +555,7 @@ async function sessionHistory(append=false){
         if(result.current){showLogin();$('login-status').textContent='현재 세션을 종료했습니다. 접근 키로 다시 로그인할 수 있습니다.';}
         else{$('sessions-status').textContent='선택한 세션을 종료했습니다.';await sessionHistory();await auditHistory();}
       }catch(error){if(epoch===scopeEpoch)$('sessions-status').textContent=error.message;}
-      finally{sessionBusy=false;sessionControls();if(actor)try{await sessionHistory();}catch(error){$('sessions-status').textContent=error.message;}}
+      finally{if(epoch===scopeEpoch){sessionBusy=false;sessionControls();if(actor)try{await sessionHistory();}catch(error){if(epoch===scopeEpoch)$('sessions-status').textContent=error.message;}}}
     });row.append(button);$('session-list').append(row);
   }
   if(!append&&!page.items.length)$('session-list').textContent='활성 세션이 없습니다.';sessionControls();
