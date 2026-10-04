@@ -44,3 +44,20 @@ compose.image.yaml은 API의 로컬 build 설정을 제거하고 API와 워커�
 `npm run smoke:image`는 AGENTTRUST_IMAGE의 고정 GHCR digest와 AGENTTRUST_EXPECTED_REVISION의 전체 commit SHA를 요구한다. 대상 Compose의 API와 워커만 inspect하며 실제 이미지·revision·출처와 격리 설정을 검증하고 `.local/image-smoke.json`에 비밀 없는 결과를 기록한다. mutable tag, API/워커 이미지 불일치, 출처 revision 오류, 공개 포트, root 실행, 워커의 서명 키, 외부 네트워크/HTTPS 허용 목록 등은 실패한다. 이 명령은 합성·외부 연결 차단 환경의 사전 점검이며 운영 고객 연결을 활성화한 호스트에 그대로 적용하지 않는다.
 
 image-smoke와 promote는 GitHub의 별도 임시 runner에서만 수행한다. 배포 서버와 개발 장치의 Docker Desktop은 변경하지 않는다. 각 작업의 registry 로그인은 종료 시 제거하고 이미지 실행 환경은 성공/실패 모두 종료한다. private DB·키·백업은 runner 밖으로 업로드하지 않는다. 최종 수동 배포용 digest는 Promote runtime-verified main image의 작업 요약에서 확인한다.
+
+
+## 읽기 전용 수동 배포 사전 점검
+
+`npm run deploy:preflight`는 서비스를 시작·중지하거나 이미지를 내려받거나 데이터베이스를 변경하지 않는다. 배포할 digest와 revision을 명시하고, 해당 이미지를 별도 절차로 미리 내려받은 후 실행한다.
+
+```powershell
+$env:AGENTTRUST_IMAGE = 'ghcr.io/automaster5013/agenttrust@sha256:<검증된 64자리 digest>'
+$env:AGENTTRUST_EXPECTED_REVISION = '<해당 이미지의 40자리 commit SHA>'
+npm run deploy:preflight
+```
+
+점검 항목은 Compose의 loopback 포트·서로 다른 포트 번호·worker 내부 네트워크·비특권 실행·읽기 전용 파일 시스템·서명 키 격리, 캐시 이미지의 digest/소스/revision, Ed25519 키 쌍, 암호화 백업 체크섬과 전체 GCM 인증, 같은 백업을 대상으로 한 최근 복원 기록이다. 평문은 메모리에서 폐기하며 파일로 쓰지 않는다. 결과에는 비밀을 포함하지 않고 실패 단계만 출력한다. 성공은 종료 코드 0, 실패는 1이다.
+
+복원 기록은 `.local/recovery-smoke.json`을 사용한다. 기록과 백업 생성 시점은 기본 24시간 이내여야 한다. `AGENTTRUST_BACKUP_MAX_AGE_HOURS`로 0 초과 168 이하의 시간 한도를 지정할 수 있다. 새 증거가 필요하면 별도 작업인 `npm run smoke:recovery`로 백업과 격리 복원 검증을 수행한다. 이 작업은 사전 점검과 달리 백업 파일과 복원 데이터베이스를 생성한다.
+
+성공은 명시된 정적 설정·캐시 이미지·인증된 백업·기존 로컬 복원 기록의 확인이다. 실제 포트 사용 가능 여부, 현재 운영 DB와 새 이미지의 마이그레이션 호환성, 새 호스트에서의 복원, 원격 보관, CI 승인 출처를 증명하지 않는다. 로컬 JSON 복원 기록은 서명된 증명서가 아니므로 신뢰할 수 있는 운영자가 보관해야 한다. 배포 전에 별도로 확인해야 한다. GitHub의 registry runtime job은 격리 환경에서 새 복원 검증을 수행한 뒤 이 명령까지 통과해야 `main` 이미지 승격을 허용한다.

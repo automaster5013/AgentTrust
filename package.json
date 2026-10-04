@@ -22,7 +22,8 @@
     "smoke:resilience": "node --env-file-if-exists=.env scripts/resilience-smoke.mjs",
     "smoke:recovery": "node --env-file-if-exists=.env scripts/recovery-smoke.mjs",
     "smoke:sustained": "node --env-file-if-exists=.env scripts/sustained-smoke.mjs",
-    "smoke:image": "node --env-file-if-exists=.env scripts/image-smoke.mjs"
+    "smoke:image": "node --env-file-if-exists=.env scripts/image-smoke.mjs",
+    "deploy:preflight": "node --env-file-if-exists=.env scripts/deploy-preflight.mjs"
   },
   "dependencies": {
     "ajv": "8.20.0",

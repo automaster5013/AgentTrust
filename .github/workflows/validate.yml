@@ -130,6 +130,10 @@ jobs:
           node --env-file-if-exists=.env scripts/ci-smoke.mjs
           node --env-file-if-exists=.env scripts/manual-review-smoke.mjs
           npm run smoke:sustained -- --cycles 2 --interval-ms 1000
+      - name: Prepare isolated recovery evidence and verify read-only deployment preflight
+        run: |
+          npm run smoke:recovery
+          npm run deploy:preflight
       - name: Stop isolated image services
         if: always()
         run: docker compose -f compose.yaml -f compose.image.yaml down
