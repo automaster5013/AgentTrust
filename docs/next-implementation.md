@@ -360,3 +360,7 @@ smoke·resilience·CI·manual-review·sustained의 포트 검증과 HTTP 호출�
 ## v0.73 구현 기록
 
 시연 세 명령을 공통 로컬 HTTP 경계로 통일했다. API가 지원하지 않는 포트를 사전 점검 첫 단계에서 거절하고 실패 본문을 정리한다. 실제 CLI 재현 테스트의 수정 전 오류 단계와 수정 후 입력 단계 거절을 확인했다. 서버 포트 설정이나 Docker 자산은 변경하지 않는다.
+
+## v0.74 구현 기록
+
+화면의 개발 버전을 서버 package.json에서 제공하도록 바꿨다. 버전 갱신마다 HTML 번호를 수동 변경할 필요가 없다. 제품 버전은 커밋·이미지 digest 검증을 대신하지 않으며 Docker 전달 증거는 기존 workflow와 manifest로 확인한다.

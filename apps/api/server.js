@@ -13,8 +13,11 @@ import { validateDatabaseRole } from './role-guard.js';
 import { parseJson } from '../../packages/contracts/json.js';
 import { InputError } from '../../packages/contracts/index.js';
 import { sampleDataset } from '../../packages/contracts/samples.js';
+import packageMetadata from '../../package.json' with {type:'json'};
 
 const webRoot=new URL('../web/',import.meta.url);
+const applicationVersion=packageMetadata.version;
+if(typeof applicationVersion!=='string'||!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(applicationVersion))throw new Error('Invalid application version.');
 const assets={'/':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/styles.css':['styles.css','text/css']};
 async function body(req) {
   if(!/^application\/json(?:;|$)/i.test(req.headers['content-type']||'')) throw new InputError('Content-Type must be application/json.',415);
@@ -43,7 +46,7 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       if(process.env.CONTAINER_MODE!=='true'&&port!==req.socket.localPort) throw new InputError('Unexpected host port.',403);
       if(req.headers.origin&&req.headers.origin!==`http://${req.headers.host}`) throw new InputError('Cross-origin requests are denied.',403);
       const requestUrl=new URL(req.url,`http://${req.headers.host}`),path=requestUrl.pathname;
-      if(req.method==='GET'&&assets[path]){const[file,type]=assets[path];res.writeHead(200,{...headers,'Content-Type':`${type}; charset=utf-8`});res.end(await readFile(new URL(file,webRoot)));return;}
+      if(req.method==='GET'&&assets[path]){const[file,type]=assets[path];const content=await readFile(new URL(file,webRoot));res.writeHead(200,{...headers,'Content-Type':`${type}; charset=utf-8`});res.end(file==='index.html'?content.toString('utf8').replace('{{APP_VERSION}}',applicationVersion):content);return;}
       const site=req.headers['sec-fetch-site'];
       if(site!==undefined&&!['same-origin','none'].includes(site))throw new InputError('Cross-site requests are denied.',403);
       if(activeRequests>=maxConcurrentRequests)return send(503,{error:'Service busy.',traceId},{'Retry-After':'1','Connection':'close'});

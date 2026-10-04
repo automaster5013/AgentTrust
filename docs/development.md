@@ -244,3 +244,7 @@ The reusable smoke:sustained command executes nine synthetic runs per cycle acro
 사전 점검·10단계 포트폴리오 시연·11단계 역할 시연에도 공통 로컬 HTTP 함수를 적용했다. API가 거절하는 1024 미만 포트와 잘못된 정규 표현을 사전 점검 inputs에서 차단하며 private 파일과 Docker 단계는 실행하지 않는다. 실제 CLI 재현은 수정 전에 PORT=80을 compose-services 오류로 안내했고, 수정 후 inputs로 안내한다. 1023·65536·앞자리 0도 첫 단계에서 거절한다.
 
 시연 호출은 origin을 바꿀 수 없는 고정 루프백 경로와 리디렉션 거절·10초 제한을 공유하고 HTTP 실패 본문을 취소한다. 사전 health의 더 짧은 5초 제한은 유지한다. 시연의 합성 평가·관리자 승인/반려·역할 거절·자체 세션 정리는 그대로다. 현재 포트 사용 가능 여부를 새로 보장하는 기능은 아니다.
+
+## 화면 구현 버전의 단일 출처 — v0.74
+
+HTML의 개발 버전 표시는 고정 문자열 대신 서버의 package.json 버전을 사용한다. 서버 시작 시 숫자 세 부분의 버전 형식을 확인하고, index.html의 고정 placeholder 하나를 치환한다. 다른 정적 파일과 CSP·no-store·접근 경계는 유지한다. 개발 화면에서 제품 버전을 직접 수정할 필요가 없으며 원본 HTML만 정적으로 열면 placeholder가 보이므로 기존 API 서버를 통해 접속한다. 이 표시는 제품 버전일 뿐 커밋·이미지 digest 또는 배포 권한 증거가 아니다.
