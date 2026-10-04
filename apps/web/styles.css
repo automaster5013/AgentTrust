@@ -27,3 +27,5 @@
 @media(max-width:650px){#workspace-nav{overflow-y:hidden;overflow-x:auto;margin:12px 0 0;padding:0 0 5px}}
 
 .receipt-entry{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:14px 0}.receipt-metadata{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:8px;min-width:0}.receipt-metadata code{flex:1 1 100%;font:inherit;overflow-wrap:anywhere}
+
+.receipt-inspection{margin:16px 0;padding:16px;border:1px solid var(--line);border-radius:8px}.receipt-inspection pre{max-height:400px;margin-bottom:0;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;font:13px/1.7 Consolas,monospace;background:#f5f8f6;padding:12px;border-radius:5px}

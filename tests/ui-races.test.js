@@ -49,7 +49,7 @@ function execution(id,state='succeeded',manual=false){return {id,state,createdAt
   snapshot:{agent:{name:'Run '+id},dataset:{name:'Synthetic dataset'},policy:{name:'Synthetic policy',requiresManualApproval:manual}},
   agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy',results:[],summary:{cases:0,pass:0,fail:0,inconclusive:0},
   gate:{decision:state==='succeeded'?'pass':'inconclusive',deploymentAllowed:state==='succeeded'&&!manual,...(manual?{requiresManualApproval:true,evaluationPassed:state==='succeeded'}:{})}};}
-async function fixture({manual=false,initialOverrides,waitForInitialization=true,timeoutSignal=ms=>AbortSignal.timeout(ms),writeClipboard=async()=>{}}={}){
+async function fixture({manual=false,initialOverrides,waitForInitialization=true,timeoutSignal=ms=>AbortSignal.timeout(ms),writeClipboard=async()=>{},digest=(...args)=>webcrypto.subtle.digest(...args)}={}){
   const nodes=new Map(),selects=new Set(['agent','dataset-select','policy','workspace-project','ci-project','baseline-run','gate-baseline-recent','history-state','history-decision','audit-action','agent-mode']);
   const element=id=>{if(!nodes.has(id))nodes.set(id,new Element(selects.has(id)?'select':'div'));return nodes.get(id);};
   const document={getElementById:element,createElement:tag=>new Element(tag)},timers=[],overrides=new Map(initialOverrides||[]),downloads=[];
@@ -70,7 +70,7 @@ async function fixture({manual=false,initialOverrides,waitForInitialization=true
   const fetch=async(path,options={})=>{const handler=overrides.get(path),data=handler?await handler(options):defaultResponse(path);return data instanceof Response?data:new Response(JSON.stringify(data),{status:200,headers:{'Content-Type':'application/json'}});};
   const source=await readFile(new URL('../apps/web/app.js',import.meta.url),'utf8');
   const AsyncFunction=Object.getPrototypeOf(async()=>{}).constructor;
-  const initialized=new AsyncFunction('document','fetch','setTimeout','crypto','URL','AbortSignal','navigator',source)(document,fetch,callback=>{timers.push(callback);},webcrypto,{createObjectURL:blob=>{downloads.push(blob);return 'blob:synthetic';},revokeObjectURL(){}},{timeout:timeoutSignal},{clipboard:{writeText:writeClipboard}});
+  const initialized=new AsyncFunction('document','fetch','setTimeout','crypto','URL','AbortSignal','navigator',source)(document,fetch,callback=>{timers.push(callback);},{randomUUID:()=>webcrypto.randomUUID(),subtle:{digest}},{createObjectURL:blob=>{downloads.push(blob);return 'blob:synthetic';},revokeObjectURL(){}},{timeout:timeoutSignal},{clipboard:{writeText:writeClipboard}});
   if(waitForInitialization)await initialized;
   const view=id=>{const row=element('history-body').children.find(row=>row.children[0].textContent==='Run '+id);return row.children.at(-1).children[0].fire('click');};
   return {element,overrides,timers,runs,view,downloads,initialized};
@@ -516,7 +516,7 @@ test('expired authentication between an API read and hydration continuation stop
  await Promise.all([f.initialized,expired]);assert.equal(catalogs,0);assert.equal(f.element('workspace-ui').hidden,true);assert.equal(f.element('login-panel').hidden,false);
 });
 
-const releaseResult=(allowed=true,baselineRunId,extra={})=>{const result={runId:'B',decision:allowed?'pass':'block',deploymentAllowed:allowed,reasons:allowed?[]:['A required rule failed.'],...extra};return {...result,artifact:{organizationId:'organization',projectId:'project',checkedAt:'2026-01-01T00:00:00Z',receiptId:'synthetic-receipt',request:{candidateRunId:'B',agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy',...(baselineRunId?{baselineRunId}:{})},result:structuredClone(result),evidence:{candidate:{runId:'B',snapshotHash:'synthetic-B',resultHash:'synthetic-result-B'},...(baselineRunId?{baseline:{runId:baselineRunId}}:{})}}};};
+const releaseResult=(allowed=true,baselineRunId,extra={})=>{const result={runId:'B',decision:allowed?'pass':'block',deploymentAllowed:allowed,reasons:allowed?[]:['A required rule failed.'],...extra};const response={...result,artifact:{organizationId:'organization',projectId:'project',checkedAt:'2026-01-01T00:00:00Z',receiptId:'synthetic-receipt',request:{candidateRunId:'B',agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy',...(baselineRunId?{baselineRunId}:{})},result:structuredClone(result),evidence:{candidate:{runId:'B',snapshotHash:'synthetic-B',resultHash:'synthetic-result-B'},...(baselineRunId?{baseline:{runId:baselineRunId}}:{})}}};return {...response,artifactHash:hash(response.artifact)};};
 test('completed evaluations without manual approval expose a version-bound final gate check',async()=>{
  const f=await fixture();await f.view('B');assert.equal(f.element('review-panel').hidden,true);assert.equal(f.element('release-check-panel').hidden,false);assert.equal(f.element('manual-gate-check').disabled,false);
  let input;f.overrides.set('/v1/release-gate',options=>{input=JSON.parse(options.body);return releaseResult();});await f.element('manual-gate-check').fire('click');
@@ -856,4 +856,78 @@ test('logout invalidates receipt navigation, clears its status and rejects detac
 test('selecting another run clears the completed historical receipt navigation notice',async()=>{
  const f=await receiptNavigationFixture();await f.candidate.fire('click');assert.match(f.element('receipt-navigation-status').textContent,/과거 검증에 연결된 실행/);
  await f.view('B');assert.equal(f.element('receipt-navigation-status').textContent,'');assert.match(f.element('snapshot').textContent,/실행 B/);
+});
+
+test('historical receipt export rejects altered signed body content even when list identifiers and declared hashes are unchanged',async()=>{
+ const f=await fixture(),sample=historicalReceiptSample();sample.data.artifact.result.reasons=['Unrelated substituted reason'];f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[sample.row],nextCursor:null}));f.overrides.set('/v1/release-receipts/'+sample.row.id,()=>sample.data);await f.element('receipts-refresh').fire('click');await f.element('receipt-list').children[0].children.at(-1).fire('click');
+ assert.equal(f.downloads.length,0);assert.match(f.element('status').textContent,/검증 기록/);
+});
+test('live gate cannot display pass or enable export when the actual artifact body hash differs from the response hash',async()=>{
+ const f=await fixture(),signed=signedUiReceipt();signed.report.artifactHash='f'.repeat(64);await f.view('B');f.overrides.set('/v1/release-gate',()=>signed.report);await f.element('manual-gate-check').fire('click');
+ assert.match(f.element('manual-gate-output').textContent,/확인 실패/);assert.equal(f.element('current-receipt-download').disabled,true);assert.ok(!f.element('next-action-title').textContent.includes('기록을 보관'));
+});
+
+async function receiptInspectionFixture(options={}){
+ const f=await fixture(options),sample=historicalReceiptSample();f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[sample.row],nextCursor:null}));f.overrides.set('/v1/release-receipts/'+sample.row.id,()=>sample.data);await f.element('receipts-refresh').fire('click');
+ const button=f.element('receipt-list').children[0].children.find(c=>c.textContent==='기록 상세 보기');return {...f,sample,inspect:button};
+}
+test('historical receipt inspection displays verified body metadata and reasons without assigning a current gate or downloading',async()=>{
+ const f=await receiptInspectionFixture();await f.view('B');await f.inspect.fire('click');assert.equal(f.element('receipt-inspection').hidden,false);
+ const text=f.element('receipt-inspection-output').textContent;for(const pattern of [/과거 확인 시점의 판정: 차단/,/본문 SHA-256 확인됨/,/필수 규칙이 실패/,/공개키 검증은 별도 CLI/])assert.match(text,pattern);
+ assert.ok(text.includes(f.sample.row.id));assert.equal(f.element('current-receipt-download').disabled,true);assert.equal(f.downloads.length,0);assert.equal(f.inspect.disabled,false);
+ await f.element('receipt-inspection-close').fire('click');assert.equal(f.element('receipt-inspection').hidden,true);assert.equal(f.element('receipt-inspection-output').textContent,'');
+});
+test('historical inspection refuses metadata mismatches and body tampering and hides raw failure content',async()=>{
+ for(const mutate of [d=>{d.artifact.projectId='other';},d=>{d.artifact.result.reasons=['<script>private-tamper-canary</script>'];}]){
+  const f=await receiptInspectionFixture();mutate(f.sample.data);await f.inspect.fire('click');assert.match(f.element('receipt-inspection-output').textContent,/확인하지 못했습니다/);assert.ok(!f.element('receipt-inspection-output').textContent.includes('private-tamper-canary'));assert.equal(f.inspect.disabled,false);
+ }
+});
+test('closing historical inspection while an API response is pending prevents its reappearance',async()=>{
+ const f=await receiptInspectionFixture(),reply=deferred();f.overrides.set('/v1/release-receipts/'+f.sample.row.id,()=>reply.promise);const pending=f.inspect.fire('click');await settle();await f.element('receipt-inspection-close').fire('click');reply.resolve(f.sample.data);await pending;
+ assert.equal(f.element('receipt-inspection').hidden,true);assert.equal(f.element('receipt-inspection-output').textContent,'');assert.equal(f.inspect.disabled,false);
+});
+test('a delayed historical body digest cannot restore details or trigger an export after logout',async()=>{
+ for(const action of ['inspect','export']){
+  const reply=deferred();let digests=0;const f=await receiptInspectionFixture({digest:async(...args)=>{digests++;await reply.promise;return webcrypto.subtle.digest(...args);}});
+  const button=action==='inspect'?f.inspect:f.element('receipt-list').children[0].children.at(-1);const pending=button.fire('click');await settle();assert.equal(digests,1);await f.element('logout-button').fire('click');reply.resolve();await pending;
+  assert.equal(f.element('receipt-inspection').hidden,true);assert.equal(f.element('receipt-inspection-output').textContent,'');assert.equal(f.downloads.length,0);
+ }
+});
+test('a delayed gate digest cannot restore a passing decision after the selected execution changes',async()=>{
+ const reply=deferred();let digests=0;const f=await fixture({digest:async(...args)=>{digests++;await reply.promise;return webcrypto.subtle.digest(...args);}});f.runs.A=execution('A');await f.view('B');f.overrides.set('/v1/release-gate',()=>signedUiReceipt().report);
+ const pending=f.element('manual-gate-check').fire('click');await settle();assert.equal(digests,1);await f.view('A');reply.resolve();await pending;assert.match(f.element('snapshot').textContent,/실행 A/);assert.ok(!f.element('manual-gate-output').textContent.includes('최종 게이트: 통과'));assert.equal(f.element('current-receipt-download').disabled,true);
+});
+test('historical body hashing rejects excessive structural depth before digest or download',async()=>{
+ let calls=0;const f=await receiptInspectionFixture({digest:async(...args)=>{calls++;return webcrypto.subtle.digest(...args);}});let deep={},current=deep;for(let i=0;i<66;i++){current.next={};current=current.next;}
+ f.sample.data.artifact.extra=deep;delete f.sample.data.signature;f.sample.row.signing_key_id=null;f.sample.data.artifactHash=hash(f.sample.data.artifact);f.sample.row.artifact_hash=f.sample.data.artifactHash;await f.element('receipts-refresh').fire('click');await f.element('receipt-list').children[0].children.at(-1).fire('click');
+ assert.equal(calls,0);assert.equal(f.downloads.length,0);assert.match(f.element('status').textContent,/검증 한도/);
+});
+
+test('historical body hashing preserves canonical object key order interoperability',async()=>{
+ const f=await receiptInspectionFixture();f.sample.data.artifact=Object.fromEntries(Object.entries(f.sample.data.artifact).reverse());f.sample.data.artifact.request=Object.fromEntries(Object.entries(f.sample.data.artifact.request).reverse());
+ await f.inspect.fire('click');assert.match(f.element('receipt-inspection-output').textContent,/본문 SHA-256 확인됨/);await f.element('receipt-list').children[0].children.at(-1).fire('click');assert.equal(f.downloads.length,1);assert.equal(verifyReceipt(JSON.parse(await f.downloads[0].text()),f.sample.publicKey).signatureVerified,true);
+});
+test('a superseded historical inspection cannot overwrite a newer selected receipt',async()=>{
+ const f=await fixture(),old=historicalReceiptSample(),next=historicalReceiptSample(true),reply=deferred();
+ next.row.id=next.data.artifact.receiptId='00000000-0000-0000-0000-000000000789';delete next.data.signature;next.row.signing_key_id=null;next.row.artifact_hash=next.data.artifactHash=hash(next.data.artifact);
+ f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[old.row,next.row],nextCursor:null}));f.overrides.set('/v1/release-receipts/'+old.row.id,()=>reply.promise);f.overrides.set('/v1/release-receipts/'+next.row.id,()=>next.data);await f.element('receipts-refresh').fire('click');
+ const buttons=f.element('receipt-list').children.map(row=>row.children.find(c=>c.textContent==='기록 상세 보기'));const pending=buttons[0].fire('click');await settle();await buttons[1].fire('click');const current=f.element('receipt-inspection-output').textContent;assert.ok(current.includes(next.row.id));assert.match(current,/과거 확인 시점의 판정: 통과/);reply.resolve(old.data);await pending;assert.equal(f.element('receipt-inspection-output').textContent,current);assert.equal(buttons[0].disabled,false);
+});
+
+
+test('historical inspection distinguishes approval expiry from completed comparison evidence',async()=>{
+ const f=await fixture(),sample=historicalReceiptSample(false,'baseline');
+ Object.assign(sample.data.artifact.result,{reasons:['A current administrator approval is required.'],manualApproval:{required:true,status:'expired'},comparison:{candidateRunId:'B',baselineRunId:'baseline',comparable:true,evaluationPassed:true,requiresManualApproval:true,changes:[],regressions:[]}});
+ delete sample.data.signature;sample.row.signing_key_id=null;sample.row.artifact_hash=sample.data.artifactHash=hash(sample.data.artifact);
+ f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[sample.row],nextCursor:null}));f.overrides.set('/v1/release-receipts/'+sample.row.id,()=>sample.data);await f.element('receipts-refresh').fire('click');await f.view('B');await f.element('receipt-list').children[0].children.find(c=>c.textContent==='기록 상세 보기').fire('click');
+ const text=f.element('receipt-inspection-output').textContent;assert.match(text,/관리자 검토: 승인 만료/);assert.match(text,/회귀 비교: 통과/);assert.match(text,/현재 유효한 관리자 승인이 필요/);assert.match(text,/서명 없음/);assert.equal(f.element('current-receipt-download').disabled,true);
+});
+
+test('historical inspection displays exact regression rules as text and rejects mismatched comparison identifiers',async()=>{
+ for(const mismatch of [false,true]){
+  const f=await fixture(),sample=historicalReceiptSample(false,'baseline');Object.assign(sample.data.artifact.result,{comparison:{candidateRunId:mismatch?'unrelated':'B',baselineRunId:'baseline',comparable:true,evaluationPassed:false,changes:[{}],regressions:[{caseId:'<case>',ruleId:'required',before:'pass',after:'fail'}]}});
+  delete sample.data.signature;sample.row.signing_key_id=null;sample.row.artifact_hash=sample.data.artifactHash=hash(sample.data.artifact);
+  f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[sample.row],nextCursor:null}));f.overrides.set('/v1/release-receipts/'+sample.row.id,()=>sample.data);await f.element('receipts-refresh').fire('click');await f.view('B');await f.element('receipt-list').children[0].children.find(c=>c.textContent==='기록 상세 보기').fire('click');
+  const text=f.element('receipt-inspection-output').textContent;if(mismatch)assert.match(text,/확인하지 못했습니다/);else{assert.match(text,/회귀 비교: 차단/);assert.ok(text.includes('사례 <case> · 규칙 required · pass → fail'));}assert.equal(f.element('current-receipt-download').disabled,true);
+ }
 });
