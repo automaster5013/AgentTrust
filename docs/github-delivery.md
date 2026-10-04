@@ -109,3 +109,12 @@ if ($preflightExitCode -ne 0 -or $report.status -ne 'passed') {
 ```
 
 검사 실패 시 stderr에는 고정 코드만 별도로 표시한다. 보고서를 저장하거나 수집하는 운영 자동화도 종료 코드와 `status`를 함께 확인해야 한다. 이 보고서는 서명된 배포 승인 증명이 아니며, 점검의 기존 범위와 제한은 그대로 적용된다.
+
+
+### 실행별 공개 배포 명세
+
+registry runtime job은 실제 이미지 검사와 모든 사전 점검이 성공한 뒤 공개 가능한 JSON 명세를 Actions 작업 요약에 남긴다. 명세에는 저장소, commit SHA, 고정 이미지 digest, workflow 실행 ID·시도 번호·URL, 검증 시각과 통과 검사 ID만 포함한다. 백업 이름·DB 접속 정보·키·원문 카탈로그·전체 private 보고서는 포함하지 않는다.
+
+`runtime_verified`는 후보 실행 검증 완료 상태다. 승격 작업은 같은 실행·시도·revision·digest의 명세인지 먼저 확인하고, Docker push 성공 후 별도 작업 요약에 `state: promoted`, `promotedAt`을 기록한다. 이 최종 요약에서 JSON을 복사해 수동 배포 기록으로 보관할 수 있다. `serverDeployed: false`는 실제 서버 배포를 수행하지 않았음을 나타낸다. 요약은 해당 Actions 실행에 연결되며 별도 다운로드 artifact나 release를 만들지 않는다.
+
+이 명세는 workflow가 만든 운영 기록이며 서명된 attestation이나 고객 릴리스 승인 영수증이 아니다. JSON만으로 CI의 출처·성공을 증명하지 않으므로 GitHub의 해당 실행 전체 성공 상태와 명세를 함께 확인한다. 실패·재실행 시도·다른 digest의 기록을 섞지 않는다. GitHub 실행/로그 보존 정책에 따라 나중에 요약을 사용할 수 없을 수 있으므로 장기 보관은 별도 운영 정책으로 관리한다.

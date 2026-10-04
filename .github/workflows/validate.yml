@@ -88,6 +88,8 @@ jobs:
 
   image-smoke:
     name: Verify registry image runtime
+    outputs:
+      manifest: ${{ steps.delivery.outputs.manifest }}
     needs: image
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -131,9 +133,13 @@ jobs:
           node --env-file-if-exists=.env scripts/manual-review-smoke.mjs
           npm run smoke:sustained -- --cycles 2 --interval-ms 1000
       - name: Prepare isolated recovery evidence and verify read-only deployment preflight
+        shell: bash
         run: |
           npm run smoke:recovery
-          npm run deploy:preflight
+          node --env-file-if-exists=.env scripts/deploy-preflight.mjs | tee .local/deployment-preflight.json
+      - name: Record public runtime delivery manifest
+        id: delivery
+        run: node scripts/delivery-manifest.mjs runtime
       - name: Stop isolated image services
         if: always()
         run: docker compose -f compose.yaml -f compose.image.yaml down
@@ -147,10 +153,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      contents: read
       packages: write
     env:
+      AGENTTRUST_DELIVERY_MANIFEST: ${{ needs.image-smoke.outputs.manifest }}
       AGENTTRUST_IMAGE: ${{ needs.image.outputs.image }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+      - name: Validate delivery manifest before promotion
+        run: node scripts/delivery-manifest.mjs validate
       - name: Prepare private runner registry configuration
         run: echo "DOCKER_CONFIG=$RUNNER_TEMP/agenttrust-docker-config" >> "$GITHUB_ENV"
       - name: Authenticate to registry
@@ -164,6 +180,8 @@ jobs:
           docker tag "$AGENTTRUST_IMAGE" "$image_name:main"
           docker push "$image_name:main"
           printf '## Runtime-verified container\n\nCommit: `%s`\n\nDeployable digest: `%s`\n\nRegistry pull, image identity, isolation, evaluation, restart and signed gate verification passed. No server deployment was performed.\n' "$GITHUB_SHA" "$AGENTTRUST_IMAGE" >> "$GITHUB_STEP_SUMMARY"
+      - name: Record promoted public delivery manifest
+        run: node scripts/delivery-manifest.mjs promoted
       - name: Remove runner registry login
         if: always()
         run: docker logout ghcr.io
