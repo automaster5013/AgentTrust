@@ -19,7 +19,7 @@ try{
   const run=await call(`/v1/runs/${checkpoint.id}`),me=await call('/v1/me');
   credential=await call('/v1/ci-credentials',{method:'POST',data:{name:'Temporary Docker CI smoke',projectId:me.projectId,ttlSeconds:60}});
   const trustedPublicKey=await readFile('.local/receipt-signing/public.pem','utf8');
-  const options={trustedPublicKey,base,projectId:me.projectId,accessKey:credential.token,checkKey:randomUUID(),candidateRunId:run.id,agentVersionId:run.agentVersionId,datasetVersionId:run.datasetVersionId,policyVersionId:run.policyVersionId};
+  const options={trustedPublicKey,base,projectId:me.projectId.toUpperCase(),accessKey:credential.token,checkKey:randomUUID(),candidateRunId:run.id.toUpperCase(),agentVersionId:run.agentVersionId.toUpperCase(),datasetVersionId:run.datasetVersionId.toUpperCase(),policyVersionId:run.policyVersionId.toUpperCase()};
   const result=await checkRelease(options);
   const replay=await checkRelease(options);assert.equal(replay.artifactHash,result.artifactHash);
   assert.equal(result.deploymentAllowed,true);

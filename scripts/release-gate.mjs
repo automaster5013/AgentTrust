@@ -35,6 +35,8 @@ export async function checkRelease({base,accessKey,candidateRunId,baselineRunId,
       if(typeof trustedPublicKey!=='string'||!trustedPublicKey.trim().startsWith('-----BEGIN PUBLIC KEY-----')||createPublicKey(trustedPublicKey).asymmetricKeyType!=='ed25519')throw new Error();
     }catch{throw new Error('A valid Ed25519 trusted public key is required.');}
   }
+  candidateRunId=candidateRunId.toLowerCase();baselineRunId=baselineRunId?.toLowerCase();projectId=projectId?.toLowerCase();
+  for(const key of ['agentVersionId','datasetVersionId','policyVersionId'])expected[key]=expected[key].toLowerCase();
   const request={candidateRunId,...(baselineRunId?{baselineRunId}:{}),...expected};
   const headers={'Content-Type':'application/json','X-AgentTrust-Request':'local-ui',...(projectId?{'X-AgentTrust-Project':projectId}:{})};
   const call=async(path,options={})=>{
