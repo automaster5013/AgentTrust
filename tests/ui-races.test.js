@@ -105,6 +105,26 @@ test('a pending execution creation preserves an explicit newer run selection',as
  creation.resolve(execution('A'));await pending;assert.match(f.element('snapshot').textContent,/실행 B/);assert.equal(f.element('status').textContent,'Explicit current selection');assert.equal(f.element('run-button').disabled,false);
 });
 
+test('pending version registration remains locked through unrelated execution completion',async()=>{
+ const f=await fixture(),creation=deferred();let registrations=0,otherRegistrations=0;
+ f.overrides.set('/v1/agent-versions',()=>{registrations++;return creation.promise;});f.overrides.set('/v1/runs',()=>execution('B'));
+ for(const kind of ['dataset','policy'])f.overrides.set('/v1/'+kind+'-versions',()=>{otherRegistrations++;return {id:kind,name:kind};});
+ const pending=f.element('agent-form').fire('submit');await settle();assert.equal(f.element('agent-create').disabled,true);
+ await f.element('run-form').fire('submit');assert.equal(f.element('agent-create').disabled,true);assert.equal(f.element('policy-create').disabled,true);assert.equal(f.element('dataset-button').disabled,true);
+ await f.element('agent-form').fire('submit');assert.equal(registrations,1);
+ await f.element('dataset-form').fire('submit');await f.element('policy-form').fire('submit');assert.equal(otherRegistrations,0);
+ creation.resolve({id:'agent',name:'Synthetic new agent'});await pending;assert.equal(f.element('agent-create').disabled,false);assert.equal(f.element('policy-create').disabled,false);assert.equal(f.element('dataset-button').disabled,false);
+});
+
+test('obsolete version registration cannot change new workspace status or release its lock',async()=>{
+ const f=await fixture(),older=deferred(),newer=deferred();let calls=0;
+ f.overrides.set('/v1/agent-versions',()=>++calls===1?older.promise:newer.promise);
+ const oldRequest=f.element('agent-form').fire('submit');await settle();await f.element('logout-button').fire('click');await f.element('login-form').fire('submit');
+ const newRequest=f.element('agent-form').fire('submit');await settle();assert.equal(calls,2);f.element('status').textContent='New version request status';
+ older.resolve({id:'agent',name:'Obsolete agent'});await oldRequest;assert.equal(f.element('status').textContent,'New version request status');assert.equal(f.element('agent-create').disabled,true);
+ newer.resolve({id:'agent',name:'Current agent'});await newRequest;assert.equal(f.element('agent-create').disabled,false);assert.match(f.element('status').textContent,/Current agent/);
+});
+
 test('late comparison result cannot replace a changed baseline selection',async()=>{
   const f=await fixture(),comparison=deferred();await f.view('B');f.overrides.set('/v1/compare',()=>comparison.promise);
   const pending=f.element('compare-form').fire('submit');await settle();

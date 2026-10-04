@@ -6,6 +6,7 @@ let actor = null;
 let activeProjectId = null;
 let scopeEpoch = 0;
 let loading = false;
+let versionBusy=false;
 let selectedRunId = null;
 let selectedRunSequence=0;
 let keyCursor=null,receiptCursor=null,runCursor=null;
@@ -123,7 +124,7 @@ function updateButtons(){
   for(const [kind,id] of [['agent','agent'],['dataset','dataset-select'],['policy','policy']])$('inspect-'+kind).disabled=!$(id).value;
   $('dataset-copy').disabled=!writer||!$('dataset-select').value;
   $('run-button').disabled=!writer||loading||!$('agent').value||!$('dataset-select').value||!$('policy').value;
-  $('dataset-button').disabled=!writer;$('agent-create').disabled=!writer;$('policy-create').disabled=actor?.role!=='admin';
+  $('dataset-button').disabled=!writer||versionBusy;$('agent-create').disabled=!writer||versionBusy;$('policy-create').disabled=actor?.role!=='admin'||versionBusy;
 }
 function render(run) {
   if(currentRun?.id===run.id&&terminal.has(currentRun.state)&&!terminal.has(run.state))return false;
@@ -230,13 +231,13 @@ $('run-form').addEventListener('submit', async event => {
   finally { if(epoch===scopeEpoch){loading = false; updateButtons();} }
 });
 $('dataset-form').addEventListener('submit', async event => {
-  event.preventDefault(); $('dataset-button').disabled = true;
+  event.preventDefault();if(versionBusy||$('dataset-button').disabled)return;const epoch=scopeEpoch;versionBusy=true;updateButtons();
   try {
     const value = JSON.parse($('dataset-json').value);
     const version = await api('/v1/dataset-versions', { method: 'POST', body: JSON.stringify(value) });
-    await catalog(version.id); message(`데이터셋 새 버전을 등록했습니다: ${version.name}`);
-  } catch (e) { message(e.message, true); }
-  finally { updateButtons(); }
+    if(epoch!==scopeEpoch)return;await catalog(version.id);if(epoch===scopeEpoch)message(`데이터셋 새 버전을 등록했습니다: ${version.name}`);
+  } catch (e) { if(epoch===scopeEpoch)message(e.message, true); }
+  finally { if(epoch===scopeEpoch){versionBusy=false;updateButtons();} }
 });
 $('download').addEventListener('click', () => {
   if (!currentRun) return;
@@ -244,7 +245,7 @@ $('download').addEventListener('click', () => {
   const link = node('a'); link.href = url; link.download = `agenttrust-${currentRun.id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 function clearProjectData(){
-  reviewBusy=false;loading=false;
+  reviewBusy=false;loading=false;versionBusy=false;
   recentBaselineRuns=[];
   $('gate-baseline-enabled').checked=false;$('gate-baseline-id').value='';$('gate-baseline-id').disabled=true;
   lookupSequence++;lookupBusy=false;$('run-lookup-button').disabled=false;$('run-lookup-id').value='';$('run-lookup-status').textContent='';
@@ -383,10 +384,11 @@ $('project-form').addEventListener('submit',async event=>{
   }catch(e){message(e.message,true);}finally{$('project-create').disabled=false;$('workspace-project').disabled=false;$('logout-button').disabled=false;}
 });
 for(const kind of ['agent','policy'])$(kind+'-form').addEventListener('submit',async event=>{
-  event.preventDefault();if($(kind+'-create').disabled)return;$(kind+'-create').disabled=true;
+  event.preventDefault();if(versionBusy||$(kind+'-create').disabled)return;const epoch=scopeEpoch;versionBusy=true;updateButtons();
   try{const input=kind==='agent'?{name:$('agent-name').value,mode:$('agent-mode').value}:{name:$('policy-name').value,minimumPassRate:Number($('policy-rate').value)/100,...($('policy-manual').checked?{requiresManualApproval:true,manualApprovalTtlSeconds:Number($('policy-review-ttl').value)}:{})};
-    const version=await api('/v1/'+kind+'-versions',{method:'POST',body:JSON.stringify(input)});await catalog({[kind]:version.id});await auditHistory();message((kind==='agent'?'에이전트':'정책')+' 새 버전을 등록했습니다: '+version.name);
-  }catch(e){message(e.message,true);}finally{updateButtons();}
+    const version=await api('/v1/'+kind+'-versions',{method:'POST',body:JSON.stringify(input)});if(epoch!==scopeEpoch)return;
+    await catalog({[kind]:version.id});if(epoch!==scopeEpoch)return;await auditHistory();if(epoch===scopeEpoch)message((kind==='agent'?'에이전트':'정책')+' 새 버전을 등록했습니다: '+version.name);
+  }catch(e){if(epoch===scopeEpoch)message(e.message,true);}finally{if(epoch===scopeEpoch){versionBusy=false;updateButtons();}}
 });
 
 $('ci-more').addEventListener('click',async()=>{$('ci-more').disabled=true;try{await ciHistory(true);}catch(e){$('ci-status').textContent=e.message;$('ci-more').disabled=!keyCursor;}});
