@@ -49,7 +49,7 @@ function execution(id,state='succeeded',manual=false){return {id,state,createdAt
   snapshot:{agent:{name:'Run '+id},dataset:{name:'Synthetic dataset'},policy:{name:'Synthetic policy',requiresManualApproval:manual}},
   agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy',results:[],summary:{cases:0,pass:0,fail:0,inconclusive:0},
   gate:{decision:state==='succeeded'?'pass':'inconclusive',deploymentAllowed:state==='succeeded'&&!manual,...(manual?{requiresManualApproval:true,evaluationPassed:state==='succeeded'}:{})}};}
-async function fixture({manual=false,initialOverrides,waitForInitialization=true,timeoutSignal=ms=>AbortSignal.timeout(ms)}={}){
+async function fixture({manual=false,initialOverrides,waitForInitialization=true,timeoutSignal=ms=>AbortSignal.timeout(ms),writeClipboard=async()=>{}}={}){
   const nodes=new Map(),selects=new Set(['agent','dataset-select','policy','workspace-project','ci-project','baseline-run','gate-baseline-recent','history-state','history-decision','audit-action','agent-mode']);
   const element=id=>{if(!nodes.has(id))nodes.set(id,new Element(selects.has(id)?'select':'div'));return nodes.get(id);};
   const document={getElementById:element,createElement:tag=>new Element(tag)},timers=[],overrides=new Map(initialOverrides||[]),downloads=[];
@@ -70,7 +70,7 @@ async function fixture({manual=false,initialOverrides,waitForInitialization=true
   const fetch=async(path,options={})=>{const handler=overrides.get(path),data=handler?await handler(options):defaultResponse(path);return data instanceof Response?data:new Response(JSON.stringify(data),{status:200,headers:{'Content-Type':'application/json'}});};
   const source=await readFile(new URL('../apps/web/app.js',import.meta.url),'utf8');
   const AsyncFunction=Object.getPrototypeOf(async()=>{}).constructor;
-  const initialized=new AsyncFunction('document','fetch','setTimeout','crypto','URL','AbortSignal',source)(document,fetch,callback=>{timers.push(callback);},webcrypto,{createObjectURL:blob=>{downloads.push(blob);return 'blob:synthetic';},revokeObjectURL(){}},{timeout:timeoutSignal});
+  const initialized=new AsyncFunction('document','fetch','setTimeout','crypto','URL','AbortSignal','navigator',source)(document,fetch,callback=>{timers.push(callback);},webcrypto,{createObjectURL:blob=>{downloads.push(blob);return 'blob:synthetic';},revokeObjectURL(){}},{timeout:timeoutSignal},{clipboard:{writeText:writeClipboard}});
   if(waitForInitialization)await initialized;
   const view=id=>{const row=element('history-body').children.find(row=>row.children[0].textContent==='Run '+id);return row.children.at(-1).children[0].fire('click');};
   return {element,overrides,timers,runs,view,downloads,initialized};
@@ -432,6 +432,33 @@ test('failed initial hydration returns to a usable login without exposing partia
 test('data loading failure after login cannot leave the loading panel stuck',async()=>{
  const f=await fixture();await f.element('logout-button').fire('click');f.overrides.set('/v1/ci-credentials?limit=25',()=>{throw new Error('Synthetic post-login read failed');});f.element('access-key').value='synthetic-key';await f.element('login-form').fire('submit');
  assert.equal(f.element('workspace-ui').hidden,true);assert.equal(f.element('loading-panel').hidden,true);assert.equal(f.element('login-panel').hidden,false);assert.equal(f.element('login-button').disabled,false);assert.equal(f.element('access-key').value,'');assert.match(f.element('login-status').textContent,/서버 응답을 읽지 못했습니다/);assert.ok(!f.element('login-status').textContent.includes('Synthetic post-login read failed'));
+});
+
+test('empty and hidden CI key controls cannot claim a clipboard copy',async()=>{
+ let copies=0;const f=await fixture({writeClipboard:async()=>copies++});f.element('ci-key-box').hidden=true;f.element('ci-status').textContent='No issued key';await f.element('ci-key-copy').fire('click');assert.equal(copies,0);assert.equal(f.element('ci-status').textContent,'No issued key');
+});
+
+test('obsolete clipboard completion cannot overwrite a newly authenticated CI status',async()=>{
+ for(const fails of [false,true]){
+  const reply=deferred(),f=await fixture({writeClipboard:async()=>{await reply.promise;if(fails)throw Error('Synthetic clipboard failure');}});
+  f.overrides.set('/v1/ci-credentials',()=>({token:'synthetic-old-key'}));await f.element('ci-key-form').fire('submit');const old=f.element('ci-key-copy').fire('click');await settle();
+  await f.element('logout-button').fire('click');await f.element('login-form').fire('submit');f.element('ci-status').textContent='Current CI workspace';reply.resolve();await old;assert.equal(f.element('ci-status').textContent,'Current CI workspace');
+ }
+});
+
+test('hiding an issued key invalidates its copy and preserves a newer copy lock',async()=>{
+ const older=deferred(),newer=deferred(),copied=[];const f=await fixture({writeClipboard:async value=>{copied.push(value);await (copied.length===1?older:newer).promise;}});
+ f.overrides.set('/v1/ci-credentials',()=>({token:'synthetic-old-key'}));await f.element('ci-key-form').fire('submit');const old=f.element('ci-key-copy').fire('click');await settle();
+ await f.element('ci-key-hide').fire('click');f.overrides.set('/v1/ci-credentials',()=>({token:'synthetic-new-key'}));await f.element('ci-key-form').fire('submit');const current=f.element('ci-key-copy').fire('click');await settle();const duplicate=f.element('ci-key-copy').fire('click');await settle();
+ if(copied.length!==2){older.resolve();newer.resolve();await Promise.all([old,current,duplicate]);assert.equal(copied.length,2);}
+ assert.deepEqual(copied,['synthetic-old-key','synthetic-new-key']);f.element('ci-status').textContent='Current key copy pending';older.resolve();await old;assert.equal(f.element('ci-key-copy').disabled,true);assert.equal(f.element('ci-status').textContent,'Current key copy pending');
+ newer.resolve();await Promise.all([current,duplicate]);assert.equal(f.element('ci-key-copy').disabled,false);assert.match(f.element('ci-status').textContent,/키를 복사/);
+});
+
+test('current clipboard denial permits an explicit retry and closing clears the key',async()=>{
+ let denied=true,copies=0;const f=await fixture({writeClipboard:async()=>{copies++;if(denied)throw Error('Synthetic clipboard denial');}});
+ f.overrides.set('/v1/ci-credentials',()=>({token:'synthetic-current-key'}));await f.element('ci-key-form').fire('submit');await f.element('ci-key-copy').fire('click');assert.match(f.element('ci-status').textContent,/클립보드에 접근/);assert.equal(f.element('ci-key-copy').disabled,false);assert.equal(copies,1);
+ denied=false;await f.element('ci-key-copy').fire('click');assert.equal(copies,2);assert.match(f.element('ci-status').textContent,/키를 복사/);await f.element('ci-key-hide').fire('click');assert.equal(f.element('ci-issued-key').value,'');assert.equal(f.element('ci-key-box').hidden,true);await f.element('ci-key-copy').fire('click');assert.equal(copies,2);
 });
 
 test('obsolete initial hydration failure cannot hide a newly authenticated workspace',async()=>{

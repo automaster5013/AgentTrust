@@ -17,6 +17,10 @@ let activeProjectId = null;
 let scopeEpoch = 0;
 let authenticationSequence=0;
 let logoutOperation=null;
+let issuedKeySequence=0,clipboardOperation=null;
+function clearIssuedKey(){
+  issuedKeySequence++;clipboardOperation=null;$('ci-key-copy').disabled=false;$('ci-issued-key').value='';$('ci-key-box').hidden=true;
+}
 function currentAuthentication(sequence,epoch,error){
   return sequence===authenticationSequence&&epoch===scopeEpoch||error?.authenticationSequence===authenticationSequence&&error?.authenticationEpoch===scopeEpoch;
 }
@@ -324,7 +328,7 @@ function clearProjectData(){
   for(const id of ['agent-name','policy-name','project-name'])$(id).value='';
   for(const id of ['agent','dataset-select','policy'])$(id).replaceChildren();
   keyCursor=null;receiptCursor=null;$('ci-more').disabled=true;$('receipts-more').disabled=true;
-  $('ci-issued-key').value='';$('ci-key-box').hidden=true;$('ci-key-list').replaceChildren();$('receipt-list').replaceChildren();$('ci-project').replaceChildren();$('ci-name').value='';$('ci-status').textContent='';
+  clearIssuedKey();$('ci-key-list').replaceChildren();$('receipt-list').replaceChildren();$('ci-project').replaceChildren();$('ci-name').value='';$('ci-status').textContent='';
   $('baseline-run').replaceChildren();$('comparison-result').textContent='';
 $('results').replaceChildren();$('history-body').replaceChildren();$('audit-list').replaceChildren();
   $('gate-badge').textContent='실행 대기';$('gate-badge').className='gate idle';$('gate-title').textContent='배포 판단을 기다립니다';
@@ -435,14 +439,21 @@ async function receiptHistory(append=false){
 }
 $('ci-key-form').addEventListener('submit',async event=>{
   event.preventDefault();if(workspaceMutation||actor?.role!=='admin')return;
-  const operation={},epoch=scopeEpoch;workspaceMutation=operation;workspaceControls();$('ci-status').textContent='';$('ci-issued-key').value='';$('ci-key-box').hidden=true;
+  const operation={},epoch=scopeEpoch;workspaceMutation=operation;workspaceControls();$('ci-status').textContent='';clearIssuedKey();
   const isCurrent=()=>epoch===scopeEpoch&&workspaceMutation===operation;
   try{const key=await api('/v1/ci-credentials',{method:'POST',body:JSON.stringify({name:$('ci-name').value,projectId:$('ci-project').value,ttlSeconds:Number($('ci-ttl').value)})});if(!isCurrent())return;
     $('ci-issued-key').value=key.token;$('ci-key-box').hidden=false;await ciHistory();if(isCurrent())$('ci-status').textContent='CI 키를 발급했습니다. 안전하게 보관한 뒤 키 창을 닫으세요.';
   }catch(e){if(isCurrent())$('ci-status').textContent=e.message;}finally{if(isCurrent()){workspaceMutation=null;workspaceControls();}}
 });
-$('ci-key-hide').addEventListener('click',()=>{$('ci-issued-key').value='';$('ci-key-box').hidden=true;});
-$('ci-key-copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('ci-issued-key').value);$('ci-status').textContent='키를 복사했습니다. CI 비밀 저장소에 보관하세요.';}catch{$('ci-status').textContent='클립보드에 접근할 수 없습니다.';}});
+$('ci-key-hide').addEventListener('click',clearIssuedKey);
+$('ci-key-copy').addEventListener('click',async()=>{
+  if($('ci-key-copy').disabled||$('ci-key-box').hidden||!$('ci-issued-key').value||actor?.role!=='admin')return;
+  const operation={},epoch=scopeEpoch,sequence=issuedKeySequence;clipboardOperation=operation;$('ci-key-copy').disabled=true;
+  const isCurrent=()=>clipboardOperation===operation&&epoch===scopeEpoch&&sequence===issuedKeySequence;
+  try{await navigator.clipboard.writeText($('ci-issued-key').value);if(isCurrent())$('ci-status').textContent='키를 복사했습니다. CI 비밀 저장소에 보관하세요.';}
+  catch{if(isCurrent())$('ci-status').textContent='클립보드에 접근할 수 없습니다.';}
+  finally{if(isCurrent()){clipboardOperation=null;$('ci-key-copy').disabled=false;}}
+});
 $('ci-refresh').addEventListener('click',()=>listAction(()=>ciHistory(),()=>keyHistorySequence,e=>{$('ci-status').textContent=e.message;}));
 $('receipts-refresh').addEventListener('click',()=>listAction(()=>receiptHistory(),()=>receiptHistorySequence));
 
