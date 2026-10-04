@@ -19,3 +19,7 @@ npm.cmd run receipt:verify -- C:\AgentTrust\.local\ci-smoke-receipt.json C:\Agen
 현재 키는 개발 장치의 파일이며 HSM/KMS·키 철회 목록·자동 회전은 구현되지 않았다. 운영 시 현재 신뢰 공개키와 과거 공개키의 보존·철회 절차, private 키 별도 백업, 복원 후 키 연결을 결정해야 한다. DB backup은 서명 private 키를 포함하지 않는다. private 파일을 임의 삭제하거나 기존 public.pem을 덮어쓰지 않는다.
 
 암호 API는 [Node.js crypto 문서](https://nodejs.org/download/release/v24.16.0/docs/api/crypto.html)를 따른다.
+
+## 오프라인 파일 읽기 제한 — v0.61
+
+`receipt:verify`는 파일을 스트림으로 읽고 최대 16 MiB까지 허용한다. 온라인 게이트 응답의 8 MiB 제한과 들여쓰기된 JSON 저장을 고려해 기존 512 KiB 제한을 확대했다. 한도를 넘으면 읽기를 중단하고, 손상된 UTF-8·잘못된 JSON·서명 변조는 종료 코드 2로 거절한다. 임의 크기의 파일을 지원하지 않으며 큰 기록은 이 한도 안에서 저장해야 한다. 성공 결과도 `historicalEvidenceOnly: true`인 과거 증거이며 현재 배포 허용을 뜻하지 않는다.
