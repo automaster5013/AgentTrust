@@ -308,3 +308,16 @@ test('regression details render as bounded text with complete counts retained',a
 test('incomplete comparison never displays a pass despite permissive flags',async()=>{
  const f=await fixture();await f.view('B');await enableBaseline(f);f.overrides.set('/v1/release-gate',()=>({...releaseResult(false),comparison:{comparable:false,evaluationPassed:true,deploymentAllowed:true}}));await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/회귀 비교: 미완료/);assert.ok(!f.element('manual-gate-output').textContent.includes('회귀 비교: 통과'));
 });
+
+async function regressionFixture(){
+ const f=await fixture();f.runs.B.results=[evidenceCase(1,'fail'),evidenceCase(10,'fail')];await f.view('B');await enableBaseline(f);f.overrides.set('/v1/release-gate',()=>({...releaseResult(false),comparison:{comparable:true,deploymentAllowed:false,regressions:[{caseId:'case-1',ruleId:'rule',before:'pass',after:'fail'}]}}));await f.element('manual-gate-check').fire('click');return f;
+}
+test('regression navigation selects the exact case without changing gate or complete download',async()=>{
+ const f=await regressionFixture();f.element('evidence-filter').value='pass';await f.element('evidence-filter').fire('change');await f.element('gate-regression-links').children[0].fire('click');assert.equal(f.element('results').children.length,1);assert.match(f.element('results').textContent,/case-1/);assert.ok(!f.element('results').textContent.includes('case-10'));assert.match(f.element('evidence-focus').textContent,/case-1/);assert.equal(f.element('evidence-filter').value,'');await f.element('download').fire('click');assert.equal(JSON.parse(await f.downloads[0].text()).results.length,2);await f.element('evidence-focus-clear').fire('click');assert.equal(f.element('results').children.length,2);
+});
+test('an obsolete regression link cannot restore focus after baseline change or run reselection',async()=>{
+ const f=await regressionFixture(),link=f.element('gate-regression-links').children[0];await f.element('gate-baseline-id').fire('input');assert.equal(f.element('gate-regression-links').children.length,0);await link.fire('click');assert.equal(f.element('evidence-focus').textContent,'');await f.element('manual-gate-check').fire('click');await f.element('gate-regression-links').children[0].fire('click');await f.view('B');assert.match(f.element('evidence-focus').textContent,/case-1/);await f.element('logout-button').fire('click');assert.equal(f.element('evidence-focus').textContent,'');
+});
+test('editing ordinary evidence filters clears exact regression focus',async()=>{
+ const f=await regressionFixture();await f.element('gate-regression-links').children[0].fire('click');f.element('evidence-search').value='case-10';await f.element('evidence-search').fire('input');assert.equal(f.element('evidence-focus').textContent,'');assert.equal(f.element('evidence-focus-clear').hidden,true);assert.match(f.element('results').textContent,/case-10/);
+});

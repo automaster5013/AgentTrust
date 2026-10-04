@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
 let currentRun = null;
-let evidencePage=0;
+let evidencePage=0,evidenceCaseId=null;
 const evidencePageSize=10;
 let actor = null;
 let activeProjectId = null;
@@ -33,8 +33,19 @@ function finalComparisonText(comparison){
     regressions.slice(0,10).map(r=>'회귀: 사례 '+r.caseId+' · 규칙 '+r.ruleId+' · '+r.before+' → '+r.after+'\n').join('')+
     (regressions.length>10?'나머지 회귀 '+(regressions.length-10)+'개는 검증 기록 JSON에서 확인하세요.\n':'');
 }
+function renderRegressionLinks(comparison){
+  const runId=selectedRunId,sequence=finalGateSequence,selection=selectedRunSequence,epoch=scopeEpoch;
+  const regressions=Array.isArray(comparison?.regressions)?comparison.regressions:[];
+  $('gate-regression-links').replaceChildren(...regressions.slice(0,10).filter(r=>currentRun?.results.some(c=>c.caseId===r.caseId)).map(r=>{
+    const link=node('a','사례 '+r.caseId+' · 규칙 '+r.ruleId+' 근거 보기','secondary');link.href='#evidence';
+    link.addEventListener('click',event=>{
+      if(sequence!==finalGateSequence||selection!==selectedRunSequence||epoch!==scopeEpoch||selectedRunId!==runId||currentRun?.id!==runId){event.preventDefault();return;}
+      evidenceCaseId=r.caseId;evidencePage=0;$('evidence-search').value='';$('evidence-filter').value='';renderEvidence();
+    });return link;
+  }));
+}
 function invalidateFinalGate(text="최종 게이트를 아직 확인하지 않았습니다."){
-  renderBaselineChoices();
+  renderBaselineChoices();$('gate-regression-links').replaceChildren();
   finalGateSequence++;finalGateBusy=false;currentReceipt=null;$('current-receipt-download').disabled=true;renderNextAction();
   $("manual-gate-output").textContent=text;
   $("release-check-panel").hidden=!currentRun||currentRun.id!==selectedRunId;
@@ -110,7 +121,7 @@ function updateButtons(){
 function render(run) {
   if(currentRun?.id===run.id&&terminal.has(currentRun.state)&&!terminal.has(run.state))return false;
   comparisonSequence++;
-  if(currentRun?.id!==run.id){reviewCursor=null;reviewShown=0;$('review-history-status').textContent='';$('review-more').disabled=true;$('review-comment').value='';$('manual-gate-output').textContent='';evidencePage=0;$('evidence-search').value='';$('evidence-filter').value='';}
+  if(currentRun?.id!==run.id){reviewCursor=null;reviewShown=0;$('review-history-status').textContent='';$('review-more').disabled=true;$('review-comment').value='';$('manual-gate-output').textContent='';evidencePage=0;evidenceCaseId=null;$('evidence-search').value='';$('evidence-filter').value='';}
   currentRun = run;
   invalidateFinalGate();
   $('comparison-result').textContent='후보 실행을 조회한 뒤 기준 실행을 선택하세요.';
@@ -132,6 +143,7 @@ function render(run) {
 function renderEvidence(){
   const run=currentRun,results=run?.results||[],search=$('evidence-search').value.trim().toLocaleLowerCase(),filter=$('evidence-filter').value;
   const matches=results.filter(c=>{
+    if(evidenceCaseId!==null&&c.caseId!==evidenceCaseId)return false;
     if(search&&!`${c.caseId} ${c.input}`.toLocaleLowerCase().includes(search))return false;
     if(filter==='fail')return c.rules.some(r=>r.status==='fail');
     if(filter==='inconclusive')return !!c.error||c.rules.some(r=>r.status==='inconclusive');
@@ -140,6 +152,8 @@ function renderEvidence(){
   });
   evidencePage=Math.min(evidencePage,Math.max(0,Math.ceil(matches.length/evidencePageSize)-1));
   const start=evidencePage*evidencePageSize,visible=matches.slice(start,start+evidencePageSize);
+  $('evidence-focus').textContent=evidenceCaseId===null?'':'선택 사례: '+evidenceCaseId;
+  $('evidence-focus-clear').hidden=evidenceCaseId===null;
   $('evidence-search').disabled=!run;$('evidence-filter').disabled=!run;
   $('evidence-previous').disabled=!run||evidencePage===0;$('evidence-next').disabled=!run||start+evidencePageSize>=matches.length;
   $('evidence-count').textContent=!run?'실행을 선택하면 사례를 찾아볼 수 있습니다.':matches.length?`일치 ${matches.length} / 전체 ${results.length}개 사례 · ${start+1}–${start+visible.length} 표시`:`일치 0 / 전체 ${results.length}개 사례`;
@@ -156,7 +170,8 @@ function renderEvidence(){
   });
   $('results').replaceChildren(...(cards.length ? cards : [node('div', !run?'첫 평가를 실행해 규칙별 판정과 에이전트 출력을 확인하세요.':results.length?'검색·필터에 맞는 사례가 없습니다.':terminal.has(run.state)?'실행이 종료됐습니다. 확정된 사례 결과가 없습니다.':'평가 결과를 기다리고 있습니다.', 'empty')]));
 }
-for(const id of ['evidence-search','evidence-filter'])$(id).addEventListener(id==='evidence-search'?'input':'change',()=>{evidencePage=0;renderEvidence();});
+for(const id of ['evidence-search','evidence-filter'])$(id).addEventListener(id==='evidence-search'?'input':'change',()=>{evidenceCaseId=null;evidencePage=0;renderEvidence();});
+$('evidence-focus-clear').addEventListener('click',()=>{evidenceCaseId=null;evidencePage=0;renderEvidence();});
 $('evidence-previous').addEventListener('click',()=>{evidencePage=Math.max(0,evidencePage-1);renderEvidence();});
 $('evidence-next').addEventListener('click',()=>{evidencePage++;renderEvidence();});
 async function history(append=false) {
@@ -222,7 +237,7 @@ function clearProjectData(){
   recentBaselineRuns=[];
   $('gate-baseline-enabled').checked=false;$('gate-baseline-id').value='';$('gate-baseline-id').disabled=true;
   lookupSequence++;lookupBusy=false;$('run-lookup-button').disabled=false;$('run-lookup-id').value='';$('run-lookup-status').textContent='';
-  evidencePage=0;$('evidence-search').value='';$('evidence-filter').value='';
+  evidencePage=0;evidenceCaseId=null;$('evidence-search').value='';$('evidence-filter').value='';
   sessionSequence++;sessionCursor=null;sessionButtons=[];$('session-list').replaceChildren();$('sessions-status').textContent='';$('sessions-more').disabled=true;
   comparisonSequence++;keyHistorySequence++;receiptHistorySequence++;reviewSequence++;reviewCursor=null;reviewShown=0;$('review-history-status').textContent='';$('review-more').disabled=true;
   inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전의 고정된 내용과 해시를 확인할 수 있습니다.';
@@ -437,13 +452,13 @@ $('manual-gate-check').addEventListener('click',async()=>{
   }
   const run=currentRun,selection=selectedRunSequence,epoch=scopeEpoch,sequence=++finalGateSequence;
   const isCurrent=()=>sequence===finalGateSequence&&selection===selectedRunSequence&&epoch===scopeEpoch&&selectedRunId===run.id;
-  currentReceipt=null;$('current-receipt-download').disabled=true;finalGateBusy=true;$('manual-gate-check').disabled=true;$('manual-gate-output').textContent='최종 게이트를 확인하고 있습니다…';
+  currentReceipt=null;$('gate-regression-links').replaceChildren();$('current-receipt-download').disabled=true;finalGateBusy=true;$('manual-gate-check').disabled=true;$('manual-gate-output').textContent='최종 게이트를 확인하고 있습니다…';
   try{
     const result=await api('/v1/release-gate',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({candidateRunId:run.id,agentVersionId:run.agentVersionId,datasetVersionId:run.datasetVersionId,policyVersionId:run.policyVersionId,...(baselineRunId?{baselineRunId}:{})})});
     if(!isCurrent())return;
     const approval={approved:'승인 유효',rejected:'반려',missing:'승인 대기',expired:'승인 만료',invalid:'승인 무효'}[result.manualApproval?.status]||'불필요';
     $('manual-gate-output').textContent='확인 시점의 최종 게이트: '+(result.deploymentAllowed?'통과':'차단')+' · 관리자 검토 '+approval+'\n실행 '+run.id+'\n'+(baselineRunId?'기준 실행 '+baselineRunId+'\n'+finalComparisonText(result.comparison):'회귀 비교: 제외\n')+(result.artifact?.checkedAt?'확인 시각 '+new Date(result.artifact.checkedAt).toLocaleString('ko-KR')+'\n':'')+(result.artifact?.receiptId?'검증 기록 '+result.artifact.receiptId+'\n':'')+result.reasons.map(releaseReason).join('\n');
-    renderNextAction(result);
+    renderNextAction(result);renderRegressionLinks(result.comparison);
     if((result.artifact?.request?.baselineRunId||null)===baselineRunId&&(!baselineRunId||result.artifact?.evidence?.baseline?.runId===baselineRunId)&&result.artifact?.request?.candidateRunId===run.id&&result.artifact?.evidence?.candidate?.runId===run.id&&typeof result.artifact.receiptId==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(result.artifact.receiptId)&&/^[a-f0-9]{64}$/.test(result.artifactHash||'')){
       currentReceipt={runId:run.id,selection,epoch,sequence,data:{artifact:result.artifact,artifactHash:result.artifactHash,...(result.signature?{signature:result.signature}:{})}};
       $('current-receipt-download').disabled=false;
