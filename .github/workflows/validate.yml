@@ -46,6 +46,7 @@ jobs:
           npm run demo:preflight
           npm run demo:portfolio
           npm run demo:portfolio -- --compare
+          npm run demo:evidence
           npm run demo:roles
       - name: Verify bounded viewer metadata measurements
         run: |
@@ -143,6 +144,7 @@ jobs:
           node --env-file-if-exists=.env scripts/smoke.mjs after
           node --env-file-if-exists=.env scripts/ci-smoke.mjs
           node --env-file-if-exists=.env scripts/manual-review-smoke.mjs
+          npm run demo:evidence
           npm run smoke:sustained -- --cycles 2 --interval-ms 1000
       - name: Prepare isolated recovery evidence and verify read-only deployment preflight
         shell: bash

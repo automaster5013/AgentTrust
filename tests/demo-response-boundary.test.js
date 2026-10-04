@@ -9,8 +9,8 @@ import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
 import {join,resolve,sep} from 'node:path';
 import {releaseResponseLimit} from '../scripts/release-gate.mjs';
 const exec=promisify(execFile);
-for(const [script,args] of [['portfolio-demo.mjs',[]],['portfolio-demo.mjs',['--compare']],['portfolio-roles.mjs',[]],['metadata-benchmark.mjs',[]]]){
- test(script+(args.length?' --compare':'')+' rejects invalid UTF-8 and excessive login bodies before scenario reads and logs out',async t=>{
+for(const [script,args] of [['portfolio-demo.mjs',[]],['portfolio-demo.mjs',['--compare']],['portfolio-demo.mjs',['--export-receipts']],['portfolio-demo.mjs',['--compare','--export-receipts']],['portfolio-roles.mjs',[]],['metadata-benchmark.mjs',[]]]){
+ test(script+(args.length?' '+args.join(' '):'')+' rejects invalid UTF-8 and excessive login bodies before scenario reads and logs out',async t=>{
   const repository=process.cwd(),dir=await mkdtemp(join(repository,'.local','demo-response-test-'));
   await mkdir(join(dir,'.local','receipt-signing'),{recursive:true});
   const key='synthetic-demo-key-canary',cookie='synthetic-demo-cookie-canary';
@@ -35,11 +35,11 @@ for(const [script,args] of [['portfolio-demo.mjs',[]],['portfolio-demo.mjs',['--
  });
 }
 
-test('portfolio demo accepts only a single comparison option before credentials or HTTP requests',async t=>{
+test('portfolio demo rejects duplicate and unsupported demo options before credentials or HTTP requests',async t=>{
   const repository=process.cwd(),dir=await mkdtemp(join(repository,'.local','demo-input-test-'));await mkdir(join(dir,'.local'));
   let requests=0;const server=createServer((req,res)=>{requests++;res.end('{}');});server.listen(0,'127.0.0.1');await once(server,'listening');
   t.after(async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));assert.ok(resolve(dir).startsWith(resolve(repository,'.local')+sep));await rm(dir,{recursive:true,force:true});});
-  for(const args of [['--unknown'],['--compare','--compare'],['--compare=true']]){
+  for(const args of [['--unknown'],['--compare','--compare'],['--compare=true'],['--export-receipts','--export-receipts'],['--compare','--export-receipts','--compare']]){
     let result;try{result=await exec(process.execPath,[join(repository,'scripts','portfolio-demo.mjs'),...args],{cwd:dir,windowsHide:true,timeout:10000,env:{...process.env,PORT:String(server.address().port)}});}catch(error){result=error;}
     assert.equal(result.code,1);assert.equal(requests,0);const report=JSON.parse(result.stdout.trim().split('\n').at(-1));assert.equal(report.status,'blocked');assert.equal(report.sessionLoggedOut,true);
   }

@@ -1,6 +1,6 @@
 {
   "name": "agenttrust",
-  "version": "0.115.0",
+  "version": "0.116.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -31,7 +31,9 @@
     "demo:roles": "node --env-file-if-exists=.env scripts/portfolio-roles.mjs",
     "demo:preflight": "node --env-file-if-exists=.env scripts/demo-preflight.mjs",
     "benchmark:metadata": "node --env-file-if-exists=.env scripts/metadata-benchmark.mjs",
-    "smoke:burst": "node --env-file-if-exists=.env scripts/burst-smoke.mjs"
+    "smoke:burst": "node --env-file-if-exists=.env scripts/burst-smoke.mjs",
+    "demo:evidence": "node --env-file-if-exists=.env scripts/portfolio-evidence-smoke.mjs",
+    "demo:evidence:verify": "node scripts/verify-portfolio-evidence.mjs"
   },
   "dependencies": {
     "ajv": "8.20.0",
