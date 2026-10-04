@@ -1,4 +1,10 @@
 const $ = id => document.getElementById(id);
+const navigation=[['evaluation','nav-evaluation'],['history','nav-history'],['versions','nav-versions'],['projects','nav-projects'],['sessions-panel','nav-sessions']];
+function updateNavigation(){
+  const section=globalThis.location?.hash.slice(1)||'evaluation';
+  for(const [target,id] of navigation){const link=$(id),selected=target===section;link.className=selected?'active':'';link.ariaCurrent=selected?'location':null;}
+}
+globalThis.addEventListener?.('hashchange',updateNavigation);updateNavigation();
 let currentRun = null;
 let evidencePage=0,evidenceCaseId=null;
 const evidencePageSize=10;
@@ -252,6 +258,7 @@ $('download').addEventListener('click', () => {
   const link = node('a'); link.href = url; link.download = `agenttrust-${currentRun.id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 function clearProjectData(){
+  $('workspace-nav').hidden=true;$('nav-projects').hidden=true;
   reviewBusy=false;loading=false;versionBusy=false;workspaceMutation=null;workspaceControls();
   recentBaselineRuns=[];
   $('gate-baseline-enabled').checked=false;$('gate-baseline-id').value='';$('gate-baseline-id').disabled=true;
@@ -309,6 +316,7 @@ async function initialize() {
   await ciHistory();await receiptHistory();await sessionHistory();
   await catalog();$('dataset-json').value=JSON.stringify(await api('/v1/sample-dataset'),null,2);await history();await auditHistory();
   updateButtons();$('loading-panel').hidden=true;$('workspace-ui').hidden=false;$('login-panel').hidden=true;
+  $('nav-projects').hidden=actor.role!=='admin';$('workspace-nav').hidden=false;updateNavigation();
 }
 $('login-form').addEventListener('submit',async event=>{
   event.preventDefault();$('login-button').disabled=true;$('login-status').textContent='';
