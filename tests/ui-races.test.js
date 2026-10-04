@@ -59,6 +59,30 @@ test('late cancellation response cannot replace a newly selected run',async()=>{
   for(const callback of f.timers.splice(0))callback();await firstView;
 });
 
+test('obsolete cancellation completion preserves the status of a new run selection',async()=>{
+ const f=await fixture(),cancel=deferred();const viewing=f.view('A');await settle();
+ f.overrides.set('/v1/runs/A/cancel',()=>cancel.promise);const pending=f.element('cancel-button').fire('click');await settle();await f.view('B');
+ f.element('status').textContent='New selection status';cancel.resolve(execution('A','cancelled'));await pending;
+ assert.equal(f.element('status').textContent,'New selection status');
+ for(const callback of f.timers.splice(0))callback();await viewing;
+});
+
+test('obsolete cancellation failure cannot replace the status after logout',async()=>{
+ const f=await fixture(),cancel=deferred();const viewing=f.view('A');await settle();
+ f.overrides.set('/v1/runs/A/cancel',async()=>{await cancel.promise;throw Error('Synthetic old cancellation failure');});
+ const pending=f.element('cancel-button').fire('click');await settle();await f.element('logout-button').fire('click');
+ f.element('status').textContent='New login status';cancel.resolve();await pending;assert.equal(f.element('status').textContent,'New login status');
+ for(const callback of f.timers.splice(0))callback();await viewing;
+});
+
+test('same-run reselection keeps freshly read state when an older cancellation resolves',async()=>{
+ const f=await fixture(),cancel=deferred();const viewing=f.view('A');await settle();
+ f.overrides.set('/v1/runs/A/cancel',()=>cancel.promise);const pending=f.element('cancel-button').fire('click');await settle();
+ f.runs.A=execution('A','succeeded');await f.view('A');assert.equal(f.element('run-state').textContent,'평가 완료');
+ cancel.resolve(execution('A','cancelled'));await pending;assert.equal(f.element('run-state').textContent,'평가 완료');
+ for(const callback of f.timers.splice(0))callback();await viewing;
+});
+
 test('late comparison result cannot replace a changed baseline selection',async()=>{
   const f=await fixture(),comparison=deferred();await f.view('B');f.overrides.set('/v1/compare',()=>comparison.promise);
   const pending=f.element('compare-form').fire('submit');await settle();

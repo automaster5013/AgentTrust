@@ -309,11 +309,13 @@ $('logout-button').addEventListener('click',async()=>{
   try{await api('/v1/auth/logout',{method:'POST',body:'{}'});showLogin();}catch(e){message(e.message,true);}
 });
 $('cancel-button').addEventListener('click',async()=>{
-  if(!currentRun)return;const target=currentRun;$('cancel-button').disabled=true;
+  if(!currentRun)return;const target=currentRun,epoch=scopeEpoch,selection=selectedRunSequence;
+  const isCurrent=()=>epoch===scopeEpoch&&selection===selectedRunSequence&&selectedRunId===target.id;$('cancel-button').disabled=true;
   try{const run=await api(`/v1/runs/${target.id}/cancel`,{method:'POST',body:'{}'});
-    if(selectedRunId===target.id){render(run);await reviewHistory(run);}
-    await history();await auditHistory();message(`실행 ${target.id.slice(0,8)}을 취소했습니다. 늦은 응답은 판정에 반영되지 않습니다.`);
-  }catch(e){message(e.message,true);}
+    if(!isCurrent())return;render(run);await reviewHistory(run);if(!isCurrent())return;
+    await history();if(!isCurrent())return;await auditHistory();if(!isCurrent())return;
+    message(`실행 ${target.id.slice(0,8)}을 취소했습니다. 늦은 응답은 판정에 반영되지 않습니다.`);
+  }catch(e){if(isCurrent())message(e.message,true);}
 });
 $('audit-action').addEventListener('change',()=>auditHistory().catch(e=>message(e.message,true)));
 $('audit-more').addEventListener('click',()=>auditHistory(true).catch(e=>message(e.message,true)));
