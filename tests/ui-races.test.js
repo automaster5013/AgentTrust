@@ -262,3 +262,27 @@ test('rechecking, refreshing review and selecting another run invalidate the dow
 test('a receipt bound to another execution cannot enable current-record download',async()=>{
  const f=await fixture(),signed=signedUiReceipt('other-run');await f.view('B');f.overrides.set('/v1/release-gate',()=>signed.report);await f.element('manual-gate-check').fire('click');assert.equal(f.element('current-receipt-download').disabled,true);await f.element('current-receipt-download').fire('click');assert.equal(f.downloads.length,0);
 });
+
+const gateBaseline='00000000-0000-0000-0000-000000000789';
+async function enableBaseline(f,id=gateBaseline){f.element('gate-baseline-enabled').checked=true;await f.element('gate-baseline-enabled').fire('change');f.element('gate-baseline-id').value=id;await f.element('gate-baseline-id').fire('input');}
+test('optional baseline is normalized and regression blocks final release',async()=>{
+ const f=await fixture();await f.view('B');await enableBaseline(f,' '+gateBaseline.toUpperCase()+' ');let input;
+ f.overrides.set('/v1/release-gate',options=>{input=JSON.parse(options.body);return {...releaseResult(false),comparison:{deploymentAllowed:false},reasons:['Baseline comparison is incomplete or regressed.']};});await f.element('manual-gate-check').fire('click');
+ assert.equal(input.baselineRunId,gateBaseline);assert.match(f.element('manual-gate-output').textContent,/회귀 비교: 차단/);assert.match(f.element('manual-gate-output').textContent,new RegExp(gateBaseline));assert.match(f.element('next-action-title').textContent,/차단 사유/);
+});
+test('invalid and identical baseline IDs make no final gate request',async()=>{
+ const f=await fixture();await f.view('B');let requests=0;f.overrides.set('/v1/release-gate',()=>{requests++;return releaseResult();});await enableBaseline(f,'invalid');await f.element('manual-gate-check').fire('click');assert.equal(requests,0);
+ f.runs.B.id=gateBaseline;f.overrides.set('/v1/runs/'+gateBaseline,()=>f.runs.B);f.element('run-lookup-id').value=gateBaseline;await f.element('run-lookup-form').fire('submit');await enableBaseline(f);await f.element('manual-gate-check').fire('click');assert.equal(requests,0);
+});
+test('changing baseline invalidates receipt and late response even after restoring the ID',async()=>{
+ const f=await fixture(),older=deferred();await f.view('B');await enableBaseline(f);f.overrides.set('/v1/release-gate',()=>older.promise);const pending=f.element('manual-gate-check').fire('click');await settle();
+ f.element('gate-baseline-id').value=lookupId;await f.element('gate-baseline-id').fire('input');f.element('gate-baseline-id').value=gateBaseline;await f.element('gate-baseline-id').fire('input');older.resolve(releaseResult());await pending;
+ assert.match(f.element('manual-gate-output').textContent,/다시 확인/);assert.equal(f.element('current-receipt-download').disabled,true);assert.equal(f.element('manual-gate-check').disabled,false);
+ f.element('gate-baseline-enabled').checked=false;await f.element('gate-baseline-enabled').fire('change');let input;f.overrides.set('/v1/release-gate',options=>{input=JSON.parse(options.body);return releaseResult();});await f.element('manual-gate-check').fire('click');assert.ok(!('baselineRunId' in input));await f.element('logout-button').fire('click');assert.equal(f.element('gate-baseline-id').value,'');assert.equal(f.element('gate-baseline-enabled').checked,false);
+});
+test('baseline-bound signed receipt exports unchanged and mismatched baseline cannot enable download',async()=>{
+ const f=await fixture();await f.view('B');await enableBaseline(f);const signed=signedUiReceipt(),artifact=signed.report.artifact;artifact.request.baselineRunId=gateBaseline;artifact.evidence.baseline={runId:gateBaseline};
+ const pair=generateKeyPairSync('ed25519'),signer=new ReceiptSigner(pair.privateKey.export({type:'pkcs8',format:'pem'}));signed.report.artifactHash=hash(artifact);signed.report.signature=signer.sign(artifact);signed.report.comparison={deploymentAllowed:true};
+ f.overrides.set('/v1/release-gate',()=>signed.report);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/회귀 비교: 통과/);await f.element('current-receipt-download').fire('click');const downloaded=JSON.parse(await f.downloads[0].text());assert.deepEqual(downloaded.artifact,artifact);assert.equal(verifyReceipt(downloaded,signer.publicMetadata().publicKey).signatureVerified,true);
+ await enableBaseline(f,lookupId);assert.equal(f.element('current-receipt-download').disabled,true);await f.element('manual-gate-check').fire('click');assert.equal(f.element('current-receipt-download').disabled,true);
+});
