@@ -205,3 +205,22 @@ test('review refresh invalidates an in-flight final gate even when the run stays
  const f=await fixture({manual:true}),older=deferred();await f.view('B');f.overrides.set('/v1/release-gate',()=>older.promise);const pending=f.element('manual-gate-check').fire('click');await settle();await f.element('review-refresh').fire('click');older.resolve(releaseResult());await pending;
  assert.match(f.element('manual-gate-output').textContent,/다시 확인하세요/);assert.equal(f.element('manual-gate-check').disabled,false);
 });
+
+test('next actions guide running, blocked and inconclusive evaluations without changing their gates',async()=>{
+ const f=await fixture();const pending=f.view('A');await settle();assert.match(f.element('next-action-title').textContent,/완료를 기다리세요/);
+ f.runs.B.gate={decision:'block',deploymentAllowed:false};await f.view('B');assert.match(f.element('next-action-title').textContent,/실패한 근거/);assert.equal(f.element('next-action-link').href,'#evidence');assert.equal(f.runs.B.gate.deploymentAllowed,false);
+ f.runs.B.gate={decision:'inconclusive',deploymentAllowed:false};await f.view('B');assert.match(f.element('next-action-detail').textContent,/통과가 아닙니다/);for(const callback of f.timers.splice(0))callback();await pending;
+});
+test('passing evaluation guides final checking and invalidation removes prior release guidance',async()=>{
+ const f=await fixture();await f.view('B');assert.equal(f.element('next-action-link').href,'#release-check-panel');f.overrides.set('/v1/release-gate',()=>releaseResult());await f.element('manual-gate-check').fire('click');assert.equal(f.element('next-action-link').href,'#receipts-panel');assert.match(f.element('next-action-detail').textContent,/새 최종 게이트/);
+ await f.view('B');assert.equal(f.element('next-action-link').href,'#release-check-panel');assert.ok(!f.element('next-action-title').textContent.includes('기록을 보관'));
+});
+test('viewer approval guidance respects role and expired results require reevaluation',async()=>{
+ const f=await fixture({manual:true,initialOverrides:[['/v1/me',()=>({role:'viewer',projectId:'project',name:'Viewer',organizationName:'Synthetic',projects:[{id:'project',name:'Synthetic'}]})]]});assert.equal(f.element('next-action-link').href,'#history');await f.view('B');
+ f.overrides.set('/v1/release-gate',()=>({...releaseResult(false),manualApproval:{status:'expired'}}));await f.element('manual-gate-check').fire('click');assert.match(f.element('next-action-title').textContent,/승인을 다시 요청/);assert.match(f.element('next-action-detail').textContent,/작성할 수 없습니다/);assert.equal(f.element('next-action-link').href,'#review-panel');
+ f.overrides.set('/v1/release-gate',()=>({...releaseResult(false),reasons:['Result is missing, stale or future-dated.'],manualApproval:{status:'approved'}}));await f.element('manual-gate-check').fire('click');assert.equal(f.element('next-action-link').href,'#evaluation');assert.match(f.element('manual-gate-output').textContent,/유효 시간이 지났/);
+});
+test('failed final check gives retry guidance and late success cannot overwrite it after refresh',async()=>{
+ const f=await fixture({manual:true});await f.view('B');f.overrides.set('/v1/release-gate',()=>{throw Error('Synthetic check failed');});await f.element('manual-gate-check').fire('click');assert.match(f.element('next-action-title').textContent,/다시 요청/);assert.match(f.element('next-action-detail').textContent,/성공 판정으로 사용할 수 없습니다/);
+ const older=deferred();f.overrides.set('/v1/release-gate',()=>older.promise);const pending=f.element('manual-gate-check').fire('click');await settle();await f.element('review-refresh').fire('click');older.resolve(releaseResult());await pending;assert.equal(f.element('next-action-link').href,'#review-panel');assert.ok(!f.element('next-action-title').textContent.includes('기록을 보관'));
+});

@@ -15,10 +15,36 @@ let inspectionSequence=0,comparisonSequence=0,keyHistorySequence=0,receiptHistor
 let reviewBusy=false,reviewCursor=null,reviewShown=0;
 let finalGateSequence=0,finalGateBusy=false;
 function invalidateFinalGate(text="최종 게이트를 아직 확인하지 않았습니다."){
-  finalGateSequence++;finalGateBusy=false;
+  finalGateSequence++;finalGateBusy=false;renderNextAction();
   $("manual-gate-output").textContent=text;
   $("release-check-panel").hidden=!currentRun||currentRun.id!==selectedRunId;
   $("manual-gate-check").disabled=!currentRun||currentRun.id!==selectedRunId||!terminal.has(currentRun.state)||reviewBusy;
+}
+function renderNextAction(result){
+  const run=currentRun?.id===selectedRunId?currentRun:null;
+  let title='평가를 시작하세요',detail=actor?.role==='viewer'?'조회자는 실행 기록에서 평가 근거를 확인할 수 있습니다.':'에이전트·데이터셋·정책 버전을 선택하고 새 평가를 실행하세요.',target=actor?.role==='viewer'?'history':'evaluation',label=actor?.role==='viewer'?'실행 기록 보기':'평가 설정 보기';
+  if(run){
+    target='evidence';label='평가 근거 보기';
+    if(!terminal.has(run.state)){title='평가 완료를 기다리세요';detail='워커가 처리 중입니다. 완료되기 전에는 릴리스를 허용하지 않습니다.';}
+    else if(run.gate.decision==='block'){title='실패한 근거를 확인하고 수정하세요';detail='필수 규칙과 통과율을 확인하세요. 변경은 새 버전으로 등록하고 다시 평가해야 합니다.';}
+    else if(run.gate.decision!=='pass'){title='누락된 근거와 실행 오류를 확인하세요';detail='취소·시간 초과·증거 누락은 통과가 아닙니다. 원인을 해결한 뒤 새 평가를 실행하세요.';}
+    else if(result?.reasons?.includes('Result is missing, stale or future-dated.')){title='결과 유효 시간을 확인하고 다시 평가하세요';detail='평가 결과가 없거나 오래됐거나 미래 시각입니다. 현재 유효한 결과로 최종 게이트를 다시 확인하세요.';target='evaluation';label='새 평가 설정 보기';}
+    else if(result?.deploymentAllowed===true){title='확인 기록을 보관하고 배포 직전에 다시 검증하세요';detail='이 결과는 확인 시점의 판단입니다. CI에서 새 최종 게이트를 확인한 뒤 배포 절차를 진행하세요.';target='receipts-panel';label='검증 기록 보기';}
+    else if(result?.manualApproval&&result.manualApproval.status!=='approved'){
+      title={missing:'관리자 검토를 요청하세요',rejected:'반려 의견을 확인하세요',expired:'관리자 승인을 다시 요청하세요',invalid:'승인 근거와 검토자 상태를 확인하세요'}[result.manualApproval.status]||'관리자 검토 상태를 확인하세요';
+      detail=actor?.role==='admin'?'평가 근거와 검토 이력을 확인하고 검토를 기록한 뒤 최종 게이트를 다시 확인하세요.':'관리자에게 근거 검토를 요청하세요. 현재 권한으로 승인 기록을 작성할 수 없습니다.';target='review-panel';label='릴리스 검토 보기';
+    }
+    else if(result){title='최종 게이트의 차단 사유를 확인하세요';detail='버전·근거·유효 시간 등 차단 사유를 해결한 뒤 다시 확인하세요. 평가 통과만으로 릴리스할 수 없습니다.';target='release-check-panel';label='최종 게이트 보기';}
+    else if(run.gate.requiresManualApproval){title='관리자 검토와 최종 확인이 필요합니다';detail=actor?.role==='admin'?'평가 근거를 검토하고 승인 여부를 기록하세요. 기존 승인이 있다면 최종 게이트에서 유효성을 확인하세요.':'관리자 검토를 요청하세요. 기존 승인이 있다면 최종 게이트에서 유효성을 확인할 수 있습니다.';target='review-panel';label='릴리스 검토 보기';}
+    else{title='최종 릴리스 게이트를 확인하세요';detail='평가 기준을 통과했습니다. 고정 버전·근거·유효 시간을 최종 게이트에서 함께 확인하세요.';target='release-check-panel';label='최종 게이트 보기';}
+  }
+  $('next-action-title').textContent=title;$('next-action-detail').textContent=detail;$('next-action-link').textContent=label;$('next-action-link').href='#'+target;
+}
+function releaseReason(reason){
+  const labels={'Result is missing, stale or future-dated.':'평가 결과가 없거나 유효 시간이 지났거나 미래 시각입니다.','A completed passing evaluation is required.':'완료된 통과 평가가 필요합니다.','Evidence integrity verification failed.':'평가 근거의 무결성 검증에 실패했습니다.','Evidence structure, version binding or summary is inconsistent.':'근거 구조·고정 버전·요약이 일치하지 않습니다.','Evaluation coverage is incomplete.':'평가 사례의 근거가 완전하지 않습니다.','Baseline comparison is incomplete or regressed.':'기준 실행 비교가 불완전하거나 회귀했습니다.','A required rule failed.':'필수 규칙이 실패했습니다.'};
+  if(reason.startsWith('A current administrator approval'))return '현재 유효한 관리자 승인이 필요합니다.';
+  if(reason.startsWith('Version mismatch:'))return '요청한 버전과 평가 실행의 고정 버전이 일치하지 않습니다.';
+  return labels[reason]||reason;
 }
 let sessionCursor=null,sessionSequence=0,sessionBusy=false,sessionButtons=[];
 const terminal = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
@@ -216,7 +242,7 @@ async function auditHistory(append=false) {
 }
 async function initialize() {
   $('loading-panel').hidden=false;$('workspace-ui').hidden=true;$('login-panel').hidden=true;
-  actor=await api('/v1/me');activeProjectId=actor.projectId;
+  actor=await api('/v1/me');activeProjectId=actor.projectId;renderNextAction();
   $('workspace-project').replaceChildren(...actor.projects.map(p=>{const option=node('option',p.name);option.value=p.id;return option;}));$('workspace-project').value=activeProjectId;
   $('identity-label').textContent=`${actor.organizationName} · ${actor.name} · ${actor.role}`;
   $('audit-panel').hidden=actor.role!=='admin';
@@ -364,9 +390,10 @@ $('manual-gate-check').addEventListener('click',async()=>{
     const result=await api('/v1/release-gate',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({candidateRunId:run.id,agentVersionId:run.agentVersionId,datasetVersionId:run.datasetVersionId,policyVersionId:run.policyVersionId})});
     if(!isCurrent())return;
     const approval={approved:'승인 유효',rejected:'반려',missing:'승인 대기',expired:'승인 만료',invalid:'승인 무효'}[result.manualApproval?.status]||'불필요';
-    $('manual-gate-output').textContent='확인 시점의 최종 게이트: '+(result.deploymentAllowed?'통과':'차단')+' · 관리자 검토 '+approval+'\n실행 '+run.id+'\n'+(result.artifact?.checkedAt?'확인 시각 '+new Date(result.artifact.checkedAt).toLocaleString('ko-KR')+'\n':'')+(result.artifact?.receiptId?'검증 기록 '+result.artifact.receiptId+'\n':'')+result.reasons.map(reason=>reason.startsWith('A current administrator approval')?'유효한 관리자 승인이 필요합니다.':reason).join('\n');
+    $('manual-gate-output').textContent='확인 시점의 최종 게이트: '+(result.deploymentAllowed?'통과':'차단')+' · 관리자 검토 '+approval+'\n실행 '+run.id+'\n'+(result.artifact?.checkedAt?'확인 시각 '+new Date(result.artifact.checkedAt).toLocaleString('ko-KR')+'\n':'')+(result.artifact?.receiptId?'검증 기록 '+result.artifact.receiptId+'\n':'')+result.reasons.map(releaseReason).join('\n');
+    renderNextAction(result);
     await receiptHistory();
-  }catch(e){if(isCurrent())$('manual-gate-output').textContent='최종 게이트 확인 실패: '+e.message;}
+  }catch(e){if(isCurrent()){$('manual-gate-output').textContent='최종 게이트 확인 실패: '+e.message;renderNextAction();$('next-action-title').textContent='최종 게이트 확인을 다시 요청하세요';$('next-action-detail').textContent='확인을 완료하지 못했습니다. 성공 판정으로 사용할 수 없습니다.';$('next-action-link').href='#release-check-panel';$('next-action-link').textContent='최종 게이트 보기';}}
   finally{if(isCurrent()){finalGateBusy=false;$('manual-gate-check').disabled=reviewBusy;}}
 });
 
