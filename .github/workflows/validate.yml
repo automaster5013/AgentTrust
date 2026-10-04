@@ -45,6 +45,7 @@ jobs:
         run: |
           npm run demo:preflight
           npm run demo:portfolio
+          npm run demo:portfolio -- --compare
           npm run demo:roles
       - name: Verify bounded viewer metadata measurements
         run: |

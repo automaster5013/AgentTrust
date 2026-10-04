@@ -1,33 +1,53 @@
 import assert from 'node:assert/strict';
 
 // The scenario uses only the seeded synthetic dataset and deterministic mocks.
-export async function runPortfolioScenario({call,wait,verify,onStep=()=>{}}){
-  const report={schemaVersion:1,synthetic:true,serverDeployed:false,steps:[]};
+export async function runPortfolioScenario({call,wait,verify,onStep=()=>{},compare=false}){
+  assert.equal(typeof compare,'boolean');
+  const report={schemaVersion:1,synthetic:true,serverDeployed:false,withBaselineComparison:compare,steps:[]};
+  const baselines=new Map();
   const active=new Set();let reviewRun,approvalAttempted=false,rejected=false;
   const step=(name,data)=>{const item={name,...data};report.steps.push(item);onStep(item);};
   const check=async(name,run,input,allowed,status)=>{
-    const receipt=await call('/v1/release-gate',{candidateRunId:run.id,...input});
+    const baseline=baselines.get(input.policyVersionId);
+    if(compare)assert.ok(baseline&&baseline.id!==run.id);
+    const receipt=await call('/v1/release-gate',{candidateRunId:run.id,...input,...(compare?{baselineRunId:baseline.id}:{})});
     assert.equal(receipt.deploymentAllowed,allowed);
     if(status)assert.equal(receipt.manualApproval?.status,status);
     assert.equal(verify(receipt).signatureVerified,true);
-    step(name,{runId:run.id,decision:receipt.decision,deploymentAllowed:allowed,manualApproval:receipt.manualApproval?.status||'not_required',receiptId:receipt.artifact.receiptId,signatureVerified:true});
+    if(compare){
+      assert.equal(receipt.artifact.request.baselineRunId,baseline.id);
+      assert.equal(receipt.artifact.evidence.baseline.runId,baseline.id);
+      assert.equal(receipt.artifact.evidence.baseline.snapshotHash,baseline.snapshotHash);
+      assert.equal(receipt.artifact.evidence.baseline.resultHash,baseline.resultHash);
+      assert.equal(receipt.comparison.baselineRunId,baseline.id);
+      assert.equal(receipt.comparison.candidateRunId,run.id);
+      assert.equal(receipt.comparison.comparable,run.gate.decision!=='inconclusive');
+      assert.equal(receipt.comparison.evaluationPassed??receipt.comparison.deploymentAllowed,run.gate.decision==='pass');
+      assert.ok(Array.isArray(receipt.comparison.regressions));
+      if(run.gate.decision==='pass')assert.equal(receipt.comparison.regressions.length,0);
+      if(run.gate.decision==='block')assert.ok(receipt.comparison.regressions.length>0);
+      assert.equal(receipt.decision,allowed?'pass':'block');
+    }
+    step(name,{runId:run.id,decision:receipt.decision,deploymentAllowed:allowed,manualApproval:receipt.manualApproval?.status||'not_required',receiptId:receipt.artifact.receiptId,signatureVerified:true,...(compare?{baselineRunId:baseline.id,comparable:receipt.comparison.comparable,comparisonEvaluationPassed:receipt.comparison.evaluationPassed??receipt.comparison.deploymentAllowed,regressions:receipt.comparison.regressions.length}:{})});
   };
   try{
     const catalog=await call('/v1/catalog');
     const dataset=catalog.dataset.find(d=>d.name==='Customer support safety · v1');
     const policy=catalog.policy.find(p=>p.name==='필수 검증 전체 통과'&&!p.requiresManualApproval&&p.minimumPassRate===1);
     assert.ok(dataset&&policy,'Seeded synthetic versions required');
-    const execute=async(mode,policyVersionId,state,decision)=>{
+    const execute=async(mode,policyVersionId,state,decision,prefix='evaluation_')=>{
       const agent=catalog.agent.find(a=>a.mode===mode);assert.ok(agent);
       const input={agentVersionId:agent.id,datasetVersionId:dataset.id,policyVersionId};
       const created=await call('/v1/runs',{...input,timeoutMs:30000,caseBudget:100});active.add(created.id);
       const run=await wait(created.id);assert.equal(run.state,state);assert.equal(run.gate.decision,decision);active.delete(run.id);
-      step('evaluation_'+mode,{runId:run.id,state:run.state,decision:run.gate.decision});return {run,input};
+      step(prefix+mode,{runId:run.id,state:run.state,decision:run.gate.decision});return {run,input};
     };
+    if(compare)baselines.set(policy.id,(await execute('compliant',policy.id,'succeeded','pass','baseline_')).run);
     for(const [mode,state,decision,allowed] of [['compliant','succeeded','pass',true],['regression','succeeded','block',false],['missing_evidence','succeeded','inconclusive',false]]){
       const item=await execute(mode,policy.id,state,decision);await check('release_'+mode,item.run,item.input,allowed);
     }
     const manual=await call('/v1/policy-versions',{name:'Portfolio synthetic administrator review',minimumPassRate:1,requiresManualApproval:true,manualApprovalTtlSeconds:3600});
+    if(compare)baselines.set(manual.id,(await execute('compliant',manual.id,'succeeded','pass','baseline_')).run);
     const item=await execute('compliant',manual.id,'succeeded','pass');reviewRun=item.run;
     assert.equal(reviewRun.gate.evaluationPassed,true);assert.equal(reviewRun.gate.deploymentAllowed,false);
     await check('approval_required',reviewRun,item.input,false,'missing');
