@@ -138,3 +138,18 @@ npm run delivery:verify -- .local/delivery-manifest.json
 정상 결과에도 `ciSuccessChecked: false`, `signatureVerified: false`를 명시한다. 파일 검사는 GitHub 성공 상태 조회나 서명된 출처 확인이 아니며, 조작자가 모든 필드를 재작성하면 파일 검사만으로 이를 판별할 수 없다. 신뢰할 수 있는 GitHub 실행 전체 성공 여부를 별도로 확인하고, 기존 `deploy:preflight`로 호스트 상태도 점검한다. 명세 검사를 배포 승인이나 자동 배포로 취급하지 않는다. 오래된 정상 명세의 열람은 허용하며 최신 릴리스 선택은 운영자가 결정한다.
 
 기계적으로 결과를 읽을 때는 `node scripts/verify-delivery.mjs <manifest.json>`을 직접 사용해 npm 안내 출력 없이 JSON을 얻는다. 이 명령은 `.env`를 자동으로 읽지 않으며 위의 독립적인 기대값만 필요하다. CI 승격 작업도 최종 명세 파일을 같은 명령으로 읽어 일치를 확인한다.
+
+
+### GitHub 성공 결과의 온라인 확인
+
+`npm run delivery:verify:github -- <manifest.json>`은 기존 파일 검사 후 GitHub의 [실행 시도 조회 API](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run-attempt)와 [해당 시도의 작업 조회 API](https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run-attempt)를 읽기 전용으로 조회한다. 기대값 환경 변수와 명세 파일은 위 `delivery:verify`와 같다. 공개 저장소는 인증 없이 사용할 수 있다. 비공개 저장소나 인증이 필요한 경우 Actions read 권한의 `AGENTTRUST_GITHUB_TOKEN`을 호출 환경에서 별도로 제공한다. 토큰을 명령 인자·파일·로그에 기록하지 않으며 이 명령은 자격증명 저장소를 자동 조회하지 않는다.
+
+```powershell
+npm run delivery:verify:github -- .local/delivery-manifest.json
+```
+
+검사 대상은 지정한 저장소와 실행·시도 번호의 commit, main 브랜치, push/workflow_dispatch 이벤트, `.github/workflows/validate.yml`, 성공 완료 상태다. 같은 시도의 `test`, `Publish candidate container`, `Verify registry image runtime`, `Promote runtime-verified main image` 네 작업이 모두 같은 commit으로 성공해야 한다. 누락·중복·추가 작업, 실패·건너뜀·대기 상태, 다른 시도 결과는 차단한다. 향후 workflow 작업 이름/구조를 변경하면 이 검증 계약도 함께 갱신해야 한다.
+
+요청은 `api.github.com`의 고정 HTTPS 경로로만 GET하며 redirect를 따르지 않는다. 응답은 각 1 MiB와 15초로 제한하고 API 접근 거절·rate limit·네트워크 오류·잘못된 응답을 종료 코드 1과 `DELIVERY_GITHUB_UNVERIFIED`로 처리한다. 오류 응답·예외·토큰은 출력하지 않으며 오프라인 성공으로 대체하지 않는다. 정상 결과는 종료 코드 0, `ciSuccessChecked: true`, `ciJobsVerified: 4`, 조회 시각 `ciCheckedAt`을 포함한다. 기계적으로 읽을 때는 `node scripts/verify-delivery-github.mjs <manifest.json>`을 직접 사용한다.
+
+온라인 확인은 GitHub가 해당 실행 시도의 성공을 보고했음을 확인한다. API 작업 결과만으로 명세 digest가 실제 registry push와 결합됐다는 암호학적 증명이 생기지 않으므로 `registryDigestBindingChecked: false`, `signatureVerified: false`를 명시한다. 검증 digest는 신뢰할 수 있는 성공 실행 요약과 별도로 확인해야 한다. 호스트 사전 점검·고객 릴리스 승인·실제 배포도 별도 절차다. 현재 CI 안에서 자신의 최종 성공을 조회하면 아직 실행 중이므로 통과할 수 없다. 이 온라인 명령은 workflow 전체 완료 후 운영자가 실행한다.
