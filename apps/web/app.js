@@ -115,6 +115,11 @@ const terminal = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
 const decisionLabels = { pass: '통과', block: '차단', inconclusive: '판정 불가' };
 const stateLabels = { queued: '대기 중', running: '실행 중', succeeded: '평가 완료', failed: '실행 실패', cancelled: '취소됨', timed_out: '시간 초과' };
 function message(text, error = false) { $('status').textContent = text; $('status').className = error ? 'error' : ''; }
+async function listAction(work,generation,onError=error=>message(error.message,true),restore){
+  const epoch=scopeEpoch;let sequence;
+  try{const pending=work();sequence=generation();await pending;}
+  catch(error){if(epoch===scopeEpoch&&sequence===generation()){onError(error);restore?.();}}
+}
 async function readApiResponse(response){
   const reader=response.body?.getReader();if(!reader)throw new Error('Missing API response body.');
   const chunks=[];let bytes=0;
@@ -252,7 +257,7 @@ async function history(append=false) {
     row.append(node('td', r.agentName), node('td', r.datasetName), node('td', stateLabels[r.state] || r.state));
     const gate = node('td'); gate.append(node('span', decisionLabels[r.gate.decision]+(r.gate.requiresManualApproval&&r.gate.evaluationPassed?' · 관리자 검토':''), `chip ${r.gate.decision}`));
     const action = node('td'); const button = node('button', '조회', 'secondary');
-    button.addEventListener('click', () => selectRun(r.id).catch(e => message(e.message, true))); action.append(button);
+    button.addEventListener('click', () => listAction(()=>selectRun(r.id),()=>selectedRunSequence)); action.append(button);
     row.append(gate, node('td', new Date(r.createdAt).toLocaleString('ko-KR')), action); return row;
   }));
 }
@@ -377,9 +382,9 @@ $('cancel-button').addEventListener('click',async()=>{
   }catch(e){if(isCurrent())message(e.message,true);}
   finally{if(isCurrent()&&cancelOperation===operation){cancelOperation=null;$('cancel-button').disabled=!currentRun||terminal.has(currentRun.state)||actor?.role==='viewer';}}
 });
-$('audit-action').addEventListener('change',()=>auditHistory().catch(e=>message(e.message,true)));
-$('audit-more').addEventListener('click',()=>auditHistory(true).catch(e=>message(e.message,true)));
-$('audit-refresh').addEventListener('click',()=>auditHistory().catch(e=>message(e.message,true)));
+$('audit-action').addEventListener('change',()=>listAction(()=>auditHistory(),()=>auditSequence));
+$('audit-more').addEventListener('click',()=>listAction(()=>auditHistory(true),()=>auditSequence));
+$('audit-refresh').addEventListener('click',()=>listAction(()=>auditHistory(),()=>auditSequence));
 
 
 $('baseline-run').addEventListener('change',()=>{comparisonSequence++;$('comparison-result').textContent='기준 실행이 변경됐습니다. 다시 비교하세요.';});
@@ -427,8 +432,8 @@ $('ci-key-form').addEventListener('submit',async event=>{
 });
 $('ci-key-hide').addEventListener('click',()=>{$('ci-issued-key').value='';$('ci-key-box').hidden=true;});
 $('ci-key-copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('ci-issued-key').value);$('ci-status').textContent='키를 복사했습니다. CI 비밀 저장소에 보관하세요.';}catch{$('ci-status').textContent='클립보드에 접근할 수 없습니다.';}});
-$('ci-refresh').addEventListener('click',()=>ciHistory().catch(e=>{$('ci-status').textContent=e.message;}));
-$('receipts-refresh').addEventListener('click',()=>receiptHistory().catch(e=>message(e.message,true)));
+$('ci-refresh').addEventListener('click',()=>listAction(()=>ciHistory(),()=>keyHistorySequence,e=>{$('ci-status').textContent=e.message;}));
+$('receipts-refresh').addEventListener('click',()=>listAction(()=>receiptHistory(),()=>receiptHistorySequence));
 
 $('workspace-project').addEventListener('change',async()=>{
   const previous=activeProjectId;let epoch=++scopeEpoch;activeProjectId=$('workspace-project').value;clearProjectData();$('workspace-project').disabled=true;
@@ -457,8 +462,8 @@ for(const kind of ['agent','policy'])$(kind+'-form').addEventListener('submit',a
   }catch(e){if(epoch===scopeEpoch)message(e.message,true);}finally{if(epoch===scopeEpoch){versionBusy=false;updateButtons();}}
 });
 
-$('ci-more').addEventListener('click',async()=>{$('ci-more').disabled=true;try{await ciHistory(true);}catch(e){$('ci-status').textContent=e.message;$('ci-more').disabled=!keyCursor;}});
-$('receipts-more').addEventListener('click',async()=>{$('receipts-more').disabled=true;try{await receiptHistory(true);}catch(e){message(e.message,true);$('receipts-more').disabled=!receiptCursor;}});
+$('ci-more').addEventListener('click',()=>{if($('ci-more').disabled)return;$('ci-more').disabled=true;return listAction(()=>ciHistory(true),()=>keyHistorySequence,e=>{$('ci-status').textContent=e.message;},()=>{$('ci-more').disabled=!keyCursor;});});
+$('receipts-more').addEventListener('click',()=>{if($('receipts-more').disabled)return;$('receipts-more').disabled=true;return listAction(()=>receiptHistory(true),()=>receiptHistorySequence,undefined,()=>{$('receipts-more').disabled=!receiptCursor;});});
 
 function renderOperations(data){
   $('worker-signal').textContent={recent:'신호 있음',stale:'지연됨',missing:'미확인'}[data.worker.state];
@@ -485,8 +490,8 @@ $('run-lookup-form').addEventListener('submit',async event=>{
   }catch{if(isCurrent())$('run-lookup-status').textContent=loaded?'실행 조회 후 관련 기록을 모두 불러오지 못했습니다. 실행 상태와 연결을 확인하고 다시 조회하세요.':'실행을 조회할 수 없습니다. ID와 현재 프로젝트·접근 권한을 확인하세요. 기존 선택은 유지됩니다.';}
   finally{if(sequence===lookupSequence){lookupBusy=false;$('run-lookup-button').disabled=false;if(!isCurrent())$('run-lookup-status').textContent='다른 실행을 선택하여 이전 ID 조회 결과를 표시하지 않습니다.';}}
 });
-$('history-filter-form').addEventListener('submit',async event=>{event.preventDefault();runCursor=null;try{await history();}catch(e){message(e.message,true);}});
-$('history-more').addEventListener('click',async()=>{$('history-more').disabled=true;try{await history(true);}catch(e){message(e.message,true);$('history-more').disabled=!runCursor;}});
+$('history-filter-form').addEventListener('submit',event=>{event.preventDefault();runCursor=null;return listAction(()=>history(),()=>historySequence);});
+$('history-more').addEventListener('click',()=>{if($('history-more').disabled)return;$('history-more').disabled=true;return listAction(()=>history(true),()=>historySequence,undefined,()=>{$('history-more').disabled=!runCursor;});});
 
 $('policy-manual').addEventListener('change',()=>{$('policy-review-ttl').disabled=!$('policy-manual').checked;});
 async function reviewHistory(run=currentRun,append=false){
@@ -515,8 +520,8 @@ $('review-form').addEventListener('submit',async event=>{
   }catch(e){if(isCurrent())message(e.message,true);}
   finally{if(epoch===scopeEpoch){reviewBusy=false;invalidateFinalGate('검토 요청이 종료됐습니다. 최종 게이트를 다시 확인하세요.');await reviewHistory().catch(()=>{});}}
 });
-$('review-refresh').addEventListener('click',()=>{invalidateFinalGate('검토 기록을 새로고침했습니다. 최종 게이트를 다시 확인하세요.');reviewHistory().catch(e=>message(e.message,true));});
-$('review-more').addEventListener('click',async()=>{const run=currentRun;if(!run)return;$('review-more').disabled=true;try{await reviewHistory(run,true);}catch(error){if(selectedRunId===run.id){message(error.message,true);$('review-more').disabled=reviewBusy||!reviewCursor;}}});
+$('review-refresh').addEventListener('click',()=>{invalidateFinalGate('검토 기록을 새로고침했습니다. 최종 게이트를 다시 확인하세요.');return listAction(()=>reviewHistory(),()=>reviewSequence+':'+selectedRunSequence);});
+$('review-more').addEventListener('click',()=>{const run=currentRun;if(!run||$('review-more').disabled)return;$('review-more').disabled=true;return listAction(()=>reviewHistory(run,true),()=>reviewSequence+':'+selectedRunSequence,undefined,()=>{$('review-more').disabled=reviewBusy||!reviewCursor;});});
 $('gate-baseline-enabled').addEventListener('change',()=>{
   $('gate-baseline-id').disabled=!$('gate-baseline-enabled').checked;
   invalidateFinalGate('비교 포함 여부가 변경됐습니다. 최종 게이트를 다시 확인하세요.');
@@ -606,8 +611,8 @@ async function sessionHistory(append=false){
   }
   if(!append&&!page.items.length)$('session-list').textContent='활성 세션이 없습니다.';sessionControls();
 }
-$('sessions-refresh').addEventListener('click',async()=>{try{await sessionHistory();}catch(error){$('sessions-status').textContent=error.message;}});
-$('sessions-more').addEventListener('click',async()=>{try{await sessionHistory(true);}catch(error){$('sessions-status').textContent=error.message;}});
+$('sessions-refresh').addEventListener('click',()=>listAction(()=>sessionHistory(),()=>sessionSequence,e=>{$('sessions-status').textContent=e.message;}));
+$('sessions-more').addEventListener('click',()=>listAction(()=>sessionHistory(true),()=>sessionSequence,e=>{$('sessions-status').textContent=e.message;}));
 
 
 $('login-button').disabled=true;

@@ -1,6 +1,6 @@
 # AgentTrust 기술 설명과 검증 근거
 
-기업 개발팀이 에이전트 변경의 평가 근거를 확인하고 릴리스 여부를 결정하는 로컬 프로토타입이다. v0.95까지 검증한 구현과 v0.91 CI 이미지의 기존 로컬 설치 실행 점검을 설명하며 고객 파일럿이나 상용 배포 성과를 주장하지 않는다. [실행 시연](portfolio-demo.md) → [실제 아키텍처](architecture.md) → 아래 검증 근거 순서로 살펴볼 수 있다.
+기업 개발팀이 에이전트 변경의 평가 근거를 확인하고 릴리스 여부를 결정하는 로컬 프로토타입이다. v0.100까지 검증한 구현과 v0.96 CI 이미지의 기존 로컬 설치 실행 점검을 설명하며 고객 파일럿이나 상용 배포 성과를 주장하지 않는다. [실행 시연](portfolio-demo.md) → [실제 아키텍처](architecture.md) → 아래 검증 근거 순서로 살펴볼 수 있다.
 
 ## 해결하려는 문제
 
@@ -51,7 +51,7 @@
 | 사용자·권한 시연 | [portfolio scenario](../scripts/portfolio-scenario.mjs), [role scenario](../scripts/portfolio-roles-scenario.mjs) | 합성 평가·승인·거절과 자체 세션 정리 |
 | 이미지와 배포 묶음 | [GitHub workflow](../.github/workflows/validate.yml), [전달 안내](github-delivery.md) | 후보 digest 실행·승격·공개 묶음 저장과 사후 CI 조회 |
 
-문서 작성 기준선은 커밋 `0bca294c70c683adbbcd006ff0d1dccada70387b`의 [GitHub CI 실행](https://github.com/automaster5013/AgentTrust/actions/runs/37209367585)이다. 이 v0.95 실행의 테스트 291개와 네 작업이 성공했고 온라인 전달 기록도 대조했다. 이 링크는 해당 커밋의 근거이며 미래 변경의 성공을 의미하지 않는다. 현재 main은 저장소의 CI 배지와 해당 실행에서 확인한다.
+문서 작성 기준선은 커밋 `5812841994dc3f5474ce142860a6867b410748ba`의 [GitHub CI 실행](https://github.com/automaster5013/AgentTrust/actions/runs/37218796869)이다. 이 v0.100 실행의 테스트 301개와 네 작업이 성공했고 온라인 전달 기록도 대조했다. 이 링크는 해당 커밋의 근거이며 미래 변경의 성공을 의미하지 않는다. 현재 main은 저장소의 CI 배지와 해당 실행에서 확인한다.
 
 실행은 [시연 안내](portfolio-demo.md)의 설치 절차를 따른다. `npm run demo:portfolio`와 `npm run demo:roles`는 각각 10단계·11단계의 결과를 출력한다. 자체 세션을 종료하고 관리자 사례를 반려로 남기며 기존 감사·평가 기록을 삭제하지 않는다. 보고서는 `.local`에 저장한다. 보고서·스크린샷을 공유하기 전에는 로컬 정보와 민감 데이터 포함 여부를 확인해야 한다. 접근 키·백업 키·서명 private key는 공유하지 않는다.
 

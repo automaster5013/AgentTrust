@@ -109,6 +109,30 @@ test('same-run reselection keeps freshly read state when an older cancellation r
  for(const callback of f.timers.splice(0))callback();await viewing;
 });
 
+const refreshCases=[['history-filter-form','submit','/v1/runs?limit=25','status'],['audit-refresh','click','/v1/audit-events?limit=25','status'],['ci-refresh','click','/v1/ci-credentials?limit=25','ci-status'],['receipts-refresh','click','/v1/release-receipts?limit=25','status'],['sessions-refresh','click','/v1/sessions?limit=25','sessions-status']];
+test('obsolete list refresh failures cannot overwrite a new workspace status',async()=>{
+ for(const [button,event,path,status] of refreshCases){
+  const f=await fixture(),older=deferred();f.overrides.set(path,async()=>{await older.promise;throw Error('Old list failure');});const pending=f.element(button).fire(event);await settle();await f.element('logout-button').fire('click');f.overrides.delete(path);await f.element('login-form').fire('submit');f.element(status).textContent='New list workspace';older.resolve();await pending;assert.equal(f.element(status).textContent,'New list workspace',button);
+ }
+});
+test('superseded list refresh failures cannot replace a newer refresh result',async()=>{
+ for(const [button,event,path,status] of refreshCases){
+  const f=await fixture(),older=deferred();f.overrides.set(path,async()=>{await older.promise;throw Error('Old list failure');});const pending=f.element(button).fire(event);await settle();f.overrides.set(path,()=>({items:[],nextCursor:null}));await f.element(button).fire(event);f.element(status).textContent='Latest refresh';older.resolve();await pending;assert.equal(f.element(status).textContent,'Latest refresh',button);
+ }
+});
+test('obsolete pagination failures cannot release a newer workspace pagination lock',async()=>{
+ for(const [button,base,status] of [['history-more','/v1/runs','status'],['ci-more','/v1/ci-credentials','ci-status'],['receipts-more','/v1/release-receipts','status']]){
+  const initial=[[base+'?limit=25',()=>({items:[],nextCursor:'older'})]],f=await fixture({initialOverrides:initial}),older=deferred(),newer=deferred();let requests=0;const path=base+'?limit=25&cursor=older';
+  f.overrides.set(path,async()=>{if(++requests===1){await older.promise;throw Error('Old page failure');}return newer.promise;});const first=f.element(button).fire('click');await settle();await f.element('logout-button').fire('click');await f.element('login-form').fire('submit');const second=f.element(button).fire('click');await settle();f.element(status).textContent='New pagination';older.resolve();await first;assert.equal(f.element(status).textContent,'New pagination',button);assert.equal(f.element(button).disabled,true,button);
+  newer.resolve({items:[],nextCursor:'next'});await second;assert.equal(f.element(button).disabled,false,button);
+ }
+});
+test('current list refresh errors remain visible and an explicit refresh recovers',async()=>{
+ for(const [button,event,path,status] of refreshCases){
+  const f=await fixture();f.overrides.set(path,()=>{throw Error('Current list failure');});await f.element(button).fire(event);assert.match(f.element(status).textContent,/기록을 조회/,button);f.overrides.set(path,()=>({items:[],nextCursor:null}));await f.element(button).fire(event);assert.equal(f.element(button).disabled,false,button);
+ }
+});
+
 test('polling cannot unlock or duplicate a pending cancellation of the selected run',async()=>{
  const f=await fixture(),reply=deferred();const viewing=f.view('A');await settle();let calls=0;
  f.overrides.set('/v1/runs/A/cancel',()=>{calls++;return reply.promise;});const cancelling=f.element('cancel-button').fire('click');await settle();
