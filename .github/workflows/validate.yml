@@ -46,6 +46,8 @@ jobs:
           npm run demo:preflight
           npm run demo:portfolio
           npm run demo:roles
+      - name: Verify bounded viewer metadata measurements
+        run: npm run benchmark:metadata -- --samples 5
       - name: Verify repeated synthetic outcomes and exactly-once accounting
         run: npm run smoke:sustained -- --cycles 2 --interval-ms 1000
       - name: Verify interrupted worker lease recovery
