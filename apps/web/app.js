@@ -95,6 +95,19 @@ function releaseReason(reason){
   if(reason.startsWith('Version mismatch:'))return '요청한 버전과 평가 실행의 고정 버전이 일치하지 않습니다.';
   return labels[reason]||reason;
 }
+// Compare JSON structure without depending on object key order or recursive stack depth.
+// This binds the displayed result to the record; trusted-key signature verification remains a CLI responsibility.
+function sameReleaseJson(left,right){
+  const pending=[[left,right,0]];let visited=0;
+  while(pending.length){
+    const [a,b,depth]=pending.pop();if(++visited>100000||depth>64)return false;
+    if(a===b)continue;
+    if(!a||!b||typeof a!=='object'||typeof b!=='object'||Array.isArray(a)!==Array.isArray(b))return false;
+    const keys=Object.keys(a),other=Object.keys(b);if(keys.length!==other.length)return false;
+    for(const key of keys){if(!Object.hasOwn(b,key))return false;pending.push([a[key],b[key],depth+1]);}
+  }
+  return true;
+}
 let sessionCursor=null,sessionSequence=0,sessionBusy=false,sessionButtons=[];
 const terminal = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
 const decisionLabels = { pass: '통과', block: '차단', inconclusive: '판정 불가' };
@@ -524,6 +537,8 @@ $('manual-gate-check').addEventListener('click',async()=>{
     if(!isCurrent())return;
     if(typeof result?.deploymentAllowed!=='boolean'||!['pass','block'].includes(result.decision)||result.deploymentAllowed!==(result.decision==='pass')||!Array.isArray(result.reasons)||!result.reasons.every(reason=>typeof reason==='string')||(result.deploymentAllowed&&result.reasons.length))throw new Error('최종 게이트 응답의 판정과 허용 여부가 일치하지 않습니다.');
     if(result.runId!==run.id||result.artifact?.request?.candidateRunId!==run.id||result.artifact?.evidence?.candidate?.runId!==run.id||(result.artifact?.request?.baselineRunId??null)!==baselineRunId||(baselineRunId&&result.artifact?.evidence?.baseline?.runId!==baselineRunId))throw new Error('최종 게이트 응답이 선택한 실행과 기준 근거에 연결되지 않습니다.');
+    const displayed=Object.fromEntries(Object.entries(result).filter(([key])=>!['artifact','artifactHash','signature'].includes(key)));
+    if(!sameReleaseJson(displayed,result.artifact.result))throw new Error('최종 게이트 판정과 저장된 검증 기록의 내용이 일치하지 않습니다.');
     const approval={approved:'승인 유효',rejected:'반려',missing:'승인 대기',expired:'승인 만료',invalid:'승인 무효'}[result.manualApproval?.status]||'불필요';
     $('manual-gate-output').textContent='확인 시점의 최종 게이트: '+(result.deploymentAllowed?'통과':'차단')+' · 관리자 검토 '+approval+'\n실행 '+run.id+'\n'+(baselineRunId?'기준 실행 '+baselineRunId+'\n'+finalComparisonText(result.comparison):'회귀 비교: 제외\n')+(result.artifact?.checkedAt?'확인 시각 '+new Date(result.artifact.checkedAt).toLocaleString('ko-KR')+'\n':'')+(result.artifact?.receiptId?'검증 기록 '+result.artifact.receiptId+'\n':'')+result.reasons.map(releaseReason).join('\n');
     renderNextAction(result);renderRegressionLinks(result.comparison);
