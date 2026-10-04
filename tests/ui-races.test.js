@@ -23,7 +23,7 @@ function execution(id,state='succeeded',manual=false){return {id,state,createdAt
   snapshot:{agent:{name:'Run '+id},dataset:{name:'Synthetic dataset'},policy:{name:'Synthetic policy',requiresManualApproval:manual}},
   agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy',results:[],summary:{cases:0,pass:0,fail:0,inconclusive:0},
   gate:{decision:state==='succeeded'?'pass':'inconclusive',deploymentAllowed:state==='succeeded'&&!manual,...(manual?{requiresManualApproval:true,evaluationPassed:state==='succeeded'}:{})}};}
-async function fixture({manual=false,initialOverrides,waitForInitialization=true}={}){
+async function fixture({manual=false,initialOverrides,waitForInitialization=true,timeoutSignal=ms=>AbortSignal.timeout(ms)}={}){
   const nodes=new Map(),selects=new Set(['agent','dataset-select','policy','workspace-project','ci-project','baseline-run','gate-baseline-recent','history-state','history-decision','audit-action','agent-mode']);
   const element=id=>{if(!nodes.has(id))nodes.set(id,new Element(selects.has(id)?'select':'div'));return nodes.get(id);};
   const document={getElementById:element,createElement:tag=>new Element(tag)},timers=[],overrides=new Map(initialOverrides||[]),downloads=[];
@@ -44,7 +44,7 @@ async function fixture({manual=false,initialOverrides,waitForInitialization=true
   const fetch=async(path,options={})=>{const handler=overrides.get(path),data=handler?await handler(options):defaultResponse(path);return {status:200,ok:true,json:async()=>data};};
   const source=await readFile(new URL('../apps/web/app.js',import.meta.url),'utf8');
   const AsyncFunction=Object.getPrototypeOf(async()=>{}).constructor;
-  const initialized=new AsyncFunction('document','fetch','setTimeout','crypto','URL',source)(document,fetch,callback=>{timers.push(callback);},webcrypto,{createObjectURL:blob=>{downloads.push(blob);return 'blob:synthetic';},revokeObjectURL(){}});
+  const initialized=new AsyncFunction('document','fetch','setTimeout','crypto','URL','AbortSignal',source)(document,fetch,callback=>{timers.push(callback);},webcrypto,{createObjectURL:blob=>{downloads.push(blob);return 'blob:synthetic';},revokeObjectURL(){}},{timeout:timeoutSignal});
   if(waitForInitialization)await initialized;
   const view=id=>{const row=element('history-body').children.find(row=>row.children[0].textContent==='Run '+id);return row.children.at(-1).children[0].fire('click');};
   return {element,overrides,timers,runs,view,downloads,initialized};
@@ -356,4 +356,14 @@ test('review success from an earlier selection preserves a newly drafted comment
  f.element('review-comment').value='Submitted synthetic opinion';const pending=f.element('review-form').fire('submit',{submitter:{value:'approved'}});await settle();
  await f.view('B');f.element('review-comment').value='New synthetic draft';f.element('status').textContent='Current selection status';reply.resolve({});await pending;
  assert.equal(f.element('review-comment').value,'New synthetic draft');assert.equal(f.element('status').textContent,'Current selection status');assert.equal(f.element('review-approve').disabled,false);
+});
+
+
+test('final gate timeout releases its button without granting permission and can be retried',async()=>{
+ const controllers=[],f=await fixture({timeoutSignal:ms=>{assert.equal(ms,15000);const c=new AbortController();controllers.push(c);return c.signal;}});await f.view('B');
+ f.overrides.set('/v1/release-gate',options=>new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true})));
+ const pending=f.element('manual-gate-check').fire('click');await settle();assert.equal(f.element('manual-gate-check').disabled,true);
+ controllers.at(-1).abort(new DOMException('Synthetic deadline','TimeoutError'));await pending;
+ assert.match(f.element('manual-gate-output').textContent,/시간이 초과/);assert.match(f.element('manual-gate-output').textContent,/처리됐을 수/);assert.equal(f.element('manual-gate-check').disabled,false);assert.equal(f.element('current-receipt-download').disabled,true);assert.equal(f.element('next-action-link').href,'#release-check-panel');
+ f.overrides.set('/v1/release-gate',()=>signedUiReceipt().report);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/최종 게이트: 통과/);
 });

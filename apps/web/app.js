@@ -84,8 +84,15 @@ const stateLabels = { queued: '대기 중', running: '실행 중', succeeded: '�
 function message(text, error = false) { $('status').textContent = text; $('status').className = error ? 'error' : ''; }
 async function api(path, options = {}) {
   const epoch=scopeEpoch;
-  const response = await fetch(path, { ...options, headers: { 'Content-Type': 'application/json', 'X-AgentTrust-Request': 'local-ui', ...(activeProjectId?{'X-AgentTrust-Project':activeProjectId}:{}), ...options.headers } });
-  const data = await response.json();
+  let response,data;
+  try{
+    response=await fetch(path,{...options,signal:AbortSignal.timeout(15000),headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui',...(activeProjectId?{'X-AgentTrust-Project':activeProjectId}:{}),...options.headers}});
+    data=await response.json();
+  }catch(error){
+    if(epoch!==scopeEpoch)throw new Error('워크스페이스가 변경되어 이전 요청의 결과를 표시하지 않습니다.');
+    if(error.name==='TimeoutError')throw new Error('요청 시간이 초과됐습니다. 서버에서 처리됐을 수 있으므로 기록을 조회한 뒤 다시 시도하세요.');
+    throw error;
+  }
   if(epoch!==scopeEpoch)throw new Error('워크스페이스가 변경되어 이전 요청의 결과를 표시하지 않습니다.');
   if (response.status === 401) showLogin();
   if (!response.ok) throw new Error(data.error || '요청을 완료하지 못했습니다.');

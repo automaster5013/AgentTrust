@@ -210,3 +210,7 @@ Actual Docker browser verification showed only the loading panel during hydratio
 ### Bounded sustained local verification (v0.41.0)
 
 The reusable smoke:sustained command executes nine synthetic runs per cycle across all mock modes, timeout and cancellation, checks two trusted-key signed decisions, and verifies scoped usage/case totals and exactly one terminal audit per run. Cycle count is limited to 1..30 and start interval to 1,000..60,000 ms; malformed, repeated, unknown or missing CLI options fail before authentication. Each invocation writes a unique private report and cleans up its own session and unfinished runs. It adds no new fixture versions, CI credentials or administrator approvals. Short two-cycle verification produced eighteen expected outcomes with no transient retries, exactly-once accounting and logout. Six invalid CLI combinations were rejected. The workflow includes the same short command; remote execution remains unverified.
+
+## 화면 요청 시간 제한 — v0.68
+
+화면 API 요청은 응답 본문 읽기를 포함해 15초 제한을 사용한다. 시간 초과는 실패로 표시하며 최종 게이트 통과·기록 저장으로 진행하지 않는다. 서버에서 생성·검토 요청이 이미 처리됐을 수 있으므로 기록 조회 후 재시도하도록 안내한다. 자동 재전송이나 서버 작업 취소를 추가하지 않는다. 평가 실행 자체의 timeoutMs 예산과 별개의 화면 요청 제한이다.
