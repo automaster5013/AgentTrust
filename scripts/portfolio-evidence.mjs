@@ -4,6 +4,7 @@ import {join} from 'node:path';
 import {randomUUID,createHash} from 'node:crypto';
 import {verifyReceipt,trustedReceiptKey} from '../packages/receipts/signature.js';
 import {receiptFileLimit} from '../packages/receipts/limits.js';
+import {assertDemoReviewBinding} from './demo-review-binding.mjs';
 
 const names=['release_compliant','release_regression','release_missing_evidence','approval_required','approval_valid','approval_rejected'];
 const allowed=[true,false,false,false,true,false];
@@ -12,10 +13,11 @@ const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
 const sha=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
 export const portfolioManifestLimit=65536;
+export const portfolioReviewLimit=65536;
 
-export function verifyPortfolioEvidence(manifest,receipts,trustedPem){
+function verifyPortfolioReceipts(manifest,receipts,trustedPem){
   const key=trustedReceiptKey(trustedPem);
-  assert.equal(manifest?.schemaVersion,1);assert.equal(manifest.synthetic,true);
+  assert.ok([1,2].includes(manifest?.schemaVersion));assert.equal(manifest.synthetic,true);
   assert.equal(manifest.historicalEvidenceOnly,true);assert.equal(manifest.serverDeployed,false);
   assert.equal(typeof manifest.withBaselineComparison,'boolean');assert.equal(manifest.keyId,key.keyId);
   assert.ok(uuid(manifest.organizationId)&&uuid(manifest.projectId));
@@ -72,7 +74,14 @@ export function verifyPortfolioEvidence(manifest,receipts,trustedPem){
   return {bundleVerified:true,receipts:6,cryptographicSignaturesVerified:6,withBaselineComparison:manifest.withBaselineComparison,historicalEvidenceOnly:true,currentReleasePermissionVerified:false,serverDeployed:false};
 }
 
-export async function writePortfolioEvidence({receipts,report,trustedPem}){
+export function verifyPortfolioEvidence(manifest,receipts,trustedPem,reviews){
+  const verification=verifyPortfolioReceipts(manifest,receipts,trustedPem);
+  if(manifest.schemaVersion===2)Object.assign(verification,verifyPortfolioReviews(manifest,receipts,reviews));
+  else assert.equal(manifest.reviews,undefined);
+  return verification;
+}
+
+export async function writePortfolioEvidence({receipts,report,trustedPem,reviews}){
   assert.equal(report.completed,true);assert.equal(report.cleanupSucceeded,true);assert.equal(report.sessionLoggedOut,true);
   const steps=report.steps.filter(step=>step.receiptId);assert.equal(steps.length,6);assert.equal(receipts.length,6);
   const files=receipts.map(receipt=>Buffer.from(JSON.stringify({artifact:receipt.artifact,artifactHash:receipt.artifactHash,signature:receipt.signature},null,2)+'\n'));
@@ -80,12 +89,39 @@ export async function writePortfolioEvidence({receipts,report,trustedPem}){
   const manifest={schemaVersion:1,synthetic:true,historicalEvidenceOnly:true,serverDeployed:false,withBaselineComparison:report.withBaselineComparison,organizationId:receipts[0].artifact.organizationId,projectId:receipts[0].artifact.projectId,keyId:trustedReceiptKey(trustedPem).keyId,
     receipts:receipts.map((r,index)=>({file:`receipt-${index+1}.json`,step:steps[index].name,receiptId:steps[index].receiptId,artifactHash:r.artifactHash,candidateRunId:steps[index].runId,baselineRunId:steps[index].baselineRunId??null,snapshotHash:r.artifact.evidence.candidate.snapshotHash,resultHash:r.artifact.evidence.candidate.resultHash,sha256:digest(files[index])}))};
   verifyPortfolioEvidence(manifest,receipts,trustedPem);
+  const reviewFiles=[];
+  if(reviews!==undefined){
+    manifest.schemaVersion=2;
+    assert.ok(Array.isArray(reviews)&&reviews.length===2);
+    manifest.reviews=reviews.map((review,index)=>{
+      const bytes=Buffer.from(JSON.stringify(review,null,2)+'\n');assert.ok(bytes.length<=portfolioReviewLimit);reviewFiles.push(bytes);
+      return {file:`review-${index+1}.json`,reviewId:review.id,reviewHash:review.reviewHash,sha256:digest(bytes)};
+    });
+    verifyPortfolioReviews(manifest,receipts,reviews);
+  }
   const bytes=Buffer.from(JSON.stringify(manifest,null,2)+'\n');assert.ok(bytes.length<=portfolioManifestLimit);
   const directory=join('.local','portfolio-evidence-'+randomUUID());await mkdir(directory,{mode:0o700});
   for(const [index,file] of files.entries())await writeFile(join(directory,`receipt-${index+1}.json`),file,{flag:'wx',mode:0o600});
+  for(const [index,file] of reviewFiles.entries())await writeFile(join(directory,`review-${index+1}.json`),file,{flag:'wx',mode:0o600});
   // Write the inventory last; a failed write leaves an incomplete, unverifiable directory.
   await writeFile(join(directory,'manifest.json'),bytes,{flag:'wx',mode:0o600});
-  return {directory,manifestSha256:digest(bytes),receipts:6,historicalEvidenceOnly:true};
+  return {directory,manifestSha256:digest(bytes),receipts:6,...(reviews?{linkedReviewsVerified:2}:{}),historicalEvidenceOnly:true};
+}
+
+// Receipt signatures must already have been verified against the trusted key.
+function verifyPortfolioReviews(manifest,receipts,reviews){
+  assert.equal(manifest.schemaVersion,2);assert.ok(Array.isArray(manifest.reviews)&&manifest.reviews.length===2);
+  assert.ok(Array.isArray(reviews)&&reviews.length===2);
+  const linked=new Map();
+  for(const receipt of receipts){const manual=receipt.artifact.result.manualApproval;if(manual?.reviewId){assert.ok(uuid(manual.reviewId)&&sha(manual.reviewHash));if(!linked.has(manual.reviewId))linked.set(manual.reviewId,[]);linked.get(manual.reviewId).push(receipt);}}
+  assert.equal(linked.size,2);const seen=new Set();
+  for(const [index,review] of reviews.entries()){
+    const descriptor=manifest.reviews[index];assert.equal(Object.keys(descriptor).sort().join(','),'file,reviewHash,reviewId,sha256');
+    assert.equal(descriptor.file,`review-${index+1}.json`);assert.ok(sha(descriptor.sha256));assert.equal(descriptor.reviewId,review.id);assert.equal(descriptor.reviewHash,review.reviewHash);
+    assert.ok(linked.has(review.id)&&!seen.has(review.id));seen.add(review.id);
+    for(const receipt of linked.get(review.id))assertDemoReviewBinding(review,receipt);
+  }
+  return {linkedReviewsVerified:2,reviewBodiesVerifiedOffline:true};
 }
 
 async function readBounded(path,limit){
@@ -98,14 +134,15 @@ async function readBounded(path,limit){
 }
 export async function loadPortfolioEvidence(directory,trustedPem,expectedManifestSha256){
   if(expectedManifestSha256!==undefined)assert.ok(sha(expectedManifestSha256));
-  const expected=new Set(['manifest.json',...Array.from({length:6},(_,index)=>`receipt-${index+1}.json`)]);
   assert.ok((await lstat(directory)).isDirectory());
-  for await(const entry of await opendir(directory)){assert.ok(expected.has(entry.name)&&entry.isFile());expected.delete(entry.name);}
-  assert.equal(expected.size,0);
   const bytes=await readBounded(join(directory,'manifest.json'),portfolioManifestLimit),manifestSha256=digest(bytes);
   if(expectedManifestSha256!==undefined)assert.equal(manifestSha256,expectedManifestSha256);
   const parse=value=>JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(value));
   const manifest=parse(bytes),receipts=[];
+  assert.ok([1,2].includes(manifest.schemaVersion));
+  const expected=new Set(['manifest.json',...Array.from({length:6},(_,index)=>`receipt-${index+1}.json`),...(manifest.schemaVersion===2?['review-1.json','review-2.json']:[])]);
+  for await(const entry of await opendir(directory)){assert.ok(expected.has(entry.name)&&entry.isFile());expected.delete(entry.name);}
+  assert.equal(expected.size,0);
   assert.equal(manifest.keyId,trustedReceiptKey(trustedPem).keyId);
   assert.ok(Array.isArray(manifest.receipts)&&manifest.receipts.length===6);
   for(let index=0;index<6;index++){
@@ -114,7 +151,16 @@ export async function loadPortfolioEvidence(directory,trustedPem,expectedManifes
     assert.equal(digest(file),manifest.receipts[index].sha256);
     const receipt=parse(file);verifyReceipt(receipt,trustedPem);receipts.push(receipt);
   }
-  return {manifest,receipts,verification:{...verifyPortfolioEvidence(manifest,receipts,trustedPem),manifestSha256,expectedManifestDigestMatched:expectedManifestSha256!==undefined}};
+  const verification=verifyPortfolioReceipts(manifest,receipts,trustedPem),reviews=[];
+  if(manifest.schemaVersion===2){
+    assert.ok(Array.isArray(manifest.reviews)&&manifest.reviews.length===2);
+    for(let index=0;index<2;index++){
+      assert.equal(manifest.reviews[index].file,`review-${index+1}.json`);
+      const file=await readBounded(join(directory,`review-${index+1}.json`),portfolioReviewLimit);assert.equal(digest(file),manifest.reviews[index].sha256);reviews.push(parse(file));
+    }
+    Object.assign(verification,verifyPortfolioReviews(manifest,receipts,reviews));
+  }else assert.equal(manifest.reviews,undefined);
+  return {manifest,receipts,reviews,verification:{...verification,manifestSha256,expectedManifestDigestMatched:expectedManifestSha256!==undefined}};
 }
 
 export async function readPortfolioEvidence(directory,trustedPem,expectedManifestSha256){

@@ -2,7 +2,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {loadPortfolioEvidence} from './portfolio-evidence.mjs';
+import {loadPortfolioEvidence,writePortfolioEvidence} from './portfolio-evidence.mjs';
 import {verifyPortfolioReceiptHistory} from './portfolio-receipt-history.mjs';
 import {readTrustedReceiptKey} from './trusted-receipt-key.mjs';
 import {seededDemoScope,assertDemoSessionScope} from './demo-session-scope.mjs';
@@ -16,11 +16,11 @@ async function call(path,data){
  if(!response.ok){await response.body?.cancel();throw Error('Local evidence history request failed');}return readReleaseResponse(response);
 }
 try{
-  assert.equal(process.argv.length,2);
+  const args=process.argv.slice(2);assert.ok(args.length===0||args.length===1&&args[0]==='--with-reviews');
   const {stdout}=await exec(process.execPath,['scripts/portfolio-demo.mjs','--compare','--export-receipts'],{timeout:120000,maxBuffer:65536,windowsHide:true});
   const report=JSON.parse(stdout.trim().split('\n').at(-1));
   assert.equal(report.status,'passed');assert.equal(report.steps,12);assert.equal(report.withBaselineComparison,true);
-  const {directory,manifestSha256}=report.evidenceBundle;
+  let {directory,manifestSha256}=report.evidenceBundle;
   assert.match(directory,/^\.local[/\\]portfolio-evidence-[a-f0-9-]{36}$/);assert.match(manifestSha256,/^[a-f0-9]{64}$/);
   const result=await exec(process.execPath,['scripts/verify-portfolio-evidence.mjs',directory,'.local/receipt-signing/public.pem',manifestSha256],{timeout:30000,maxBuffer:65536,windowsHide:true});
   const verification=JSON.parse(result.stdout.trim());
@@ -30,9 +30,16 @@ try{
   const config=JSON.parse((await readFile('.local/credentials.json','utf8')).replace(/^\uFEFF/,'')),organization=config.organizations[0];scope=seededDemoScope(organization);
   assert.equal(loaded.manifest.organizationId,scope.organizationId);assert.equal(loaded.manifest.projectId,scope.projectId);base=localSmokeBase();
   await call('/v1/auth/login',{accessKey:organization.credentials.find(credential=>credential.role==='viewer').token});assertDemoSessionScope(await call('/v1/me'),scope,'viewer');
-  const history=await verifyPortfolioReceiptHistory({call,receipts:loaded.receipts});assert.equal(history.linkedReviewsVerified,2);
+  let reviews;
+  const history=await verifyPortfolioReceiptHistory({call,receipts:loaded.receipts,onVerifiedReviews:values=>{reviews=values;}});assert.equal(history.linkedReviewsVerified,2);
   await call('/v1/auth/logout',{});cookie=null;
-  console.log(JSON.stringify({status:'passed',directory,manifestSha256,...verification,...history,historySessionLoggedOut:true}));
+  let finalVerification=verification;
+  if(args.length){
+    const enriched=await writePortfolioEvidence({receipts:loaded.receipts,reviews,trustedPem:publicKey,report:{...report,completed:true,steps:loaded.manifest.receipts.map(row=>({name:row.step,receiptId:row.receiptId,runId:row.candidateRunId,...(row.baselineRunId?{baselineRunId:row.baselineRunId}:{})}))}});
+    directory=enriched.directory;manifestSha256=enriched.manifestSha256;
+    const result=await exec(process.execPath,['scripts/verify-portfolio-evidence.mjs',directory,'.local/receipt-signing/public.pem',manifestSha256],{timeout:30000,maxBuffer:65536,windowsHide:true});finalVerification=JSON.parse(result.stdout.trim());assert.equal(finalVerification.reviewBodiesVerifiedOffline,true);
+  }
+  console.log(JSON.stringify({status:'passed',directory,...finalVerification,...history,historySessionLoggedOut:true}));
 }catch{
   console.error('Synthetic portfolio evidence export, offline verification or history check did not complete.');process.exitCode=1;
 }

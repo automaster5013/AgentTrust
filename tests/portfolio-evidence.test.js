@@ -7,7 +7,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {ReceiptSigner,verifyReceipt} from '../packages/receipts/signature.js';
 import {hash} from '../packages/contracts/hash.js';
-import {writePortfolioEvidence,readPortfolioEvidence,verifyPortfolioEvidence,portfolioManifestLimit} from '../scripts/portfolio-evidence.mjs';
+import {writePortfolioEvidence,readPortfolioEvidence,loadPortfolioEvidence,verifyPortfolioEvidence,portfolioManifestLimit,portfolioReviewLimit} from '../scripts/portfolio-evidence.mjs';
 const exec=promisify(execFile),sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 function fixture(compare=false){
   const signer=new ReceiptSigner(generateKeyPairSync('ed25519').privateKey.export({type:'pkcs8',format:'pem'}));
@@ -81,4 +81,58 @@ test('offline bundle readers reject an unauthenticated first receipt before pars
 test('an inventory naming another trusted key is rejected before reading receipt bodies',async t=>{
  const f=await bundle(t),bytes=Buffer.from([255]);f.manifest.keyId='f'.repeat(64);f.manifest.receipts[0].sha256=sha(bytes);await writeFile(join(f.directory,'receipt-1.json'),bytes);await writeFile(join(f.directory,'manifest.json'),JSON.stringify(f.manifest));
  await assert.rejects(readPortfolioEvidence(f.directory,f.trustedPem),error=>error instanceof assert.AssertionError);
+});
+
+async function reviewedBundle(t){
+ const f=fixture(true),reviews=f.receipts.slice(4).map(receipt=>{
+  const a=receipt.artifact,payload={schemaVersion:1,id:randomUUID(),organizationId:a.organizationId,projectId:a.projectId,runId:a.request.candidateRunId,actorId:randomUUID(),decision:a.result.manualApproval.status,comment:'Historical synthetic opinion',createdAt:'2026-10-04T23:00:00.000Z',snapshotHash:a.evidence.candidate.snapshotHash,resultHash:a.evidence.candidate.resultHash};
+  const review={...payload,reviewHash:hash(payload)};Object.assign(a.result.manualApproval,{reviewId:review.id,reviewHash:review.reviewHash});receipt.artifactHash=hash(a);receipt.signature=f.signer.sign(a);return review;
+ });
+ const written=await writePortfolioEvidence({...f,reviews});
+ t.after(async()=>{assert.ok(resolve(written.directory).startsWith(resolve('.local')+sep));await rm(written.directory,{recursive:true,force:true});});
+ const {receipts:count,...output}=written;assert.equal(count,6);
+ return {...f,...output,reviews,manifest:JSON.parse(await readFile(join(written.directory,'manifest.json'),'utf8'))};
+}
+
+test('v2 audit exports authenticate two original opinions offline while retaining v1 compatibility',async t=>{
+ const f=await reviewedBundle(t),loaded=await loadPortfolioEvidence(f.directory,f.trustedPem,f.manifestSha256);
+ assert.equal(loaded.manifest.schemaVersion,2);assert.deepEqual(loaded.reviews,f.reviews);assert.equal(loaded.verification.linkedReviewsVerified,2);assert.equal(loaded.verification.reviewBodiesVerifiedOffline,true);assert.equal(loaded.verification.currentReleasePermissionVerified,false);
+ assert.throws(()=>verifyPortfolioEvidence(f.manifest,f.receipts,f.trustedPem));
+ assert.equal(verifyPortfolioEvidence(f.manifest,f.receipts,f.trustedPem,f.reviews).reviewBodiesVerifiedOffline,true);
+ const old=await bundle(t);assert.equal((await loadPortfolioEvidence(old.directory,old.trustedPem)).reviews.length,0);
+});
+
+test('review substitution remains rejected when file and inventory checksums are recomputed',async t=>{
+ for(const field of ['comment','actorId','organizationId','projectId','runId','snapshotHash','resultHash','createdAt','decision']){
+  const f=await reviewedBundle(t),review=f.reviews[0];review[field]=field==='decision'?'rejected':field==='createdAt'?'2026-10-06T00:00:00.000Z':field.endsWith('Hash')?'f'.repeat(64):field==='comment'?'Changed opinion':randomUUID();
+  const {reviewHash,...payload}=review;review.reviewHash=hash(payload);const bytes=Buffer.from(JSON.stringify(review));f.manifest.reviews[0].sha256=sha(bytes);f.manifest.reviews[0].reviewHash=review.reviewHash;
+  await writeFile(join(f.directory,'review-1.json'),bytes);await writeFile(join(f.directory,'manifest.json'),JSON.stringify(f.manifest));await assert.rejects(readPortfolioEvidence(f.directory,f.trustedPem));
+ }
+});
+
+test('review bundles require exactly the two signed references and a fixed regular-file inventory',async t=>{
+ for(const mutate of [async f=>{await rm(join(f.directory,'review-2.json'));},async f=>{await writeFile(join(f.directory,'review-3.json'),'{}');},async f=>{f.manifest.reviews[0].file='../credentials.json';},async f=>{f.manifest.reviews[1]=f.manifest.reviews[0];},async f=>{f.manifest.reviews[0].privateExtra=true;},async f=>{f.manifest.schemaVersion=1;}]){
+  const f=await reviewedBundle(t);await mutate(f);await writeFile(join(f.directory,'manifest.json'),JSON.stringify(f.manifest));await assert.rejects(readPortfolioEvidence(f.directory,f.trustedPem));
+ }
+ const f=fixture();await assert.rejects(writePortfolioEvidence({...f,reviews:[]}));
+});
+
+test('review byte limits and strict UTF-8 apply even with matching inventory checksums',async t=>{
+ for(const bytes of [Buffer.alloc(portfolioReviewLimit+1,32),Buffer.from([255])]){
+  const f=await reviewedBundle(t);f.manifest.reviews[0].sha256=sha(bytes);await writeFile(join(f.directory,'review-1.json'),bytes);await writeFile(join(f.directory,'manifest.json'),JSON.stringify(f.manifest));await assert.rejects(readPortfolioEvidence(f.directory,f.trustedPem));
+ }
+});
+
+test('receipt signatures are checked before parsing linked opinion bodies',async t=>{
+ const f=await reviewedBundle(t);f.receipts[0].signature.value='A'.repeat(86)+'==';const receipt=Buffer.from(JSON.stringify(f.receipts[0])),review=Buffer.from([255]);
+ f.manifest.receipts[0].sha256=sha(receipt);f.manifest.reviews[0].sha256=sha(review);await writeFile(join(f.directory,'receipt-1.json'),receipt);await writeFile(join(f.directory,'review-1.json'),review);await writeFile(join(f.directory,'manifest.json'),JSON.stringify(f.manifest));
+ await assert.rejects(readPortfolioEvidence(f.directory,f.trustedPem),/Receipt signature/);
+});
+
+test('independently invoked offline CLI verifies reviews and redacts altered opinion failures',async t=>{
+ const f=await reviewedBundle(t),dir=await mkdtemp(join(resolve('.local'),'review-evidence-cli-test-')),key=join(dir,'public.pem');
+ t.after(async()=>{assert.ok(resolve(dir).startsWith(resolve('.local')+sep));await rm(dir,{recursive:true,force:true});});await writeFile(key,f.trustedPem);
+ const result=await exec(process.execPath,['scripts/verify-portfolio-evidence.mjs',f.directory,key,f.manifestSha256],{timeout:10000,windowsHide:true});assert.equal(JSON.parse(result.stdout).reviewBodiesVerifiedOffline,true);
+ f.reviews[0].comment='never-print-private-opinion';const bytes=Buffer.from(JSON.stringify(f.reviews[0]));f.manifest.reviews[0].sha256=sha(bytes);await writeFile(join(f.directory,'review-1.json'),bytes);await writeFile(join(f.directory,'manifest.json'),JSON.stringify(f.manifest));
+ await assert.rejects(exec(process.execPath,['scripts/verify-portfolio-evidence.mjs',f.directory,key]),error=>error.code===2&&!error.stdout&&!error.stderr.includes(f.reviews[0].comment));
 });

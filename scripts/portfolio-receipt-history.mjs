@@ -3,7 +3,7 @@ import {assertDemoReviewBinding} from './demo-review-binding.mjs';
 
 // Compare bounded list metadata with the six artifacts already verified offline.
 // This phase reads history only; it cannot reuse historical approval as permission.
-export async function verifyPortfolioReceiptHistory({call,receipts}){
+export async function verifyPortfolioReceiptHistory({call,receipts,onVerifiedReviews}){
   assert.ok(Array.isArray(receipts)&&receipts.length===6);
   const candidates=[...new Set(receipts.map(receipt=>receipt.artifact.request.candidateRunId))];assert.equal(candidates.length,4);
   let queries=0;
@@ -33,5 +33,6 @@ export async function verifyPortfolioReceiptHistory({call,receipts}){
     if(!reviews.has(manual.reviewId)){reviews.set(manual.reviewId,await call('/v1/runs/'+artifact.request.candidateRunId+'/reviews/'+manual.reviewId));linkedReviewQueries++;}
     assertDemoReviewBinding(reviews.get(manual.reviewId),receipt);
   }
+  if(onVerifiedReviews)await onVerifiedReviews([...reviews.values()]);
   return {linkedReviewsVerified:reviews.size,linkedReviewQueries,receiptHistoryVerified:true,receiptHistoryCandidates:4,receiptHistoryRecordsMatched:6,receiptHistoryQueries:queries,readOnlyHistoryQueries:true};
 }
