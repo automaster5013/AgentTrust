@@ -191,6 +191,24 @@ jobs:
           mkdir -p .local
           node scripts/delivery-manifest.mjs promoted | tee .local/delivery-manifest.json
           node scripts/verify-delivery.mjs .local/delivery-manifest.json
+      - name: Prepare public manifest bundle
+        run: node scripts/delivery-bundle.mjs
+      - name: Save public delivery manifest and checksum
+        id: delivery-artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: agenttrust-delivery-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            delivery-artifacts/${{ github.run_id }}-${{ github.run_attempt }}/delivery-manifest.json
+            delivery-artifacts/${{ github.run_id }}-${{ github.run_attempt }}/delivery-manifest.sha256
+          if-no-files-found: error
+          include-hidden-files: false
+          overwrite: false
+          retention-days: 30
+      - name: Link downloadable delivery files
+        env:
+          DELIVERY_ARTIFACT_URL: ${{ steps.delivery-artifact.outputs.artifact-url }}
+        run: printf '\n[Download public delivery manifest and checksum](%s) (30-day retention).\n' "$DELIVERY_ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
       - name: Remove runner registry login
         if: always()
         run: docker logout ghcr.io

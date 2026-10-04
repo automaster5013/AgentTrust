@@ -115,7 +115,7 @@ if ($preflightExitCode -ne 0 -or $report.status -ne 'passed') {
 
 registry runtime job은 실제 이미지 검사와 모든 사전 점검이 성공한 뒤 공개 가능한 JSON 명세를 Actions 작업 요약에 남긴다. 명세에는 저장소, commit SHA, 고정 이미지 digest, workflow 실행 ID·시도 번호·URL, 검증 시각과 통과 검사 ID만 포함한다. 백업 이름·DB 접속 정보·키·원문 카탈로그·전체 private 보고서는 포함하지 않는다.
 
-`runtime_verified`는 후보 실행 검증 완료 상태다. 승격 작업은 같은 실행·시도·revision·digest의 명세인지 먼저 확인하고, Docker push 성공 후 별도 작업 요약에 `state: promoted`, `promotedAt`을 기록한다. 이 최종 요약에서 JSON을 복사해 수동 배포 기록으로 보관할 수 있다. `serverDeployed: false`는 실제 서버 배포를 수행하지 않았음을 나타낸다. 요약은 해당 Actions 실행에 연결되며 별도 다운로드 artifact나 release를 만들지 않는다.
+`runtime_verified`는 후보 실행 검증 완료 상태다. 승격 작업은 같은 실행·시도·revision·digest의 명세인지 먼저 확인하고, Docker push 성공 후 별도 작업 요약에 `state: promoted`, `promotedAt`을 기록한다. 이 최종 요약에서 JSON을 복사해 수동 배포 기록으로 보관할 수 있다. `serverDeployed: false`는 실제 서버 배포를 수행하지 않았음을 나타낸다. 요약은 해당 Actions 실행에 연결된다. 이후 아래의 다운로드 artifact를 추가했으며 GitHub release는 만들지 않는다.
 
 이 명세는 workflow가 만든 운영 기록이며 서명된 attestation이나 고객 릴리스 승인 영수증이 아니다. JSON만으로 CI의 출처·성공을 증명하지 않으므로 GitHub의 해당 실행 전체 성공 상태와 명세를 함께 확인한다. 실패·재실행 시도·다른 digest의 기록을 섞지 않는다. GitHub 실행/로그 보존 정책에 따라 나중에 요약을 사용할 수 없을 수 있으므로 장기 보관은 별도 운영 정책으로 관리한다.
 
@@ -153,3 +153,20 @@ npm run delivery:verify:github -- .local/delivery-manifest.json
 요청은 `api.github.com`의 고정 HTTPS 경로로만 GET하며 redirect를 따르지 않는다. 응답은 각 1 MiB와 15초로 제한하고 API 접근 거절·rate limit·네트워크 오류·잘못된 응답을 종료 코드 1과 `DELIVERY_GITHUB_UNVERIFIED`로 처리한다. 오류 응답·예외·토큰은 출력하지 않으며 오프라인 성공으로 대체하지 않는다. 정상 결과는 종료 코드 0, `ciSuccessChecked: true`, `ciJobsVerified: 4`, 조회 시각 `ciCheckedAt`을 포함한다. 기계적으로 읽을 때는 `node scripts/verify-delivery-github.mjs <manifest.json>`을 직접 사용한다.
 
 온라인 확인은 GitHub가 해당 실행 시도의 성공을 보고했음을 확인한다. API 작업 결과만으로 명세 digest가 실제 registry push와 결합됐다는 암호학적 증명이 생기지 않으므로 `registryDigestBindingChecked: false`, `signatureVerified: false`를 명시한다. 검증 digest는 신뢰할 수 있는 성공 실행 요약과 별도로 확인해야 한다. 호스트 사전 점검·고객 릴리스 승인·실제 배포도 별도 절차다. 현재 CI 안에서 자신의 최종 성공을 조회하면 아직 실행 중이므로 통과할 수 없다. 이 온라인 명령은 workflow 전체 완료 후 운영자가 실행한다.
+
+
+### 다운로드 가능한 공개 명세 묶음
+
+승격 후 명세 파일 검사가 통과하면 공개 필드만 다시 투영한 `delivery-manifest.json`과 그 파일의 정확한 UTF-8 바이트에 대한 `delivery-manifest.sha256`을 [Actions artifact](https://github.com/actions/upload-artifact)로 저장한다. artifact 이름은 `agenttrust-delivery-<commit>-<run ID>-<attempt>`이며, 요청한 보관 기간은 30일이다. 승격 작업 요약의 다운로드 링크나 해당 실행의 Artifacts 목록에서 ZIP을 받을 수 있다. GitHub 로그인과 저장소 접근 권한이 필요할 수 있으며 저장소 보관 정책이나 삭제에 따라 다운로드 가능 기간이 제한될 수 있다.
+
+업로드 action은 commit SHA로 고정했다. 대상은 두 파일의 정확한 경로뿐이며 wildcard·전체 작업 디렉터리·`.local`·`.env`·백업·키·원문 private 보고서를 업로드하지 않는다. 공개 출력 폴더 `delivery-artifacts/`도 Git과 Docker context에서 제외한다. 기존 출력 폴더를 덮어쓰지 않으며 파일 준비나 업로드 실패는 workflow 실패로 처리한다. 이미지 승격 이후 artifact 업로드가 실패할 수 있으므로 전체 실행 성공 여부를 확인해야 한다.
+
+ZIP을 새 폴더에 풀고, Linux에서는 `sha256sum -c delivery-manifest.sha256`, PowerShell에서는 아래처럼 체크섬을 확인한다. 파일의 줄바꿈·인코딩을 다시 저장하지 말고 다운로드한 원본을 사용한다.
+
+```powershell
+$expected = ((Get-Content delivery-manifest.sha256 -Raw).Trim() -split '  ')[0]
+$actual = (Get-FileHash delivery-manifest.json -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw 'Delivery manifest checksum mismatch' }
+```
+
+다음으로 독립적인 기대값을 설정하고 `delivery:verify` 및 `delivery:verify:github`를 실행한다. checksum은 다운로드/복사 중 변경 감지용이며, JSON과 checksum을 함께 조작한 경우를 인증하지 않는다. 서명된 attestation·CI 출처 인증·고객 릴리스 승인·호스트 점검·실제 배포를 대체하지 않는다. 장기 보관이 필요하면 운영자가 승인된 별도 보관 정책을 적용한다.
