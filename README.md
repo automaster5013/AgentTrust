@@ -2,69 +2,84 @@
 
 [![Validate and deliver](https://github.com/automaster5013/AgentTrust/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/automaster5013/AgentTrust/actions/workflows/validate.yml)
 
-AI 에이전트의 품질과 보안을 평가하고, 검증 증거를 바탕으로 배포 결정을 지원하는 플랫폼.
+기업 개발팀이 AI 에이전트의 평가 근거를 확인하고, 관리자 검토와 CI 릴리스 게이트를 거쳐 배포 여부를 결정하는 플랫폼입니다.
 
-현재 단계: v0.60 기업 개발팀의 평가 실행·관리자 검토·CI 릴리스 게이트를 로컬 Docker에서 구현했다. 저장된 근거와 규칙의 일치, 조직 격리, 만료·철회와 잠금 대기 후 권한 재확인, 불변 서명 기록, 암호화 백업과 격리 복원을 검증한다. 사례 검색·필터·페이지 조회와 초기 화면 준비 상태를 제공하며 전체 224개 테스트가 통과했다. GitHub Actions의 전체 검증과 GHCR 이미지 발행을 실제로 확인했다. 후보 digest의 별도 실행 검증 후 main 이미지로 승격하는 단계를 제공한다. 실제 고객 모델 연동·상용 서버 배포는 아직 수행하지 않았다.
-작업 루트: `C:\AgentTrust`; 독립 Git 저장소의 `main` 브랜치.
+**v0.60 로컬 프로토타입**: 합성 데이터와 모의 에이전트로 평가 실행 → 근거 탐색·회귀 비교 → 관리자 승인/반려 → 최종 게이트 → 서명 기록 저장을 구현했습니다. GitHub Actions에서 224개 테스트와 Docker 이미지 전달을 검증했습니다. 실제 고객 모델 연동과 상용 서버 배포는 아직 수행하지 않았습니다.
 
-## 포트폴리오 시연
+## 구현된 흐름
 
-`npm run demo:preflight`로 로컬 시연 준비 상태를 먼저 확인한다. `npm run demo:portfolio`로 합성 평가 4개와 최종 게이트 6개를 재현한다. 통과·차단·증거 누락과 관리자 승인 대기→승인→반려, 서명 검증을 확인한다. [설치와 화면 시연 절차](docs/portfolio-demo.md)를 따른다. `npm run demo:roles`는 작성자의 평가 생성, 조회자의 근거·게이트 확인, 관리자의 승인·반려와 권한·조직 경계 거절을 재현한다. 실제 배포는 수행하지 않는다.
+| 단계 | 확인하는 내용 | 구현 근거 |
+| --- | --- | --- |
+| 평가 실행 | 불변 에이전트·데이터셋·정책 버전에 연결된 실행과 결과 | [아키텍처](docs/architecture.md) |
+| 근거 탐색·회귀 비교 | 사례 검색·필터·페이지 조회, 실행 UUID 직접 조회, 회귀 사례로 이동 | [화면 시연](docs/portfolio-demo.md) |
+| 관리자 검토 | 정책에 따른 승인 대기·승인·반려·만료와 불변 검토 기록 | [관리자 검토](docs/manual-review.md) |
+| 최종 릴리스 게이트 | 현재 권한·결과 유효 시간·필수 근거·선택적 기준 실행·검토 상태 재확인 | [CI 연결](docs/release-integration.md) |
+| 검증 기록 저장 | 원본 artifact·해시·Ed25519 서명 내보내기와 신뢰 공개키 검증 | [서명 운영](docs/receipt-signatures.md) |
 
-[합성 시연 화면](docs/portfolio-engineering.md#합성-시연-화면-증거)에서 비교·승인 분리와 회귀 근거 이동, 반려 후 차단을 확인할 수 있다.
+필수 평가 실패는 `block`, 실행 오류·필수 증거 누락은 `inconclusive`로 처리합니다. `pass`만 기본 배포 허용이며 관리자 검토 정책에서는 유효한 승인도 필요합니다. 저장한 기록은 과거 확인의 증거이므로 실제 배포 직전에 게이트를 다시 호출합니다.
 
-[기술 설명과 검증 근거](docs/portfolio-engineering.md)에서 설계 선택·재현 명령·코드와 테스트 위치·남은 제한을 확인할 수 있다. [실제 아키텍처](docs/architecture.md)는 구현된 평가·승인·이미지 전달 흐름을 설명한다.
+조직 경계는 API 권한 검사와 PostgreSQL RLS로 검증합니다. API와 워커의 DB 권한을 분리하고 키 철회·만료와 잠금 대기 후 권한을 재확인합니다. [기술 설명과 테스트 근거](docs/portfolio-engineering.md)에서 설계 선택과 비용을 확인할 수 있습니다.
 
-## 설계 문서
+## 핵심 화면
 
-- [GitHub CI와 Docker 이미지 전달·수동 배포 준비](docs/github-delivery.md)
-- [6시간 자율 개발 결과와 인수인계](docs/autonomous-development.md)
-- [제품 비전과 범위](docs/product.md)
-- [위협 모델](docs/threat-model.md)
-- [시스템 아키텍처](docs/architecture.md)
-- [단계별 로드맵과 출시 조건](docs/roadmap.md)
-- [다음 구현 작업](docs/next-implementation.md)
+관리자가 반려한 뒤 최종 게이트를 다시 확인하면 배포가 차단됩니다. 아래는 **v0.57에서 촬영한 합성 시연 화면**이며 현재 실행 결과를 나타내지 않습니다.
 
-## 핵심 원칙
+![관리자 반려 후 최종 릴리스 게이트 차단](docs/evidence/current-rejection.png)
 
-평가 실패·시간 초과·증거 누락은 통과로 처리하지 않는다. 평가 결과는 특정 에이전트 버전, 데이터셋 버전, 정책 버전과 연결한다. 점수는 위험 제거를 보장하지 않으며 정책에 명시한 범위 안에서 해석한다.
+[화면 증거 모음](docs/portfolio-engineering.md#합성-시연-화면-증거)에는 비교 통과와 승인 대기의 분리(v0.51), 정확한 회귀 사례 이동(v0.52)도 포함되어 있습니다.
 
-첫 고객은 기업 개발팀으로 확정했다. 배포 지역, 데이터 보존 기간, 결제 방식은 확정 전이다. 기본 가정은 기업 개발팀을 대상으로 한 단일 리전 SaaS이며 초기 개발에서는 합성 데이터와 모의 에이전트를 사용한다.
+## 로컬에서 재현하기
 
-## 로컬 실행
+Node.js 24와 실행 중인 Docker Desktop이 필요합니다. Windows 작업 루트는 `C:\AgentTrust`입니다.
 
-[개발 안내와 API 계약](docs/development.md)을 참고한다. Node.js 24와 Docker Desktop에서 npm.cmd ci --cache .cache/npm → npm.cmd run setup → npm.cmd run docker:up을 실행하고 http://127.0.0.1:4310을 연다. 접근 키는 .local/credentials.json에 있다. 기존 LogiTrack은 [정지·보존](docs/logitrack-preservation.md) 상태다.
+```powershell
+Set-Location C:\AgentTrust
+npm.cmd ci --cache .cache/npm --ignore-scripts
+npm.cmd run setup
+npm.cmd run docker:up
+npm.cmd run demo:preflight
+npm.cmd run demo:portfolio
+npm.cmd run demo:roles
+```
 
-[HTTPS 연결과 CI 게이트 사용법](docs/release-integration.md)을 참고한다. 비교 화면은 같은 데이터셋·정책의 완료 결과를 사용한다.
+화면은 [http://127.0.0.1:4310](http://127.0.0.1:4310)에서 열립니다. `setup`이 생성한 `.local/credentials.json`에서 역할에 맞는 접근 키로 로그인합니다. `.env`와 `.local`은 비공개 로컬 자료이며 커밋하지 않습니다. 다른 셸에서는 `npm.cmd` 대신 `npm`을 사용합니다.
 
-[프로젝트 CI 키와 승인 기록](docs/ci-operations.md) · [백업·복원 검증](docs/backup-recovery.md)
+| 명령 | 검증 범위 |
+| --- | --- |
+| `demo:preflight` | 런타임·로컬 설정·Compose 서비스/포트·API health의 읽기 전용 준비 점검 |
+| `demo:portfolio` | 합성 평가 4개와 최종 게이트 6개: 통과·차단·근거 누락·승인 대기·승인·반려 및 서명 |
+| `demo:roles` | 작성자·조회자·관리자 흐름과 권한 외 요청·다른 조직 요청의 거절 |
 
-신규 로컬 백업은 인증 암호화와 복원 보안 카탈로그 검증을 지원한다. 키는 별도 private 디렉터리에 보관한다. 자세한 절차와 운영 제한은 [백업·복원 문서](docs/backup-recovery.md)를 따른다.
+시연 명령은 합성 실행과 검증 기록을 생성합니다. 준비 점검만으로 실제 인증·평가 성공이 보장되지는 않습니다. [설치와 발표 절차](docs/portfolio-demo.md), [개발 안내와 API 계약](docs/development.md)에 상세 조건을 정리했습니다.
 
-관리자는 화면에서 프로젝트를 만들 수 있으며, 작성자는 모의 에이전트와 데이터셋 버전을, 관리자는 릴리스 정책 버전을 등록할 수 있다. 새 프로젝트에 세 가지 버전이 모두 준비되면 평가 실행이 가능하다. 프로젝트 생성은 조직별 최대 100개이며 Idempotency-Key로 중복 요청을 처리한다.
+Compose 프로젝트는 `agenttrust`이며 API 4310, DB 55432 포트를 루프백에 공개합니다. `npm.cmd run docker:stop`은 이미지와 볼륨을 보존하며 정지합니다. 기존 LogiTrack 자산은 [정지·보존 상태](docs/logitrack-preservation.md)로 유지합니다.
 
-릴리스 검증 기록에 Ed25519 서명을 추가했으며 별도 신뢰 공개키로 오프라인 검증할 수 있다. [서명 운영 문서](docs/receipt-signatures.md)를 따른다.
+## 검증과 이미지 전달
 
-관리자는 프로젝트 운영 상태에서 대기·실행 중·기한 초과 실행과 최근 워커 신호를 확인할 수 있다. 워커 신호는 현재 처리 성공을 보장하는 판정이 아니며 실행별 증거와 게이트를 함께 확인한다.
+**고정 검증 기준선**: [v0.60 소스 커밋](https://github.com/automaster5013/AgentTrust/commit/41611674e0a1411d3d7ba554d378167fa4f5e8c9)의 [CI 실행 #37191576626](https://github.com/automaster5013/AgentTrust/actions/runs/37191576626)에서 224개 테스트와 아래 네 작업이 모두 성공했습니다. 상단 배지는 최신 `main` 실행을 표시합니다.
 
-실행 기록은 상태·판정 필터와 페이지 조회를 제공한다. 목록 쿼리는 평가 원문을 가져오지 않고 요약만 반환한다. 기준 실행 선택은 기록 필터와 별도로 완료 실행을 제공한다.
+1. 전체 테스트와 Docker 기반 평가·복구·시연 검증
+2. 같은 커밋의 후보 컨테이너를 GHCR에 발행
+3. 별도 환경에서 후보 digest를 가져와 실제 런타임 검증
+4. 검증한 이미지를 `main`으로 승격하고 전달 manifest·checksum 보관
 
-정책별 관리자 검토 요구, 불변 승인/반려 기록, 현재 검토 상태를 확인하는 CI 최종 게이트를 지원한다. [관리자 검토](docs/manual-review.md)와 [운영 상태](docs/operations.md) 문서를 따른다.
+배포 대상 서버는 아직 없습니다. [GitHub CI/CD와 수동 배포 준비](docs/github-delivery.md)에서 이미지 digest·리비전·워크플로 검증 및 `deploy:preflight` 절차를 확인할 수 있습니다. CI 이미지 검증은 고객 환경의 운영 검증을 대신하지 않습니다.
 
-조직·멤버십·접근 키·세션 테이블도 tenant RLS를 적용한다. 인증 전 조회는 전용 NOLOGIN 역할의 제한된 함수로 수행하며, API DB 역할은 평가를 등록·취소하고 워커가 자동 평가 결과를 확정한다.
+로컬 소스 검증:
 
-백업 지문은 작은 배치로 계산하며 복원된 트리거·제약 조건·열·역할 멤버십과 인증 테넌트 경계까지 검증한다. 기존 백업도 원래 지문 버전으로 복원 검증을 유지한다.
+```powershell
+npm.cmd run check
+npm.cmd test
+```
 
-수동 배포 전 읽기 전용 점검: `npm run deploy:preflight`. 준비 조건과 검증 범위는 [GitHub delivery 안내](docs/github-delivery.md#읽기-전용-수동-배포-사전-점검)를 참고한다.
+## 운영 문서와 남은 범위
 
-완료된 실행은 관리자 검토 필요 여부와 관계없이 최종 릴리스 게이트를 확인할 수 있다. 확인 시점의 판단과 검증 기록 ID를 표시하며, 실행 재선택·검토 변경·새로고침 시 다시 확인하도록 이전 결과를 무효화한다. 실제 배포 직전에는 CI 게이트를 다시 호출한다.
+| 문서 | 내용 |
+| --- | --- |
+| [기술 설명](docs/portfolio-engineering.md) · [아키텍처](docs/architecture.md) | 설계 선택, 코드·테스트 근거, 발표 구성, 구현된 처리 흐름 |
+| [프로젝트 CI 운영](docs/ci-operations.md) · [운영 상태](docs/operations.md) | 프로젝트 CI 키, 승인 기록, 대기·실행·기한 초과 상태와 워커 신호 |
+| [백업·복원](docs/backup-recovery.md) | 암호화 백업, 별도 키 보관, 격리 복원과 데이터·보안 카탈로그 검증 |
+| [위협 모델](docs/threat-model.md) · [제품 범위](docs/product.md) | 보안 경계와 제품 가정 |
+| [로드맵](docs/roadmap.md) · [다음 구현 작업](docs/next-implementation.md) | 출시 조건과 완료 이력 |
 
-평가와 최종 게이트의 상태별 다음 행동 안내를 제공한다. 근거 확인·새 평가·관리자 검토·최종 확인·검증 기록으로 이동할 수 있으며, 역할과 승인 만료/반려·결과 유효 시간·확인 실패를 구분한다. 화면 안내는 서버의 판정이나 권한을 변경하지 않는다.
-
-실행 기록의 실행 ID 조회에 시연 명령의 UUID를 붙여 넣으면 현재 프로젝트에서 접근 가능한 근거를 바로 확인할 수 있다. 목록 필터를 유지하고 잘못된 ID·권한 거절은 기존 선택을 변경하지 않는다.
-
-최종 게이트 확인 직후 ‘이번 검증 기록 JSON 저장’으로 원본 artifact·해시·서명을 내보낼 수 있다. 통과·차단 기록을 모두 지원하며 실행 전환·검토 변경·재검증 시 이전 다운로드를 비활성화한다. 저장은 서명 검증과 현재 배포 권한 확인을 대체하지 않는다.
-
-최종 게이트에서 기준 실행 UUID를 입력해 회귀 비교를 선택적으로 포함할 수 있다. 기준 변경은 이전 판단과 기록 저장을 무효화한다.
-
-최종 게이트의 최근 완료 기준 목록에서 후보 자신을 제외하고 선택할 수 있다. 목록은 호환성을 보장하지 않으며 최종 서버 비교가 판단한다.
+실제 고객 모델 연결, SSO/OIDC, 상용 배포·운영 검증은 남아 있습니다. 배포 지역·데이터 보존 기간·결제 방식도 확정 전입니다. 현재 점수와 판정은 합성 데이터 및 정책에 명시한 범위의 증거이며 위험 제거를 보장하지 않습니다.
