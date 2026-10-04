@@ -107,6 +107,8 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       const kind={'/v1/agent-versions':'agent','/v1/dataset-versions':'dataset','/v1/policy-versions':'policy'}[path];
       if(req.method==='POST'&&kind) return send(201,await store.createVersion(context,kind,await body(req)));
       if(req.method==='POST'&&path==='/v1/runs'){const result=await store.createRun(context,await body(req),req.headers['idempotency-key']);return send(result.replay?200:202,result.run);}
+      const reviewDetail=/^\/v1\/runs\/([a-zA-Z0-9-]+)\/reviews\/([a-zA-Z0-9-]+)$/.exec(path);
+      if(req.method==='GET'&&reviewDetail){if(requestUrl.searchParams.size)throw new InputError('Review detail does not accept query parameters.');return send(200,await reviews.get(context,reviewDetail[1],reviewDetail[2]));}
       const reviewMatch=/^\/v1\/runs\/([a-zA-Z0-9-]+)\/reviews$/.exec(path);
       if(req.method==='GET'&&reviewMatch)return send(200,await reviews.list(context,reviewMatch[1],sequencePagination(requestUrl.searchParams,reviewPageContext(context,reviewMatch[1]))));
       if(req.method==='POST'&&reviewMatch){const review=await reviews.create(context,reviewMatch[1],await body(req),req.headers['idempotency-key']);return send(review.replay?200:201,review);}

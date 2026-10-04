@@ -36,7 +36,7 @@ let historySequence=0;
 let lookupSequence=0,lookupBusy=false;
 let auditCursor=null,auditSequence=0;
 let inspectionSequence=0,comparisonSequence=0,keyHistorySequence=0,receiptHistorySequence=0,reviewSequence=0;
-let receiptInspectionSequence=0;
+let receiptInspectionSequence=0,receiptInspectionTrigger=null;
 let receiptFilters={decision:'',candidateRunId:''},receiptShown=0;
 let reviewBusy=false,reviewCursor=null,reviewShown=0;
 let finalGateSequence=0,finalGateBusy=false,currentReceipt=null;
@@ -151,8 +151,8 @@ async function verifyHistoricalReceipt(data,record,organizationId,projectId){
   if(!matchesHistoricalReceipt(data,record,organizationId,projectId))throw Error('검증 기록이 선택한 기록과 현재 조직·프로젝트 범위에 일치하지 않습니다.');
   await verifyArtifactBody(data.artifact,record.artifact_hash);
 }
-function clearReceiptInspection(){
-  receiptInspectionSequence++;$('receipt-inspection').hidden=true;$('receipt-inspection-output').textContent='';
+function clearReceiptInspection(restoreFocus=false){
+  const trigger=receiptInspectionTrigger;receiptInspectionTrigger=null;receiptInspectionSequence++;$('receipt-inspection').hidden=true;$('receipt-inspection-output').textContent='';if(restoreFocus===true){if(trigger?.isConnected&&!trigger.disabled)trigger.focus?.();else $('receipts-panel').focus?.();}
 }
 function receiptInspectionText(data){
   const artifact=data.artifact,{request,result}=artifact;
@@ -171,6 +171,19 @@ function receiptInspectionText(data){
   if(result.reasons.length>20)lines.push(`나머지 사유 ${result.reasons.length-20}개는 기록 JSON에서 확인하세요.`);
   lines.push(`후보 스냅샷 해시 ${evidenceHash('snapshotHash')}`,`후보 결과 해시 ${evidenceHash('resultHash')}`,`본문 SHA-256 확인됨: ${data.artifactHash}`,data.signature?`서명 포함 · 키 ${data.signature.keyId} · 공개키 검증은 별도 CLI`:'서명 없음 · 본문 해시 확인은 발급자 서명 검증이 아닙니다.');
   return lines.join('\n');
+}
+function historicalReviewReference(artifact){
+  const manual=artifact.result.manualApproval;
+  if(!manual?.reviewId&&!manual?.reviewHash)return null;
+  const valid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value);
+  if(!valid(manual.reviewId)||!valid(artifact.request.candidateRunId)||!/^[a-f0-9]{64}$/.test(manual.reviewHash||''))throw Error('Invalid historical review reference');
+  return {reviewId:manual.reviewId,runId:artifact.request.candidateRunId};
+}
+async function historicalReviewText(artifact,review){
+  const manual=artifact.result.manualApproval,reference=historicalReviewReference(artifact);
+  if(!reference||review?.schemaVersion!==1||review.id!==reference.reviewId||review.runId!==reference.runId||review.organizationId!==artifact.organizationId||review.projectId!==artifact.projectId||review.reviewHash!==manual.reviewHash||review.snapshotHash!==artifact.evidence.candidate.snapshotHash||review.resultHash!==artifact.evidence.candidate.resultHash||typeof review.actorId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(review.actorId)||typeof review.comment!=='string'||review.comment.length>500||!['approved','rejected'].includes(review.decision)||['approved','expired'].includes(manual.status)&&review.decision!=='approved'||manual.status==='rejected'&&review.decision!=='rejected'||manual.status==='missing'||!Number.isFinite(Date.parse(review.createdAt))||Date.parse(review.createdAt)>Date.parse(artifact.checkedAt))throw Error('Historical review mismatch');
+  const {reviewHash,...payload}=review;await verifyArtifactBody(payload,manual.reviewHash);
+  return `연결된 과거 검토 근거 (본문 해시 확인)\n검토 기록 ${review.id}\n검토자 ID ${review.actorId}\n검토 시각 ${review.createdAt}\n검토 결정 ${review.decision==='approved'?'승인':'반려'}\n검토 의견 ${review.comment||'(의견 없음)'}\n검토 본문 SHA-256 ${reviewHash}\n이 과거 검토는 현재 승인 상태나 검토자의 현재 권한을 확인하지 않습니다.`;
 }
 clearReceiptInspection();
 let sessionCursor=null,sessionSequence=0,sessionBusy=false,sessionButtons=[];
@@ -510,20 +523,28 @@ async function receiptHistory(append=false){
     const inspect=node('button','기록 상세 보기','secondary');
     inspect.addEventListener('click',async()=>{
       if(inspect.disabled||epoch!==scopeEpoch)return;
-      const sequence=++receiptInspectionSequence,organizationId=actor?.organizationId,projectId=activeProjectId;
+      const sequence=++receiptInspectionSequence,organizationId=actor?.organizationId,projectId=activeProjectId;receiptInspectionTrigger=inspect;
       const isCurrent=()=>epoch===scopeEpoch&&sequence===receiptInspectionSequence;
       inspect.disabled=true;$('receipt-inspection').hidden=false;$('receipt-inspection-output').textContent='과거 검증 기록의 범위와 본문 해시를 확인하고 있습니다…';
       try{
         const data=await api(`/v1/release-receipts/${receipt.id}`);if(!isCurrent())return;
         await verifyHistoricalReceipt(data,receipt,organizationId,projectId);if(!isCurrent())return;
-        $('receipt-inspection-output').textContent=receiptInspectionText(data);
-        $('receipt-inspection').scrollIntoView?.({block:'start'});
+        const text=receiptInspectionText(data);$('receipt-inspection-output').textContent=text;
+        const manual=data.artifact.result.manualApproval;
+        if(manual?.reviewId||manual?.reviewHash){
+          $('receipt-inspection-output').textContent=text+'\n\n연결된 과거 검토 근거를 확인하고 있습니다.';
+          try{
+            const reference=historicalReviewReference(data.artifact),review=await api('/v1/runs/'+reference.runId+'/reviews/'+reference.reviewId);if(!isCurrent())return;
+            const detail=await historicalReviewText(data.artifact,review);if(!isCurrent())return;$('receipt-inspection-output').textContent=text+'\n\n'+detail;
+          }catch{if(isCurrent())$('receipt-inspection-output').textContent=text+'\n\n연결된 과거 검토 근거를 확인하지 못했습니다. 검증 기록의 본문 확인과는 별개입니다.';}
+        }
+        if(isCurrent()){$('receipt-inspection-title').focus?.({preventScroll:true});$('receipt-inspection').scrollIntoView?.({block:'start'});}
       }catch{if(isCurrent())$('receipt-inspection-output').textContent='검증 기록을 확인하지 못했습니다. 연결·접근 권한·기록의 무결성을 확인하고 다시 조회하세요.';}
       finally{if(epoch===scopeEpoch)inspect.disabled=false;}
     });row.append(inspect);
     const button=node('button','기록 JSON 저장','secondary');button.addEventListener('click',async()=>{if(button.disabled)return;const epoch=scopeEpoch,organizationId=actor?.organizationId,projectId=activeProjectId;button.disabled=true;try{const data=await api(`/v1/release-receipts/${receipt.id}`);if(epoch!==scopeEpoch)return;await verifyHistoricalReceipt(data,receipt,organizationId,projectId);if(epoch!==scopeEpoch)return;const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=node('a');link.href=url;link.download=`agenttrust-receipt-${receipt.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){if(epoch===scopeEpoch)message(e.message,true);}finally{if(epoch===scopeEpoch)button.disabled=false;}});row.append(button);return row;
   }));
-  if(!append&&!page.items.length)$('receipt-list').textContent='아직 CI 검증 기록이 없습니다.';
+  if(!append&&!page.items.length)$('receipt-list').textContent=receiptFilters.decision||receiptFilters.candidateRunId?'적용한 조건에 맞는 검증 기록이 없습니다.':'아직 CI 검증 기록이 없습니다.';
 }
 $('ci-key-form').addEventListener('submit',async event=>{
   event.preventDefault();if(workspaceMutation||actor?.role!=='admin')return;
@@ -543,7 +564,7 @@ $('ci-key-copy').addEventListener('click',async()=>{
   finally{if(isCurrent()){clipboardOperation=null;$('ci-key-copy').disabled=false;}}
 });
 $('ci-refresh').addEventListener('click',()=>listAction(()=>ciHistory(),()=>keyHistorySequence,e=>{$('ci-status').textContent=e.message;}));
-$('receipt-inspection-close').addEventListener('click',clearReceiptInspection);
+$('receipt-inspection-close').addEventListener('click',()=>clearReceiptInspection(true));
 $('receipts-refresh').addEventListener('click',()=>listAction(()=>receiptHistory(),()=>receiptHistorySequence));
 function applyReceiptFilters(filters){
   receiptHistorySequence++;receiptCursor=null;receiptFilters=filters;receiptShown=0;$('receipts-more').disabled=true;$('receipt-list').replaceChildren();clearReceiptInspection();

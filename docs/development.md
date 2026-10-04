@@ -504,3 +504,6 @@ initialize는 원래 scopeEpoch를 보관하고 각 비동기 단계 직후 확�
 `GET /v1/release-receipts?limit=25&decision=block&candidateRunId=<UUID>`는 판정과 후보 실행을 교집합으로 조회한다. `decision`은 `pass`/`block`, 후보 UUID는 대소문자 입력을 정규화한다. 생략한 조건은 제한하지 않는다. 잘못된 값·중복 조건·알 수 없는 쿼리는 400이다. `limit`/`cursor`가 없으면 기존 배열 응답(최대 100개)을 유지하며, 페이지 요청은 `{items,nextCursor}`를 반환한다. 목록에는 원본 artifact·사례 출력·서명을 포함하지 않는다.
 
 커서는 조직·프로젝트·리소스·필터 조건에 묶인다. 다른 조건의 커서나 CI 키 목록 커서를 전달하면 400이다. 페이지 사이의 새 기록 추가는 첫 페이지의 커서 이전 구간에 끼어들지 않는다. v0.119까지의 검증 기록 커서는 새로고침해 다시 받아야 한다.
+
+
+`GET /v1/runs/<run UUID>/reviews/<review UUID>`는 현재 조직/프로젝트와 해당 실행에 속한 원래 검토 한 개를 반환한다. viewer/editor/admin 세션으로 읽으며 CI 전용 키는 접근할 수 없다. 잘못된 UUID·쿼리는 400, 다른 조직/프로젝트/실행이나 없는 기록은 404다. 응답은 과거 본문과 reviewHash이며 현재 검토자 권한·현재 승인·새로운 쓰기 권한을 포함하지 않는다.

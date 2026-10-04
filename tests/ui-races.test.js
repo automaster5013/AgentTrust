@@ -52,7 +52,7 @@ function execution(id,state='succeeded',manual=false){return {id,state,createdAt
 async function fixture({manual=false,initialOverrides,waitForInitialization=true,timeoutSignal=ms=>AbortSignal.timeout(ms),writeClipboard=async()=>{},digest=(...args)=>webcrypto.subtle.digest(...args)}={}){
   const nodes=new Map(),selects=new Set(['agent','dataset-select','policy','workspace-project','ci-project','baseline-run','gate-baseline-recent','history-state','history-decision','audit-action','agent-mode']);
   const element=id=>{if(!nodes.has(id))nodes.set(id,new Element(selects.has(id)?'select':'div'));return nodes.get(id);};
-  const document={getElementById:element,createElement:tag=>new Element(tag)},timers=[],overrides=new Map(initialOverrides||[]),downloads=[];
+  const document={getElementById:element,createElement:tag=>new Element(tag)},timers=[],overrides=new Map(initialOverrides||[]),downloads=[],httpRequests=[];
   element('workspace-ui').hidden=true;element('login-panel').hidden=true;element('loading-panel').hidden=false;element('login-button').disabled=true;
   element('timeout-ms').value='30000';element('case-budget').value='100';
   const runs={A:execution('A','running'),B:execution('B','succeeded',manual)};
@@ -67,13 +67,13 @@ async function fixture({manual=false,initialOverrides,waitForInitialization=true
     if(path.startsWith('/v1/runs/'))return runs[path.split('/')[3]];
     return {items:[],nextCursor:null};
   };
-  const fetch=async(path,options={})=>{const handler=overrides.get(path),data=handler?await handler(options):defaultResponse(path);return data instanceof Response?data:new Response(JSON.stringify(data),{status:200,headers:{'Content-Type':'application/json'}});};
+  const fetch=async(path,options={})=>{httpRequests.push(path);const handler=overrides.get(path),data=handler?await handler(options):defaultResponse(path);return data instanceof Response?data:new Response(JSON.stringify(data),{status:200,headers:{'Content-Type':'application/json'}});};
   const source=await readFile(new URL('../apps/web/app.js',import.meta.url),'utf8');
   const AsyncFunction=Object.getPrototypeOf(async()=>{}).constructor;
   const initialized=new AsyncFunction('document','fetch','setTimeout','crypto','URL','AbortSignal','navigator',source)(document,fetch,callback=>{timers.push(callback);},{randomUUID:()=>webcrypto.randomUUID(),subtle:{digest}},{createObjectURL:blob=>{downloads.push(blob);return 'blob:synthetic';},revokeObjectURL(){}},{timeout:timeoutSignal},{clipboard:{writeText:writeClipboard}});
   if(waitForInitialization)await initialized;
   const view=id=>{const row=element('history-body').children.find(row=>row.children[0].textContent==='Run '+id);return row.children.at(-1).children[0].fire('click');};
-  return {element,overrides,timers,runs,view,downloads,initialized};
+  return {element,overrides,timers,runs,view,downloads,initialized,httpRequests};
 }
 
 test('late cancellation response cannot replace a newly selected run',async()=>{
@@ -958,4 +958,47 @@ test('a filtered receipt failure cannot leave rows or a page cursor from the pri
 test('logout clears receipt filters and prevents a pending condition from restoring its results',async()=>{
  const f=await fixture(),reply=deferred();f.element('receipt-decision').value='pass';f.element('receipt-candidate-id').value='00000000-0000-0000-0000-000000000abc';f.overrides.set('/v1/release-receipts?limit=25&decision=pass&candidateRunId=00000000-0000-0000-0000-000000000abc',()=>reply.promise);
  const pending=f.element('receipt-filter-form').fire('submit');await settle();await f.element('logout-button').fire('click');reply.resolve({items:[historicalReceiptSample(true).row],nextCursor:'old'});await pending;assert.equal(f.element('receipt-candidate-id').value,'');assert.equal(f.element('receipt-decision').value,'');assert.equal(f.element('receipt-filter-status').textContent,'');assert.equal(f.element('receipt-list').children.length,0);
+});
+
+
+async function historicalReviewFixture(status='approved',options={}){
+ const f=await fixture(options),sample=historicalReceiptSample(status==='approved'),runId='00000000-0000-0000-0000-000000000abc',reviewId='00000000-0000-0000-0000-000000000def';
+ const artifact=sample.data.artifact;artifact.request.candidateRunId=artifact.result.runId=artifact.evidence.candidate.runId=sample.row.candidate_run_id=runId;artifact.evidence.candidate.snapshotHash=hash('snapshot');artifact.evidence.candidate.resultHash=hash('result');
+ const payload={schemaVersion:1,id:reviewId,organizationId:artifact.organizationId,projectId:artifact.projectId,runId,actorId:'00000000-0000-0000-0000-000000000123',decision:status==='rejected'?'rejected':'approved',comment:'<script>synthetic historical opinion</script>',createdAt:'2025-12-31T23:59:00.000Z',snapshotHash:artifact.evidence.candidate.snapshotHash,resultHash:artifact.evidence.candidate.resultHash};
+ const review={...payload,reviewHash:hash(payload)};artifact.result.manualApproval={required:true,status,reviewId,reviewHash:review.reviewHash};
+ const signer=new ReceiptSigner(generateKeyPairSync('ed25519').privateKey.export({type:'pkcs8',format:'pem'}));sample.data.artifactHash=sample.row.artifact_hash=hash(artifact);sample.data.signature=signer.sign(artifact);sample.publicKey=signer.publicMetadata().publicKey;sample.row.signing_key_id=sample.data.signature.keyId;
+ const path='/v1/runs/'+runId+'/reviews/'+reviewId;f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[sample.row],nextCursor:null}));f.overrides.set('/v1/release-receipts/'+sample.row.id,()=>sample.data);f.overrides.set(path,()=>review);await f.element('receipts-refresh').fire('click');
+ return {...f,sample,review,path,inspect:f.element('receipt-list').children[0].children.find(c=>c.textContent==='기록 상세 보기')};
+}
+
+test('historical inspection binds the original review payload and shows its opinion as plain text without granting current approval',async()=>{
+ const f=await historicalReviewFixture();assert.equal(verifyReceipt(f.sample.data,f.sample.publicKey).signatureVerified,true);await f.view('B');await f.inspect.fire('click');const text=f.element('receipt-inspection-output').textContent;assert.match(text,/연결된 과거 검토 근거/);assert.ok(text.includes(f.review.id));assert.ok(text.includes(f.review.actorId));assert.ok(text.includes('<script>synthetic historical opinion</script>'));assert.match(text,/현재 승인 상태나 검토자의 현재 권한을 확인하지 않습니다/);assert.equal(f.element('receipt-inspection-output').children.length,0);assert.equal(f.element('current-receipt-download').disabled,true);
+});
+
+test('expired and rejected historical approvals retain their own bound review decisions',async()=>{
+ for(const status of ['expired','rejected']){const f=await historicalReviewFixture(status);await f.inspect.fire('click');const text=f.element('receipt-inspection-output').textContent;assert.match(text,status==='expired'?/관리자 검토: 승인 만료/:/관리자 검토: 반려/);assert.match(text,status==='expired'?/검토 결정 승인/:/검토 결정 반려/);assert.match(text,/본문 해시 확인/);}
+});
+
+test('unavailable, tampered or mismatched review bodies preserve verified receipt details and hide raw review failures',async()=>{
+ for(const mutate of [r=>{r.id='other';},r=>{r.snapshotHash='other';},r=>{r.comment='private-review-canary';},r=>{r.actorId='invalid';},r=>{r.decision='rejected';},null]){
+  const f=await historicalReviewFixture();if(mutate)mutate(f.review);else f.overrides.set(f.path,()=>{throw Error('private-review-canary');});await f.inspect.fire('click');const text=f.element('receipt-inspection-output').textContent;assert.match(text,/본문 SHA-256 확인됨/);assert.match(text,/과거 검토 근거를 확인하지 못했습니다/);assert.ok(!text.includes('private-review-canary'));assert.equal(f.inspect.disabled,false);
+ }
+});
+
+test('a pending linked review cannot restore historical details after closing or logging out',{timeout:5000},async()=>{
+ for(const action of ['close','logout']){
+  const f=await historicalReviewFixture(),reply=deferred(),requested=deferred();f.overrides.set(f.path,()=>{requested.resolve();return reply.promise;});const pending=f.inspect.fire('click');await requested.promise;assert.match(f.element('receipt-inspection-output').textContent,/과거 검토 근거를 확인하고 있습니다/);await f.element(action==='close'?'receipt-inspection-close':'logout-button').fire('click');reply.resolve(f.review);await pending;assert.equal(f.element('receipt-inspection').hidden,true);assert.equal(f.element('receipt-inspection-output').textContent,'');
+ }
+});
+
+test('a delayed linked review digest cannot restore details after receipt conditions reset',{timeout:5000},async()=>{
+ const reply=deferred(),started=deferred();let calls=0;const f=await historicalReviewFixture('approved',{digest:async(...args)=>{if(++calls===2){started.resolve();await reply.promise;}return webcrypto.subtle.digest(...args);}});const pending=f.inspect.fire('click');await started.promise;assert.equal(calls,2);await f.element('receipt-filter-reset').fire('click');reply.resolve();await pending;assert.equal(f.element('receipt-inspection').hidden,true);assert.equal(f.element('receipt-inspection-output').textContent,'');
+});
+
+test('malformed historical review references fail before issuing any review request',async()=>{
+ const f=await historicalReviewFixture();f.sample.data.artifact.result.manualApproval.reviewId='../private';f.sample.data.artifactHash=f.sample.row.artifact_hash=hash(f.sample.data.artifact);let requests=0;f.overrides.set(f.path,()=>{requests++;return f.review;});await f.element('receipts-refresh').fire('click');const button=f.element('receipt-list').children[0].children.find(c=>c.textContent==='기록 상세 보기');await button.fire('click');assert.equal(requests,0);assert.equal(f.httpRequests.filter(path=>path.includes('/reviews/')).length,0);assert.match(f.element('receipt-inspection-output').textContent,/과거 검토 근거를 확인하지 못했습니다/);
+});
+
+test('an empty receipt condition distinguishes no matching records from an empty workspace',async()=>{
+ const f=await fixture();f.element('receipt-decision').value='block';f.overrides.set('/v1/release-receipts?limit=25&decision=block',()=>({items:[],nextCursor:null}));await f.element('receipt-filter-form').fire('submit');assert.match(f.element('receipt-list').textContent,/적용한 조건에 맞는/);assert.ok(!f.element('receipt-list').textContent.includes('아직 CI'));await f.element('receipt-filter-reset').fire('click');assert.match(f.element('receipt-list').textContent,/아직 CI 검증 기록/);
 });

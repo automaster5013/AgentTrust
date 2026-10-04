@@ -30,7 +30,7 @@ try{
   const config=JSON.parse((await readFile('.local/credentials.json','utf8')).replace(/^\uFEFF/,'')),organization=config.organizations[0];scope=seededDemoScope(organization);
   assert.equal(loaded.manifest.organizationId,scope.organizationId);assert.equal(loaded.manifest.projectId,scope.projectId);base=localSmokeBase();
   await call('/v1/auth/login',{accessKey:organization.credentials.find(credential=>credential.role==='viewer').token});assertDemoSessionScope(await call('/v1/me'),scope,'viewer');
-  const history=await verifyPortfolioReceiptHistory({call,receipts:loaded.receipts});
+  const history=await verifyPortfolioReceiptHistory({call,receipts:loaded.receipts});assert.equal(history.linkedReviewsVerified,2);
   await call('/v1/auth/logout',{});cookie=null;
   console.log(JSON.stringify({status:'passed',directory,manifestSha256,...verification,...history,historySessionLoggedOut:true}));
 }catch{

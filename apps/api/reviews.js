@@ -10,7 +10,18 @@ import { sequencePageResult } from './pagination.js';
 export const reviewPageContext=(context,runId)=>({...context,cursorScope:hash({resource:'run-reviews',runId})});
 
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
-function publicReview(row){if(hash(row.payload)!==row.review_hash)throw new Error('Review integrity mismatch.');return {...row.payload,reviewHash:row.review_hash};}
+const reviewFields='actorId,comment,createdAt,decision,id,organizationId,projectId,resultHash,runId,schemaVersion,snapshotHash';
+const reviewColumns={id:'id',organizationId:'organization_id',projectId:'project_id',runId:'run_id',actorId:'actor_id',decision:'decision'};
+function publicReview(row){
+  const payload=row.payload;
+  const validPayload=payload&&Object.keys(payload).sort().join(',')===reviewFields&&payload.schemaVersion===1&&
+    ['id','organizationId','projectId','runId','actorId'].every(key=>uuid(payload[key]))&&['approved','rejected'].includes(payload.decision)&&
+    typeof payload.comment==='string'&&payload.comment.length<=500&&['snapshotHash','resultHash'].every(key=>/^[a-f0-9]{64}$/.test(payload[key]||''))&&
+    Number.isFinite(Date.parse(payload.createdAt))&&new Date(payload.createdAt).toISOString()===payload.createdAt;
+  const metadataMatches=validPayload&&Object.entries(reviewColumns).every(([key,column])=>payload[key]===row[column])&&Date.parse(payload.createdAt)===row.created_at.getTime();
+  if(!metadataMatches||hash(payload)!==row.review_hash)throw new Error('Review integrity mismatch.');
+  return {...payload,reviewHash:row.review_hash};
+}
 export async function latestReview(client,context,runId){
   const row=(await client.query(`SELECT r.*,m.active AND m.role='admin' AS actor_valid FROM agenttrust.run_reviews r
     JOIN agenttrust.memberships m ON m.id=r.actor_id AND m.organization_id=r.organization_id
@@ -23,8 +34,15 @@ export class Reviews{
     if(!uuid(runId))throw new InputError('Invalid run id.');
     return transaction(this.database,async client=>{
       if(!(await client.query('SELECT id FROM agenttrust.runs WHERE organization_id=$1 AND project_id=$2 AND id=$3',[context.organizationId,context.projectId,runId])).rowCount)throw new InputError('Unknown run.',404);
-      const rows=(await client.query('SELECT payload,review_hash,review_order FROM agenttrust.run_reviews WHERE organization_id=$1 AND project_id=$2 AND run_id=$3 AND ($4::bigint IS NULL OR review_order<$4::bigint) ORDER BY review_order DESC LIMIT $5',[context.organizationId,context.projectId,runId,page?.cursor?.order||null,page?page.limit+1:50])).rows;
+      const rows=(await client.query('SELECT * FROM agenttrust.run_reviews WHERE organization_id=$1 AND project_id=$2 AND run_id=$3 AND ($4::bigint IS NULL OR review_order<$4::bigint) ORDER BY review_order DESC LIMIT $5',[context.organizationId,context.projectId,runId,page?.cursor?.order||null,page?page.limit+1:50])).rows;
       return page?sequencePageResult(rows.map(row=>({...publicReview(row),cursor_order:row.review_order})),page,reviewPageContext(context,runId)):rows.map(publicReview);
+    },context.organizationId);
+  }
+  async get(context,runId,reviewId){
+    if(!uuid(runId)||!uuid(reviewId))throw new InputError('Invalid run or review id.');
+    return transaction(this.database,async client=>{
+      const row=(await client.query('SELECT * FROM agenttrust.run_reviews WHERE organization_id=$1 AND project_id=$2 AND run_id=$3 AND id=$4',[context.organizationId,context.projectId,runId,reviewId])).rows[0];
+      if(!row)throw new InputError('Unknown review.',404);return publicReview(row);
     },context.organizationId);
   }
   async create(context,runId,input,key){
@@ -36,7 +54,7 @@ export class Reviews{
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,5))',[context.organizationId]);
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,4))',[runId]);
       await revalidateSession(client,context,{adminOnly:true});
-      const prior=(await client.query('SELECT payload,review_hash,request_hash FROM agenttrust.run_reviews WHERE organization_id=$1 AND project_id=$2 AND actor_id=$3 AND idempotency_key=$4',[context.organizationId,context.projectId,context.membershipId,key])).rows[0];
+      const prior=(await client.query('SELECT * FROM agenttrust.run_reviews WHERE organization_id=$1 AND project_id=$2 AND actor_id=$3 AND idempotency_key=$4',[context.organizationId,context.projectId,context.membershipId,key])).rows[0];
       if(prior){if(prior.request_hash!==requestHash)throw new InputError('Review idempotency key conflict.',409);return {...publicReview(prior),replay:true};}
       const row=(await client.query('SELECT * FROM agenttrust.runs WHERE organization_id=$1 AND project_id=$2 AND id=$3 FOR SHARE',[context.organizationId,context.projectId,runId])).rows[0];
       if(!row)throw new InputError('Unknown run.',404);const run=publicRun(row);
