@@ -78,7 +78,7 @@ Compose 프로젝트는 `agenttrust`이며 API 4310, DB 55432 포트를 루프�
 
 ## 검증과 이미지 전달
 
-**고정 검증 기준선**: [v0.149 소스 커밋](https://github.com/automaster5013/AgentTrust/commit/fc559dbb97c147879d6fe7b9cfeb08801527fcc7)의 [CI 실행 #37334205268](https://github.com/automaster5013/AgentTrust/actions/runs/37334205268)에서 실제 472개 테스트와 네 작업 성공을 확인했습니다. 같은 digest의 기존 로컬 설치에서 기록 보존·서명·비교·원래 의견 자료·역할·조회 측정·병렬 평가를 검증하고 소스 v0.149로 복원했습니다. 소스와 registry CI 양쪽의 두 조직 범위·용량·사용량·감사·자체 로그아웃도 확인했습니다. [완료 범위와 재현 절차](docs/portfolio-status.md)를 참고하세요. 상단 배지는 최신 main 실행을 표시합니다.
+**고정 검증 기준선**: [v0.159 소스 커밋](https://github.com/automaster5013/AgentTrust/commit/848cad24bb99a9aa87a0d09674ed8a671f804dd3)의 [CI 실행 37390238772](https://github.com/automaster5013/AgentTrust/actions/runs/37390238772)에서 실제 535개 테스트와 네 작업 성공을 확인했습니다. 같은 digest의 기존 로컬 설치에서 저장 기록 보존·서명·비교·원래 검토 의견·수용 기준 증거 묶음·조직 용량·역할·조회·병렬 평가를 확인하고 소스 v0.159로 복원했습니다. [합성 수용 시연 절차](docs/acceptance-walkthrough.md)와 [완료 범위](docs/portfolio-status.md)를 참고하세요. 상단 배지는 최신 main 실행을 표시합니다.
 
 1. 전체 테스트와 Docker 기반 평가·복구·시연 검증
 2. 같은 커밋의 후보 컨테이너를 GHCR에 발행
@@ -107,3 +107,7 @@ npm.cmd test
 실제 고객 모델 연결, SSO/OIDC, 상용 배포·운영 검증은 남아 있습니다. 배포 지역·데이터 보존 기간·결제 방식도 확정 전입니다. 현재 점수와 판정은 합성 데이터 및 정책에 명시한 범위의 증거이며 위험 제거를 보장하지 않습니다.
 
 화면의 **합성 데이터셋 등록 → 합성 수용 기준 초안 준비**는 데이터셋 두 사례와 관리자 승인 정책을 양식에 함께 채운다. 아직 저장되지 않은 초안이며 각 버전을 등록·선택한 뒤 평가해야 한다. 자세한 절차는 [합성 수용 기준 화면 준비](docs/connector-contract.md#화면에서-합성-수용-기준-초안-준비)를 따른다.
+
+현재 기능을 처음 살펴볼 때는 [합성 수용 기준 시연](docs/acceptance-walkthrough.md)을 따르세요. 아래는 실제 v0.159 소스 Docker에서 자체 읽기 전용 세션으로 확인한 초안 준비 화면입니다. 등록·평가·승인을 자동 실행하지 않습니다.
+
+![v0.159 합성 수용 기준 초안 준비](docs/evidence/acceptance-draft-v159.jpg)
