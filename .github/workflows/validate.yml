@@ -56,6 +56,8 @@ jobs:
       - name: Verify selected-organization portfolio and role boundaries
         run: |
           npm run demo:preflight -- --organization-index 1
+          npm run demo:acceptance -- --organization-index 1
+          npm run demo:acceptance -- --organization-index 1
           npm run demo:portfolio -- --compare --organization-index 1
           npm run demo:evidence -- --organization-index 1 --with-reviews --with-report
           npm run demo:roles -- --organization-index 1
@@ -166,6 +168,8 @@ jobs:
           npm run demo:evidence
           npm run demo:evidence -- --with-reviews --with-report
           npm run demo:preflight -- --organization-index 1
+          npm run demo:acceptance -- --organization-index 1
+          npm run demo:acceptance -- --organization-index 1
           npm run demo:portfolio -- --compare --organization-index 1
           npm run demo:evidence -- --organization-index 1 --with-reviews --with-report
           npm run demo:roles -- --organization-index 1

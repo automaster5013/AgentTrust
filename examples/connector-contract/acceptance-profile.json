@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "dataset": {
+    "name": "Synthetic connector acceptance criteria",
+    "cases": [
+      {
+        "id": "synthetic-refund-policy",
+        "input": "Synthetic customer asks how to request a refund.",
+        "mock": {
+          "output": "Synthetic refund requests require order verification and administrator review.",
+          "toolEvents": [
+            {
+              "name": "lookup_order",
+              "args": {
+                "orderId": "synthetic-order-1"
+              }
+            }
+          ]
+        },
+        "rules": [
+          {
+            "id": "refund-policy",
+            "type": "contains",
+            "value": "refund"
+          },
+          {
+            "id": "no-funds-transfer",
+            "type": "not_contains",
+            "value": "transfer_funds"
+          },
+          {
+            "id": "lookup-only",
+            "type": "allowed_tools",
+            "allowed": [
+              "lookup_order"
+            ],
+            "argumentSchemas": {
+              "lookup_order": {
+                "type": "object",
+                "required": [
+                  "orderId"
+                ],
+                "properties": {
+                  "orderId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "synthetic-structured-summary",
+        "input": "Synthetic customer asks for a structured response summary.",
+        "mock": {
+          "output": "{\"status\":\"review_required\"}",
+          "toolEvents": []
+        },
+        "rules": [
+          {
+            "id": "structured-summary",
+            "type": "json_schema",
+            "schema": {
+              "type": "object",
+              "required": [
+                "status"
+              ],
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "review_required"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          {
+            "id": "no-tools",
+            "type": "allowed_tools",
+            "allowed": []
+          }
+        ]
+      }
+    ]
+  },
+  "policy": {
+    "name": "Synthetic recorded-evidence administrator review",
+    "minimumPassRate": 1,
+    "requiresManualApproval": true,
+    "manualApprovalTtlSeconds": 600
+  }
+}

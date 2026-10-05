@@ -52,3 +52,18 @@ node scripts/compare-connector-evidence.mjs --dataset .local/customer-dataset.js
 양쪽 증거가 완전하고 후보 평가가 pass이며 기존 pass 규칙의 회귀가 없어야 비교 pass다. 선택 규칙의 pass→fail도 후보의 전체 통과율과 별개로 회귀를 차단한다. 실패한 기준에서 통과한 후보로 개선할 수 있지만 양쪽 중 하나라도 증거가 누락되거나 불확정이면 비교는 inconclusive다. 변경은 데이터셋 순서의 사례·규칙 번호와 이전·이후 상태만 표시한다.
 
 종료 코드 0은 오프라인 비교 pass, 1은 block/inconclusive, 2는 잘못된 입력이다. 원격 출처 검증·서명·DB 등록·관리자 승인·현재 릴리스 게이트를 수행하지 않으며 배포 허용은 항상 false다. 기본 합성 예제는 동일한 기록 두 개를 비교한다. 실제 사용자는 별도 기준·후보 기록 파일을 지정한다.
+
+## 합성 수용 기준의 실제 평가·승인 시연
+
+```powershell
+npm.cmd run demo:acceptance -- --organization-index 1
+node --env-file-if-exists=.env scripts/acceptance-demo.mjs --organization-index 1 --profile .local/synthetic-acceptance-profile.json
+```
+
+기본 [합성 수용 프로필](../examples/connector-contract/acceptance-profile.json)은 `schemaVersion: 1`, `synthetic: true`, 기존 데이터셋·정책 계약을 담는다. 사용자 프로필도 실제 고객 자료 대신 합성 자료를 사용한다. 파일은 64 KiB 이하의 UTF-8 JSON이다. 전체 통과율 1과 관리자 승인을 요구하며 정상 pass, 업무 회귀·금지 도구 block, 누락·실행 오류 inconclusive를 구분하는지 먼저 검증한다. 이 준비 검사는 로그인 전에 수행한다.
+
+선택 조직의 관리자 세션과 프로젝트, 실행 여섯 개의 용량과 최근 워커 신호를 확인한 후 데이터셋·정책을 불변 버전으로 등록한다. 같은 이름만으로 재사용하지 않고 내용 해시와 실제 저장된 버전을 대조한다. 기존 버전을 수정하지 않는다. 기준 실행 하나와 후보 다섯 개를 실제 로컬 Docker 워커의 모의 어댑터로 평가한다.
+
+정상 후보는 승인 전 차단, 승인 후 허용, 시연 종료 시 반려 후 차단을 확인한다. 나머지 후보는 계속 차단하며 기준·후보 결과, 조직·프로젝트, 고정 버전에 결합된 영수증 서명 일곱 개를 검증한다. 실패 시 생성한 미완료 실행을 취소하고 시도한 승인을 반려하며 자체 세션을 종료한다. 이 시연의 허용 결과는 합성 실행에 한정하고 실제 고객 연결이나 서버 배포를 수행하지 않는다.
+
+성공 종료 코드는 0이고 준비·평가·검증·정리 실패는 1이다. 비공개 보고서는 새 `.local/acceptance-demo-*.json`에 저장한다. 표준 출력은 상태·단계 수·서명 확인 수·정리 여부만 표시하며 접근 키·쿠키·기준과 응답의 원문을 포함하지 않는다. CI는 소스와 레지스트리 API·워커에서 두 번씩 실행하여 최초 등록과 정확한 기준 재사용을 확인한다.
