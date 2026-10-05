@@ -29,5 +29,6 @@
 .receipt-entry{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:14px 0}.receipt-metadata{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:8px;min-width:0}.receipt-metadata code{flex:1 1 100%;font:inherit;overflow-wrap:anywhere}
 
 .receipt-inspection{margin:16px 0;padding:16px;border:1px solid var(--line);border-radius:8px}.receipt-inspection pre{max-height:400px;margin-bottom:0;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;font:13px/1.7 Consolas,monospace;background:#f5f8f6;padding:12px;border-radius:5px}
+.review-source summary{cursor:pointer;font-weight:600;padding:6px 0}.review-source summary:focus-visible{outline:2px solid #43a079;outline-offset:3px}.review-source pre{max-height:280px;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;font:12px/1.7 Consolas,monospace;background:#f5f8f6;padding:12px;border-radius:5px}
 
 .receipt-filters{display:grid;grid-template-columns:150px minmax(180px,1fr) auto;gap:15px;align-items:end;margin:20px 0}.receipt-filters input{width:100%}#receipt-filter-status{overflow-wrap:anywhere}@media(max-width:1050px){.receipt-filters{grid-template-columns:1fr}.receipt-filters .actions{flex-wrap:wrap}}

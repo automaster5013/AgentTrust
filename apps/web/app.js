@@ -674,7 +674,11 @@ async function reviewHistory(run=currentRun,append=false){
   updateRunNavigation();
   $('manual-status').textContent='정책에서 관리자 검토를 요구합니다. 승인 유효 시간 '+(run.snapshot.policy.manualApprovalTtlSeconds??3600)+'초. 최종 배포 판단은 현재 CI 게이트를 확인하세요.';
   if(!append)$('review-list').replaceChildren();
-  $('review-list').append(...reviews.map(review=>{const row=node('div',undefined,'audit-entry');row.append(node('strong',review.decision==='approved'?'승인 ':'반려 '),node('span',new Date(review.createdAt).toLocaleString('ko-KR')+' · 검토자 '+review.actorId.slice(0,8)),node('p',review.comment||'(의견 없음)'));return row;}));
+  $('review-list').append(...reviews.map(review=>{
+    const row=node('div',undefined,'audit-entry'),source=node('details',undefined,'review-source');
+    source.append(node('summary','검토 원본 · '+review.id.slice(0,8)),node('p','과거 검토 원본과 서버의 본문 해시입니다. 현재 검토자 권한·승인 효력은 최종 게이트에서 확인하세요. 독립 서명 검증은 검증 기록과 신뢰 공개키로 수행하세요.','hint'),node('pre',JSON.stringify(review,null,2)));
+    row.append(node('strong',review.decision==='approved'?'승인 ':'반려 '),node('span',new Date(review.createdAt).toLocaleString('ko-KR')+' · 검토자 '+review.actorId.slice(0,8)),node('p',review.comment||'(의견 없음)'),source);return row;
+  }));
   if(!append&&!reviews.length)$('review-list').textContent='아직 관리자 검토 기록이 없습니다.';
 }
 $('review-form').addEventListener('submit',async event=>{
