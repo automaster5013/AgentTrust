@@ -9,6 +9,7 @@ import {ReceiptSigner,verifyReceipt} from '../packages/receipts/signature.js';
 import {hash} from '../packages/contracts/hash.js';
 import {writePortfolioEvidence,readPortfolioEvidence,loadPortfolioEvidence,verifyPortfolioEvidence,portfolioManifestLimit,portfolioReviewLimit} from '../scripts/portfolio-evidence.mjs';
 import {createPortfolioEvidenceReport,evidenceReportReasonLimit} from '../scripts/portfolio-evidence-report.mjs';
+import {isOrdinaryHtmlOutput} from '../scripts/audit-report-output.mjs';
 const exec=promisify(execFile),sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 function fixture(compare=false){
   const signer=new ReceiptSigner(generateKeyPairSync('ed25519').privateKey.export({type:'pkcs8',format:'pem'}));
@@ -180,4 +181,16 @@ test('long signed reasons have a labeled bounded display and blank reasons canno
  for(const receipt of f.receipts){receipt.artifactHash=hash(receipt.artifact);receipt.signature=f.signer.sign(receipt.artifact);}
  const written=await writePortfolioEvidence(f);t.after(async()=>{assert.ok(resolve(written.directory).startsWith(resolve('.local')+sep));await rm(written.directory,{recursive:true,force:true});});const report=await createPortfolioEvidenceReport(written.directory,f.trustedPem,written.manifestSha256);
  assert.match(report.html,/긴 이유는 일부만 표시: 원본 자료 확인/);assert.match(report.html,/&lt;빈 이유 문구&gt;/);assert.equal((report.html.match(/&lt;/g)||[]).length,evidenceReportReasonLimit+4);assert.ok(!report.html.includes('not-visible-tail'));assert.equal((await loadPortfolioEvidence(written.directory,f.trustedPem)).receipts[1].artifact.result.reasons[0].length,evidenceReportReasonLimit+100);
+});
+
+test('audit report output cannot become an alternate stream of an existing file',async t=>{
+ const f=await reviewedBundle(t),dir=await mkdtemp(join(resolve('.local'),'audit-report-stream-test-')),key=join(dir,'public.pem'),base=join(dir,'ordinary.html');
+ t.after(async()=>{assert.ok(resolve(dir).startsWith(resolve('.local')+sep));await rm(dir,{recursive:true,force:true});});await writeFile(key,f.trustedPem);await writeFile(base,'Original synthetic file');
+ await assert.rejects(exec(process.execPath,['scripts/write-portfolio-evidence-report.mjs',f.directory,key,base+':attached.html'],{windowsHide:true,timeout:10000}),error=>error.code===2&&!error.stdout);
+ assert.equal(await readFile(base,'utf8'),'Original synthetic file');assert.equal((await loadPortfolioEvidence(f.directory,f.trustedPem)).verification.bundleVerified,true);
+});
+
+test('portable HTML destinations exclude devices and hidden streams without opening any device',()=>{
+ for(const name of ['NUL.html','CON.html','PRN.html','aux.html','COM1.html','LPT9.html','COM¹.html','NUL .extra.html','normal.html:stream.html','bad?.html','bad\u0000.html','report.html.','report.html '])assert.equal(isOrdinaryHtmlOutput(join('.local',name)),false,name);
+ for(const name of ['report.html','감사 보고서.html','comparison.HTML','null.html','company.html','console.html'])assert.equal(isOrdinaryHtmlOutput(join('.local',name)),true,name);
 });

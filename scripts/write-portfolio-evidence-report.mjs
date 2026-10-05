@@ -1,10 +1,11 @@
 import {writeFile,realpath} from 'node:fs/promises';
-import {extname,dirname,relative,isAbsolute,sep} from 'node:path';
+import {dirname,relative,isAbsolute,sep} from 'node:path';
+import {isOrdinaryHtmlOutput} from './audit-report-output.mjs';
 import {readTrustedReceiptKey} from './trusted-receipt-key.mjs';
 import {createPortfolioEvidenceReport} from './portfolio-evidence-report.mjs';
 try{
  const args=process.argv.slice(2);
- if(![3,4].includes(args.length)||args.some(value=>!value.trim())||extname(args[2]).toLowerCase()!=='.html'||args[3]!==undefined&&!/^[a-f0-9]{64}$/.test(args[3]))throw Error('Invalid report input');
+ if(![3,4].includes(args.length)||args.some(value=>!value.trim())||!isOrdinaryHtmlOutput(args[2])||args[3]!==undefined&&!/^[a-f0-9]{64}$/.test(args[3]))throw Error('Invalid report input');
  const destination=relative(await realpath(args[0]),await realpath(dirname(args[2])));
  if(!(isAbsolute(destination)||destination==='..'||destination.startsWith('..'+sep)))throw Error('Report must be outside the immutable bundle');
  const trustedPem=await readTrustedReceiptKey(args[1]);
