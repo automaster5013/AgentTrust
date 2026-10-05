@@ -1,15 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {runRoleScenario} from '../scripts/portfolio-roles-scenario.mjs';
+import {randomUUID} from 'node:crypto';
+import {hash} from '../packages/contracts/hash.js';
 
-function fixture({waitFails=false,denyFails=false,checkFails=false,cleanupFails=false,changeReceipt=()=>{},changeRun=()=>{}}={}){
+function fixture({waitFails=false,denyFails=false,checkFails=false,cleanupFails=false,changeReceipt=()=>{},changeRun=()=>{},reusePolicy=false}={}){
   const calls=[];let review='missing',checks=0;
-  const completed={id:'synthetic-run',agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy',state:'succeeded',snapshotHash:'synthetic-hash',resultHash:'synthetic-result',gate:{decision:'pass',evaluationPassed:true,deploymentAllowed:false}};
+  const policyId=randomUUID(),policyData={name:'Portfolio synthetic role boundaries',minimumPassRate:1,requiresManualApproval:true,manualApprovalTtlSeconds:3600},policyHash=hash(policyData);
+  const completed={id:'synthetic-run',agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:policyId,state:'succeeded',snapshotHash:'synthetic-hash',resultHash:'synthetic-result',gate:{decision:'pass',evaluationPassed:true,deploymentAllowed:false}};
   const call=async(role,path,data,expected)=>{
     calls.push({role,path,data,expected});
     if(expected){if(denyFails)throw Error('Authorization was unexpectedly allowed');return;}
-    if(path==='/v1/catalog')return {agent:[{id:'agent',mode:'compliant'}],dataset:[{id:'dataset',name:'Customer support safety · v1'}]};
-    if(path==='/v1/policy-versions')return {id:'policy'};
+    if(path==='/v1/catalog')return {agent:[{id:'agent',mode:'compliant'}],dataset:[{id:'dataset',name:'Customer support safety · v1'}],policy:reusePolicy?[{...policyData,id:policyId,contentHash:policyHash}]:[]};
+    if(path==='/v1/policy-versions')return {...policyData,id:policyId,contentHash:policyHash};
+    if(path==='/v1/versions/'+policyId)return {id:policyId,kind:'policy',data:policyData,contentHash:policyHash};
     if(path==='/v1/runs')return {...completed,state:'queued'};
     if(path.endsWith('/cancel'))return {};
     if(path.endsWith('/reviews')){if(!data)return [];if(cleanupFails&&data.decision==='rejected')throw Error('Synthetic cleanup failure');review=data.decision;return {};}
@@ -30,6 +34,9 @@ test('role demo separates editor creation, viewer checks, admin reviews and orga
   assert.ok(f.calls.filter(c=>c.path==='/v1/release-gate'&&!c.expected).every(c=>c.role==='viewer'));
   assert.ok(f.calls.filter(c=>c.path.endsWith('/reviews')&&c.data&&!c.expected).every(c=>c.role==='admin'));
   assert.deepEqual(r.steps.filter(s=>s.signatureVerified).map(s=>s.deploymentAllowed),[false,true,false]);
+});
+test('role demonstration reuses a verified policy through the administrator while retaining authorization checks',async()=>{
+ const f=fixture({reusePolicy:true}),r=await runRoleScenario(f.dependencies);assert.equal(r.completed,true);assert.equal(r.demoPolicyReused,true);assert.equal(r.steps.length,11);assert.equal(f.calls.filter(c=>c.path==='/v1/policy-versions'&&!c.expected).length,0);const reads=f.calls.filter(c=>c.path.startsWith('/v1/versions/'));assert.equal(reads.length,1);assert.equal(reads[0].role,'admin');assert.deepEqual(f.calls.filter(c=>c.expected).map(c=>c.expected),[403,403,403,403,404,404]);assert.equal(r.cleanupSucceeded,true);
 });
 test('unexpected authorization success blocks the role demonstration',async()=>{
   const f=fixture({denyFails:true}),r=await runRoleScenario(f.dependencies);assert.equal(r.completed,false);assert.ok(!JSON.stringify(r).includes('unexpectedly allowed'));

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {assertDemoReceiptBinding} from './demo-receipt-binding.mjs';
+import {ensureDemoReviewPolicy} from './demo-policy-version.mjs';
 
 // The scenario uses only the seeded synthetic dataset and deterministic mocks.
 export async function runPortfolioScenario({call,wait,verify,onStep=()=>{},compare=false}){
@@ -56,7 +57,8 @@ export async function runPortfolioScenario({call,wait,verify,onStep=()=>{},compa
     for(const [mode,state,decision,allowed] of [['compliant','succeeded','pass',true],['regression','succeeded','block',false],['missing_evidence','succeeded','inconclusive',false]]){
       const item=await execute(mode,policy.id,state,decision);await check('release_'+mode,item.run,item.input,allowed);
     }
-    const manual=await call('/v1/policy-versions',{name:'Portfolio synthetic administrator review',minimumPassRate:1,requiresManualApproval:true,manualApprovalTtlSeconds:3600});
+    const manual=await ensureDemoReviewPolicy({call,policies:catalog.policy,name:'Portfolio synthetic administrator review'});
+    report.demoPolicyReused=manual.reused;report.demoPolicyVersionId=manual.id;
     if(compare)baselines.set(manual.id,(await execute('compliant',manual.id,'succeeded','pass','baseline_')).run);
     const item=await execute('compliant',manual.id,'succeeded','pass');reviewRun=item.run;
     assert.equal(reviewRun.gate.evaluationPassed,true);assert.equal(reviewRun.gate.deploymentAllowed,false);

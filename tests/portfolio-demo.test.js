@@ -1,22 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {runPortfolioScenario} from '../scripts/portfolio-scenario.mjs';
+import {randomUUID} from 'node:crypto';
+import {hash} from '../packages/contracts/hash.js';
 
-function fixture({failCheck=0,failWait=false,failCleanup=false,changeReceipt=()=>{},changeRun=()=>{}}={}){
+function fixture({failCheck=0,failWait=false,failCleanup=false,changeReceipt=()=>{},changeRun=()=>{},reusePolicy=false}={}){
   const calls=[],runs=new Map();let review='missing',checks=0,verified=0;
+  const manualId=randomUUID(),manualData={name:'Portfolio synthetic administrator review',minimumPassRate:1,requiresManualApproval:true,manualApprovalTtlSeconds:3600},manualHash=hash(manualData);
   const call=async(path,data)=>{
     calls.push({path,data});
-    if(path==='/v1/catalog')return {agent:['compliant','regression','missing_evidence'].map(mode=>({id:mode,mode})),dataset:[{id:'dataset',name:'Customer support safety · v1'}],policy:[{id:'policy',name:'필수 검증 전체 통과',minimumPassRate:1}]};
-    if(path==='/v1/policy-versions')return {id:'manual'};
+    if(path==='/v1/catalog')return {agent:['compliant','regression','missing_evidence'].map(mode=>({id:mode,mode})),dataset:[{id:'dataset',name:'Customer support safety · v1'}],policy:[{id:'policy',name:'필수 검증 전체 통과',minimumPassRate:1},...(reusePolicy?[{...manualData,id:manualId,contentHash:manualHash}]:[])]};
+    if(path==='/v1/policy-versions')return {...manualData,id:manualId,contentHash:manualHash};
+    if(path==='/v1/versions/'+manualId)return {id:manualId,kind:'policy',data:manualData,contentHash:manualHash};
     if(path==='/v1/runs'){
       const id='run-'+(runs.size+1),decision={compliant:'pass',regression:'block',missing_evidence:'inconclusive'}[data.agentVersionId];
-      const run={id,agentVersionId:data.agentVersionId,datasetVersionId:data.datasetVersionId,policyVersionId:data.policyVersionId,state:'succeeded',snapshotHash:'snapshot-'+id,resultHash:'result-'+id,gate:{decision,evaluationPassed:decision==='pass',deploymentAllowed:decision==='pass'&&data.policyVersionId!=='manual'}};runs.set(id,run);return run;
+      const run={id,agentVersionId:data.agentVersionId,datasetVersionId:data.datasetVersionId,policyVersionId:data.policyVersionId,state:'succeeded',snapshotHash:'snapshot-'+id,resultHash:'result-'+id,gate:{decision,evaluationPassed:decision==='pass',deploymentAllowed:decision==='pass'&&data.policyVersionId!==manualId}};runs.set(id,run);return run;
     }
     if(path.endsWith('/reviews')){if(failCleanup&&data.decision==='rejected')throw Error('Synthetic cleanup failure');review=data.decision;return {};}
     if(path.endsWith('/cancel'))return {};
     if(path==='/v1/release-gate'){
       if(++checks===failCheck)throw Error('Synthetic check failure');
-      const decision=runs.get(data.candidateRunId).gate.decision,manual=data.policyVersionId==='manual';
+      const decision=runs.get(data.candidateRunId).gate.decision,manual=data.policyVersionId===manualId;
       const allowed=decision==='pass'&&(!manual||review==='approved'),baseline=runs.get(data.baselineRunId);
       const candidate=runs.get(data.candidateRunId);
       const receipt={decision:allowed?'pass':'block',deploymentAllowed:allowed,...(manual?{manualApproval:{status:review}}:{}),runId:candidate.id,reasons:allowed?[]:['synthetic block'],artifact:{receiptId:'receipt-'+checks,request:{...data},evidence:{candidate:{runId:candidate.id,snapshotHash:candidate.snapshotHash,resultHash:candidate.resultHash},...(baseline?{baseline:{runId:baseline.id,snapshotHash:baseline.snapshotHash,resultHash:baseline.resultHash}}:{})}},...(baseline?{comparison:{baselineRunId:baseline.id,candidateRunId:data.candidateRunId,comparable:decision!=='inconclusive',evaluationPassed:decision==='pass',regressions:decision==='pass'?[]:[{caseId:'synthetic',ruleId:'required'}]}}:{})};
@@ -33,6 +37,9 @@ test('portfolio scenario demonstrates four evaluations and six independently sig
   assert.deepEqual(r.steps.filter(s=>s.receiptId).map(s=>s.deploymentAllowed),[true,false,false,false,true,false]);
   assert.deepEqual(r.steps.filter(s=>s.name.startsWith('approval_')).map(s=>s.manualApproval),['missing','approved','rejected']);
   assert.equal(f.calls.filter(c=>c.path==='/v1/runs').length,4);assert.equal(f.calls.at(-2).data.decision,'rejected');assert.equal(r.serverDeployed,false);
+});
+test('comparison demonstration reuses the exact policy but creates fresh evaluations and approval decisions',async()=>{
+ const f=fixture({reusePolicy:true}),r=await runPortfolioScenario({...f.dependencies,compare:true});assert.equal(r.completed,true);assert.equal(r.demoPolicyReused,true);assert.equal(r.steps.length,12);assert.equal(f.calls.filter(c=>c.path==='/v1/policy-versions').length,0);assert.equal(f.calls.filter(c=>c.path.startsWith('/v1/versions/')).length,1);assert.equal(f.calls.filter(c=>c.path==='/v1/runs').length,6);assert.deepEqual(r.steps.filter(s=>s.name.startsWith('approval_')).map(s=>s.manualApproval),['missing','approved','rejected']);assert.equal(r.cleanupSucceeded,true);
 });
 test('failed post-approval verification leaves the synthetic example rejected',async()=>{
   const f=fixture({failCheck:5}),r=await runPortfolioScenario(f.dependencies);

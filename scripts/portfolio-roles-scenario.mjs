@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {assertDemoReceiptBinding} from './demo-receipt-binding.mjs';
+import {ensureDemoReviewPolicy} from './demo-policy-version.mjs';
 
 export async function runRoleScenario({call,wait,verify,onStep=()=>{}}){
   const report={schemaVersion:1,synthetic:true,serverDeployed:false,steps:[]};
@@ -17,7 +18,8 @@ export async function runRoleScenario({call,wait,verify,onStep=()=>{}}){
   try{
     const catalog=await call('admin','/v1/catalog');
     const agent=catalog.agent.find(v=>v.mode==='compliant'),dataset=catalog.dataset.find(v=>v.name==='Customer support safety · v1');assert.ok(agent&&dataset);
-    const policy=await call('admin','/v1/policy-versions',{name:'Portfolio synthetic role boundaries',minimumPassRate:1,requiresManualApproval:true,manualApprovalTtlSeconds:3600});
+    const policy=await ensureDemoReviewPolicy({call:(path,data)=>call('admin',path,data),policies:catalog.policy,name:'Portfolio synthetic role boundaries'});
+    report.demoPolicyReused=policy.reused;report.demoPolicyVersionId=policy.id;
     input={agentVersionId:agent.id,datasetVersionId:dataset.id,policyVersionId:policy.id};
     run=await call('editor','/v1/runs',{...input,timeoutMs:30000,caseBudget:100});
     const completed=await wait(run.id);assert.equal(completed.id,run.id);
