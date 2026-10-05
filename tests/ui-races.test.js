@@ -279,6 +279,14 @@ test('review refresh keeps approval buttons disabled while a submission is pendi
   submission.resolve({id:'synthetic-review'});await pending;assert.equal(f.element('review-approve').disabled,false);
 });
 
+for(const submitted of [false,true])test(`review controls recover after ${submitted?'successful':'failed'} submission followed by a history read failure`,async()=>{
+ const f=await fixture({manual:true});await f.view('B');
+ f.overrides.set('/v1/runs/B/reviews',()=>{if(!submitted)throw Error('Synthetic review submission failure');return {id:'synthetic-review'};});
+ f.overrides.set('/v1/runs/B/reviews?limit=25',()=>{throw Error('Synthetic history read failure');});
+ await f.element('review-form').fire('submit',{submitter:{value:'rejected'}});
+ assert.equal(f.element('review-approve').disabled,false);assert.equal(f.element('review-reject').disabled,false);assert.equal(f.element('review-more').disabled,true);assert.equal(f.element('manual-gate-check').disabled,false);assert.equal(f.element('current-receipt-download').disabled,true);
+});
+
 test('older session list response cannot overwrite a newer refresh',async()=>{
  const f=await fixture(),older=deferred();let calls=0;
  const session=name=>({id:name,membershipId:'member',name,role:'viewer',current:false,createdAt:'2026-01-01T00:00:00Z',expiresAt:'2026-01-01T01:00:00Z'});

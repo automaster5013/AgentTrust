@@ -663,6 +663,8 @@ async function reviewHistory(run=currentRun,append=false){
   if(append&&!reviewCursor)return;
   const sequence=++reviewSequence;
   if(!run||run.id!==selectedRunId||!run.snapshot.policy.requiresManualApproval){$('review-panel').hidden=true;updateRunNavigation();return;}
+  $('review-approve').disabled=reviewBusy||actor?.role!=='admin'||run.state!=='succeeded'||run.gate.evaluationPassed!==true;
+  $('review-reject').disabled=reviewBusy||actor?.role!=='admin'||!terminal.has(run.state);
   if(!append){reviewCursor=null;reviewShown=0;$('review-list').replaceChildren();$('review-history-status').textContent='';$('review-more').disabled=true;}
   const params=new URLSearchParams({limit:'25'});if(append)params.set('cursor',reviewCursor);
   const page=await api('/v1/runs/'+run.id+'/reviews?'+params);if(sequence!==reviewSequence||selectedRunId!==run.id)return;
@@ -670,8 +672,6 @@ async function reviewHistory(run=currentRun,append=false){
   if(!append)reviewShown=0;reviewShown+=reviews.length;$('review-history-status').textContent=`검토 기록 ${reviewShown}개 표시 · ${reviewCursor?'이전 기록이 있습니다.':'마지막 기록입니다.'}`;
   $('review-panel').hidden=false;$('review-form').hidden=actor?.role!=='admin';
   updateRunNavigation();
-  $('review-approve').disabled=reviewBusy||actor?.role!=='admin'||run.state!=='succeeded'||run.gate.evaluationPassed!==true;
-  $('review-reject').disabled=reviewBusy||actor?.role!=='admin'||!terminal.has(run.state);
   $('manual-status').textContent='정책에서 관리자 검토를 요구합니다. 승인 유효 시간 '+(run.snapshot.policy.manualApprovalTtlSeconds??3600)+'초. 최종 배포 판단은 현재 CI 게이트를 확인하세요.';
   if(!append)$('review-list').replaceChildren();
   $('review-list').append(...reviews.map(review=>{const row=node('div',undefined,'audit-entry');row.append(node('strong',review.decision==='approved'?'승인 ':'반려 '),node('span',new Date(review.createdAt).toLocaleString('ko-KR')+' · 검토자 '+review.actorId.slice(0,8)),node('p',review.comment||'(의견 없음)'));return row;}));
