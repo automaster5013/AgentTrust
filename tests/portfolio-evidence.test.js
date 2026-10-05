@@ -8,7 +8,7 @@ import {promisify} from 'node:util';
 import {ReceiptSigner,verifyReceipt} from '../packages/receipts/signature.js';
 import {hash} from '../packages/contracts/hash.js';
 import {writePortfolioEvidence,readPortfolioEvidence,loadPortfolioEvidence,verifyPortfolioEvidence,portfolioManifestLimit,portfolioReviewLimit} from '../scripts/portfolio-evidence.mjs';
-import {createPortfolioEvidenceReport,evidenceReportReasonLimit} from '../scripts/portfolio-evidence-report.mjs';
+import {createPortfolioEvidenceReport,evidenceReportReasonLimit,evidenceReportRegressionLimit,evidenceReportComparisonFieldLimit} from '../scripts/portfolio-evidence-report.mjs';
 import {isOrdinaryHtmlOutput} from '../scripts/audit-report-output.mjs';
 const exec=promisify(execFile),sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 function fixture(compare=false){
@@ -142,7 +142,7 @@ test('independently invoked offline CLI verifies reviews and redacts altered opi
 test('readable audit reports authenticate v1 and v2 sources and separate historical decisions from current permission',async t=>{
  for(const f of [await bundle(t,true),await reviewedBundle(t)]){
   const report=await createPortfolioEvidenceReport(f.directory,f.trustedPem,f.manifestSha256);assert.equal(report.verification.cryptographicSignaturesVerified,6);assert.equal(report.verification.currentReleasePermissionVerified,false);
-  assert.match(report.html,/현재 배포 허용을 확인한 보고서가 아닙니다/);assert.match(report.html,/HTML 자체는 서명되지 않은 읽기용 사본/);assert.match(report.html,/default-src 'none'/);assert.ok(f.receipts.every(receipt=>report.html.includes(receipt.artifact.receiptId)));assert.equal((report.html.match(/<tr>/g)||[]).length,7);assert.equal((report.html.match(/<script/g)||[]).length,0);
+  assert.match(report.html,/현재 배포 허용을 확인한 보고서가 아닙니다/);assert.match(report.html,/HTML 자체는 서명되지 않은 읽기용 사본/);assert.match(report.html,/default-src 'none'/);assert.ok(f.receipts.every(receipt=>report.html.includes(receipt.artifact.receiptId)));assert.equal((report.html.match(/<tr>/g)||[]).length,11);assert.equal((report.html.match(/<script/g)||[]).length,0);
   if(f.reviews)assert.equal(report.verification.reviewBodiesVerifiedOffline,true);else assert.match(report.html,/검토 의견 본문 미포함/);
  }
 });
@@ -193,4 +193,29 @@ test('audit report output cannot become an alternate stream of an existing file'
 test('portable HTML destinations exclude devices and hidden streams without opening any device',()=>{
  for(const name of ['NUL.html','CON.html','PRN.html','aux.html','COM1.html','LPT9.html','COM¹.html','NUL .extra.html','normal.html:stream.html','bad?.html','bad\u0000.html','report.html.','report.html '])assert.equal(isOrdinaryHtmlOutput(join('.local',name)),false,name);
  for(const name of ['report.html','감사 보고서.html','comparison.HTML','null.html','company.html','console.html'])assert.equal(isOrdinaryHtmlOutput(join('.local',name)),true,name);
+});
+
+
+test('signed regression details preserve incomplete comparison and escape original case and rule states',async t=>{
+ const f=fixture(true);
+ f.receipts[1].artifact.result.comparison.regressions=[{caseId:'<case>',ruleId:'<rule>',before:'pass',after:'fail'}];
+ f.receipts[2].artifact.result.comparison.regressions=[{caseId:'incomplete-case',ruleId:'missing-rule',before:'pass',after:'inconclusive'}];
+ for(const r of f.receipts){r.artifactHash=hash(r.artifact);r.signature=f.signer.sign(r.artifact);}
+ const written=await writePortfolioEvidence(f);t.after(async()=>{assert.ok(resolve(written.directory).startsWith(resolve('.local')+sep));await rm(written.directory,{recursive:true,force:true});});
+ const report=await createPortfolioEvidenceReport(written.directory,f.trustedPem,written.manifestSha256);
+ assert.match(report.html,/&lt;case&gt;<\/td><td>&lt;rule&gt;<\/td><td>pass<\/td><td>fail/);
+ assert.match(report.html,/비교 불완전: 회귀 목록만으로 안전을 판단할 수 없습니다/);
+ assert.match(report.html,/incomplete-case<\/td><td>missing-rule<\/td><td>pass<\/td><td>inconclusive/);
+ assert.ok(!report.html.includes('<case>'));assert.equal(report.verification.currentReleasePermissionVerified,false);
+});
+
+test('large signed regression lists have bounded rows and fields without deleting original evidence',async t=>{
+ const f=fixture(true),regressions=Array.from({length:evidenceReportRegressionLimit+1},(_,i)=>({caseId:i===evidenceReportRegressionLimit?'hidden-tail-case':'case-'+i,ruleId:'x'.repeat(evidenceReportComparisonFieldLimit+1),before:'pass',after:'fail'}));
+ f.receipts[1].artifact.result.comparison.regressions=regressions;
+ for(const r of f.receipts){r.artifactHash=hash(r.artifact);r.signature=f.signer.sign(r.artifact);}
+ const written=await writePortfolioEvidence(f);t.after(async()=>{assert.ok(resolve(written.directory).startsWith(resolve('.local')+sep));await rm(written.directory,{recursive:true,force:true});});
+ const report=await createPortfolioEvidenceReport(written.directory,f.trustedPem,written.manifestSha256);
+ assert.match(report.html,/회귀 항목 21개 · 표시 20개/);assert.match(report.html,/회귀 목록 일부만 표시/);assert.match(report.html,/\[일부 표시\]/);assert.match(report.html,/원본 상태 정보 없음/);
+ assert.ok(!report.html.includes('hidden-tail-case'));assert.ok(!report.html.includes('x'.repeat(evidenceReportComparisonFieldLimit+1)));
+ const loaded=await loadPortfolioEvidence(written.directory,f.trustedPem,written.manifestSha256);assert.deepEqual(loaded.receipts[1].artifact.result.comparison.regressions,regressions);
 });

@@ -17,6 +17,22 @@ function reasonText(reasons){
  return text;
 }
 
+export const evidenceReportRegressionLimit=20;
+export const evidenceReportComparisonFieldLimit=160;
+function comparisonDetails(comparison){
+ if(!comparison)return '<p>기준 비교 없음</p>';
+ const regressions=comparison.regressions;
+ const field=value=>{
+  if(typeof value!=='string'||!value.trim())return '원본 상태 정보 없음';
+  return value.length>evidenceReportComparisonFieldLimit?value.slice(0,evidenceReportComparisonFieldLimit)+' [일부 표시]':value;
+ };
+ const coverage=comparison.comparable?'완전한 기준 비교':'비교 불완전: 회귀 목록만으로 안전을 판단할 수 없습니다';
+ const count=`회귀 항목 ${regressions.length}개 · 표시 ${Math.min(regressions.length,evidenceReportRegressionLimit)}개`;
+ const rows=regressions.slice(0,evidenceReportRegressionLimit).map(row=>`<tr><td>${escape(field(row?.caseId))}</td><td>${escape(field(row?.ruleId))}</td><td>${escape(field(row?.before))}</td><td>${escape(field(row?.after))}</td></tr>`).join('');
+ const body=rows?`<div class="table-wrap"><table><thead><tr><th>사례</th><th>규칙</th><th>기준 상태</th><th>후보 상태</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p>원본 회귀 목록에 항목이 없습니다. 당시 게이트와 비교 완전성을 함께 확인하세요.</p>';
+ return `<section class="comparison"><h4>당시 기준 대비 회귀 근거</h4><p>${escape(coverage)} · ${escape(count)}</p>${body}${regressions.length>evidenceReportRegressionLimit?'<p>회귀 목록 일부만 표시: 전체 항목은 서명된 원본 자료를 확인하세요.</p>':''}</section>`;
+}
+
 // Render only the same bounded buffers authenticated by the offline reader.
 // The HTML is a readable derivative, not another signed release artifact.
 export async function createPortfolioEvidenceReport(directory,trustedPem,expectedManifestSha256){
@@ -28,7 +44,7 @@ export async function createPortfolioEvidenceReport(directory,trustedPem,expecte
  const details=receipts.map((receipt,index)=>{
   const a=receipt.artifact,q=a.request;
   const values=[['검증 기록 UUID',a.receiptId],['확인 시각',a.checkedAt],['후보 실행',q.candidateRunId],['기준 실행',q.baselineRunId],['에이전트 버전',q.agentVersionId],['데이터셋 버전',q.datasetVersionId],['정책 버전',q.policyVersionId],['스냅샷 SHA-256',a.evidence.candidate.snapshotHash],['평가 결과 SHA-256',a.evidence.candidate.resultHash],['기록 본문 SHA-256',receipt.artifactHash],['서명 키 ID',receipt.signature.keyId]];
-  return `<article><h3>${escape(steps[manifest.receipts[index].step])}</h3><dl>${values.map(([label,value])=>`<dt>${escape(label)}</dt><dd><code>${escape(value)}</code></dd>`).join('')}</dl><p>당시 차단 이유: ${escape(reasonText(a.result.reasons))}</p></article>`;
+  return `<article><h3>${escape(steps[manifest.receipts[index].step])}</h3><dl>${values.map(([label,value])=>`<dt>${escape(label)}</dt><dd><code>${escape(value)}</code></dd>`).join('')}</dl><p>당시 차단 이유: ${escape(reasonText(a.result.reasons))}</p>${comparisonDetails(a.result.comparison)}</article>`;
  }).join('');
  const opinions=reviews.map(review=>`<article><h3>${review.decision==='approved'?'당시 승인 의견':'반려 의견'}</h3><dl>${[['검토 UUID',review.id],['검토자 UUID',review.actorId],['후보 실행',review.runId],['검토 시각',review.createdAt],['검토 본문 SHA-256',review.reviewHash]].map(([label,value])=>`<dt>${escape(label)}</dt><dd><code>${escape(value)}</code></dd>`).join('')}</dl><pre>${escape(review.comment)}</pre></article>`).join('');
  const html=`<!doctype html>
