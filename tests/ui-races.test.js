@@ -396,6 +396,21 @@ test('filtered paginated evidence downloads the complete immutable run JSON',asy
 
 
 const reviewEntry=comment=>({id:comment,actorId:'synthetic-actor',createdAt:'2026-01-01T00:00:00Z',decision:'rejected',comment});
+test('a failed pending review refresh removes old opinions and its cursor before responding',async()=>{
+ const f=await fixture({manual:true}),reply=deferred(),started=deferred();
+ f.overrides.set('/v1/runs/B/reviews?limit=25',()=>({items:[reviewEntry('old opinion')],nextCursor:'older'}));await f.view('B');
+ f.overrides.set('/v1/runs/B/reviews?limit=25',async()=>{started.resolve();await reply.promise;throw Error('Synthetic review refresh failure');});
+ const pending=f.element('review-refresh').fire('click');await started.promise;
+ assert.equal(f.element('review-list').children.length,0);assert.equal(f.element('review-more').disabled,true);assert.ok(!f.element('review-history-status').textContent.includes('1개 표시'));
+ reply.resolve();await pending;assert.ok(!f.element('review-list').textContent.includes('old opinion'));assert.equal(f.element('review-more').disabled,true);
+ f.overrides.set('/v1/runs/B/reviews?limit=25',()=>({items:[reviewEntry('new opinion')],nextCursor:null}));await f.element('review-refresh').fire('click');assert.match(f.element('review-list').textContent,/new opinion/);assert.match(f.element('review-history-status').textContent,/1개 표시/);
+});
+test('an old review page cannot restore a cursor after a newer full refresh fails',async()=>{
+ const f=await fixture({manual:true}),reply=deferred();f.overrides.set('/v1/runs/B/reviews?limit=25',()=>({items:[reviewEntry('old opinion')],nextCursor:'older'}));await f.view('B');
+ f.overrides.set('/v1/runs/B/reviews?limit=25&cursor=older',()=>reply.promise);const pending=f.element('review-more').fire('click');await settle();
+ f.overrides.set('/v1/runs/B/reviews?limit=25',()=>{throw Error('Synthetic review refresh failure');});await f.element('review-refresh').fire('click');reply.resolve({items:[reviewEntry('obsolete opinion')],nextCursor:'obsolete-cursor'});await pending;
+ assert.equal(f.element('review-list').children.length,0);assert.equal(f.element('review-more').disabled,true);assert.ok(!f.element('review-list').textContent.includes('obsolete opinion'));
+});
 test('review pages append in order and a newer refresh excludes an older pending page',async()=>{
  const f=await fixture({manual:true}),older=deferred();let refresh=0;
  f.overrides.set('/v1/runs/B/reviews?limit=25',()=>({items:[reviewEntry(++refresh===1?'first':'refreshed')],nextCursor:'older'}));await f.view('B');assert.equal(f.element('review-more').disabled,false);assert.match(f.element('review-history-status').textContent,/1개 표시/);

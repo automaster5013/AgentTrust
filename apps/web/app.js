@@ -663,6 +663,7 @@ async function reviewHistory(run=currentRun,append=false){
   if(append&&!reviewCursor)return;
   const sequence=++reviewSequence;
   if(!run||run.id!==selectedRunId||!run.snapshot.policy.requiresManualApproval){$('review-panel').hidden=true;updateRunNavigation();return;}
+  if(!append){reviewCursor=null;reviewShown=0;$('review-list').replaceChildren();$('review-history-status').textContent='';$('review-more').disabled=true;}
   const params=new URLSearchParams({limit:'25'});if(append)params.set('cursor',reviewCursor);
   const page=await api('/v1/runs/'+run.id+'/reviews?'+params);if(sequence!==reviewSequence||selectedRunId!==run.id)return;
   reviewCursor=page.nextCursor;$('review-more').disabled=reviewBusy||!reviewCursor;const reviews=page.items;
