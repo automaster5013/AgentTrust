@@ -5,12 +5,16 @@ import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 import {localSmokeBase,fetchLocalSmoke} from './local-smoke-http.mjs';
 import {readReleaseResponse} from './release-gate.mjs';
+import {parseDemoOptions} from './demo-options.mjs';
+import {seededDemoScope} from './demo-session-scope.mjs';
+import {selectedDemoReadiness} from './selected-demo-readiness.mjs';
 import {readTrustedReceiptKey} from './trusted-receipt-key.mjs';
 
 const checks=[['inputs','Node.js 24와 유효한 로컬 PORT를 사용하세요.'],['local-files','npm run setup으로 로컬 설정과 두 조직의 역할 키를 준비하세요. 기존 비밀 파일을 보존하세요.'],['signing-key-pair','기존 서명 키 쌍을 보존하고 setup 상태를 확인하세요.'],['compose-services','Docker Desktop을 실행하고 npm run docker:up으로 API·DB·워커를 준비하세요.'],['api-health','로컬 API 주소와 포트, DB 연결을 확인하세요.']];
 export async function demoPreflight(stages){
   const report={schemaVersion:1,readOnly:true,status:'passed',checks:[]};let blocked=false;
-  for(const [name,guidance] of checks){
+  const selected=stages['selected-organization']?[["selected-organization","선택 조직의 관리자 키·프로젝트, 워커 신호와 비교 시연용 실행 용량을 확인하세요."]]:[];
+  for(const [name,guidance] of [...checks,...selected]){
     if(blocked){report.checks.push({name,status:'not_run'});continue;}
     try{await stages[name]();report.checks.push({name,status:'passed'});}
     catch{blocked=true;report.status='blocked';report.failedCheck=name;report.guidance=guidance;report.checks.push({name,status:'blocked'});}
@@ -37,13 +41,25 @@ export function verifyDemoServices(rows,port){
   assert.ok(bindings.some(p=>p.URL==='127.0.0.1'&&p.PublishedPort===Number(port)&&p.TargetPort===4310));
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
-  const port=process.env.PORT??'4310';let base;
+  const port=process.env.PORT??'4310';let base,config,options,selectedReport,cookie;
   const report=await demoPreflight({
-    inputs:async()=>{assert.equal(process.argv.length,2);assert.equal(process.versions.node.split('.')[0],'24');base=localSmokeBase(port);},
-    'local-files':async()=>{assert.ok((await stat('.env')).isFile());const bytes=await readFile('.local/credentials.json');assert.ok(bytes.length<=65536);verifyDemoCredentials(JSON.parse(bytes.toString('utf8').replace(/^\uFEFF/,'')));},
+    inputs:async()=>{options=parseDemoOptions(process.argv.slice(2));assert.equal(process.versions.node.split('.')[0],'24');base=localSmokeBase(port);},
+    'local-files':async()=>{assert.ok((await stat('.env')).isFile());const bytes=await readFile('.local/credentials.json');assert.ok(bytes.length<=65536);config=JSON.parse(bytes.toString('utf8').replace(/^\uFEFF/,''));verifyDemoCredentials(config);if(process.argv.length>2)seededDemoScope(config.organizations[options.organizationIndex]);},
     'signing-key-pair':async()=>{const privateKey=createPrivateKey(await readFile('.local/receipt-signing/private.pem'));assert.equal(privateKey.asymmetricKeyType,'ed25519');const expected=createPublicKey(privateKey).export({type:'spki',format:'pem'});assert.equal(expected,createPublicKey(await readTrustedReceiptKey('.local/receipt-signing/public.pem')).export({type:'spki',format:'pem'}));},
     'compose-services':async()=>{const output=execFileSync('docker',['compose','ps','--format','json'],{encoding:'utf8',timeout:15000,maxBuffer:1048576,stdio:['ignore','pipe','pipe']}).trim();const rows=output.startsWith('[')?JSON.parse(output):output.split('\n').filter(Boolean).map(line=>JSON.parse(line));verifyDemoServices(rows,port);},
-    'api-health':async()=>{const response=await fetchLocalSmoke(base,'/health',{signal:AbortSignal.timeout(5000)});if(response.status!==200){await response.body?.cancel();throw Error('Local health request failed');}const result=await readReleaseResponse(response);assert.equal(result.status,'ok');assert.equal(result.mode,'local-mock');assert.equal(result.persistent,true);}
+    'api-health':async()=>{const response=await fetchLocalSmoke(base,'/health',{signal:AbortSignal.timeout(5000)});if(response.status!==200){await response.body?.cancel();throw Error('Local health request failed');}const result=await readReleaseResponse(response);assert.equal(result.status,'ok');assert.equal(result.mode,'local-mock');assert.equal(result.persistent,true);},
+    ...(process.argv.length>2?{'selected-organization':async()=>{
+      const organization=config.organizations[options.organizationIndex],scope=seededDemoScope(organization);
+      selectedReport=await selectedDemoReadiness(organization,async(path,data)=>{
+        if(path==='/v1/auth/logout'&&!cookie)return {};
+        const response=await fetchLocalSmoke(base,path,{method:data?'POST':'GET',headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui','X-AgentTrust-Project':scope.projectId,...(cookie?{Cookie:cookie}:{})},...(data?{body:JSON.stringify(data)}:{}),signal:AbortSignal.timeout(5000)});
+        if(path==='/v1/auth/login')cookie=response.headers.get('set-cookie')?.split(';')[0];
+        if(!response.ok){await response.body?.cancel();throw Error('Selected readiness request failed');}
+        if(path==='/v1/auth/login'&&!cookie){await response.body?.cancel();throw Error('Selected readiness session is unavailable');}
+        return readReleaseResponse(response);
+      });assert.equal(selectedReport.status,'passed');
+    }}:{})
   });
+  if(selectedReport)Object.assign(report,{organizationIndex:options.organizationIndex,selectedOrganization:selectedReport,readOnly:false,readOnlyOperationalQueries:true,businessDataReadOnly:true,authenticationSessionAttempted:true});
   console.log(JSON.stringify(report));if(report.status!=='passed')process.exitCode=1;
 }
