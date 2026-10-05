@@ -1,9 +1,9 @@
 const routes=[['identity','/v1/me'],['catalog','/v1/catalog'],['run-summaries','/v1/runs?limit=25'],['usage','/v1/usage']];
 export function parseMetadataBenchmarkArgs(args){
-  const options={samples:20,concurrency:1},seen=new Set();
+  const options={samples:20,concurrency:1,organizationIndex:0},seen=new Set();
   for(let i=0;i<args.length;i+=2){
-    const flag=args[i],value=args[i+1],name=flag==='--samples'?'samples':flag==='--concurrency'?'concurrency':null;
-    if(!name||seen.has(name)||typeof value!=='string'||!/^[1-9][0-9]{0,2}$/.test(value)||String(Number(value))!==value||Number(value)>(name==='samples'?100:8))throw new Error('Use --samples 1..100 and --concurrency 1..8 once each.');
+    const flag=args[i],value=args[i+1],name=flag==='--samples'?'samples':flag==='--concurrency'?'concurrency':flag==='--organization-index'?'organizationIndex':null;
+    if(!name||seen.has(name)||typeof value!=='string'||!(name==='organizationIndex'?/^(0|[1-9][0-9]?)$/:/^[1-9][0-9]{0,2}$/).test(value)||String(Number(value))!==value||Number(value)>(name==='samples'?100:name==='concurrency'?8:99))throw new Error('Use --samples 1..100, --concurrency 1..8 and --organization-index 0..99 once each.');
     seen.add(name);options[name]=Number(value);
   }
   return options;

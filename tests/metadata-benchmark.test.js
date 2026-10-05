@@ -9,8 +9,8 @@ import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 const exec=promisify(execFile);
 test('metadata sample arguments are bounded and unambiguous',()=>{
- assert.deepEqual(parseMetadataBenchmarkArgs([]),{samples:20,concurrency:1});assert.deepEqual(parseMetadataBenchmarkArgs(['--samples','100']),{samples:100,concurrency:1});
- assert.deepEqual(parseMetadataBenchmarkArgs(['--concurrency','8','--samples','7']),{samples:7,concurrency:8});
+ assert.deepEqual(parseMetadataBenchmarkArgs([]),{samples:20,concurrency:1,organizationIndex:0});assert.deepEqual(parseMetadataBenchmarkArgs(['--samples','100']),{samples:100,concurrency:1,organizationIndex:0});
+ assert.deepEqual(parseMetadataBenchmarkArgs(['--concurrency','8','--samples','7']),{samples:7,concurrency:8,organizationIndex:0});
  for(const args of [['--samples','0'],['--samples','101'],['--samples','01'],['--samples','1\n'],['--samples'],['--unknown','5'],['--samples','5','--samples','5']])assert.throws(()=>parseMetadataBenchmarkArgs(args));
  for(const args of [['--concurrency','0'],['--concurrency','9'],['--concurrency','01'],['--concurrency'],['--concurrency','2','--concurrency','3']])assert.throws(()=>parseMetadataBenchmarkArgs(args));
 });
@@ -54,7 +54,7 @@ test('actual metadata command measures fixed viewer reads and cleans sessions on
  const repository=process.cwd(),dir=await mkdtemp(join(repository,'.local','metadata-test-'));
  await mkdir(join(dir,'.local'));
  const secret='synthetic-metadata-key-canary',session='synthetic-metadata-cookie-canary';
- await writeFile(join(dir,'.local','credentials.json'),JSON.stringify({organizations:[{credentials:[{role:'viewer',token:secret}]}]}));
+ await writeFile(join(dir,'.local','credentials.json'),JSON.stringify({organizations:[{organizationId:'00000000-0000-4000-8000-000000000000',projectId:'10000000-0000-4000-8000-000000000000',credentials:[{role:'viewer',token:secret}]}]}));
  let failure='',calls=[],logout=0,parallel=false,active=0,peak=0,identityReads=0,failMeasured=false,logoutWithPending=false;
  const server=createServer(async(req,res)=>{
   calls.push([req.method,req.url]);res.setHeader('Content-Type','application/json');
@@ -74,7 +74,7 @@ test('actual metadata command measures fixed viewer reads and cleans sessions on
    }finally{active--;}
   }
   if(req.url===failure){res.writeHead(500);res.end('{}');return;}
-  res.end(JSON.stringify(req.url==='/v1/me'?{role:'viewer'}:{}));
+  res.end(JSON.stringify(req.url==='/v1/me'?{role:'viewer',organizationId:'00000000-0000-4000-8000-000000000000',projectId:'10000000-0000-4000-8000-000000000000'}:{}));
  });server.listen(0,'127.0.0.1');await once(server,'listening');
  t.after(async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));assert.ok(resolve(dir).startsWith(resolve(repository,'.local')+requireSeparator()));await rm(dir,{recursive:true,force:true});});
  const options={cwd:dir,windowsHide:true,env:{...process.env,PORT:String(server.address().port)}};
@@ -105,3 +105,31 @@ test('actual metadata command measures fixed viewer reads and cleans sessions on
 });
 
 function requireSeparator(){return process.platform==='win32'?'\\':'/';}
+
+
+test('metadata organization selector is canonical, bounded and compatible with measurement options',()=>{
+ assert.deepEqual(parseMetadataBenchmarkArgs(['--organization-index','1','--samples','5','--concurrency','4']),{samples:5,concurrency:4,organizationIndex:1});
+ for(const args of [['--organization-index','01'],['--organization-index','-1'],['--organization-index','100'],['--organization-index'],['--organization-index','1','--organization-index','0']])assert.throws(()=>parseMetadataBenchmarkArgs(args));
+});
+
+async function scopedMetadataFixture(t){
+ const repository=process.cwd(),dir=await mkdtemp(join(repository,'.local','metadata-scoped-test-'));await mkdir(join(dir,'.local'));
+ const organizations=[0,1].map(i=>({organizationId:`00000000-0000-4000-8000-00000000000${i}`,projectId:`10000000-0000-4000-8000-00000000000${i}`,credentials:[{role:'viewer',token:`synthetic-metadata-scope-${i}-canary`}]}));await writeFile(join(dir,'.local','credentials.json'),JSON.stringify({organizations}));
+ t.after(async()=>{assert.ok(resolve(dir).startsWith(resolve(repository,'.local')+requireSeparator()));await rm(dir,{recursive:true,force:true});});return {repository,dir,organizations};
+}
+
+test('actual metadata command binds selected viewer scope before measurement and logs out wrong scopes',async t=>{
+ const f=await scopedMetadataFixture(t),selected=f.organizations[1],session='synthetic-scoped-metadata-cookie';let changes={},reads=0,logins=0,logouts=0;
+ const server=createServer(async(req,res)=>{res.setHeader('Content-Type','application/json');assert.equal(req.headers['x-agenttrust-project'],selected.projectId);
+  if(req.url==='/v1/auth/login'){let raw='';for await(const chunk of req)raw+=chunk;assert.equal(JSON.parse(raw).accessKey,selected.credentials[0].token);logins++;res.setHeader('Set-Cookie',session+'=value; HttpOnly');res.end('{}');return;}
+  assert.equal(req.headers.cookie,session+'=value');if(req.url==='/v1/auth/logout'){logouts++;res.end('{}');return;}assert.equal(req.method,'GET');if(req.url==='/v1/me'){res.end(JSON.stringify({role:'viewer',organizationId:selected.organizationId,projectId:selected.projectId,...changes}));return;}reads++;res.end('{}');
+ });server.listen(0,'127.0.0.1');await once(server,'listening');t.after(async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));});
+ const run=async()=>{try{return {...await exec(process.execPath,[join(f.repository,'scripts','metadata-benchmark.mjs'),'--organization-index','1','--samples','1'],{cwd:f.dir,windowsHide:true,timeout:15000,env:{...process.env,PORT:String(server.address().port)}}),code:0};}catch(e){return e;}};
+ for(const mismatch of [{organizationId:f.organizations[0].organizationId},{projectId:f.organizations[0].projectId},{role:'admin'}]){changes=mismatch;const result=await run();assert.equal(result.code,1);const summary=JSON.parse(result.stdout),raw=await readFile(join(f.dir,summary.reportPath),'utf8'),report=JSON.parse(raw);assert.equal(report.organizationIndex,1);assert.equal(report.organizationId,selected.organizationId);assert.equal(report.projectId,selected.projectId);assert.equal(report.sessionScopeVerified,false);assert.equal(report.sessionLoggedOut,true);assert.equal(summary.results,undefined);for(const o of f.organizations)assert.ok(!raw.includes(o.credentials[0].token));assert.ok(!raw.includes(session));}assert.equal(reads,0);
+ changes={};const result=await run(),summary=JSON.parse(result.stdout),report=JSON.parse(await readFile(join(f.dir,summary.reportPath),'utf8'));assert.equal(result.code,0);assert.equal(report.sessionScopeVerified,true);assert.equal(report.organizationIndex,1);assert.equal(report.requests,12);assert.equal(reads,9);assert.equal(logins,4);assert.equal(logouts,4);
+});
+
+test('actual metadata selector refuses nonexistent and invalid organizations before login',async t=>{
+ const f=await scopedMetadataFixture(t);let calls=0;const server=createServer((req,res)=>{calls++;res.end('{}');});server.listen(0,'127.0.0.1');await once(server,'listening');t.after(async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));});
+ for(const args of [['--organization-index','2'],['--organization-index','01'],['--organization-index'],['--organization-index','1','--organization-index','0']]){let result;try{result=await exec(process.execPath,[join(f.repository,'scripts','metadata-benchmark.mjs'),...args],{cwd:f.dir,windowsHide:true,timeout:15000,env:{...process.env,PORT:String(server.address().port)}});}catch(e){result=e;}assert.equal(result.code,1);const summary=JSON.parse(result.stdout);assert.equal(summary.status,'blocked');assert.equal(summary.sessionLoggedOut,true);}assert.equal(calls,0);
+});

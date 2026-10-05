@@ -6,6 +6,8 @@
 
 `.github/workflows/validate.yml`의 Validate and deliver는 main push, PR, 수동 실행을 지원한다. test 작업은 구문·전체 테스트·의존성 audit, Docker 평가와 재시작 지속성, CI 서명, 관리자 승인/반려, 반복 평가, 워커 중단 복구, 백업 인증 실패와 정상 격리 복원을 검증한다. 각 runner의 Compose 프로젝트는 실행 ID로 분리하며 마지막에 해당 서비스를 종료한다. 실제 고객 데이터나 로컬 비밀을 runner에 주입하지 않는다.
 
+v0.144부터 소스 작업과 레지스트리 이미지 실행 작업에서 기본 조직과 기존 두 번째 조직의 짧은 반복 평가를 각각 수행한다. 두 번째 조직에서는 기준 비교·서명 여섯 개와 원래 의견 두 개의 감사 자료·관리자/작성자/조회자/교차 조직 역할 흐름도 검증한다. 각 시연은 로그인 범위와 생성할 실행 수의 용량을 확인하고 자신의 세션을 종료한다. [실제 v0.144 실행](https://github.com/automaster5013/AgentTrust/actions/runs/37325923399)의 두 작업 로그에서 이 흐름의 완료를 대조했다. runner의 합성 실행은 기존 로컬 장시간 검증 집계에 포함하지 않는다.
+
 main의 소스 검증이 성공하면 image 작업이 같은 commit을 빌드해 `ghcr.io/automaster5013/agenttrust:sha-<전체 commit SHA>` 후보로 저장한다. 별도 image-smoke runner가 새 합성 DB·비밀 키를 만들고 후보 digest를 GHCR에서 pull해 로컬 build 없이 실행한다. 실제 컨테이너의 digest·이미지 ID·출처 commit과 비관리자 사용자·loopback 포트·내부 워커 네트워크·읽기 전용 파일시스템·최소 권한·API 전용 서명 키를 확인한다. 평가와 재시작 지속성·서명 게이트·관리자 검토·반복 실행이 통과한 뒤에만 promote 작업이 같은 digest를 `:main`으로 승격한다. 후보 실행 검증 실패 시 기존 main 이미지를 유지한다. PR과 main 외 수동 실행은 이미지를 발행하지 않는다. 검증 실패 시 발행 작업은 시작하지 않는다. 작업별 최소 권한을 사용하며 후보 발행/승격에는 packages: write, 이미지 실행 검증에는 packages: read를 부여하고 내장 GITHUB_TOKEN으로 인증한다. 별도 PAT secret은 필요하지 않다. 출처·commit OCI label을 포함하며 Actions 작업 요약에 digest를 기록한다. tag는 변경될 수 있으므로 배포 시 검증된 `@sha256:<digest>`를 사용한다.
 
 GHCR 패키지 공개 여부를 이 workflow에서 변경하지 않는다. 비공개 이미지 접근이 필요한 운영자는 해당 사용자/조직의 packages:read 권한으로 별도 인증한다. GitHub의 [이미지 발행 지침](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images)을 따른다.

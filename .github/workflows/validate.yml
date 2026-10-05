@@ -54,6 +54,7 @@ jobs:
           npm run demo:portfolio -- --compare --organization-index 1
           npm run demo:evidence -- --organization-index 1 --with-reviews --with-report
           npm run demo:roles -- --organization-index 1
+          npm run benchmark:metadata -- --organization-index 1 --samples 5 --concurrency 4
       - name: Verify bounded viewer metadata measurements
         run: |
           npm run benchmark:metadata -- --samples 5
@@ -157,6 +158,7 @@ jobs:
           npm run demo:portfolio -- --compare --organization-index 1
           npm run demo:evidence -- --organization-index 1 --with-reviews --with-report
           npm run demo:roles -- --organization-index 1
+          npm run benchmark:metadata -- --organization-index 1 --samples 5 --concurrency 4
           npm run smoke:sustained -- --cycles 2 --interval-ms 1000
           npm run smoke:sustained -- --organization-index 1 --cycles 2 --interval-ms 1000
       - name: Prepare isolated recovery evidence and verify read-only deployment preflight
