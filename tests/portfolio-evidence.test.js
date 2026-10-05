@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {generateKeyPairSync,randomUUID,createHash} from 'node:crypto';
-import {readFile,writeFile,rm,mkdtemp,mkdir} from 'node:fs/promises';
+import {readFile,writeFile,rm,mkdtemp,mkdir,symlink} from 'node:fs/promises';
 import {join,resolve,sep} from 'node:path';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {ReceiptSigner,verifyReceipt} from '../packages/receipts/signature.js';
 import {hash} from '../packages/contracts/hash.js';
 import {writePortfolioEvidence,readPortfolioEvidence,loadPortfolioEvidence,verifyPortfolioEvidence,portfolioManifestLimit,portfolioReviewLimit} from '../scripts/portfolio-evidence.mjs';
+import {createPortfolioEvidenceReport,evidenceReportReasonLimit} from '../scripts/portfolio-evidence-report.mjs';
 const exec=promisify(execFile),sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 function fixture(compare=false){
   const signer=new ReceiptSigner(generateKeyPairSync('ed25519').privateKey.export({type:'pkcs8',format:'pem'}));
@@ -135,4 +136,48 @@ test('independently invoked offline CLI verifies reviews and redacts altered opi
  const result=await exec(process.execPath,['scripts/verify-portfolio-evidence.mjs',f.directory,key,f.manifestSha256],{timeout:10000,windowsHide:true});assert.equal(JSON.parse(result.stdout).reviewBodiesVerifiedOffline,true);
  f.reviews[0].comment='never-print-private-opinion';const bytes=Buffer.from(JSON.stringify(f.reviews[0]));f.manifest.reviews[0].sha256=sha(bytes);await writeFile(join(f.directory,'review-1.json'),bytes);await writeFile(join(f.directory,'manifest.json'),JSON.stringify(f.manifest));
  await assert.rejects(exec(process.execPath,['scripts/verify-portfolio-evidence.mjs',f.directory,key]),error=>error.code===2&&!error.stdout&&!error.stderr.includes(f.reviews[0].comment));
+});
+
+test('readable audit reports authenticate v1 and v2 sources and separate historical decisions from current permission',async t=>{
+ for(const f of [await bundle(t,true),await reviewedBundle(t)]){
+  const report=await createPortfolioEvidenceReport(f.directory,f.trustedPem,f.manifestSha256);assert.equal(report.verification.cryptographicSignaturesVerified,6);assert.equal(report.verification.currentReleasePermissionVerified,false);
+  assert.match(report.html,/현재 배포 허용을 확인한 보고서가 아닙니다/);assert.match(report.html,/HTML 자체는 서명되지 않은 읽기용 사본/);assert.match(report.html,/default-src 'none'/);assert.ok(f.receipts.every(receipt=>report.html.includes(receipt.artifact.receiptId)));assert.equal((report.html.match(/<tr>/g)||[]).length,7);assert.equal((report.html.match(/<script/g)||[]).length,0);
+  if(f.reviews)assert.equal(report.verification.reviewBodiesVerifiedOffline,true);else assert.match(report.html,/검토 의견 본문 미포함/);
+ }
+});
+
+test('authenticated opinion and reason markup is rendered as escaped plain text',async t=>{
+ const f=await reviewedBundle(t),comment='<script>window.privateOpinion=1</script> & "quoted"';f.reviews[0].comment=comment;
+ const {reviewHash,...payload}=f.reviews[0];f.reviews[0].reviewHash=hash(payload);Object.assign(f.receipts[4].artifact.result.manualApproval,{reviewHash:f.reviews[0].reviewHash});f.receipts[1].artifact.result.reasons=['</td><img src="https://private.example/">'];
+ for(const receipt of f.receipts){receipt.artifactHash=hash(receipt.artifact);receipt.signature=f.signer.sign(receipt.artifact);}
+ const written=await writePortfolioEvidence(f);t.after(async()=>{assert.ok(resolve(written.directory).startsWith(resolve('.local')+sep));await rm(written.directory,{recursive:true,force:true});});
+ const report=await createPortfolioEvidenceReport(written.directory,f.trustedPem,written.manifestSha256);assert.ok(!report.html.includes(comment));assert.match(report.html,/&lt;script&gt;window.privateOpinion=1&lt;\/script&gt;/);assert.match(report.html,/&lt;img src=&quot;https:\/\/private.example\//);assert.ok(!report.html.includes('<img'));assert.ok(!report.html.includes('<script'));
+});
+
+test('audit report CLI never overwrites files or changes the verified bundle inventory',async t=>{
+ const f=await reviewedBundle(t),dir=await mkdtemp(join(resolve('.local'),'audit-report-cli-test-')),key=join(dir,'public.pem'),output=join(dir,'report.html');t.after(async()=>{assert.ok(resolve(dir).startsWith(resolve('.local')+sep));await rm(dir,{recursive:true,force:true});});await writeFile(key,f.trustedPem);
+ const args=[f.directory,key,output,f.manifestSha256],result=await exec(process.execPath,['scripts/write-portfolio-evidence-report.mjs',...args],{windowsHide:true,timeout:10000});assert.equal(JSON.parse(result.stdout).reportCreated,true);assert.equal(JSON.parse(result.stdout).reportCryptographicallySigned,false);
+ const original=await readFile(output);await assert.rejects(exec(process.execPath,['scripts/write-portfolio-evidence-report.mjs',...args]),error=>error.code===2&&!error.stdout);assert.deepEqual(await readFile(output),original);
+ await assert.rejects(exec(process.execPath,['scripts/write-portfolio-evidence-report.mjs',f.directory,key,join(f.directory,'report.html')]),error=>error.code===2&&!error.stdout);assert.equal((await readPortfolioEvidence(f.directory,f.trustedPem,f.manifestSha256)).reviewBodiesVerifiedOffline,true);
+});
+
+test('invalid or unauthenticated report inputs do not create a file or expose opinion errors',async t=>{
+ const f=await reviewedBundle(t),dir=await mkdtemp(join(resolve('.local'),'audit-report-failure-test-')),key=join(dir,'public.pem'),output=join(dir,'report.html');t.after(async()=>{assert.ok(resolve(dir).startsWith(resolve('.local')+sep));await rm(dir,{recursive:true,force:true});});await writeFile(key,fixture().trustedPem);
+ for(const args of [[f.directory,key,output],[f.directory,key,output,'bad-digest'],[f.directory,key,join(dir,'report.json')],[f.directory,key,output,f.manifestSha256,'extra']])await assert.rejects(exec(process.execPath,['scripts/write-portfolio-evidence-report.mjs',...args]),error=>error.code===2&&!error.stdout);
+ await assert.rejects(readFile(output),{code:'ENOENT'});await writeFile(key,f.trustedPem);f.reviews[0].comment='private-audit-canary';const bytes=Buffer.from(JSON.stringify(f.reviews[0]));f.manifest.reviews[0].sha256=sha(bytes);await writeFile(join(f.directory,'review-1.json'),bytes);await writeFile(join(f.directory,'manifest.json'),JSON.stringify(f.manifest));
+ await assert.rejects(exec(process.execPath,['scripts/write-portfolio-evidence-report.mjs',f.directory,key,output]),error=>error.code===2&&!error.stdout&&!error.stderr.includes(f.reviews[0].comment));await assert.rejects(readFile(output),{code:'ENOENT'});
+});
+
+test('an output directory alias cannot insert the HTML into an immutable evidence bundle',async t=>{
+ const f=await reviewedBundle(t),dir=await mkdtemp(join(resolve('.local'),'audit-report-alias-test-')),key=join(dir,'public.pem'),alias=join(dir,'bundle-alias');
+ t.after(async()=>{assert.ok(resolve(dir).startsWith(resolve('.local')+sep));await rm(dir,{recursive:true,force:true});});await writeFile(key,f.trustedPem);await symlink(resolve(f.directory),alias,process.platform==='win32'?'junction':'dir');
+ await assert.rejects(exec(process.execPath,['scripts/write-portfolio-evidence-report.mjs',f.directory,key,join(alias,'report.html')]),error=>error.code===2&&!error.stdout);
+ assert.equal((await readPortfolioEvidence(f.directory,f.trustedPem,f.manifestSha256)).bundleVerified,true);await assert.rejects(readFile(join(f.directory,'report.html')),{code:'ENOENT'});
+});
+
+test('long signed reasons have a labeled bounded display and blank reasons cannot be mistaken for no blocking reason',async t=>{
+ const f=fixture(true);f.receipts[1].artifact.result.reasons=['<'.repeat(evidenceReportReasonLimit+100),'not-visible-tail'];f.receipts[2].artifact.result.reasons=[''];
+ for(const receipt of f.receipts){receipt.artifactHash=hash(receipt.artifact);receipt.signature=f.signer.sign(receipt.artifact);}
+ const written=await writePortfolioEvidence(f);t.after(async()=>{assert.ok(resolve(written.directory).startsWith(resolve('.local')+sep));await rm(written.directory,{recursive:true,force:true});});const report=await createPortfolioEvidenceReport(written.directory,f.trustedPem,written.manifestSha256);
+ assert.match(report.html,/긴 이유는 일부만 표시: 원본 자료 확인/);assert.match(report.html,/&lt;빈 이유 문구&gt;/);assert.equal((report.html.match(/&lt;/g)||[]).length,evidenceReportReasonLimit+4);assert.ok(!report.html.includes('not-visible-tail'));assert.equal((await loadPortfolioEvidence(written.directory,f.trustedPem)).receipts[1].artifact.result.reasons[0].length,evidenceReportReasonLimit+100);
 });

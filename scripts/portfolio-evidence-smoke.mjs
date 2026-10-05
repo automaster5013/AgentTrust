@@ -2,6 +2,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
+import {randomUUID} from 'node:crypto';
 import {loadPortfolioEvidence,writePortfolioEvidence} from './portfolio-evidence.mjs';
 import {verifyPortfolioReceiptHistory} from './portfolio-receipt-history.mjs';
 import {readTrustedReceiptKey} from './trusted-receipt-key.mjs';
@@ -16,7 +17,7 @@ async function call(path,data){
  if(!response.ok){await response.body?.cancel();throw Error('Local evidence history request failed');}return readReleaseResponse(response);
 }
 try{
-  const args=process.argv.slice(2);assert.ok(args.length===0||args.length===1&&args[0]==='--with-reviews');
+  const args=process.argv.slice(2);assert.ok(args.length<=2&&new Set(args).size===args.length&&args.every(arg=>['--with-reviews','--with-report'].includes(arg)));assert.ok(!args.includes('--with-report')||args.includes('--with-reviews'));
   const {stdout}=await exec(process.execPath,['scripts/portfolio-demo.mjs','--compare','--export-receipts'],{timeout:120000,maxBuffer:65536,windowsHide:true});
   const report=JSON.parse(stdout.trim().split('\n').at(-1));
   assert.equal(report.status,'passed');assert.equal(report.steps,12);assert.equal(report.withBaselineComparison,true);
@@ -39,7 +40,12 @@ try{
     directory=enriched.directory;manifestSha256=enriched.manifestSha256;
     const result=await exec(process.execPath,['scripts/verify-portfolio-evidence.mjs',directory,'.local/receipt-signing/public.pem',manifestSha256],{timeout:30000,maxBuffer:65536,windowsHide:true});finalVerification=JSON.parse(result.stdout.trim());assert.equal(finalVerification.reviewBodiesVerifiedOffline,true);
   }
-  console.log(JSON.stringify({status:'passed',directory,...finalVerification,...history,historySessionLoggedOut:true}));
+  let auditReport;
+  if(args.includes('--with-report')){
+    const path='.local/portfolio-audit-'+randomUUID()+'.html';
+    const result=await exec(process.execPath,['scripts/write-portfolio-evidence-report.mjs',directory,'.local/receipt-signing/public.pem',path,manifestSha256],{timeout:30000,maxBuffer:65536,windowsHide:true}),written=JSON.parse(result.stdout.trim());assert.equal(written.reportCreated,true);assert.equal(written.reportCryptographicallySigned,false);auditReport={path,reportCreated:true,reportCryptographicallySigned:false};
+  }
+  console.log(JSON.stringify({status:'passed',directory,...finalVerification,...history,...(auditReport?{auditReport}:{}),historySessionLoggedOut:true}));
 }catch{
   console.error('Synthetic portfolio evidence export, offline verification or history check did not complete.');process.exitCode=1;
 }
