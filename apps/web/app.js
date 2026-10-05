@@ -318,18 +318,21 @@ $('evidence-next').addEventListener('click',()=>{evidencePage++;renderEvidence()
 async function history(append=false) {
   if(append&&!runCursor)return;
   const sequence=++historySequence,params=new URLSearchParams({limit:'25'});
+  const previousBaseline=$('baseline-run').value;
   if($('history-state').value)params.set('state',$('history-state').value);
   if($('history-decision').value)params.set('decision',$('history-decision').value);
   if(append)params.set('cursor',runCursor);
-  const [page,baselines]=await Promise.all([api('/v1/runs?'+params.toString()),append?Promise.resolve(null):api('/v1/runs?limit=100&state=succeeded')]);
+  if(!append){runCursor=null;$('history-more').disabled=true;$('history-body').replaceChildren();recentBaselineRuns=[];renderBaselineChoices();$('baseline-run').replaceChildren();comparisonSequence++;$('comparison-result').textContent='실행 기록을 새로 조회하고 있습니다. 완료 후 기준 실행을 선택해 비교하세요.';}
+  let page,baselines;
+  try{[page,baselines]=await Promise.all([api('/v1/runs?'+params.toString()),append?Promise.resolve(null):api('/v1/runs?limit=100&state=succeeded')]);}
+  catch(error){if(!append&&sequence===historySequence)$('comparison-result').textContent='실행 기록을 불러오지 못했습니다. 다시 조회하세요.';throw error;}
   if(sequence!==historySequence)return;
   runCursor=page.nextCursor;$('history-more').disabled=!runCursor;
   if(!append){
   const runs=baselines.items;recentBaselineRuns=runs;renderBaselineChoices();
-  const previous=$('baseline-run').value;
   $('baseline-run').replaceChildren(...runs.map(r=>{const option=node('option',`${r.agentName} · ${stateLabels[r.state]} · ${r.id.slice(0,8)}`);option.value=r.id;return option;}));
-  if(runs.some(r=>r.id===previous))$('baseline-run').value=previous;
-  $('history-body').replaceChildren();
+  if(runs.some(r=>r.id===previousBaseline))$('baseline-run').value=previousBaseline;
+  $('comparison-result').textContent='후보 실행을 조회한 뒤 기준 실행을 선택하세요.';
   }
   $('history-body').append(...page.items.map(r => {
     const row = node('tr');

@@ -404,6 +404,24 @@ test('filtered paginated evidence downloads the complete immutable run JSON',asy
 
 
 const reviewEntry=comment=>({id:comment,actorId:'synthetic-actor',createdAt:'2026-01-01T00:00:00Z',decision:'rejected',comment});
+test('a failed pending run refresh clears old rows, cursor and recent baseline choices',async()=>{
+ const f=await fixture(),reply=deferred(),started=deferred();
+ f.overrides.set('/v1/runs?limit=25',()=>({items:[{id:'old',agentName:'Old run',datasetName:'Dataset',state:'succeeded',gate:{decision:'pass'},createdAt:'2026-01-01T00:00:00Z'}],nextCursor:'older'}));await f.element('history-filter-form').fire('submit');
+ f.overrides.set('/v1/runs?limit=25',async()=>{started.resolve();await reply.promise;throw Error('Synthetic run refresh failure');});
+ const pending=f.element('history-filter-form').fire('submit');await started.promise;
+ assert.equal(f.element('history-body').children.length,0);assert.equal(f.element('history-more').disabled,true);assert.equal(f.element('baseline-run').children.length,0);
+ reply.resolve();await pending;assert.equal(f.element('history-body').children.length,0);assert.equal(f.element('history-more').disabled,true);assert.match(f.element('comparison-result').textContent,/불러오지 못했습니다/);
+ f.overrides.set('/v1/runs?limit=25',()=>({items:[],nextCursor:null}));await f.element('history-filter-form').fire('submit');assert.equal(f.element('history-more').disabled,true);
+});
+
+test('an older run page cannot restore rows or cursor after a newer full refresh fails',async()=>{
+ const f=await fixture({initialOverrides:[['/v1/runs?limit=25',()=>({items:[],nextCursor:'older'})]]}),reply=deferred();
+ f.overrides.set('/v1/runs?limit=25&cursor=older',()=>reply.promise);const pending=f.element('history-more').fire('click');await settle();
+ f.overrides.set('/v1/runs?limit=25',()=>{throw Error('Synthetic run refresh failure');});await f.element('history-filter-form').fire('submit');
+ reply.resolve({items:[{id:'old',agentName:'Obsolete run',datasetName:'Dataset',state:'succeeded',gate:{decision:'pass'},createdAt:'2026-01-01T00:00:00Z'}],nextCursor:'obsolete'});await pending;
+ assert.equal(f.element('history-body').children.length,0);assert.equal(f.element('history-more').disabled,true);
+});
+
 test('a failed pending review refresh removes old opinions and its cursor before responding',async()=>{
  const f=await fixture({manual:true}),reply=deferred(),started=deferred();
  f.overrides.set('/v1/runs/B/reviews?limit=25',()=>({items:[reviewEntry('old opinion')],nextCursor:'older'}));await f.view('B');
