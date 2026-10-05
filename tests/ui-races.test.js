@@ -1128,3 +1128,31 @@ test('execution capacity is labeled as organization observation and cleared afte
  await f.element('operations-refresh').fire('click');assert.match(f.element('execution-capacity').textContent,/조직 전체.*9980.*10000.*20.*9.*10.*1/);assert.match(f.element('execution-capacity').textContent,/요청 시.*재확인/);assert.equal(f.element('run-button').disabled,false);
  await f.element('logout-button').fire('click');assert.equal(f.element('execution-capacity').textContent,'');
 });
+
+const operationSample=(queued,used)=>({worker:{state:'recent',lastSeen:null},queue:{queued,running:0,overdue:0,expiredLeases:0},recent:{completed24h:used,errors24h:0},observedAt:'2026-01-01T00:00:00Z',executionCapacity:{scope:'organization',organizationId:'organization',retained:{used,limit:10000,remaining:10000-used},active:{used:0,limit:10,remaining:10}}});
+test('failed operations refresh clears old signal, queue and capacity values and offers retry in the same panel',async()=>{
+ const f=await fixture();f.overrides.set('/v1/operations',()=>operationSample(2,30));await f.element('operations-refresh').fire('click');assert.match(f.element('execution-capacity').textContent,/30/);
+ const reply=deferred();f.overrides.set('/v1/operations',async()=>{await reply.promise;throw Error('Synthetic operations failure');});const pending=f.element('operations-refresh').fire('click');await settle();
+ assert.equal(f.element('worker-signal').textContent,'—');assert.equal(f.element('queue-waiting').textContent,'—');assert.equal(f.element('execution-capacity').textContent,'');assert.equal(f.element('operations-detail').textContent,'');assert.match(f.element('operations-status').textContent,/조회하고 있습니다/);
+ reply.resolve();await pending;assert.match(f.element('operations-status').textContent,/완료하지 못했습니다.*다시/);assert.equal(f.element('operations-refresh').disabled,false);assert.equal(f.element('run-button').disabled,false);
+ await f.element('logout-button').fire('click');assert.equal(f.element('operations-status').textContent,'');
+});
+test('an older direct operations success cannot replace a newer audit-triggered observation',async()=>{
+ const f=await fixture(),reply=deferred();let calls=0;f.overrides.set('/v1/operations',()=>++calls===1?reply.promise:operationSample(9,70));const old=f.element('operations-refresh').fire('click');await settle();
+ await f.element('audit-refresh').fire('click');assert.equal(f.element('queue-waiting').textContent,'9');const latest=f.element('execution-capacity').textContent;reply.resolve(operationSample(2,30));await old;assert.equal(f.element('queue-waiting').textContent,'9');assert.equal(f.element('execution-capacity').textContent,latest);assert.equal(f.element('operations-refresh').disabled,false);
+});
+test('an older audit-triggered operations response cannot replace a newer direct observation or its busy state',async()=>{
+ const f=await fixture(),reply=deferred(),latestReply=deferred();let calls=0;f.overrides.set('/v1/operations',()=>++calls===1?reply.promise:latestReply.promise);
+ const old=f.element('audit-refresh').fire('click');await settle();
+ // A subsequent full audit read supersedes the first, then finishes; direct read follows.
+ f.overrides.set('/v1/operations',()=>operationSample(8,60));await f.element('audit-refresh').fire('click');f.overrides.set('/v1/operations',()=>latestReply.promise);const current=f.element('operations-refresh').fire('click');await settle();assert.equal(f.element('operations-refresh').disabled,true);
+ reply.resolve(operationSample(1,20));await old;assert.equal(f.element('operations-refresh').disabled,true);assert.equal(f.element('execution-capacity').textContent,'');latestReply.resolve(operationSample(7,90));await current;assert.equal(f.element('queue-waiting').textContent,'7');assert.match(f.element('execution-capacity').textContent,/90/);assert.equal(f.element('operations-refresh').disabled,false);
+});
+
+
+test('obsolete operations failure cannot clear newer success and an audit batch failure offers local retry',async()=>{
+ const f=await fixture(),reply=deferred();f.overrides.set('/v1/operations',async()=>{await reply.promise;throw Error('Old failure');});const old=f.element('operations-refresh').fire('click');await settle();
+ f.overrides.set('/v1/operations',()=>operationSample(6,50));await f.element('audit-refresh').fire('click');const latest=f.element('execution-capacity').textContent;reply.resolve();await old;assert.equal(f.element('queue-waiting').textContent,'6');assert.equal(f.element('execution-capacity').textContent,latest);assert.match(f.element('operations-status').textContent,/완료했습니다/);
+ f.overrides.set('/v1/usage',()=>{throw Error('Usage batch failure');});await f.element('audit-refresh').fire('click');assert.equal(f.element('queue-waiting').textContent,'—');assert.equal(f.element('execution-capacity').textContent,'');assert.match(f.element('operations-status').textContent,/다시 조회/);assert.equal(f.element('operations-refresh').disabled,false);
+ await f.element('operations-refresh').fire('click');assert.equal(f.element('queue-waiting').textContent,'6');assert.match(f.element('operations-status').textContent,/완료했습니다/);
+});

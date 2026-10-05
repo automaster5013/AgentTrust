@@ -34,7 +34,7 @@ const cancellationPending=()=>cancelOperation?.epoch===scopeEpoch&&cancelOperati
 let keyCursor=null,receiptCursor=null,runCursor=null;
 let historySequence=0;
 let lookupSequence=0,lookupBusy=false;
-let auditCursor=null,auditSequence=0;
+let auditCursor=null,auditSequence=0,operationsSequence=0;
 let inspectionSequence=0,comparisonSequence=0,keyHistorySequence=0,receiptHistorySequence=0,receiptListGeneration=0,reviewSequence=0;
 let receiptInspectionSequence=0,receiptInspectionTrigger=null;
 let receiptFilters={decision:'',candidateRunId:''},receiptShown=0;
@@ -389,7 +389,7 @@ $('download').addEventListener('click', () => {
 function clearProjectData(){
   cancelOperation=null;
   $('workspace-nav').hidden=true;$('nav-projects').hidden=true;
-  $('operations-refresh').disabled=false;
+  operationsSequence++;$('operations-refresh').disabled=false;$('operations-status').textContent='';
   reviewBusy=false;loading=false;versionBusy=false;workspaceMutation=null;workspaceControls();
   recentBaselineRuns=[];
   $('gate-baseline-enabled').checked=false;$('gate-baseline-id').value='';$('gate-baseline-id').disabled=true;
@@ -427,16 +427,19 @@ async function auditHistory(append=false) {
   if($('audit-action').value)params.set('action',$('audit-action').value);
   if(append)params.set('cursor',auditCursor);
   if(!append){auditCursor=null;$('audit-more').disabled=true;$('audit-list').replaceChildren();$('usage-summary').textContent='';}
+  const operationsRead=append?null:beginOperationsRead();
+  try{
   const [page,usage,operations]=await Promise.all([api('/v1/audit-events?'+params),append?null:api('/v1/usage'),append?null:api('/v1/operations')]);
   if(sequence!==auditSequence)return;
   auditCursor=page.nextCursor;$('audit-more').disabled=!auditCursor;
-  if(!append){renderOperations(operations);
+  if(!append){completeOperationsRead(operationsRead,operations);
     $('usage-summary').textContent=`조직 전체 완료 실행 ${usage.completed_runs}개 · 결과 사례 ${usage.evaluated_cases}개 · 시도 ${usage.attempts}회 (모의 사용량)`;
   }
   $('audit-list').append(...page.items.map(e=>{
     const row=node('div',undefined,'audit-entry');row.append(node('strong',e.action+' '),node('span',`${new Date(e.created_at).toLocaleString('ko-KR')} · ${e.resource_id || '—'}`));return row;
   }));
   if(!append&&!page.items.length)$('audit-list').textContent='선택한 동작의 감사 기록이 없습니다.';
+  }catch(e){if(!append)failOperationsRead(operationsRead);throw e;}
 }
 async function initialize() {
   const epoch=scopeEpoch,assertCurrent=()=>{if(epoch!==scopeEpoch)throw new Error('워크스페이스가 변경되어 이전 요청의 결과를 표시하지 않습니다.');};
@@ -642,9 +645,23 @@ function renderOperations(data){
   $('execution-capacity').textContent=capacity?.scope==='organization'?'조직 전체 · 보관 기록 '+capacity.retained.used+' / '+capacity.retained.limit+'개 (남은 '+capacity.retained.remaining+'개) · 진행 중 '+capacity.active.used+' / '+capacity.active.limit+'개 (남은 '+capacity.active.remaining+'개) · 조회 '+new Date(data.observedAt).toLocaleTimeString('ko-KR')+' · 요청 시 서버가 용량을 재확인합니다.':'조직 실행 용량을 확인할 수 없습니다. 상태를 새로 조회하세요.';
   $('operations-alert').textContent=(data.worker.state!=='recent'?'최근 워커 신호가 없습니다. Docker 워커와 DB 연결을 확인하세요. ':'')+(data.queue.overdue||data.queue.expiredLeases?'처리가 지연된 실행이 있습니다. 실행 기록의 상태와 워커 복구를 확인하세요.':'');
 }
+function clearOperationsObservation(){
+  for(const id of ['worker-signal','queue-waiting','queue-running','queue-overdue'])$(id).textContent='—';
+  for(const id of ['operations-detail','execution-capacity','operations-alert'])$(id).textContent='';
+}
+function beginOperationsRead(){
+  const sequence=++operationsSequence;clearOperationsObservation();$('operations-refresh').disabled=true;
+  $('operations-status').textContent='현재 프로젝트 운영 상태를 조회하고 있습니다…';return sequence;
+}
+function completeOperationsRead(sequence,data){
+  if(sequence!==operationsSequence)return;renderOperations(data);$('operations-status').textContent='운영 상태 조회를 완료했습니다.';$('operations-refresh').disabled=false;
+}
+function failOperationsRead(sequence){
+  if(sequence!==operationsSequence)return;clearOperationsObservation();$('operations-status').textContent='운영 상태 조회를 완료하지 못했습니다. 연결을 확인하고 상태 새로고침으로 다시 조회하세요.';$('operations-refresh').disabled=false;
+}
 $('operations-refresh').addEventListener('click',async()=>{
-  if($('operations-refresh').disabled)return;const epoch=scopeEpoch;
-  $('operations-refresh').disabled=true;try{const data=await api('/v1/operations');if(epoch===scopeEpoch)renderOperations(data);}catch(e){if(epoch===scopeEpoch)message(e.message,true);}finally{if(epoch===scopeEpoch)$('operations-refresh').disabled=false;}
+  if($('operations-refresh').disabled)return;const epoch=scopeEpoch,sequence=beginOperationsRead();
+  try{const data=await api('/v1/operations');if(epoch===scopeEpoch)completeOperationsRead(sequence,data);}catch{if(epoch===scopeEpoch)failOperationsRead(sequence);}
 });
 
 async function lookupRun(id,statusId='run-lookup-status',fromReceipt=false){
