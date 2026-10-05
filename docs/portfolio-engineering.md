@@ -1,6 +1,6 @@
 # AgentTrust 기술 설명과 검증 근거
 
-기업 개발팀이 에이전트 변경의 평가 근거를 확인하고 릴리스 여부를 결정하는 로컬 프로토타입이다. v0.125까지 검증한 구현과 v0.125 CI 이미지의 기존 로컬 설치 실행 점검을 설명하며 고객 파일럿이나 상용 배포 성과를 주장하지 않는다. [실행 시연](portfolio-demo.md) → [실제 아키텍처](architecture.md) → 아래 검증 근거 순서로 살펴볼 수 있다.
+기업 개발팀이 에이전트 변경의 평가 근거를 확인하고 릴리스 여부를 결정하는 로컬 프로토타입이다. v0.126까지 검증한 구현과 v0.126 CI 이미지의 기존 로컬 설치 실행 점검을 설명하며 고객 파일럿이나 상용 배포 성과를 주장하지 않는다. [실행 시연](portfolio-demo.md) → [실제 아키텍처](architecture.md) → 아래 검증 근거 순서로 살펴볼 수 있다.
 
 ## 해결하려는 문제
 
@@ -51,7 +51,7 @@
 | 사용자·권한 시연 | [portfolio scenario](../scripts/portfolio-scenario.mjs), [role scenario](../scripts/portfolio-roles-scenario.mjs) | 합성 평가·승인·거절과 자체 세션 정리 |
 | 이미지와 배포 묶음 | [GitHub workflow](../.github/workflows/validate.yml), [전달 안내](github-delivery.md) | 후보 digest 실행·승격·공개 묶음 저장과 사후 CI 조회 |
 
-문서 작성 기준선은 커밋 `d5f47be146e66ecdf5539ebf28d4168e3d5c5844`의 [GitHub CI 실행](https://github.com/automaster5013/AgentTrust/actions/runs/37247260667)이다. 이 v0.125 실행의 실제 테스트 로그에서 416개 통과·0개 실패를 확인했고 네 작업과 실제 전달 ZIP·오프라인 묶음·온라인 GitHub 기록을 대조했다. 같은 digest의 기존 로컬 설치 실행도 기록 보존·서명 시연·원래 검토 의견의 오프라인 결합·읽기용 감사 보고서 생성을 통과했다. 이 링크는 해당 커밋의 근거이며 미래 변경의 성공을 의미하지 않는다. [현재 완료 범위](portfolio-status.md)와 아래 역사 기록을 구분한다.
+문서 작성 기준선은 커밋 `687accfeaddd71013c20708abf316ac99c63ddff`의 [GitHub CI 실행](https://github.com/automaster5013/AgentTrust/actions/runs/37250561734)이다. 이 v0.126 실행의 실제 테스트 로그에서 416개 통과·0개 실패를 확인했고 네 작업과 실제 전달 ZIP·오프라인 묶음·온라인 GitHub 기록을 대조했다. 같은 digest의 기존 로컬 설치 실행도 기록 보존·서명 시연·원래 검토 의견의 오프라인 결합·읽기용 감사 보고서 생성을 통과했다. 이 링크는 해당 커밋의 근거이며 미래 변경의 성공을 의미하지 않는다. [현재 완료 범위](portfolio-status.md)와 아래 역사 기록을 구분한다.
 
 실행은 [시연 안내](portfolio-demo.md)의 설치 절차를 따른다. `npm run demo:portfolio`와 `npm run demo:roles`는 각각 10단계·11단계의 결과를 출력한다. 자체 세션을 종료하고 관리자 사례를 반려로 남기며 기존 감사·평가 기록을 삭제하지 않는다. 보고서는 `.local`에 저장한다. 보고서·스크린샷을 공유하기 전에는 로컬 정보와 민감 데이터 포함 여부를 확인해야 한다. 접근 키·백업 키·서명 private key는 공유하지 않는다.
 
