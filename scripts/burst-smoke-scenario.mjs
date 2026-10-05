@@ -7,6 +7,17 @@ export function parseBurstArgs(args){
  if(args.length!==2||args[0]!=='--runs'||!/^[1-9][0-9]?$/.test(args[1])||String(Number(args[1]))!==args[1]||Number(args[1])<2||Number(args[1])>20)throw Error('Use --runs 2..20 once.');
  return Number(args[1]);
 }
+export function parseBurstOptions(args){
+ const burstArgs=[];let organizationIndex=0,selected=false;
+ for(let i=0;i<args.length;i+=2){
+  const flag=args[i],value=args[i+1];
+  if(flag==='--organization-index'){
+   if(selected||typeof value!=='string'||!/^(0|[1-9][0-9]?)$/.test(value))throw Error('Use --organization-index 0..99 once.');
+   selected=true;organizationIndex=Number(value);
+  }else burstArgs.push(flag,value);
+ }
+ return {runs:parseBurstArgs(burstArgs),organizationIndex};
+}
 async function boundedMap(items,limit,work){
  const results=new Array(items.length);let cursor=0,failure;
  await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{
