@@ -238,7 +238,7 @@ async function catalog(selectedDataset) {
   for (const [kind, id] of [['agent', 'agent'], ['dataset', 'dataset-select'], ['policy', 'policy']]) {
     const select = $(id); const previous = typeof selectedDataset==='object' && selectedDataset?.[kind] ? selectedDataset[kind] : kind === 'dataset' && typeof selectedDataset==='string' ? selectedDataset : select.value;
     select.replaceChildren(...data[kind].map(v => {
-      const option = node('option', `${v.name}${v.cases ? ` · ${v.cases}개 사례` : ''}${kind==='policy'?` · ${Math.round(v.minimumPassRate*100)}%${v.requiresManualApproval?' · 관리자 검토':''}`:''}`);
+      const option = node('option', `${v.name} · ${v.id.slice(0,8)}${v.cases ? ` · ${v.cases}개 사례` : ''}${kind==='policy'?` · ${Math.round(v.minimumPassRate*100)}%${v.requiresManualApproval?' · 관리자 검토':''}`:''}`);
       option.value = v.id; return option;
     }));
     if (data[kind].some(v => v.id === previous)) select.value = previous;
@@ -746,7 +746,7 @@ for(const [kind,selector] of [['agent','agent'],['dataset','dataset-select'],['p
   $('inspect-'+kind).addEventListener('click',async()=>{
     const sequence=++inspectionSequence,id=$(selector).value;
     try{const version=await api('/v1/versions/'+id);if(sequence!==inspectionSequence||$(selector).value!==id)return;
-      $('version-inspection-meta').textContent=`${version.data.name} · ${new Date(version.createdAt).toLocaleString('ko-KR')} · SHA-256 ${version.contentHash}`;
+      $('version-inspection-meta').textContent=`${version.data.name} · 버전 UUID ${version.id} · ${new Date(version.createdAt).toLocaleString('ko-KR')} · SHA-256 ${version.contentHash}`;
       $('version-inspection-output').textContent=JSON.stringify(version.data,null,2);
     }catch(error){if(sequence===inspectionSequence)message(error.message,true);}
   });
