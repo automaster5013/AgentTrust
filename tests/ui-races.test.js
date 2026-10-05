@@ -1156,3 +1156,14 @@ test('obsolete operations failure cannot clear newer success and an audit batch 
  f.overrides.set('/v1/usage',()=>{throw Error('Usage batch failure');});await f.element('audit-refresh').fire('click');assert.equal(f.element('queue-waiting').textContent,'—');assert.equal(f.element('execution-capacity').textContent,'');assert.match(f.element('operations-status').textContent,/다시 조회/);assert.equal(f.element('operations-refresh').disabled,false);
  await f.element('operations-refresh').fire('click');assert.equal(f.element('queue-waiting').textContent,'6');assert.match(f.element('operations-status').textContent,/완료했습니다/);
 });
+
+
+test('operations capacity refuses other organizations and inconsistent observed counts without blocking evaluation',async()=>{
+ const f=await fixture();for(const change of [s=>s.executionCapacity.organizationId='other-organization',s=>s.executionCapacity.retained.remaining=9999,s=>s.executionCapacity.active.used=-1,s=>s.executionCapacity.active.remaining='10',s=>s.executionCapacity.retained.limit=0,s=>s.executionCapacity.retained.used=1.5,s=>s.executionCapacity.active.used=31,s=>s.observedAt='invalid',s=>delete s.executionCapacity.active]){
+  const sample=operationSample(2,30);change(sample);f.overrides.set('/v1/operations',()=>sample);await f.element('operations-refresh').fire('click');assert.match(f.element('execution-capacity').textContent,/확인할 수 없습니다/);assert.ok(!f.element('execution-capacity').textContent.includes('NaN'));assert.equal(f.element('queue-waiting').textContent,'2');assert.equal(f.element('run-button').disabled,false);assert.equal(f.element('operations-refresh').disabled,false);
+ }
+});
+
+test('operations capacity accepts exact and exceeded retained limits with zero remaining as an observation',async()=>{
+ const f=await fixture();for(const used of [10000,10001]){const sample=operationSample(0,used);sample.executionCapacity.retained.remaining=0;sample.executionCapacity.active={used:10,limit:10,remaining:0};f.overrides.set('/v1/operations',()=>sample);await f.element('operations-refresh').fire('click');assert.match(f.element('execution-capacity').textContent,new RegExp('보관 기록 '+used+' / 10000'));assert.match(f.element('execution-capacity').textContent,/남은 0개.*요청 시 서버/);assert.equal(f.element('run-button').disabled,false);}
+});
