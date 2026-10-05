@@ -1121,3 +1121,10 @@ test('obsolete history failure cannot overwrite a newer empty result status',asy
  reply.resolve();await old;assert.equal(f.element('history-status').textContent,current);
  await f.element('logout-button').fire('click');assert.equal(f.element('history-status').textContent,'');
 });
+
+
+test('execution capacity is labeled as organization observation and cleared after logout',async()=>{
+ const f=await fixture();f.overrides.set('/v1/operations',()=>({worker:{state:'recent',lastSeen:null},queue:{queued:0,running:0,overdue:0,expiredLeases:0},recent:{completed24h:0,errors24h:0},observedAt:'2026-01-01T00:00:00Z',executionCapacity:{scope:'organization',organizationId:'organization',retained:{used:9980,limit:10000,remaining:20},active:{used:9,limit:10,remaining:1}}}));
+ await f.element('operations-refresh').fire('click');assert.match(f.element('execution-capacity').textContent,/조직 전체.*9980.*10000.*20.*9.*10.*1/);assert.match(f.element('execution-capacity').textContent,/요청 시.*재확인/);assert.equal(f.element('run-button').disabled,false);
+ await f.element('logout-button').fire('click');assert.equal(f.element('execution-capacity').textContent,'');
+});

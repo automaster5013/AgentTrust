@@ -866,3 +866,19 @@ test('correctly hashed review payloads with contradictory stored identities are 
  }
  const list=await f.request(path,{role:'viewer'});assert.equal(list.status,503);assert.ok(!(await list.text()).includes('private-review-canary'));const gate=await f.request('/v1/release-gate',{role:'viewer',method:'POST',json:{candidateRunId:run.id,...f.input('compliant',{policyVersionId:policy.id})}});assert.equal(gate.status,503);
 });
+
+
+test('administrator execution capacity covers its organization while queue remains project scoped',async t=>{
+ const f=await fixture(t),{run}=await f.create(),project=await f.store.createProject(f.contexts.admin,{name:'Capacity second project'},randomUUID()),selected={...f.contexts.admin,projectId:project.id};
+ const dataset=await f.store.createVersion(selected,'dataset',await(await f.request('/v1/sample-dataset')).json()),agent=await f.store.createVersion(selected,'agent',{name:'Capacity agent',mode:'compliant'}),policy=await f.store.createVersion(selected,'policy',{name:'Capacity policy',minimumPassRate:1});
+ const second=await f.store.createRun(selected,{agentVersionId:agent.id,datasetVersionId:dataset.id,policyVersionId:policy.id},randomUUID());
+ await f.store.cancel(f.contexts.admin,run.id);
+ const foreignCatalog=await f.store.catalog(f.contexts.other_admin),foreign=await f.store.createRun(f.contexts.other_admin,{agentVersionId:foreignCatalog.agent[0].id,datasetVersionId:foreignCatalog.dataset[0].id,policyVersionId:foreignCatalog.policy[0].id},randomUUID());
+ try{
+  const first=await(await f.request('/v1/operations')).json(),otherProject=await(await f.request('/v1/operations',{extra:{'X-AgentTrust-Project':project.id}})).json(),otherOrganization=await(await f.request('/v1/operations',{role:'other_admin'})).json();
+  assert.equal(first.queue.queued,0);assert.equal(otherProject.queue.queued,1);
+  assert.deepEqual(first.executionCapacity,{scope:'organization',organizationId:f.first.organizationId,retained:{used:2,limit:10000,remaining:9998},active:{used:1,limit:10,remaining:9}});
+  assert.deepEqual(otherProject.executionCapacity,first.executionCapacity);assert.deepEqual(otherOrganization.executionCapacity,{scope:'organization',organizationId:f.other.organizationId,retained:{used:1,limit:10000,remaining:9999},active:{used:1,limit:10,remaining:9}});
+  await f.store.cancel(selected,second.run.id);const after=await(await f.request('/v1/operations')).json();assert.equal(after.executionCapacity.retained.used,2);assert.equal(after.executionCapacity.active.used,0);assert.equal(after.executionCapacity.active.remaining,10);
+ }finally{await f.store.cancel(selected,second.run.id);await f.store.cancel(f.contexts.other_admin,foreign.run.id);}
+});

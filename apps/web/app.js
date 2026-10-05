@@ -411,7 +411,7 @@ $('results').replaceChildren();$('history-body').replaceChildren();$('history-st
   $('gate-reason').textContent='평가를 실행하면 정책을 기준으로 결과를 표시합니다.';$('allowed').textContent='—';$('run-state').textContent='대기';
   $('snapshot').textContent='아직 선택한 실행이 없습니다.';$('dataset-json').value='';$('usage-summary').textContent='';
   $('review-panel').hidden=true;$('review-list').replaceChildren();$('review-comment').value='';$('manual-gate-output').textContent='';
-  $('operations-detail').textContent='';$('operations-alert').textContent='';
+  $('operations-detail').textContent='';$('execution-capacity').textContent='';$('operations-alert').textContent='';
   for(const id of ['worker-signal','queue-waiting','queue-running','queue-overdue'])$(id).textContent='—';
   for(const id of ['case-count','pass-count','fail-count','unknown-count'])$(id).textContent='—';
   $('download').disabled=true;$('cancel-button').disabled=true;
@@ -638,6 +638,8 @@ function renderOperations(data){
   $('worker-signal').textContent={recent:'신호 있음',stale:'지연됨',missing:'미확인'}[data.worker.state];
   $('queue-waiting').textContent=data.queue.queued;$('queue-running').textContent=data.queue.running;$('queue-overdue').textContent=data.queue.overdue;
   $('operations-detail').textContent='선택한 프로젝트 · 최근 24시간 완료 '+data.recent.completed24h+'개 · 실행 오류/시간 초과 '+data.recent.errors24h+'개 · 워커 신호 '+(data.worker.lastSeen?new Date(data.worker.lastSeen).toLocaleString('ko-KR'):'없음')+' · 조회 '+new Date(data.observedAt).toLocaleTimeString('ko-KR');
+  const capacity=data.executionCapacity;
+  $('execution-capacity').textContent=capacity?.scope==='organization'?'조직 전체 · 보관 기록 '+capacity.retained.used+' / '+capacity.retained.limit+'개 (남은 '+capacity.retained.remaining+'개) · 진행 중 '+capacity.active.used+' / '+capacity.active.limit+'개 (남은 '+capacity.active.remaining+'개) · 조회 '+new Date(data.observedAt).toLocaleTimeString('ko-KR')+' · 요청 시 서버가 용량을 재확인합니다.':'조직 실행 용량을 확인할 수 없습니다. 상태를 새로 조회하세요.';
   $('operations-alert').textContent=(data.worker.state!=='recent'?'최근 워커 신호가 없습니다. Docker 워커와 DB 연결을 확인하세요. ':'')+(data.queue.overdue||data.queue.expiredLeases?'처리가 지연된 실행이 있습니다. 실행 기록의 상태와 워커 복구를 확인하세요.':'');
 }
 $('operations-refresh').addEventListener('click',async()=>{

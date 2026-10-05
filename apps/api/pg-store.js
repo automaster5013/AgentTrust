@@ -7,7 +7,7 @@ import { pageResult } from './pagination.js';
 
 export const terminalStates = new Set(['succeeded','failed','cancelled','timed_out']);
 import { incomplete } from '../../packages/evaluator/outcome.js';
-import {RunQuotaError} from '../../packages/contracts/run-quota-error.js';
+import {RunQuotaError,runLimits} from '../../packages/contracts/run-quota-error.js';
 export { incomplete };
 function uuid(value) { if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value || '')) throw new InputError('Invalid resource id.'); return value; }
 function trustedVersion(row){
@@ -48,7 +48,10 @@ export class PgStore {
         count(*) FILTER(WHERE completed_at>$3::timestamptz-interval '24 hours') AS completed_24h,
         count(*) FILTER(WHERE completed_at>$3::timestamptz-interval '24 hours' AND state IN ('failed','timed_out')) AS errors_24h,
         max(completed_at) AS last_completed_at FROM agenttrust.runs WHERE organization_id=$1 AND project_id=$2`,[context.organizationId,context.projectId,now])).rows[0];
-      return {projectId:context.projectId,observedAt:now.toISOString(),worker:{state:age===null?'missing':age>=0&&age<=15?'recent':'stale',lastSeen:health?.last_seen.toISOString()||null,ageSeconds:age},
+      const capacity=(await client.query("SELECT count(*) AS retained,count(*) FILTER(WHERE state IN ('queued','running')) AS active FROM agenttrust.runs WHERE organization_id=$1",[context.organizationId])).rows[0];
+      const retained=Number(capacity.retained),active=Number(capacity.active);
+      const executionCapacity={scope:'organization',organizationId:context.organizationId,retained:{used:retained,limit:runLimits.history,remaining:Math.max(0,runLimits.history-retained)},active:{used:active,limit:runLimits.active,remaining:Math.max(0,runLimits.active-active)}};
+      return {executionCapacity,projectId:context.projectId,observedAt:now.toISOString(),worker:{state:age===null?'missing':age>=0&&age<=15?'recent':'stale',lastSeen:health?.last_seen.toISOString()||null,ageSeconds:age},
         queue:{queued:Number(row.queued),running:Number(row.running),overdue:Number(row.overdue),expiredLeases:Number(row.expired_leases),oldestQueuedAt:row.oldest_queued_at?.toISOString()||null},
         recent:{completed24h:Number(row.completed_24h),errors24h:Number(row.errors_24h),lastCompletedAt:row.last_completed_at?.toISOString()||null}};
     },context.organizationId);
@@ -114,8 +117,8 @@ export class PgStore {
         return {run:publicRun(previous.rows[0]),replay:true};
       }
       const count=await client.query("SELECT count(*) AS total,count(*) FILTER(WHERE state IN ('queued','running')) AS active FROM agenttrust.runs WHERE organization_id=$1",[context.organizationId]);
-      if(Number(count.rows[0].total)>=10000)throw new RunQuotaError('history');
-      if(Number(count.rows[0].active)>=10)throw new RunQuotaError('active');
+      if(Number(count.rows[0].total)>=runLimits.history)throw new RunQuotaError('history');
+      if(Number(count.rows[0].active)>=runLimits.active)throw new RunQuotaError('active');
       const snapshot={};
       for(const kind of ['agent','dataset','policy']) {
         const result=await client.query('SELECT * FROM agenttrust.versions WHERE id=$1 AND organization_id=$2 AND project_id=$3 AND kind=$4',[request[`${kind}VersionId`],context.organizationId,context.projectId,kind]);

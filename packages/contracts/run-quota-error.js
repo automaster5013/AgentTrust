@@ -1,5 +1,6 @@
 import {InputError} from './index.js';
 
+export const runLimits=Object.freeze({active:10,history:10000});
 const codes=Object.freeze({active:'run_active_limit',history:'run_history_limit'});
 export class RunQuotaError extends InputError {
   #code;
