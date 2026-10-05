@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
+import {evaluateRecordedConnector} from './connector-replay.js';
+import {sampleDataset} from '../contracts/samples.js';
 import {buildHttpsRequest,validateEvidence} from './https-adapter.js';
 const request=buildHttpsRequest({agent:{id:'synthetic-version'}},{id:'synthetic-case',input:'Synthetic connector request',mock:{private:'not-transmitted'},rules:[{private:'not-transmitted'}]});
 assert.deepEqual(request,{caseId:'synthetic-case',input:'Synthetic connector request',agentVersionId:'synthetic-version'});
 assert.deepEqual(validateEvidence({output:'Synthetic connector response',toolEvents:[]}),{output:'Synthetic connector response',toolEvents:[]});
 assert.throws(()=>buildHttpsRequest({agent:{id:'synthetic-version'}},{id:'synthetic-case',input:'\u0000'}));
 assert.throws(()=>validateEvidence({output:'Synthetic connector response'}));
+const replayInput={dataset:sampleDataset,policy:{name:'Synthetic recorded criteria',minimumPassRate:1,requiresManualApproval:true},trace:{schemaVersion:1,agentVersionId:'synthetic-version',entries:sampleDataset.cases.map(item=>({request:{caseId:item.id,input:item.input,agentVersionId:'synthetic-version'},response:item.mock}))}};
+const replay=evaluateRecordedConnector(replayInput);assert.equal(replay.evaluationDecision,'pass');assert.equal(replay.deploymentAllowed,false);assert.equal(replay.recordedSourceVerified,false);
+replayInput.trace.entries=[];assert.equal(evaluateRecordedConnector(replayInput).evaluationDecision,'inconclusive');
 const version=JSON.parse(await readFile(new URL('../../package.json',import.meta.url),'utf8')).version;
-console.log(JSON.stringify({schemaVersion:1,purpose:'connector-contract-runtime-smoke',status:'passed',runtimeVersion:version,requestContractVerified:true,responseContractVerified:true,invalidContractsRejected:true,networkRequestsMade:0,releaseGateEvaluated:false,deploymentAllowed:false}));
+console.log(JSON.stringify({schemaVersion:1,purpose:'connector-contract-runtime-smoke',status:'passed',runtimeVersion:version,requestContractVerified:true,responseContractVerified:true,invalidContractsRejected:true,recordedReplayVerified:true,incompleteRecordedReplayRejected:true,recordedReplaySourceVerified:false,networkRequestsMade:0,releaseGateEvaluated:false,deploymentAllowed:false}));

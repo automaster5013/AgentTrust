@@ -1,0 +1,6 @@
+{
+  "name": "Synthetic recorded-evidence administrator review",
+  "minimumPassRate": 1,
+  "requiresManualApproval": true,
+  "manualApprovalTtlSeconds": 600
+}

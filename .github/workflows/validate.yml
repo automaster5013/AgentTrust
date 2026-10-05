@@ -27,6 +27,7 @@ jobs:
       - run: npm run setup
       - run: npm run check
       - run: npm run connector:contract
+      - run: npm run connector:replay
       - run: node packages/evaluator/connector-contract-smoke.js
       - run: npm test
       - run: npm audit --audit-level=high --cache .cache/npm
@@ -150,6 +151,7 @@ jobs:
           docker compose -f compose.yaml -f compose.image.yaml up -d --no-build --wait api worker
           npm run smoke:image
           npm run connector:contract
+          npm run connector:replay
           docker compose -f compose.yaml -f compose.image.yaml exec -T worker node packages/evaluator/connector-contract-smoke.js
       - name: Verify evaluation, restart, signed gates and accounting from registry image
         run: |

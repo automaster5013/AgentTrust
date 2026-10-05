@@ -24,3 +24,18 @@ npm.cmd run connector:contract -- --request .local/customer-request.json --respo
 계약 통과 후에는 [HTTPS 연결의 운영자 설정과 네트워크 통제](release-integration.md#https-연결)를 별도로 준비하고, 실제 평가 및 현재 릴리스 게이트를 통과해야 한다. 연결 대상 인증 헤더와 고객 서버는 아직 연결하지 않았다. CLI 검사는 응답의 출처·진실성·평가 규칙 통과·배포 허용을 증명하지 않는다.
 
 CI는 소스의 합성 파일 검증과 레지스트리 worker 이미지 안의 요청·응답 계약 검사를 각각 실행한다. 기본 worker의 외부 연결 비활성 상태를 유지하며 공개 예제를 실제 고객 자료로 해석하지 않는다.
+
+## 기록된 응답을 평가 규칙에 재현하기
+
+```powershell
+npm.cmd run connector:replay
+npm.cmd run connector:replay -- --dataset .local/customer-dataset.json --policy .local/customer-policy.json --trace .local/customer-trace.json
+```
+
+기본 [데이터셋](../examples/connector-contract/dataset.json), [정책](../examples/connector-contract/policy.json), [응답 기록](../examples/connector-contract/trace.json)은 공개 합성 예제다. 사용자 파일은 각각 64 KiB 이하의 UTF-8 JSON이어야 한다. 데이터셋·정책은 기존 등록 계약을 사용하지만 이 명령은 DB에 등록하거나 변경하지 않는다. 데이터셋의 mock은 계약 유효성 확인에만 필요하며 실제 재현에는 기록된 응답만 사용한다.
+
+응답 기록은 `schemaVersion: 1`, `agentVersionId`, 최대 100개의 `entries`를 갖는다. 각 항목의 `request`는 기존 세 요청 필드이며 `response`는 기록된 응답이다. 사례 ID·입력·에이전트 버전이 일치해야 하며 다른 사례·중복 항목은 평가 전에 거절한다. 누락 항목·응답 누락·잘못된 증거 형식은 어댑터 실패에 해당하므로 불확정 증거로 평가한다. 응답의 실제 출처나 원격 코드 버전을 증명하지 않는다.
+
+기존 평가 코어의 필수 규칙·도구·인자 스키마·JSON 출력·통과율 기준을 적용한다. 필수 실패는 block, 필수 증거 누락·어댑터 오류는 inconclusive이며 둘이 함께 있으면 기존 코어의 필수 실패 우선순위를 따른다. 자동 평가가 pass여도 실제 관리자 검토나 현재 릴리스 게이트를 호출하지 않고 배포 허용은 false로 표시한다.
+
+출력은 집계와 데이터셋 순서의 사례 번호·규칙 상태 개수만 포함한다. 입력·출력·사례/규칙 ID·정책 텍스트·경로·원문 오류를 출력하지 않는다. 종료 코드 0은 오프라인 평가 pass, 1은 block/inconclusive, 2는 입력 검증 오류다. 고객 연결·서명·릴리스 승인·배포는 별도 절차다.

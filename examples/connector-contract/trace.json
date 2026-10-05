@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "agentVersionId": "00000000-0000-4000-8000-000000000001",
+  "entries": [
+    {
+      "request": {
+        "caseId": "synthetic-refund-policy",
+        "input": "Synthetic customer asks how to request a refund.",
+        "agentVersionId": "00000000-0000-4000-8000-000000000001"
+      },
+      "response": {
+        "output": "Synthetic refund requests require order verification and administrator review.",
+        "toolEvents": [
+          {
+            "name": "lookup_order",
+            "args": {
+              "orderId": "synthetic-order-1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "caseId": "synthetic-structured-summary",
+        "input": "Synthetic customer asks for a structured response summary.",
+        "agentVersionId": "00000000-0000-4000-8000-000000000001"
+      },
+      "response": {
+        "output": "{\"status\":\"review_required\"}",
+        "toolEvents": []
+      }
+    }
+  ]
+}
