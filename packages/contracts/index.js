@@ -2,6 +2,7 @@ import Ajv from 'ajv';
 import { canonical } from './hash.js';
 import { assertJsonValue } from './json.js';
 
+export const versionLimit=1000;
 export class InputError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }

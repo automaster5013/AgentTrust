@@ -877,8 +877,17 @@ test('administrator execution capacity covers its organization while queue remai
  try{
   const first=await(await f.request('/v1/operations')).json(),otherProject=await(await f.request('/v1/operations',{extra:{'X-AgentTrust-Project':project.id}})).json(),otherOrganization=await(await f.request('/v1/operations',{role:'other_admin'})).json();
   assert.equal(first.queue.queued,0);assert.equal(otherProject.queue.queued,1);
+  assert.deepEqual(first.versionCapacity,{scope:'organization',organizationId:f.first.organizationId,used:12,limit:1000,remaining:988});assert.deepEqual(otherProject.versionCapacity,first.versionCapacity);assert.deepEqual(otherOrganization.versionCapacity,{scope:'organization',organizationId:f.other.organizationId,used:9,limit:1000,remaining:991});
+
   assert.deepEqual(first.executionCapacity,{scope:'organization',organizationId:f.first.organizationId,retained:{used:2,limit:10000,remaining:9998},active:{used:1,limit:10,remaining:9}});
   assert.deepEqual(otherProject.executionCapacity,first.executionCapacity);assert.deepEqual(otherOrganization.executionCapacity,{scope:'organization',organizationId:f.other.organizationId,retained:{used:1,limit:10000,remaining:9999},active:{used:1,limit:10,remaining:9}});
   await f.store.cancel(selected,second.run.id);const after=await(await f.request('/v1/operations')).json();assert.equal(after.executionCapacity.retained.used,2);assert.equal(after.executionCapacity.active.used,0);assert.equal(after.executionCapacity.active.remaining,10);
  }finally{await f.store.cancel(selected,second.run.id);await f.store.cancel(f.contexts.other_admin,foreign.run.id);}
+});
+
+
+test('organization version capacity follows the atomic shared registration quota under competing creates',async t=>{
+ const f=await fixture(t),data={name:'Synthetic version quota fixture',minimumPassRate:1};await f.owner.query("INSERT INTO agenttrust.versions(id,organization_id,project_id,kind,data,content_hash) SELECT gen_random_uuid(),$1,$2,'policy',$3::jsonb,$4 FROM generate_series(1,990)",[f.first.organizationId,f.first.projectId,JSON.stringify(data),hash(data)]);
+ const before=await(await f.request('/v1/operations')).json();assert.deepEqual(before.versionCapacity,{scope:'organization',organizationId:f.first.organizationId,used:999,limit:1000,remaining:1});
+ const outcomes=await Promise.allSettled([f.store.createVersion(f.contexts.admin,'policy',{name:'Synthetic competing policy A',minimumPassRate:1}),f.store.createVersion(f.contexts.admin,'policy',{name:'Synthetic competing policy B',minimumPassRate:1})]);assert.equal(outcomes.filter(x=>x.status==='fulfilled').length,1);const denied=outcomes.find(x=>x.status==='rejected');assert.equal(denied.reason.status,429);const after=await(await f.request('/v1/operations')).json();assert.equal(after.versionCapacity.used,1000);assert.equal(after.versionCapacity.remaining,0);const foreign=await(await f.request('/v1/operations',{role:'other_admin'})).json();assert.equal(foreign.versionCapacity.used,9);assert.equal((await f.request('/v1/operations',{role:'viewer'})).status,403);
 });

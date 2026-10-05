@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { validate, InputError } from '../../packages/contracts/index.js';
+import { validate, InputError,versionLimit } from '../../packages/contracts/index.js';
 import { hash } from '../../packages/contracts/hash.js';
 import { transaction } from './database.js';
 import { audit, requireWrite,revalidateSession } from './auth.js';
@@ -49,9 +49,10 @@ export class PgStore {
         count(*) FILTER(WHERE completed_at>$3::timestamptz-interval '24 hours' AND state IN ('failed','timed_out')) AS errors_24h,
         max(completed_at) AS last_completed_at FROM agenttrust.runs WHERE organization_id=$1 AND project_id=$2`,[context.organizationId,context.projectId,now])).rows[0];
       const capacity=(await client.query("SELECT count(*) AS retained,count(*) FILTER(WHERE state IN ('queued','running')) AS active FROM agenttrust.runs WHERE organization_id=$1",[context.organizationId])).rows[0];
+      const versions=(await client.query('SELECT count(*) AS used FROM agenttrust.versions WHERE organization_id=$1',[context.organizationId])).rows[0];const versionCapacity={scope:'organization',organizationId:context.organizationId,used:Number(versions.used),limit:versionLimit,remaining:Math.max(0,versionLimit-Number(versions.used))};
       const retained=Number(capacity.retained),active=Number(capacity.active);
       const executionCapacity={scope:'organization',organizationId:context.organizationId,retained:{used:retained,limit:runLimits.history,remaining:Math.max(0,runLimits.history-retained)},active:{used:active,limit:runLimits.active,remaining:Math.max(0,runLimits.active-active)}};
-      return {executionCapacity,projectId:context.projectId,observedAt:now.toISOString(),worker:{state:age===null?'missing':age>=0&&age<=15?'recent':'stale',lastSeen:health?.last_seen.toISOString()||null,ageSeconds:age},
+      return {executionCapacity,versionCapacity,projectId:context.projectId,observedAt:now.toISOString(),worker:{state:age===null?'missing':age>=0&&age<=15?'recent':'stale',lastSeen:health?.last_seen.toISOString()||null,ageSeconds:age},
         queue:{queued:Number(row.queued),running:Number(row.running),overdue:Number(row.overdue),expiredLeases:Number(row.expired_leases),oldestQueuedAt:row.oldest_queued_at?.toISOString()||null},
         recent:{completed24h:Number(row.completed_24h),errors24h:Number(row.errors_24h),lastCompletedAt:row.last_completed_at?.toISOString()||null}};
     },context.organizationId);
@@ -95,7 +96,7 @@ export class PgStore {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[context.organizationId]);
       await revalidateSession(client,context,{write:true,adminOnly:kind==='policy'});
       const count=await client.query('SELECT count(*) FROM agenttrust.versions WHERE organization_id=$1',[context.organizationId]);
-      if(Number(count.rows[0].count)>=1000) throw new InputError('Organization version quota reached.',429);
+      if(Number(count.rows[0].count)>=versionLimit) throw new InputError('Organization version quota reached.',429);
       const id=randomUUID(); const contentHash=hash(data);
       const row=(await client.query('INSERT INTO agenttrust.versions(id,organization_id,project_id,kind,data,content_hash) VALUES($1,$2,$3,$4,$5,$6) RETURNING created_at',[id,context.organizationId,context.projectId,kind,data,contentHash])).rows[0];
       await audit(client,context,`${kind}.version.created`,id,{contentHash});
