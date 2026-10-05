@@ -70,6 +70,8 @@
 
 | 화면 | 확인한 행동 | 촬영한 구현 |
 |---|---|---|
+| [현재 비교 통과와 반려 차단](evidence/current-rejection-v132.png) | 새 게이트에서 기준 비교 통과와 관리자 반려 차단을 확인; 과거 승인 원본을 펼쳐도 현재 안내 유지 | v0.132 |
+| [과거 승인 원본 펼치기](evidence/review-source-v132.png) | 원본 의견·전체 UUID·평가 해시·본문 해시를 읽기 전용으로 표시 | v0.132 |
 | [비교 통과와 승인 대기](evidence/comparison-approval.png) | 회귀 0개로 비교가 통과해도 관리자 승인 대기이면 최종 차단 | v0.51 |
 | [정확한 회귀 사례 이동](evidence/exact-regression-case.png) | structured-answer 사례를 선택해 전체 3개 중 1개 표시; 전체 JSON은 유지 | v0.52 |
 | [반려 후 현재 최종 차단](evidence/current-rejection.png) | 재시연의 관리자 사례를 UUID로 조회하고 새 게이트에서 반려·차단 확인 | v0.57 |
