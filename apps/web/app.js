@@ -498,7 +498,10 @@ async function ciHistory(append=false){
 async function receiptHistory(append=false){
   if(!actor)return;
   if(append&&!receiptCursor)return;
-  if(!append)receiptListGeneration++;
+  if(!append){
+    receiptListGeneration++;receiptCursor=null;receiptShown=0;
+    $('receipts-more').disabled=true;$('receipt-list').replaceChildren();clearReceiptInspection();
+  }
   const sequence=++receiptHistorySequence,params=new URLSearchParams({limit:'25'});
   for(const [key,value] of Object.entries(receiptFilters))if(value)params.set(key,value);
   if(append)params.set('cursor',receiptCursor);

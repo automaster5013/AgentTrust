@@ -919,6 +919,19 @@ test('appending receipt pages keeps an already requested export valid',{timeout:
  const f=await receiptInspectionFixture(),reply=deferred(),started=deferred();f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[f.sample.row],nextCursor:'next'}));f.overrides.set('/v1/release-receipts?limit=25&cursor=next',()=>({items:[],nextCursor:null}));await f.element('receipts-refresh').fire('click');f.overrides.set('/v1/release-receipts/'+f.sample.row.id,()=>{started.resolve();return reply.promise;});
  const pending=f.element('receipt-list').children[0].children.at(-1).fire('click');await started.promise;await f.element('receipts-more').fire('click');reply.resolve(f.sample.data);await pending;assert.equal(f.downloads.length,1);assert.equal(verifyReceipt(JSON.parse(await f.downloads[0].text()),f.sample.publicKey).signatureVerified,true);
 });
+
+test('a full receipt refresh removes stale rows, cursor and details before a pending response fails',{timeout:5000},async()=>{
+ const f=await receiptInspectionFixture(),reply=deferred(),started=deferred();f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[f.sample.row],nextCursor:'next'}));await f.element('receipts-refresh').fire('click');await f.element('receipt-list').children[0].children.find(child=>child.textContent==='기록 상세 보기').fire('click');assert.equal(f.element('receipt-inspection').hidden,false);assert.equal(f.element('receipts-more').disabled,false);
+ f.overrides.set('/v1/release-receipts?limit=25',async()=>{started.resolve();await reply.promise;throw Error('private-stale-list-canary');});const pending=f.element('receipts-refresh').fire('click');await started.promise;
+ assert.equal(f.element('receipt-list').children.length,0);assert.equal(f.element('receipt-inspection').hidden,true);assert.equal(f.element('receipts-more').disabled,true);reply.resolve();await pending;
+ assert.equal(f.element('receipt-list').children.length,0);assert.equal(f.element('receipt-inspection-output').textContent,'');assert.ok(!f.element('status').textContent.includes('private-stale-list-canary'));assert.match(f.element('receipt-filter-status').textContent,/불러오지 못했습니다/);
+ f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[f.sample.row],nextCursor:null}));await f.element('receipts-refresh').fire('click');assert.equal(f.element('receipt-list').children.length,1);await f.element('receipt-list').children[0].children.at(-1).fire('click');assert.equal(f.downloads.length,1);
+});
+
+test('a full receipt refresh invalidates a pending linked historical review',{timeout:5000},async()=>{
+ const f=await historicalReviewFixture(),reply=deferred(),started=deferred();f.overrides.set(f.path,()=>{started.resolve();return reply.promise;});const pending=f.inspect.fire('click');await started.promise;await f.element('receipts-refresh').fire('click');reply.resolve(f.review);await pending;
+ assert.equal(f.element('receipt-inspection').hidden,true);assert.equal(f.element('receipt-inspection-output').textContent,'');assert.equal(f.element('receipt-list').children.length,1);
+});
 test('a delayed gate digest cannot restore a passing decision after the selected execution changes',async()=>{
  const reply=deferred();let digests=0;const f=await fixture({digest:async(...args)=>{digests++;await reply.promise;return webcrypto.subtle.digest(...args);}});f.runs.A=execution('A');await f.view('B');f.overrides.set('/v1/release-gate',()=>signedUiReceipt().report);
  const pending=f.element('manual-gate-check').fire('click');await settle();assert.equal(digests,1);await f.view('A');reply.resolve();await pending;assert.match(f.element('snapshot').textContent,/실행 A/);assert.ok(!f.element('manual-gate-output').textContent.includes('최종 게이트: 통과'));assert.equal(f.element('current-receipt-download').disabled,true);
