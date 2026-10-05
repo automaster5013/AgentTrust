@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {buildHttpsRequest,validateEvidence} from './https-adapter.js';
+const request=buildHttpsRequest({agent:{id:'synthetic-version'}},{id:'synthetic-case',input:'Synthetic connector request',mock:{private:'not-transmitted'},rules:[{private:'not-transmitted'}]});
+assert.deepEqual(request,{caseId:'synthetic-case',input:'Synthetic connector request',agentVersionId:'synthetic-version'});
+assert.deepEqual(validateEvidence({output:'Synthetic connector response',toolEvents:[]}),{output:'Synthetic connector response',toolEvents:[]});
+assert.throws(()=>buildHttpsRequest({agent:{id:'synthetic-version'}},{id:'synthetic-case',input:'\u0000'}));
+assert.throws(()=>validateEvidence({output:'Synthetic connector response'}));
+const version=JSON.parse(await readFile(new URL('../../package.json',import.meta.url),'utf8')).version;
+console.log(JSON.stringify({schemaVersion:1,purpose:'connector-contract-runtime-smoke',status:'passed',runtimeVersion:version,requestContractVerified:true,responseContractVerified:true,invalidContractsRejected:true,networkRequestsMade:0,releaseGateEvaluated:false,deploymentAllowed:false}));

@@ -17,6 +17,7 @@ const rule = {
   }
 };
 const schemas = {
+  connectorRequest: { type: 'object', additionalProperties: false, required: ['caseId','input','agentVersionId'], properties: { caseId: { ...text, maxLength: 80 }, input: text, agentVersionId: { ...text, maxLength: 80 } } },
   agent: { type: 'object', additionalProperties: false, required: ['name', 'mode'], properties: {
     endpointHash: { type: 'string', pattern: '^[a-f0-9]{64}$' }, connectorId: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,80}$' }, name: { ...text, maxLength: 100 }, mode: { enum: ['compliant', 'regression', 'forbidden_tool', 'error', 'missing_evidence', 'unsafe_output', 'slow', 'https'] }
   } },

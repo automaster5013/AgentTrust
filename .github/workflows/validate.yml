@@ -26,6 +26,8 @@ jobs:
       - run: npm ci --cache .cache/npm --ignore-scripts
       - run: npm run setup
       - run: npm run check
+      - run: npm run connector:contract
+      - run: node packages/evaluator/connector-contract-smoke.js
       - run: npm test
       - run: npm audit --audit-level=high --cache .cache/npm
       - name: Match API user to private signing-file owner
@@ -147,6 +149,8 @@ jobs:
           docker compose -f compose.yaml -f compose.image.yaml pull api worker
           docker compose -f compose.yaml -f compose.image.yaml up -d --no-build --wait api worker
           npm run smoke:image
+          npm run connector:contract
+          docker compose -f compose.yaml -f compose.image.yaml exec -T worker node packages/evaluator/connector-contract-smoke.js
       - name: Verify evaluation, restart, signed gates and accounting from registry image
         run: |
           node --env-file-if-exists=.env scripts/smoke.mjs before

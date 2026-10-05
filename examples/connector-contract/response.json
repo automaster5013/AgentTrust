@@ -1,0 +1,1 @@
+{"output":"Synthetic refund requests require order verification and administrator review.","toolEvents":[{"name":"lookup_order","args":{"orderId":"synthetic-order-1"}}]}

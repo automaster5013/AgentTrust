@@ -22,13 +22,16 @@ export function validateEvidence(evidence) {
   // Reuse the bounded evidence contract, including nested input inspection.
   return validate('dataset',{name:'HTTPS evidence',cases:[{id:'response',input:'response',mock:evidence,rules:[{id:'required',type:'contains',value:'response'}]}]}).cases[0].mock;
 }
+export function buildHttpsRequest(snapshot,testCase){
+  return validate('connectorRequest',{caseId:testCase.id,input:testCase.input,agentVersionId:snapshot.agent.id});
+}
 export async function httpsEvidence(snapshot,testCase,{organizationId,configuration=process.env.AGENTTRUST_HTTPS_TARGETS||'{}',resolver=lookup,transport=request}={}) {
   const targets=JSON.parse(configuration);
   const endpoint=targets[organizationId]?.[snapshot.agent.connectorId];
   if(typeof endpoint!=='string')throw new Error('Connector is disabled.');
   if(createHash('sha256').update(endpoint).digest('hex')!==snapshot.agent.endpointHash)throw new Error('Connector endpoint changed.');
+  const payload=JSON.stringify(buildHttpsRequest(snapshot,testCase));
   const {url,address}=await resolveTarget(endpoint,resolver);
-  const payload=JSON.stringify({caseId:testCase.id,input:testCase.input,agentVersionId:snapshot.agent.id});
   return new Promise((resolve,reject)=>{
     let timer;
     const req=transport(url,{method:'POST',agent:false,rejectUnauthorized:true,servername:url.hostname,
