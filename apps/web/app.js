@@ -35,7 +35,7 @@ let keyCursor=null,receiptCursor=null,runCursor=null;
 let historySequence=0;
 let lookupSequence=0,lookupBusy=false;
 let auditCursor=null,auditSequence=0;
-let inspectionSequence=0,comparisonSequence=0,keyHistorySequence=0,receiptHistorySequence=0,reviewSequence=0;
+let inspectionSequence=0,comparisonSequence=0,keyHistorySequence=0,receiptHistorySequence=0,receiptListGeneration=0,reviewSequence=0;
 let receiptInspectionSequence=0,receiptInspectionTrigger=null;
 let receiptFilters={decision:'',candidateRunId:''},receiptShown=0;
 let reviewBusy=false,reviewCursor=null,reviewShown=0;
@@ -498,6 +498,7 @@ async function ciHistory(append=false){
 async function receiptHistory(append=false){
   if(!actor)return;
   if(append&&!receiptCursor)return;
+  if(!append)receiptListGeneration++;
   const sequence=++receiptHistorySequence,params=new URLSearchParams({limit:'25'});
   for(const [key,value] of Object.entries(receiptFilters))if(value)params.set(key,value);
   if(append)params.set('cursor',receiptCursor);
@@ -508,7 +509,7 @@ async function receiptHistory(append=false){
   $('receipt-filter-status').textContent=`조회 조건: ${decisionLabels[receiptFilters.decision]||'모든 판정'} · ${receiptFilters.candidateRunId?'후보 '+receiptFilters.candidateRunId:'모든 후보 실행'} · ${receiptShown}개 표시${receiptShown?'':' (일치하는 검증 기록이 없습니다.)'}`;
   if(!append)$('receipt-list').replaceChildren();
   $('receipt-list').append(...page.items.map(receipt=>{
-    const epoch=scopeEpoch;
+    const epoch=scopeEpoch,generation=receiptListGeneration;
     const row=node('div',undefined,'audit-entry receipt-entry'),metadata=node('div',undefined,'receipt-metadata');
     metadata.append(node('strong',decisionLabels[receipt.decision]),node('span',`${new Date(receipt.created_at).toLocaleString('ko-KR')} · 실행 ${receipt.candidate_run_id.slice(0,8)} · ${receipt.signing_key_id?'서명 포함':'기존 서명 없음'}`),node('code','검증 기록 '+receipt.id));row.append(metadata);
     for(const [label,id] of [['후보 평가 근거 보기',receipt.candidate_run_id],...(receipt.baseline_run_id?[['기준 평가 근거 보기',receipt.baseline_run_id]]:[])]){
@@ -542,7 +543,19 @@ async function receiptHistory(append=false){
       }catch{if(isCurrent())$('receipt-inspection-output').textContent='검증 기록을 확인하지 못했습니다. 연결·접근 권한·기록의 무결성을 확인하고 다시 조회하세요.';}
       finally{if(epoch===scopeEpoch)inspect.disabled=false;}
     });row.append(inspect);
-    const button=node('button','기록 JSON 저장','secondary');button.addEventListener('click',async()=>{if(button.disabled)return;const epoch=scopeEpoch,organizationId=actor?.organizationId,projectId=activeProjectId;button.disabled=true;try{const data=await api(`/v1/release-receipts/${receipt.id}`);if(epoch!==scopeEpoch)return;await verifyHistoricalReceipt(data,receipt,organizationId,projectId);if(epoch!==scopeEpoch)return;const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=node('a');link.href=url;link.download=`agenttrust-receipt-${receipt.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){if(epoch===scopeEpoch)message(e.message,true);}finally{if(epoch===scopeEpoch)button.disabled=false;}});row.append(button);return row;
+    const button=node('button','기록 JSON 저장','secondary');
+    button.addEventListener('click',async()=>{
+      const isCurrent=()=>epoch===scopeEpoch&&generation===receiptListGeneration;
+      if(button.disabled||!isCurrent())return;
+      const organizationId=actor?.organizationId,projectId=activeProjectId;button.disabled=true;
+      try{
+        const data=await api(`/v1/release-receipts/${receipt.id}`);if(!isCurrent())return;
+        await verifyHistoricalReceipt(data,receipt,organizationId,projectId);if(!isCurrent())return;
+        const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
+        const link=node('a');link.href=url;link.download=`agenttrust-receipt-${receipt.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+      }catch(e){if(isCurrent())message(e.message,true);}
+      finally{if(isCurrent())button.disabled=false;}
+    });row.append(button);return row;
   }));
   if(!append&&!page.items.length)$('receipt-list').textContent=receiptFilters.decision||receiptFilters.candidateRunId?'적용한 조건에 맞는 검증 기록이 없습니다.':'아직 CI 검증 기록이 없습니다.';
 }

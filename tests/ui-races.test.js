@@ -893,6 +893,32 @@ test('a delayed historical body digest cannot restore details or trigger an expo
   assert.equal(f.element('receipt-inspection').hidden,true);assert.equal(f.element('receipt-inspection-output').textContent,'');assert.equal(f.downloads.length,0);
  }
 });
+
+test('receipt filter reset cancels a pending JSON download before response or digest completion',{timeout:5000},async()=>{
+ for(const phase of ['response','digest']){
+  const reply=deferred(),started=deferred(),f=await receiptInspectionFixture(phase==='digest'?{digest:async(...args)=>{started.resolve();await reply.promise;return webcrypto.subtle.digest(...args);}}:{});
+  if(phase==='response')f.overrides.set('/v1/release-receipts/'+f.sample.row.id,()=>{started.resolve();return reply.promise;});
+  const old=f.element('receipt-list').children[0].children.at(-1),pending=old.fire('click');await started.promise;await f.element('receipt-filter-reset').fire('click');f.element('status').textContent='Current filter workspace';reply.resolve(f.sample.data);await pending;
+  assert.equal(f.downloads.length,0);assert.equal(f.element('status').textContent,'Current filter workspace');
+  f.overrides.set('/v1/release-receipts/'+f.sample.row.id,()=>f.sample.data);await f.element('receipt-list').children[0].children.at(-1).fire('click');assert.equal(f.downloads.length,1);
+ }
+});
+
+test('replacing the receipt list suppresses a late download failure and detached export action',async()=>{
+ const f=await receiptInspectionFixture(),reply=deferred(),started=deferred();let reads=0;f.overrides.set('/v1/release-receipts/'+f.sample.row.id,async()=>{reads++;started.resolve();await reply.promise;throw Error('Old private download failure');});
+ const old=f.element('receipt-list').children[0].children.at(-1),pending=old.fire('click');await started.promise;await f.element('receipts-refresh').fire('click');f.element('status').textContent='Fresh receipt list';reply.resolve();await pending;assert.equal(f.element('status').textContent,'Fresh receipt list');
+ await old.fire('click');assert.equal(reads,1);assert.equal(f.downloads.length,0);
+});
+
+test('an old workspace export button cannot issue a request after logout and new login',async()=>{
+ const f=await receiptInspectionFixture(),old=f.element('receipt-list').children[0].children.at(-1);let reads=0;f.overrides.set('/v1/release-receipts/'+f.sample.row.id,()=>{reads++;return f.sample.data;});await f.element('logout-button').fire('click');await f.element('login-form').fire('submit');await old.fire('click');assert.equal(reads,0);assert.equal(f.downloads.length,0);
+ await f.element('receipt-list').children[0].children.at(-1).fire('click');assert.equal(reads,1);assert.equal(f.downloads.length,1);
+});
+
+test('appending receipt pages keeps an already requested export valid',{timeout:5000},async()=>{
+ const f=await receiptInspectionFixture(),reply=deferred(),started=deferred();f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[f.sample.row],nextCursor:'next'}));f.overrides.set('/v1/release-receipts?limit=25&cursor=next',()=>({items:[],nextCursor:null}));await f.element('receipts-refresh').fire('click');f.overrides.set('/v1/release-receipts/'+f.sample.row.id,()=>{started.resolve();return reply.promise;});
+ const pending=f.element('receipt-list').children[0].children.at(-1).fire('click');await started.promise;await f.element('receipts-more').fire('click');reply.resolve(f.sample.data);await pending;assert.equal(f.downloads.length,1);assert.equal(verifyReceipt(JSON.parse(await f.downloads[0].text()),f.sample.publicKey).signatureVerified,true);
+});
 test('a delayed gate digest cannot restore a passing decision after the selected execution changes',async()=>{
  const reply=deferred();let digests=0;const f=await fixture({digest:async(...args)=>{digests++;await reply.promise;return webcrypto.subtle.digest(...args);}});f.runs.A=execution('A');await f.view('B');f.overrides.set('/v1/release-gate',()=>signedUiReceipt().report);
  const pending=f.element('manual-gate-check').fire('click');await settle();assert.equal(digests,1);await f.view('A');reply.resolve();await pending;assert.match(f.element('snapshot').textContent,/실행 A/);assert.ok(!f.element('manual-gate-output').textContent.includes('최종 게이트: 통과'));assert.equal(f.element('current-receipt-download').disabled,true);
