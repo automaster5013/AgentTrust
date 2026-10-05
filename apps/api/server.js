@@ -12,6 +12,7 @@ import { pool } from './database.js';
 import { validateDatabaseRole } from './role-guard.js';
 import { parseJson } from '../../packages/contracts/json.js';
 import { InputError } from '../../packages/contracts/index.js';
+import {RunQuotaError} from '../../packages/contracts/run-quota-error.js';
 import { sampleDataset } from '../../packages/contracts/samples.js';
 import packageMetadata from '../../package.json' with {type:'json'};
 
@@ -118,7 +119,7 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       throw new InputError('Endpoint not found.',404);
     } catch(error) {
       if(!(error instanceof InputError)) console.error(`API request failed (${error.code||'runtime'}), trace ${traceId}.`);
-      if(!res.destroyed&&!res.headersSent)send(error instanceof InputError?error.status:503,{error:error instanceof InputError?error.message:'Service unavailable.',traceId});
+      if(!res.destroyed&&!res.headersSent)send(error instanceof InputError?error.status:503,{error:error instanceof InputError?error.message:'Service unavailable.',traceId,...(error instanceof RunQuotaError?{code:error.code}:{})});
     } finally {completeWork();}
   });
   server.maxConnections=128;

@@ -7,6 +7,7 @@ import { pageResult } from './pagination.js';
 
 export const terminalStates = new Set(['succeeded','failed','cancelled','timed_out']);
 import { incomplete } from '../../packages/evaluator/outcome.js';
+import {RunQuotaError} from '../../packages/contracts/run-quota-error.js';
 export { incomplete };
 function uuid(value) { if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value || '')) throw new InputError('Invalid resource id.'); return value; }
 function trustedVersion(row){
@@ -113,7 +114,8 @@ export class PgStore {
         return {run:publicRun(previous.rows[0]),replay:true};
       }
       const count=await client.query("SELECT count(*) AS total,count(*) FILTER(WHERE state IN ('queued','running')) AS active FROM agenttrust.runs WHERE organization_id=$1",[context.organizationId]);
-      if(Number(count.rows[0].total)>=10000||Number(count.rows[0].active)>=10) throw new InputError('Organization execution quota reached.',429);
+      if(Number(count.rows[0].total)>=10000)throw new RunQuotaError('history');
+      if(Number(count.rows[0].active)>=10)throw new RunQuotaError('active');
       const snapshot={};
       for(const kind of ['agent','dataset','policy']) {
         const result=await client.query('SELECT * FROM agenttrust.versions WHERE id=$1 AND organization_id=$2 AND project_id=$3 AND kind=$4',[request[`${kind}VersionId`],context.organizationId,context.projectId,kind]);

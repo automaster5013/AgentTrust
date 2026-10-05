@@ -220,7 +220,9 @@ async function api(path, options = {}) {
   }
   if(epoch!==scopeEpoch)throw new Error('워크스페이스가 변경되어 이전 요청의 결과를 표시하지 않습니다.');
   if (!response.ok){
-    const error=new Error(typeof data?.error==='string'&&data.error.length<=500?data.error:'요청을 완료하지 못했습니다.');
+    const executionLimits={run_active_limit:'진행 중인 평가가 많습니다. 실행 기록에서 완료 상태를 확인한 뒤 다시 요청하세요.',run_history_limit:'조직의 실행 기록 보관 한도에 도달했습니다. 기존 기록은 보존되며 관리자에게 운영 한도를 문의하세요.'};
+    const guidance=response.status===429&&Object.hasOwn(executionLimits,data?.code)?executionLimits[data.code]:null;
+    const error=new Error(guidance||(typeof data?.error==='string'&&data.error.length<=500?data.error:'요청을 완료하지 못했습니다.'));
     if(response.status===401){showLogin();error.authenticationSequence=authenticationSequence;error.authenticationEpoch=scopeEpoch;}
     throw error;
   }

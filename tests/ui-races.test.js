@@ -19,6 +19,15 @@ class Element{
 }
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return {promise,resolve};};
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
+for(const [code,expected] of [['run_active_limit',/진행 중인 평가/],['run_history_limit',/기록 보관 한도/]])test(`execution ${code} offers the matching recovery guidance without locking the form`,async()=>{
+ const f=await fixture();f.overrides.set('/v1/runs',()=>new Response(JSON.stringify({error:'Organization execution quota reached.',code}),{status:429,headers:{'Content-Type':'application/json'}}));
+ await f.element('run-form').fire('submit');assert.match(f.element('status').textContent,expected);assert.equal(f.element('run-button').disabled,false);assert.equal(f.element('history-body').children.length,2);
+});
+test('execution guidance does not reinterpret unrelated status or unknown codes',async()=>{
+ const f=await fixture();for(const [status,code] of [[403,'run_active_limit'],[429,'unknown_limit']]){
+  f.overrides.set('/v1/runs',()=>new Response(JSON.stringify({error:'Synthetic other restriction',code}),{status,headers:{'Content-Type':'application/json'}}));await f.element('run-form').fire('submit');assert.equal(f.element('status').textContent,'Synthetic other restriction');assert.equal(f.element('run-button').disabled,false);
+ }
+});
 
 test('obsolete dataset copy failure preserves a new workspace draft and status',async()=>{
  const f=await fixture(),reply=deferred();f.overrides.set('/v1/versions/dataset',async()=>{await reply.promise;throw Error('Old synthetic copy failure');});

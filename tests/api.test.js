@@ -45,6 +45,30 @@ async function waitFor(store,context,id,predicate,limit=5000) {
   throw new Error('Run did not reach expected state.');
 }
 
+test('active execution capacity reports its reason and still replays an existing request',async t=>{
+ const f=await fixture(t),key=randomUUID(),body=f.input();
+ const first=await f.request('/v1/runs',{method:'POST',json:body,extra:{'Idempotency-Key':key}});assert.equal(first.status,202);const original=await first.json();
+ const requests=await Promise.all(Array.from({length:10},()=>f.request('/v1/runs',{method:'POST',json:body,extra:{'Idempotency-Key':randomUUID()}})));
+ assert.equal(requests.filter(r=>r.status===202).length,9);const blocked=requests.find(r=>r.status===429);assert.ok(blocked);assert.equal((await blocked.json()).code,'run_active_limit');
+ const replay=await f.request('/v1/runs',{method:'POST',json:body,extra:{'Idempotency-Key':key}});assert.equal(replay.status,200);assert.equal((await replay.json()).id,original.id);
+ const counts=await f.owner.query('SELECT count(*)::int AS total FROM agenttrust.runs WHERE organization_id=$1',[f.first.organizationId]);assert.equal(counts.rows[0].total,10);
+ const viewer=await f.request('/v1/runs',{role:'viewer',method:'POST',json:body,extra:{'Idempotency-Key':randomUUID()}});assert.equal(viewer.status,403);assert.equal((await viewer.json()).code,undefined);
+ const foreign=await f.store.catalog(f.contexts.other_admin),other=await f.request('/v1/runs',{role:'other_admin',method:'POST',json:{agentVersionId:foreign.agent[0].id,datasetVersionId:foreign.dataset[0].id,policyVersionId:foreign.policy[0].id},extra:{'Idempotency-Key':randomUUID()}});assert.equal(other.status,202);
+});
+
+test('retained execution capacity is distinct and does not reject a matching idempotent replay',async t=>{
+ const f=await fixture(t),key=randomUUID(),body=f.input(),first=await f.request('/v1/runs',{method:'POST',json:body,extra:{'Idempotency-Key':key}});assert.equal(first.status,202);const original=await first.json();
+ const client=await f.owner.connect(),outcome=incomplete('cancelled','Synthetic retained-capacity fixture');
+ try{await client.query('BEGIN');
+  await client.query(`INSERT INTO agenttrust.runs(id,organization_id,project_id,agent_version_id,dataset_version_id,policy_version_id,idempotency_key,fingerprint,snapshot,snapshot_hash,timeout_ms,case_budget,max_attempts,deadline)
+   SELECT gen_random_uuid(),organization_id,project_id,agent_version_id,dataset_version_id,policy_version_id,'quota-'||gen_random_uuid()::text,fingerprint,snapshot,snapshot_hash,timeout_ms,case_budget,max_attempts,deadline FROM agenttrust.runs CROSS JOIN generate_series(1,9999) WHERE id=$1`,[original.id]);
+  await client.query("UPDATE agenttrust.runs SET state='cancelled',outcome=$2,result_hash=$3,completed_at=clock_timestamp(),lease_token=NULL,lease_until=NULL WHERE organization_id=$1 AND state='queued'",[f.first.organizationId,outcome,hash({results:outcome.results,gate:outcome.gate})]);await client.query('COMMIT');
+ }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+ const blocked=await f.request('/v1/runs',{method:'POST',json:body,extra:{'Idempotency-Key':randomUUID()}});assert.equal(blocked.status,429);assert.equal((await blocked.json()).code,'run_history_limit');
+ const replay=await f.request('/v1/runs',{method:'POST',json:body,extra:{'Idempotency-Key':key}});assert.equal(replay.status,200);assert.equal((await replay.json()).id,original.id);
+ const counts=await f.owner.query("SELECT count(*)::int AS total,count(*) FILTER(WHERE state IN ('queued','running'))::int AS active FROM agenttrust.runs WHERE organization_id=$1",[f.first.organizationId]);assert.deepEqual(counts.rows[0],{total:10000,active:0});
+});
+
 test('authenticated HTTP flow persists versions and evaluates all mock modes',async t=>{
   const f=await fixture(t);
   const sample=await(await f.request('/v1/sample-dataset')).json();
