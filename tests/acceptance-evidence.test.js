@@ -1,0 +1,39 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile,writeFile,mkdtemp,rm} from 'node:fs/promises';
+import {join,resolve,sep} from 'node:path';
+import {pathToFileURL} from 'node:url';
+import {spawnSync} from 'node:child_process';
+import {randomUUID,generateKeyPairSync,createHash} from 'node:crypto';
+import {hash} from '../packages/contracts/hash.js';
+import {evaluate} from '../packages/evaluator/index.js';
+import {releaseGate} from '../packages/evaluator/comparison.js';
+import {ReceiptSigner} from '../packages/receipts/signature.js';
+import {acceptanceModes} from '../scripts/acceptance-profile.mjs';
+import {verifyAcceptanceEvidence,writeAcceptanceEvidence,readAcceptanceEvidence} from '../scripts/acceptance-evidence.mjs';
+const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
+async function fixture(t){
+ const profile=JSON.parse(await readFile(new URL('../examples/connector-contract/acceptance-profile.json',import.meta.url),'utf8')),scope={organizationId:randomUUID(),projectId:randomUUID()},keys=generateKeyPairSync('ed25519'),signer=new ReceiptSigner(keys.privateKey.export({type:'pkcs8',format:'pem'})),trustedPem=signer.publicMetadata().publicKey,version=(data)=>({...data,id:randomUUID(),contentHash:hash(data),createdAt:'2026-10-06T00:00:00.000Z'}),dataset=version(profile.dataset),policy=version(profile.policy),runs=['compliant',...acceptanceModes.map(x=>x[0])].map(mode=>{const snapshot={agent:version({name:'Synthetic '+mode,mode}),dataset,policy},outcome=evaluate(snapshot);return {id:randomUUID(),...scope,agentVersionId:snapshot.agent.id,datasetVersionId:dataset.id,policyVersionId:policy.id,snapshot,snapshotHash:hash(snapshot),...outcome,resultHash:hash({results:outcome.results,gate:outcome.gate}),completedAt:'2026-10-06T00:00:00.000Z'};});
+ const reviews=['approved','rejected'].map((decision,i)=>{const payload={schemaVersion:1,id:randomUUID(),...scope,runId:runs[1].id,actorId:randomUUID(),decision,comment:'Synthetic review private-comment-canary',createdAt:`2026-10-06T00:00:${i===0?'00':'30'}.000Z`,snapshotHash:runs[1].snapshotHash,resultHash:runs[1].resultHash};return {...payload,reviewHash:hash(payload)};});
+ const receipts=Array.from({length:7},(_,i)=>{const run=runs[i<3?1:i-1],request={candidateRunId:run.id,baselineRunId:runs[0].id,agentVersionId:run.agentVersionId,datasetVersionId:run.datasetVersionId,policyVersionId:run.policyVersionId},review=i===1||i===2?{...reviews[i-1],actorValid:true}:undefined,result=releaseGate(run,request,runs[0],Date.parse('2026-10-06T00:01:00.000Z'),review),artifact={schemaVersion:1,receiptId:randomUUID(),...scope,checkedAt:'2026-10-06T00:01:00.000Z',request,result,evidence:Object.fromEntries([['candidate',run],['baseline',runs[0]]].map(([name,r])=>[name,{runId:r.id,snapshotHash:r.snapshotHash,resultHash:r.resultHash}]))};return {...result,artifact,artifactHash:hash(artifact),signature:signer.sign(artifact)};});
+ const report={completed:true,cleanupSucceeded:true,sessionLoggedOut:true},directories=[],dir=await mkdtemp(join(process.cwd(),'.local','acceptance-evidence-test-'));directories.push(dir);t.after(async()=>{for(const p of directories){assert.ok(resolve(p).startsWith(resolve(process.cwd(),'.local')+sep));await rm(p,{recursive:true,force:true});}});
+ const input={profile,runs,receipts,reviews,report,trustedPem},bundle=await writeAcceptanceEvidence(input);directories.push(bundle.directory);const manifest=JSON.parse(await readFile(join(bundle.directory,'manifest.json'),'utf8'));return {input,bundle,manifest,dir,directories};
+}
+test('acceptance bundle verifies criteria, six complete outcomes, seven signatures and two historical reviews',async t=>{
+ const f=await fixture(t),r=await readAcceptanceEvidence(f.bundle.directory,f.input.trustedPem,f.bundle.manifestSha256);assert.equal(r.status,'passed');assert.equal(r.runIntegrityVerified,6);assert.equal(r.cryptographicSignaturesVerified,7);assert.equal(r.linkedReviewsVerified,2);assert.equal(r.criteriaBoundToSignedRunEvidence,true);assert.equal(r.expectedManifestDigestMatched,true);assert.equal(r.currentReleasePermissionVerified,false);assert.equal(r.historicalEvidenceOnly,true);assert.ok(!JSON.stringify(r).includes('canary'));
+});
+test('offline acceptance verification rejects altered criteria, outcomes, scope, duplicated evidence and review bodies',async t=>{
+ const f=await fixture(t);for(const mutate of [v=>{v.profile.dataset.name='Altered criteria';v.manifest.profileHash=hash(v.profile);},v=>v.runs[1].summary.passRate=0.2,v=>v.runs[1].organizationId=randomUUID(),v=>v.runs[2]=v.runs[1],v=>v.receipts[1]=v.receipts[0],v=>v.receipts[1].signature.value='invalid',v=>v.reviews[0].comment='Altered review',v=>v.manifest.steps.reverse()]){const v=structuredClone({manifest:f.manifest,...f.input});mutate(v);assert.throws(()=>verifyAcceptanceEvidence(v));}
+ const untrusted=generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'});await assert.rejects(readAcceptanceEvidence(f.bundle.directory,untrusted,f.bundle.manifestSha256));
+});
+test('acceptance directory reader rejects changed hashes, extras, omissions and unsafe inventory paths',async t=>{
+ const f=await fixture(t);await assert.rejects(readAcceptanceEvidence(f.bundle.directory,f.input.trustedPem,'0'.repeat(64)));const extra=join(f.bundle.directory,'extra.json');await writeFile(extra,'{}');await assert.rejects(readAcceptanceEvidence(f.bundle.directory,f.input.trustedPem,f.bundle.manifestSha256));await rm(extra);
+ const path=join(f.bundle.directory,'profile.json'),original=await readFile(path);await writeFile(path,Buffer.concat([original,Buffer.from(' ')]));await assert.rejects(readAcceptanceEvidence(f.bundle.directory,f.input.trustedPem,f.bundle.manifestSha256));await writeFile(path,original);
+ const manifest=structuredClone(f.manifest);manifest.files[0].file='../private-path-canary.json';const bytes=Buffer.from(JSON.stringify(manifest));await writeFile(join(f.bundle.directory,'manifest.json'),bytes);await assert.rejects(readAcceptanceEvidence(f.bundle.directory,f.input.trustedPem,digest(bytes)));await writeFile(join(f.bundle.directory,'manifest.json'),JSON.stringify(f.manifest,null,2)+'\n');await rm(join(f.bundle.directory,'run-6.json'));await assert.rejects(readAcceptanceEvidence(f.bundle.directory,f.input.trustedPem,f.bundle.manifestSha256));
+});
+test('actual acceptance verifier runs without network APIs and emits bounded failure metadata',async t=>{
+ const f=await fixture(t),key=join(f.dir,'trusted.pem'),guard=join(f.dir,'guard.mjs');await writeFile(key,f.input.trustedPem);await writeFile(guard,"import https from 'node:https';import dns from 'node:dns';import {syncBuiltinESMExports} from 'node:module';https.request=()=>{throw Error('Network prohibited');};dns.promises.lookup=()=>{throw Error('DNS prohibited');};globalThis.fetch=()=>{throw Error('Network prohibited');};syncBuiltinESMExports();");const args=['--import',pathToFileURL(guard).href,'scripts/verify-acceptance-evidence.mjs',f.bundle.directory,key,f.bundle.manifestSha256];let r=spawnSync(process.execPath,args,{encoding:'utf8',windowsHide:true,timeout:10000});assert.equal(r.status,0);assert.equal(JSON.parse(r.stdout).status,'passed');assert.equal(r.stderr,'');args[args.length-1]='private-digest-canary';r=spawnSync(process.execPath,args,{encoding:'utf8',windowsHide:true,timeout:10000});assert.equal(r.status,2);assert.equal(JSON.parse(r.stdout).status,'blocked');assert.ok(!r.stdout.includes('canary'));assert.equal(r.stderr,'');
+});
+test('incomplete or unsuccessfully cleaned acceptance demonstrations cannot export evidence',async t=>{
+ const f=await fixture(t);for(const field of ['completed','cleanupSucceeded','sessionLoggedOut'])await assert.rejects(writeAcceptanceEvidence({...f.input,report:{...f.input.report,[field]:false}}));
+});
