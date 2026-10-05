@@ -11,7 +11,7 @@ test('actual sustained command logs out issued sessions when login evidence is m
  const repository=process.cwd(),dir=await mkdtemp(join(repository,'.local','sustained-cleanup-test-'));
  await mkdir(join(dir,'.local','receipt-signing'),{recursive:true});
  const secret='synthetic-soak-key-canary',session='synthetic-soak-session-canary';
- await writeFile(join(dir,'.local','credentials.json'),JSON.stringify({organizations:[{credentials:[{role:'admin',token:secret}]}]}));
+ await writeFile(join(dir,'.local','credentials.json'),JSON.stringify({organizations:[{organizationId:'00000000-0000-4000-8000-000000000000',projectId:'10000000-0000-4000-8000-000000000000',credentials:[{role:'admin',token:secret}]}]}));
  await writeFile(join(dir,'.local','receipt-signing','public.pem'),'synthetic-unused-public-key');
  let status=200,body='{invalid',logout=0,login=0;
  const server=createServer(async(req,res)=>{
