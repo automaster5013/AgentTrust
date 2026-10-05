@@ -33,3 +33,23 @@ test('portfolio organization selector rejects malformed, repeated and unavailabl
  const f=await fixture(t);let requests=0;const server=createServer((req,res)=>{requests++;res.end('{}');});server.listen(0,'127.0.0.1');await once(server,'listening');t.after(async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));});
  for(const args of [['--organization-index','01'],['--organization-index','-1'],['--organization-index','100'],['--organization-index'],['--organization-index','1','--organization-index','0'],['--organization-index','2'],['--organization-index','1','--compare','--compare']]){const r=await run(f,server.address().port,'portfolio-demo.mjs',args);assert.equal(r.code,1);const summary=JSON.parse(r.stdout.trim().split('\n').at(-1));assert.equal(summary.status,'blocked');assert.equal(summary.sessionLoggedOut,true);}assert.equal(requests,0);
 });
+
+test('role demo selects primary roles from organization one and an independent outsider from organization zero',async t=>{
+ const f=await fixture(t),selected=f.organizations[1],other=f.organizations[0];let logins=0,logouts=0,unexpected=0,wrongOutsider;
+ const tokens=new Map(f.organizations.flatMap((o,index)=>o.credentials.map(c=>[c.token,{...o,role:c.role,index}])));
+ const server=createServer(async(req,res)=>{res.setHeader('Content-Type','application/json');
+  if(req.url==='/v1/auth/login'){let raw='';for await(const chunk of req)raw+=chunk;const expected=[selected.credentials[0],selected.credentials[1],selected.credentials[2],other.credentials[2]][logins%4];const token=JSON.parse(raw).accessKey;assert.equal(token,expected.token);const scope=tokens.get(token);assert.equal(req.headers['x-agenttrust-project'],scope.projectId);logins++;res.setHeader('Set-Cookie',`synthetic-role-${scope.index}-${scope.role}=value; HttpOnly`);res.end('{}');return;}
+  const match=/^synthetic-role-([01])-(admin|editor|viewer)=value$/.exec(req.headers.cookie);assert.ok(match);const o=f.organizations[Number(match[1])];assert.equal(req.headers['x-agenttrust-project'],o.projectId);
+  if(req.url==='/v1/me'){res.end(JSON.stringify({organizationId:o.organizationId,projectId:o.projectId,role:match[2],...(o===other?wrongOutsider:{})}));return;}
+  if(req.url==='/v1/auth/logout'){logouts++;res.end('{}');return;}unexpected++;res.writeHead(500);res.end('{}');
+ });server.listen(0,'127.0.0.1');await once(server,'listening');t.after(async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));});
+ for(const changes of [{organizationId:selected.organizationId},{projectId:selected.projectId},{role:'admin'}]){
+  wrongOutsider=changes;const result=await run(f,server.address().port,'portfolio-roles.mjs',['--organization-index','1']);assert.equal(result.code,1);const summary=JSON.parse(result.stdout.trim().split('\n').at(-1)),raw=await readFile(join(f.dir,summary.reportPath),'utf8'),report=JSON.parse(raw);assert.equal(report.completed,false);assert.equal(report.sessionsLoggedOut,true);assert.equal(report.organizationIndex,1);assert.equal(report.organizationId,selected.organizationId);assert.equal(report.outsiderOrganizationId,other.organizationId);assert.equal(report.steps?.length??0,0);for(const secret of tokens.keys())assert.ok(!raw.includes(secret));assert.ok(!raw.includes('synthetic-role-'));
+ }
+ assert.equal(logins,12);assert.equal(logouts,12);assert.equal(unexpected,0);
+});
+
+test('role organization selector refuses missing or duplicated choices without authenticating',async t=>{
+ const f=await fixture(t);let requests=0;const server=createServer((req,res)=>{requests++;res.end('{}');});server.listen(0,'127.0.0.1');await once(server,'listening');t.after(async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));});
+ for(const args of [['--organization-index','2'],['--organization-index','01'],['--organization-index'],['--organization-index','0','--organization-index','1'],['--compare']]){const r=await run(f,server.address().port,'portfolio-roles.mjs',args);assert.equal(r.code,1);const summary=JSON.parse(r.stdout.trim().split('\n').at(-1));assert.equal(summary.status,'blocked');assert.equal(summary.sessionsLoggedOut,true);}assert.equal(requests,0);
+});
