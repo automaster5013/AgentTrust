@@ -1,6 +1,6 @@
 # 구현된 시스템 아키텍처
 
-v0.132의 구현 기준. 실제 코드와 로컬 Docker·GitHub CI에서 검증한 구조를 설명한다. 초기의 TypeScript·독립 객체 저장소·서명 웹훅 제안은 현재 구현에 포함되지 않는다. 제품 목표는 [제품 문서](product.md), 시연은 [포트폴리오 시연](portfolio-demo.md), 설계 판단과 검증 근거는 [기술 설명](portfolio-engineering.md)을 따른다.
+v0.133의 구현 기준. 실제 코드와 로컬 Docker·GitHub CI에서 검증한 구조를 설명한다. 초기의 TypeScript·독립 객체 저장소·서명 웹훅 제안은 현재 구현에 포함되지 않는다. 제품 목표는 [제품 문서](product.md), 시연은 [포트폴리오 시연](portfolio-demo.md), 설계 판단과 검증 근거는 [기술 설명](portfolio-engineering.md)을 따른다.
 
 ## 실행 구성과 경계
 
@@ -22,6 +22,8 @@ flowchart LR
 런타임은 Node.js 24, 웹은 HTML/CSS/JavaScript ESM이다. [Compose](../compose.yaml)는 API·DB·워커 세 서비스를 실행한다. API와 DB의 호스트 포트는 기본적으로 loopback에만 노출된다. 워커는 internal backend 네트워크만 사용하며 기본 외부 연결이 없다. 원격 HTTPS 어댑터는 [통제 조건과 opt-in 절차](release-integration.md)를 따르며 실제 고객 대상 호출은 검증하지 않았다.
 
 API는 로그인·조직/프로젝트 범위·역할·입력 계약·불변 버전·평가 요청·결과 조회·검토·최종 게이트를 처리한다. 워커가 평가 결과를 확정하고 API가 임의의 평가 결과를 통과로 저장하지 않는다. 평가 근거는 현재 PostgreSQL JSONB에 저장한다. 독립 객체 저장소와 임의 코드 실행은 없다.
+
+실행 목록은 조직·프로젝트 범위에서 생성 시각과 UUID의 내림차순 커서를 사용한다. [마이그레이션 020](../infra/migrations/020_run_history_index.sql)의 비고유 인덱스가 이 순서를 지원한다. 목록에 큰 평가 스냅샷을 포함하지 않으며 권한·RLS·큐 점유의 의미는 유지한다. 인덱스의 추가 저장·쓰기 비용과 실제 조회 표본은 [기술 설명](portfolio-engineering.md#실행-이력-인덱스와-복구--v0133)에 기록했다.
 
 DB 소유자 역할은 준비·마이그레이션에 사용한다. API 역할은 조직 RLS와 제한된 권한을 적용하며 인증 전에는 제한된 함수로 인증 상태를 조회한다. 워커는 조직을 가로지르는 큐 처리를 위해 별도 BYPASSRLS 역할을 사용하되 필요한 테이블·작업 권한으로 제한한다. 워커가 조직 RLS로 격리된다는 의미는 아니다. 역할·프로젝트 검사와 DB 제약을 함께 사용한다.
 
