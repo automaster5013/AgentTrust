@@ -121,3 +121,22 @@ flowchart LR
 | 복구·소스 전달 | [recovery.mjs](../scripts/recovery.mjs), [workflow](../.github/workflows/validate.yml) |
 
 SSO/OIDC·실제 고객 모델·고객 데이터 보존/삭제 정책·독립 객체 저장소·2인 승인・상용 서버 운영은 다음 범위다. 구체적인 외부 대상과 운영 요구가 정해진 뒤 구현과 검증을 분리해 진행한다.
+
+## 수용 기준 준비와 독립 증거 — v0.159
+
+```mermaid
+flowchart LR
+  Profile[공개 합성 수용 프로필] --> Check[인증 없는 오프라인 기준 점검]
+  Profile --> Draft[인증된 프로젝트 GET으로 화면 초안 준비]
+  Draft --> Register[사용자가 새 불변 버전 등록·선택]
+  Profile --> Demo[선택 조직 용량·기준 해시 확인]
+  Demo --> Register
+  Register --> Runs[고정 버전 평가와 승인·반려]
+  Runs --> Signed[서명된 최종 게이트 기록]
+  Signed --> Export[프로필·실행·기록·검토 묶음]
+  Export --> Offline[외부 manifest 해시와 신뢰 키로 독립 검증]
+```
+
+[수용 프로필 검증](../packages/evaluator/acceptance-profile.js)은 데이터셋·정책 계약과 다섯 모의 동작의 기대 상태·판정을 함께 검사한다. [초안 준비](../apps/web/app.js)는 읽기 요청만 사용하며 준비 중 편집하거나 프로젝트를 바꾸면 이전 응답을 적용하지 않는다. [실제 합성 시연](../scripts/acceptance-scenario.mjs)은 조직 전체 등록 용량과 재사용 계획을 확인하고 저장된 불변 기준의 내용 해시를 검증한다.
+
+[독립 증거 검증](../scripts/acceptance-evidence.mjs)은 프로필의 데이터셋·정책 해시를 여섯 실행의 스냅샷과 연결하고, 실제 규칙 결과·요약·서명 기록 일곱 개·원래 검토 두 개를 다시 검사한다. 기준 점검이나 과거 증거 검증이 현재 배포 권한을 생성하지 않는다. 등록·평가·현재 최종 게이트는 각각의 서버 검사를 따른다.

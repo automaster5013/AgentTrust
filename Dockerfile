@@ -4,5 +4,6 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
 COPY apps ./apps
 COPY packages ./packages
+COPY examples ./examples
 USER node
 CMD ["node", "apps/api/server.js"]

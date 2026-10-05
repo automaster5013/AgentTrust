@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {evaluateRecordedConnector} from './connector-replay.js';
 import {compareRecordedConnectors} from './connector-compare.js';
 import {validateAcceptanceProfile} from './acceptance-profile.js';
+import packagedAcceptanceProfile from '../../examples/connector-contract/acceptance-profile.json' with {type:'json'};
 import {sampleDataset} from '../contracts/samples.js';
 import {buildHttpsRequest,validateEvidence} from './https-adapter.js';
 const request=buildHttpsRequest({agent:{id:'synthetic-version'}},{id:'synthetic-case',input:'Synthetic connector request',mock:{private:'not-transmitted'},rules:[{private:'not-transmitted'}]});
@@ -10,6 +11,7 @@ assert.deepEqual(request,{caseId:'synthetic-case',input:'Synthetic connector req
 assert.deepEqual(validateEvidence({output:'Synthetic connector response',toolEvents:[]}),{output:'Synthetic connector response',toolEvents:[]});
 assert.throws(()=>buildHttpsRequest({agent:{id:'synthetic-version'}},{id:'synthetic-case',input:'\u0000'}));
 assert.throws(()=>validateEvidence({output:'Synthetic connector response'}));
+assert.equal(validateAcceptanceProfile(packagedAcceptanceProfile).dataset.cases.length,2);
 const acceptanceProfile={schemaVersion:1,synthetic:true,dataset:sampleDataset,policy:{name:'Synthetic acceptance criteria',minimumPassRate:1,requiresManualApproval:true}};assert.equal(validateAcceptanceProfile(acceptanceProfile).synthetic,true);assert.throws(()=>validateAcceptanceProfile({...acceptanceProfile,policy:{...acceptanceProfile.policy,minimumPassRate:0.8}}));
 const replayInput={dataset:sampleDataset,policy:{name:'Synthetic recorded criteria',minimumPassRate:1,requiresManualApproval:true},trace:{schemaVersion:1,agentVersionId:'synthetic-version',entries:sampleDataset.cases.map(item=>({request:{caseId:item.id,input:item.input,agentVersionId:'synthetic-version'},response:item.mock}))}};
 const replay=evaluateRecordedConnector(replayInput);assert.equal(replay.evaluationDecision,'pass');assert.equal(replay.deploymentAllowed,false);assert.equal(replay.recordedSourceVerified,false);
@@ -19,4 +21,4 @@ comparisonInput.candidate.entries[0].response.output='Synthetic regression';asse
 comparisonInput.candidate.entries=[];assert.equal(compareRecordedConnectors(comparisonInput).comparisonDecision,'inconclusive');
 replayInput.trace.entries=[];assert.equal(evaluateRecordedConnector(replayInput).evaluationDecision,'inconclusive');
 const version=JSON.parse(await readFile(new URL('../../package.json',import.meta.url),'utf8')).version;
-console.log(JSON.stringify({schemaVersion:1,purpose:'connector-contract-runtime-smoke',status:'passed',runtimeVersion:version,requestContractVerified:true,responseContractVerified:true,invalidContractsRejected:true,recordedReplayVerified:true,incompleteRecordedReplayRejected:true,recordedComparisonVerified:true,recordedRegressionBlocked:true,incompleteComparisonRejected:true,offlineAcceptanceProfileVerified:true,weakenedAcceptanceProfileRejected:true,recordedReplaySourceVerified:false,networkRequestsMade:0,releaseGateEvaluated:false,deploymentAllowed:false}));
+console.log(JSON.stringify({schemaVersion:1,purpose:'connector-contract-runtime-smoke',status:'passed',runtimeVersion:version,requestContractVerified:true,responseContractVerified:true,invalidContractsRejected:true,recordedReplayVerified:true,incompleteRecordedReplayRejected:true,recordedComparisonVerified:true,recordedRegressionBlocked:true,incompleteComparisonRejected:true,offlineAcceptanceProfileVerified:true,packagedAcceptanceProfileVerified:true,weakenedAcceptanceProfileRejected:true,recordedReplaySourceVerified:false,networkRequestsMade:0,releaseGateEvaluated:false,deploymentAllowed:false}));

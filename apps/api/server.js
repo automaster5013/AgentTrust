@@ -14,8 +14,11 @@ import { parseJson } from '../../packages/contracts/json.js';
 import { InputError } from '../../packages/contracts/index.js';
 import {RunQuotaError} from '../../packages/contracts/run-quota-error.js';
 import { sampleDataset } from '../../packages/contracts/samples.js';
+import acceptanceProfile from '../../examples/connector-contract/acceptance-profile.json' with {type:'json'};
+import {validateAcceptanceProfile} from '../../packages/evaluator/acceptance-profile.js';
 import packageMetadata from '../../package.json' with {type:'json'};
 
+validateAcceptanceProfile(acceptanceProfile);
 const webRoot=new URL('../web/',import.meta.url);
 const applicationVersion=packageMetadata.version;
 if(typeof applicationVersion!=='string'||!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(applicationVersion))throw new Error('Invalid application version.');
@@ -93,6 +96,7 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       if(req.method==='GET'&&versionMatch)return send(200,await store.getVersion(context,versionMatch[1]));
       if(req.method==='GET'&&path==='/v1/catalog') return send(200,await store.catalog(context));
       if(req.method==='GET'&&path==='/v1/operations')return send(200,await store.operations(context));
+      if(req.method==='GET'&&path==='/v1/sample-acceptance-profile'){if(requestUrl.search)throw new InputError('Unexpected sample profile query.',400);return send(200,validateAcceptanceProfile(acceptanceProfile));}
       if(req.method==='GET'&&path==='/v1/sample-dataset') return send(200,sampleDataset);
       if(req.method==='GET'&&path==='/v1/runs') return send(200,await store.listRuns(context,runPagination(requestUrl.searchParams,context)));
       if(req.method==='GET'&&path==='/v1/audit-events') return send(200,await store.auditEvents(context,auditPagination(requestUrl.searchParams,context)));

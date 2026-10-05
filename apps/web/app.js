@@ -25,7 +25,7 @@ function currentAuthentication(sequence,epoch,error){
   return sequence===authenticationSequence&&epoch===scopeEpoch||error?.authenticationSequence===authenticationSequence&&error?.authenticationEpoch===scopeEpoch;
 }
 let loading = false;
-let versionBusy=false;
+let versionBusy=false,acceptanceBusy=false;
 let workspaceMutation=null;
 let selectedRunId = null;
 let selectedRunSequence=0;
@@ -252,9 +252,10 @@ function updateButtons(){
   workspaceControls();
   const writer=actor&&actor.role!=='viewer';
   for(const [kind,id] of [['agent','agent'],['dataset','dataset-select'],['policy','policy']])$('inspect-'+kind).disabled=!$(id).value;
-  $('dataset-copy').disabled=!writer||!$('dataset-select').value;
+  $('dataset-copy').disabled=!writer||!$('dataset-select').value||acceptanceBusy;
+  $('acceptance-prepare').disabled=actor?.role!=='admin'||!activeProjectId||versionBusy||acceptanceBusy;
   $('run-button').disabled=!writer||loading||!$('agent').value||!$('dataset-select').value||!$('policy').value;
-  $('dataset-button').disabled=!writer||versionBusy;$('agent-create').disabled=!writer||versionBusy;$('policy-create').disabled=actor?.role!=='admin'||versionBusy;
+  $('dataset-button').disabled=!writer||versionBusy||acceptanceBusy;$('agent-create').disabled=!writer||versionBusy||acceptanceBusy;$('policy-create').disabled=actor?.role!=='admin'||versionBusy||acceptanceBusy;
 }
 function workspaceControls(){
   const busy=workspaceMutation!==null;
@@ -390,7 +391,7 @@ function clearProjectData(){
   cancelOperation=null;
   $('workspace-nav').hidden=true;$('nav-projects').hidden=true;
   operationsSequence++;$('operations-refresh').disabled=false;$('operations-status').textContent='';
-  reviewBusy=false;loading=false;versionBusy=false;workspaceMutation=null;workspaceControls();
+  reviewBusy=false;loading=false;versionBusy=false;acceptanceBusy=false;$('acceptance-draft-status').textContent='';workspaceMutation=null;workspaceControls();
   recentBaselineRuns=[];
   $('gate-baseline-enabled').checked=false;$('gate-baseline-id').value='';$('gate-baseline-id').disabled=true;
   lookupSequence++;lookupBusy=false;$('run-lookup-button').disabled=false;$('run-lookup-id').value='';$('run-lookup-status').textContent='';$('receipt-navigation-status').textContent='';
@@ -799,6 +800,20 @@ for(const [kind,selector] of [['agent','agent'],['dataset','dataset-select'],['p
     }catch(error){if(sequence===inspectionSequence)message(error.message,true);}
   });
 }
+function acceptanceDraftSnapshot(){return ['dataset-json','policy-name','policy-rate','policy-review-ttl'].map(id=>$(id).value).concat($('policy-manual').checked);}
+$('acceptance-prepare').addEventListener('click',async()=>{
+  if($('acceptance-prepare').disabled)return;const epoch=scopeEpoch,before=acceptanceDraftSnapshot();acceptanceBusy=true;updateButtons();$('acceptance-draft-status').textContent='합성 수용 기준 초안을 준비하고 있습니다…';
+  try{
+    const profile=await api('/v1/sample-acceptance-profile');if(epoch!==scopeEpoch)return;
+    const data=profile?.dataset,policy=profile?.policy;
+    if(profile?.schemaVersion!==1||profile?.synthetic!==true||!data||typeof data.name!=='string'||!data.name.trim()||data.name.length>100||!Array.isArray(data.cases)||data.cases.length!==2||data.cases.some(c=>!c||!Array.isArray(c.rules))||data.cases.reduce((n,c)=>n+c.rules.length,0)!==5||!policy||typeof policy.name!=='string'||!policy.name.trim()||policy.name.length>100||policy.minimumPassRate!==1||policy.requiresManualApproval!==true||!Number.isInteger(policy.manualApprovalTtlSeconds)||policy.manualApprovalTtlSeconds<60||policy.manualApprovalTtlSeconds>86400)throw Error('Invalid synthetic acceptance profile');
+    const serialized=JSON.stringify(data,null,2);if(new TextEncoder().encode(JSON.stringify(profile)).length>65536)throw Error('Oversized synthetic acceptance profile');
+    if(acceptanceDraftSnapshot().some((value,index)=>value!==before[index])){$('acceptance-draft-status').textContent='요청 중 수정한 초안을 유지했습니다. 필요하면 다시 준비하세요.';return;}
+    $('dataset-json').value=serialized;$('policy-name').value=policy.name;$('policy-rate').value='100';$('policy-manual').checked=true;$('policy-review-ttl').value=String(policy.manualApprovalTtlSeconds);$('policy-review-ttl').disabled=false;
+    $('acceptance-draft-status').textContent='데이터셋과 관리자 승인 정책 초안을 준비했습니다. 아직 저장되지 않았습니다. 사용할 버전을 등록·선택한 뒤 평가하세요.';
+  }catch{if(epoch===scopeEpoch)$('acceptance-draft-status').textContent='합성 수용 기준 초안을 준비하지 못했습니다. 기존 초안을 유지했습니다. 다시 준비하세요.';}
+  finally{if(epoch===scopeEpoch){acceptanceBusy=false;updateButtons();}}
+});
 $('dataset-copy').addEventListener('click',async()=>{
   if($('dataset-copy').disabled)return;const id=$('dataset-select').value,draft=$('dataset-json').value,epoch=scopeEpoch;$('dataset-copy').disabled=true;
   try{const version=await api('/v1/versions/'+id);if(epoch!==scopeEpoch||$('dataset-select').value!==id)return;
