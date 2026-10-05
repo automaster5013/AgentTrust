@@ -9,9 +9,11 @@ import {readTrustedReceiptKey} from './trusted-receipt-key.mjs';
 import {seededDemoScope,assertDemoSessionScope} from './demo-session-scope.mjs';
 import {parseDemoOptions} from './demo-options.mjs';
 import assert from 'node:assert/strict';
+import {checkDemoRunCapacity} from './demo-run-capacity.mjs';
 
 const reportPath='.local/portfolio-roles-'+randomUUID()+'.json',sessions=new Map();
 let base,report={schemaVersion:1,synthetic:true,completed:false,serverDeployed:false},organizationIndex=0,primaryScope,outsiderScope,sessionScopesVerified=false;
+let capacityPreflight={status:'not_reached'};
 async function call(role,path,data,expected){
   const session=sessions.get(role);if(!session)throw Error('Missing local session');
   const response=await fetchLocalSmoke(base,path,{method:data?'POST':'GET',headers:{'Content-Type':'application/json','X-AgentTrust-Request':'local-ui','X-AgentTrust-Project':session.projectId,'Idempotency-Key':randomUUID(),...(session.cookie?{Cookie:session.cookie}:{})},...(data?{body:JSON.stringify(data)}:{})});
@@ -33,17 +35,20 @@ try{
     assertDemoSessionScope(await call(role,'/v1/me'),scope,actualRole);
   }
   sessionScopesVerified=true;
+  capacityPreflight={status:'invalid_capacity',requestedRuns:1};
+  capacityPreflight=checkDemoRunCapacity(await call('admin','/v1/operations'),primaryScope,1);assert.equal(capacityPreflight.status,'passed');
   report=await runRoleScenario({call,verify:r=>verifyReceipt(r,publicKey),onStep:s=>console.log(JSON.stringify(s)),wait:async id=>{
     const deadline=Date.now()+45000;while(Date.now()<deadline){const r=await call('editor','/v1/runs/'+id);if(!['queued','running'].includes(r.state))return r;await sleep(100);}throw Error('Local role evaluation timeout');
   }});
 }catch{report.completed=false;report.failed=true;}
 finally{
+  report.capacityPreflight=capacityPreflight;
   if(primaryScope)Object.assign(report,{organizationIndex,...primaryScope,sessionScopesVerified,...(outsiderScope?{outsiderOrganizationId:outsiderScope.organizationId,outsiderProjectId:outsiderScope.projectId}:{})});
   report.sessionsLoggedOut=true;
   for(const [role,session] of sessions)if(session.cookie)try{await call(role,'/v1/auth/logout',{});}catch{report.sessionsLoggedOut=false;}
   report.finishedAt=new Date().toISOString();
   try{await writeFile(reportPath,JSON.stringify(report,null,2)+'\n',{flag:'wx',mode:0o600});}catch{report.reportWriteFailed=true;}
   const passed=report.completed===true&&report.cleanupSucceeded===true&&report.sessionsLoggedOut&&!report.reportWriteFailed;
-  console.log(JSON.stringify({status:passed?'passed':'blocked',synthetic:true,steps:report.steps?.length||0,cleanupSucceeded:report.cleanupSucceeded===true,sessionsLoggedOut:report.sessionsLoggedOut,reportPath,serverDeployed:false}));
+  console.log(JSON.stringify({status:passed?'passed':'blocked',synthetic:true,organizationIndex,capacityPreflightStatus:capacityPreflight.status,steps:report.steps?.length||0,cleanupSucceeded:report.cleanupSucceeded===true,sessionsLoggedOut:report.sessionsLoggedOut,reportPath,serverDeployed:false}));
   if(!passed){console.error('Synthetic role demonstration did not complete. Check local setup and private report.');process.exitCode=1;}
 }

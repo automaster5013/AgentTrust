@@ -69,3 +69,32 @@ test('evidence organization selection and review/report option errors fail befor
  const f=await fixture(t);let requests=0;const server=createServer((req,res)=>{requests++;res.end('{}');});server.listen(0,'127.0.0.1');await once(server,'listening');t.after(async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));});
  for(const args of [['--organization-index','01'],['--organization-index'],['--organization-index','1','--organization-index','0'],['--with-report','--organization-index','1'],['--with-reviews','--with-reviews']]){const result=await run(f,server.address().port,'portfolio-evidence-smoke.mjs',args);assert.equal(result.code,1);assert.equal(result.stdout,'');}assert.equal(requests,0);
 });
+
+async function capacityFixture(t){
+ const f=await fixture(t);let operations,catalog=0,writes=0,logouts=0;const keys=new Map(f.organizations.flatMap((o,index)=>o.credentials.map(c=>[c.token,{...o,role:c.role,index}])));
+ const server=createServer(async(req,res)=>{res.setHeader('Content-Type','application/json');
+  if(req.url==='/v1/auth/login'){let raw='';for await(const chunk of req)raw+=chunk;const scope=keys.get(JSON.parse(raw).accessKey);assert.ok(scope);assert.equal(req.headers['x-agenttrust-project'],scope.projectId);res.setHeader('Set-Cookie',`synthetic-capacity-${scope.index}-${scope.role}=value; HttpOnly`);res.end('{}');return;}
+  const match=/^synthetic-capacity-([01])-(admin|editor|viewer)=value$/.exec(req.headers.cookie);assert.ok(match);const scope=f.organizations[Number(match[1])];assert.equal(req.headers['x-agenttrust-project'],scope.projectId);
+  if(req.url==='/v1/me'){res.end(JSON.stringify({organizationId:scope.organizationId,projectId:scope.projectId,role:match[2]}));return;}
+  if(req.url==='/v1/operations'){assert.equal(match[2],'admin');assert.equal(scope.organizationId,f.organizations[1].organizationId);res.end(JSON.stringify(operations));return;}
+  if(req.url==='/v1/auth/logout'){logouts++;res.end('{}');return;}
+  if(req.url==='/v1/catalog'){catalog++;res.writeHead(500);res.end('{}');return;}writes++;res.writeHead(500);res.end('{}');
+ });server.listen(0,'127.0.0.1');await once(server,'listening');t.after(async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));});
+ return {...f,port:server.address().port,set:value=>{operations=value;},counts:()=>({catalog,writes,logouts}),normal:{observedAt:'2026-10-05T00:00:00Z',executionCapacity:{scope:'organization',organizationId:f.organizations[1].organizationId,retained:{used:20,limit:10000,remaining:9980},active:{used:0,limit:10,remaining:10}}}};
+}
+test('portfolio demos preflight all planned runs, reject unusable scoped capacity without writes, and admit the exact observed boundary',async t=>{
+ const f=await capacityFixture(t),c=f.normal.executionCapacity;
+ for(const compare of [false,true]){
+  const requested=compare?6:4;
+  for(const [value,expected] of [[{...f.normal,executionCapacity:{...c,retained:{used:10000-requested+1,limit:10000,remaining:requested-1}}},'insufficient_retained'],[{...f.normal,executionCapacity:{...c,active:{used:10,limit:10,remaining:0}}},'no_active_slot'],[{...f.normal,executionCapacity:{...c,organizationId:f.organizations[0].organizationId}},'invalid_capacity'],[{},'invalid_capacity'],[{...f.normal,executionCapacity:{...c,retained:{used:10000-requested,limit:10000,remaining:requested}}},'passed']]){
+   f.set(value);const before=f.counts(),result=await run(f,f.port,'portfolio-demo.mjs',['--organization-index','1',...(compare?['--compare']:[])]);assert.equal(result.code,1);const summary=JSON.parse(result.stdout.trim().split('\n').at(-1)),report=JSON.parse(await readFile(join(f.dir,summary.reportPath),'utf8'));assert.equal(report.completed,false);assert.equal(report.sessionLoggedOut,true);assert.equal(report.capacityPreflight.status,expected);assert.equal(report.capacityPreflight.requestedRuns,requested);assert.equal(summary.capacityPreflightStatus,expected);assert.equal(f.counts().logouts,before.logouts+1);assert.equal(f.counts().catalog,before.catalog+(expected==='passed'?1:0));assert.equal(f.counts().writes,0);
+  }
+ }
+});
+
+test('role demo checks one planned run before policy mutation and closes every scoped session on capacity failure',async t=>{
+ const f=await capacityFixture(t),c=f.normal.executionCapacity;
+ for(const [value,expected] of [[{...f.normal,executionCapacity:{...c,retained:{used:10000,limit:10000,remaining:0}}},'insufficient_retained'],[{...f.normal,executionCapacity:{...c,active:{used:10,limit:10,remaining:0}}},'no_active_slot'],[{...f.normal,executionCapacity:{...c,retained:{used:-1,limit:10000,remaining:10001}}},'invalid_capacity']]){
+  f.set(value);const before=f.counts(),result=await run(f,f.port,'portfolio-roles.mjs',['--organization-index','1']);assert.equal(result.code,1);const summary=JSON.parse(result.stdout.trim().split('\n').at(-1)),report=JSON.parse(await readFile(join(f.dir,summary.reportPath),'utf8'));assert.equal(report.sessionsLoggedOut,true);assert.equal(report.completed,false);assert.equal(report.capacityPreflight.status,expected);assert.equal(report.capacityPreflight.requestedRuns,1);assert.equal(summary.capacityPreflightStatus,expected);assert.equal(f.counts().logouts,before.logouts+4);assert.equal(f.counts().writes,0);assert.equal(f.counts().catalog,0);
+ }
+});

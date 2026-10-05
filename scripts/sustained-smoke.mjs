@@ -7,7 +7,7 @@ import {pool} from '../apps/api/database.js';
 import {verifyReceipt} from '../packages/receipts/signature.js';
 import {readReleaseResponse} from './release-gate.mjs';
 import {seededDemoScope,assertDemoSessionScope} from './demo-session-scope.mjs';
-import {runLimits} from '../packages/contracts/run-quota-error.js';
+import {checkDemoRunCapacity} from './demo-run-capacity.mjs';
 const base=localSmokeBase();
 const options={cycles:5,intervalMs:10000,organizationIndex:0},seen=new Set();
 for(let i=2;i<process.argv.length;i+=2){
@@ -43,14 +43,7 @@ try{
  Object.assign(report,{organizationIndex:options.organizationIndex,...scope});
  await call('/v1/auth/login',{accessKey:key});assertDemoSessionScope(await call('/v1/me'),scope,'admin');report.sessionScopeVerified=true;
   report.capacityPreflight={status:'invalid_capacity',requestedRuns:options.cycles*9};
- const operations=await call('/v1/operations'),capacity=operations.executionCapacity;
- assert.equal(capacity?.scope,'organization');assert.equal(capacity.organizationId,scope.organizationId);assert.ok(Number.isFinite(Date.parse(operations.observedAt)));
- for(const [name,limit] of [['retained',runLimits.history],['active',runLimits.active]]){const value=capacity[name];assert.ok(value&&Number.isSafeInteger(value.used)&&value.used>=0);assert.equal(value.limit,limit);assert.equal(value.remaining,Math.max(0,limit-value.used));}
- assert.ok(capacity.active.used<=capacity.retained.used);
- Object.assign(report.capacityPreflight,{observedAt:operations.observedAt,retainedRemaining:capacity.retained.remaining,activeRemaining:capacity.active.remaining});
- if(capacity.retained.remaining<report.capacityPreflight.requestedRuns){report.capacityPreflight.status='insufficient_retained';throw Error('Requested sustained runs exceed observed retained capacity.');}
- if(capacity.active.remaining<1){report.capacityPreflight.status='no_active_slot';throw Error('No observed active execution slot.');}
- report.capacityPreflight.status='passed';
+ report.capacityPreflight=checkDemoRunCapacity(await call('/v1/operations'),scope,report.capacityPreflight.requestedRuns);assert.equal(report.capacityPreflight.status,'passed');
  const catalog=await call('/v1/catalog');inputs={agent:catalog.agent,dataset:catalog.dataset.find(d=>d.name==='Customer support safety · v1'),policy:catalog.policy.find(p=>!p.requiresManualApproval)};assert.ok(inputs.dataset&&inputs.policy);
  for(let cycle=0;cycle<report.targetCycles&&!stopping;cycle++){
   let candidate,regression;for(const [mode,state,decision] of [['compliant','succeeded','pass'],['regression','succeeded','block'],['forbidden_tool','succeeded','block'],['error','failed','inconclusive'],['missing_evidence','succeeded','inconclusive'],['unsafe_output','succeeded','block'],['slow','succeeded','pass']]){const done=await execute(mode,state,decision);if(mode==='compliant')candidate=done;if(mode==='regression')regression=done;}
