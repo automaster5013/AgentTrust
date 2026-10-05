@@ -404,6 +404,18 @@ test('filtered paginated evidence downloads the complete immutable run JSON',asy
 
 
 const reviewEntry=comment=>({id:comment,actorId:'synthetic-actor',createdAt:'2026-01-01T00:00:00Z',decision:'rejected',comment});
+for(const sample of [
+ {name:'audit',button:'audit-refresh',list:'audit-list',more:'audit-more',path:'/v1/audit-events?limit=25',row:{action:'Old synthetic audit',created_at:'2026-01-01T00:00:00Z',resource_id:'old'}},
+ {name:'CI key',button:'ci-refresh',list:'ci-key-list',more:'ci-more',path:'/v1/ci-credentials?limit=25',row:{id:'old',project_id:'project',name:'Old synthetic key',expires_at:'2099-01-01T00:00:00Z',revoked_at:null}},
+ {name:'session',button:'sessions-refresh',list:'session-list',more:'sessions-more',path:'/v1/sessions?limit=25',row:{id:'old',name:'Old synthetic session',role:'viewer',current:false,createdAt:'2026-01-01T00:00:00Z',expiresAt:'2099-01-01T00:00:00Z'}}
+])test(`failed pending ${sample.name} refresh clears obsolete rows and pagination`,async()=>{
+ const f=await fixture(),reply=deferred(),started=deferred();f.overrides.set(sample.path,()=>({items:[sample.row],nextCursor:'older',scope:'organization'}));await f.element(sample.button).fire('click');assert.equal(f.element(sample.more).disabled,false);
+ f.overrides.set(sample.path,async()=>{started.resolve();await reply.promise;throw Error('Synthetic full refresh failure');});const pending=f.element(sample.button).fire('click');await started.promise;
+ assert.equal(f.element(sample.list).children.length,0);assert.equal(f.element(sample.more).disabled,true);
+ reply.resolve();await pending;assert.equal(f.element(sample.list).children.length,0);assert.equal(f.element(sample.more).disabled,true);
+ f.overrides.set(sample.path,()=>({items:[sample.row],nextCursor:null,scope:'organization'}));await f.element(sample.button).fire('click');assert.equal(f.element(sample.list).children.length,1);assert.equal(f.element(sample.more).disabled,true);
+});
+
 test('a failed pending run refresh clears old rows, cursor and recent baseline choices',async()=>{
  const f=await fixture(),reply=deferred(),started=deferred();
  f.overrides.set('/v1/runs?limit=25',()=>({items:[{id:'old',agentName:'Old run',datasetName:'Dataset',state:'succeeded',gate:{decision:'pass'},createdAt:'2026-01-01T00:00:00Z'}],nextCursor:'older'}));await f.element('history-filter-form').fire('submit');

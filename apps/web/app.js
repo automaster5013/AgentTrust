@@ -421,12 +421,13 @@ async function auditHistory(append=false) {
   const sequence=++auditSequence,params=new URLSearchParams({limit:'25'});
   if($('audit-action').value)params.set('action',$('audit-action').value);
   if(append)params.set('cursor',auditCursor);
+  if(!append){auditCursor=null;$('audit-more').disabled=true;$('audit-list').replaceChildren();$('usage-summary').textContent='';}
   const [page,usage,operations]=await Promise.all([api('/v1/audit-events?'+params),append?null:api('/v1/usage'),append?null:api('/v1/operations')]);
   if(sequence!==auditSequence)return;
   auditCursor=page.nextCursor;$('audit-more').disabled=!auditCursor;
   if(!append){renderOperations(operations);
     $('usage-summary').textContent=`조직 전체 완료 실행 ${usage.completed_runs}개 · 결과 사례 ${usage.evaluated_cases}개 · 시도 ${usage.attempts}회 (모의 사용량)`;
-    $('audit-list').replaceChildren();}
+  }
   $('audit-list').append(...page.items.map(e=>{
     const row=node('div',undefined,'audit-entry');row.append(node('strong',e.action+' '),node('span',`${new Date(e.created_at).toLocaleString('ko-KR')} · ${e.resource_id || '—'}`));return row;
   }));
@@ -490,8 +491,8 @@ async function ciHistory(append=false){
   if(actor?.role!=='admin')return;
   if(append&&!keyCursor)return;
   const sequence=++keyHistorySequence;
+  if(!append){keyCursor=null;$('ci-more').disabled=true;$('ci-key-list').replaceChildren();}
   const page=await api('/v1/ci-credentials?limit=25'+(append?'&cursor='+encodeURIComponent(keyCursor):''));if(sequence!==keyHistorySequence)return;keyCursor=page.nextCursor;$('ci-more').disabled=!keyCursor;
-  if(!append)$('ci-key-list').replaceChildren();
   $('ci-key-list').append(...page.items.map(key=>{
     const row=node('div',undefined,'audit-entry');const expired=Date.parse(key.expires_at)<=Date.now();
     row.append(node('strong',key.name+' '),node('span',`${key.project_id.slice(0,8)} · ${key.revoked_at?'철회됨':expired?'만료됨':'활성'} · 만료 ${new Date(key.expires_at).toLocaleString('ko-KR')}`));
@@ -775,8 +776,9 @@ function sessionControls(){
 async function sessionHistory(append=false){
   if(!actor||append&&!sessionCursor)return;
   const sequence=++sessionSequence,params=new URLSearchParams({limit:'25'});if(append)params.set('cursor',sessionCursor);
+  if(!append){sessionCursor=null;$('session-list').replaceChildren();sessionButtons=[];sessionControls();}
   const page=await api('/v1/sessions?'+params);if(sequence!==sessionSequence)return;
-  sessionCursor=page.nextCursor;if(!append){$('session-list').replaceChildren();sessionButtons=[];}
+  sessionCursor=page.nextCursor;
   $('sessions-scope').textContent=page.scope==='organization'?'관리자: 현재 조직의 활성 세션을 확인하고 종료할 수 있습니다. 접근 키 자체는 철회하지 않습니다.':'현재 계정의 활성 세션만 표시합니다. 이 세션을 종료하면 로그인 화면으로 돌아갑니다.';
   for(const session of page.items){
     const row=node('div',undefined,'audit-entry');row.append(node('strong',session.name+' '),node('span',`${session.role} · ${session.current?'현재 브라우저 · ':''}${session.id.slice(0,8)} · 시작 ${new Date(session.createdAt).toLocaleString('ko-KR')} · 만료 ${new Date(session.expiresAt).toLocaleString('ko-KR')}`));
