@@ -34,7 +34,7 @@ const cancellationPending=()=>cancelOperation?.epoch===scopeEpoch&&cancelOperati
 let keyCursor=null,receiptCursor=null,runCursor=null;
 let historySequence=0;
 let lookupSequence=0,lookupBusy=false;
-let auditCursor=null,auditSequence=0,operationsSequence=0;
+let auditCursor=null,auditSequence=0,auditShown=0,operationsSequence=0;
 let inspectionSequence=0,comparisonSequence=0,keyHistorySequence=0,receiptHistorySequence=0,receiptListGeneration=0,reviewSequence=0;
 let receiptInspectionSequence=0,receiptInspectionTrigger=null;
 let receiptFilters={decision:'',candidateRunId:''},receiptShown=0;
@@ -398,7 +398,7 @@ function clearProjectData(){
   sessionSequence++;sessionBusy=false;sessionCursor=null;sessionButtons=[];$('session-list').replaceChildren();$('sessions-status').textContent='';$('sessions-more').disabled=true;sessionControls();
   comparisonSequence++;keyHistorySequence++;receiptHistorySequence++;reviewSequence++;reviewCursor=null;reviewShown=0;$('review-history-status').textContent='';$('review-more').disabled=true;
   inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전의 고정된 내용과 해시를 확인할 수 있습니다.';
-  auditSequence++;auditCursor=null;$('audit-more').disabled=true;$('audit-action').value='';
+  auditSequence++;auditCursor=null;auditShown=0;$('audit-status').textContent='';$('audit-more').disabled=true;$('audit-action').value='';
   currentRun=null;invalidateFinalGate();renderEvidence();selectedRunId=null;selectedRunSequence++;historySequence++;runCursor=null;$('history-more').disabled=true;$('history-state').value='';$('history-decision').value='';message('');$('run-button').disabled=true;$('dataset-button').disabled=true;
   for(const id of ['agent-name','policy-name','project-name'])$(id).value='';
   for(const id of ['agent','dataset-select','policy'])$(id).replaceChildren();
@@ -426,7 +426,8 @@ async function auditHistory(append=false) {
   const sequence=++auditSequence,params=new URLSearchParams({limit:'25'});
   if($('audit-action').value)params.set('action',$('audit-action').value);
   if(append)params.set('cursor',auditCursor);
-  if(!append){auditCursor=null;$('audit-more').disabled=true;$('audit-list').replaceChildren();$('usage-summary').textContent='';}
+  if(!append){auditCursor=null;auditShown=0;$('audit-list').replaceChildren();$('usage-summary').textContent='';}
+  $('audit-more').disabled=true;$('audit-status').textContent=append?'이전 감사 기록을 조회하고 있습니다…':'현재 조건의 감사 기록을 조회하고 있습니다…';
   const operationsRead=append?null:beginOperationsRead();
   try{
   const [page,usage,operations]=await Promise.all([api('/v1/audit-events?'+params),append?null:api('/v1/usage'),append?null:api('/v1/operations')]);
@@ -438,8 +439,9 @@ async function auditHistory(append=false) {
   $('audit-list').append(...page.items.map(e=>{
     const row=node('div',undefined,'audit-entry');row.append(node('strong',e.action+' '),node('span',`${new Date(e.created_at).toLocaleString('ko-KR')} · ${e.resource_id || '—'}`));return row;
   }));
-  if(!append&&!page.items.length)$('audit-list').textContent='선택한 동작의 감사 기록이 없습니다.';
-  }catch(e){if(!append)failOperationsRead(operationsRead);throw e;}
+  auditShown+=page.items.length;$('audit-status').textContent=auditShown?auditShown+'개 감사 기록을 표시합니다. '+(auditCursor?'이전 기록을 더 조회할 수 있습니다.':'현재 조건의 마지막 기록입니다.'):'현재 조건에 맞는 감사 기록이 없습니다.';
+  }catch(e){if(sequence===auditSequence){$('audit-status').textContent=append?'표시된 '+auditShown+'개 기록은 유지됩니다. 이전 감사 기록을 불러오지 못했습니다. 다시 조회하세요.':'감사 기록을 불러오지 못했습니다. 다시 조회하세요.';}if(!append)failOperationsRead(operationsRead);throw e;}
+  finally{if(sequence===auditSequence)$('audit-more').disabled=!auditCursor;}
 }
 async function initialize() {
   const epoch=scopeEpoch,assertCurrent=()=>{if(epoch!==scopeEpoch)throw new Error('워크스페이스가 변경되어 이전 요청의 결과를 표시하지 않습니다.');};
@@ -480,7 +482,7 @@ $('cancel-button').addEventListener('click',async()=>{
   finally{if(isCurrent()&&cancelOperation===operation){cancelOperation=null;$('cancel-button').disabled=!currentRun||terminal.has(currentRun.state)||actor?.role==='viewer';}}
 });
 $('audit-action').addEventListener('change',()=>listAction(()=>auditHistory(),()=>auditSequence));
-$('audit-more').addEventListener('click',()=>listAction(()=>auditHistory(true),()=>auditSequence));
+$('audit-more').addEventListener('click',()=>{if($('audit-more').disabled)return;return listAction(()=>auditHistory(true),()=>auditSequence);});
 $('audit-refresh').addEventListener('click',()=>listAction(()=>auditHistory(),()=>auditSequence));
 
 
