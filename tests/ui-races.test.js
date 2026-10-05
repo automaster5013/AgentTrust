@@ -1103,3 +1103,21 @@ test('malformed historical review references fail before issuing any review requ
 test('an empty receipt condition distinguishes no matching records from an empty workspace',async()=>{
  const f=await fixture();f.element('receipt-decision').value='block';f.overrides.set('/v1/release-receipts?limit=25&decision=block',()=>({items:[],nextCursor:null}));await f.element('receipt-filter-form').fire('submit');assert.match(f.element('receipt-list').textContent,/적용한 조건에 맞는/);assert.ok(!f.element('receipt-list').textContent.includes('아직 CI'));await f.element('receipt-filter-reset').fire('click');assert.match(f.element('receipt-list').textContent,/아직 CI 검증 기록/);
 });
+
+
+test('run history reports loading, empty success and retryable page failure locally',async()=>{
+ const f=await fixture(),reply=deferred();f.overrides.set('/v1/runs?limit=25',()=>reply.promise);
+ const pending=f.element('history-filter-form').fire('submit');await settle();assert.match(f.element('history-status').textContent,/조회하고 있습니다/);
+ reply.resolve({items:[],nextCursor:null});await pending;assert.match(f.element('history-status').textContent,/조건에 맞는 실행 기록이 없습니다/);
+ f.overrides.set('/v1/runs?limit=25',()=>({items:[{id:'B',agentName:'Run B',datasetName:'Dataset',state:'succeeded',gate:{decision:'pass'},createdAt:'2026-01-01T00:00:00Z'}],nextCursor:'older'}));
+ await f.element('history-filter-form').fire('submit');assert.match(f.element('history-status').textContent,/1개.*이전 실행/);
+ f.overrides.set('/v1/runs?limit=25&cursor=older',()=>{throw Error('Synthetic page failure');});await f.element('history-more').fire('click');
+ assert.equal(f.element('history-body').children.length,1);assert.match(f.element('history-status').textContent,/1개.*유지.*다시/);assert.equal(f.element('history-more').disabled,false);
+});
+test('obsolete history failure cannot overwrite a newer empty result status',async()=>{
+ const f=await fixture(),reply=deferred();f.overrides.set('/v1/runs?limit=25',async()=>{await reply.promise;throw Error('Old history failure');});
+ const old=f.element('history-filter-form').fire('submit');await settle();f.element('history-state').value='cancelled';f.overrides.set('/v1/runs?limit=25&state=cancelled',()=>({items:[],nextCursor:null}));
+ await f.element('history-filter-form').fire('submit');const current=f.element('history-status').textContent;assert.match(current,/조건에 맞는 실행 기록이 없습니다/);
+ reply.resolve();await old;assert.equal(f.element('history-status').textContent,current);
+ await f.element('logout-button').fire('click');assert.equal(f.element('history-status').textContent,'');
+});

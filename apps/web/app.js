@@ -325,9 +325,10 @@ async function history(append=false) {
   if($('history-decision').value)params.set('decision',$('history-decision').value);
   if(append)params.set('cursor',runCursor);
   if(!append){runCursor=null;$('history-more').disabled=true;$('history-body').replaceChildren();recentBaselineRuns=[];renderBaselineChoices();$('baseline-run').replaceChildren();comparisonSequence++;$('comparison-result').textContent='실행 기록을 새로 조회하고 있습니다. 완료 후 기준 실행을 선택해 비교하세요.';}
+  $('history-status').textContent=append?'이전 실행 기록을 조회하고 있습니다…':'현재 조건의 실행 기록을 조회하고 있습니다…';
   let page,baselines;
   try{[page,baselines]=await Promise.all([api('/v1/runs?'+params.toString()),append?Promise.resolve(null):api('/v1/runs?limit=100&state=succeeded')]);}
-  catch(error){if(!append&&sequence===historySequence)$('comparison-result').textContent='실행 기록을 불러오지 못했습니다. 다시 조회하세요.';throw error;}
+  catch(error){if(sequence===historySequence){$('history-status').textContent=append?'표시된 '+$('history-body').children.length+'개 기록은 유지됩니다. 이전 실행을 불러오지 못했습니다. 다시 조회하세요.':'실행 기록을 불러오지 못했습니다. 다시 조회하세요.';if(!append)$('comparison-result').textContent='실행 기록을 불러오지 못했습니다. 다시 조회하세요.';}throw error;}
   if(sequence!==historySequence)return;
   runCursor=page.nextCursor;$('history-more').disabled=!runCursor;
   if(!append){
@@ -344,6 +345,8 @@ async function history(append=false) {
     button.addEventListener('click', () => listAction(()=>selectRun(r.id),()=>selectedRunSequence)); action.append(button);
     row.append(gate, node('td', new Date(r.createdAt).toLocaleString('ko-KR')), action); return row;
   }));
+  const shown=$('history-body').children.length;
+  $('history-status').textContent=shown?shown+'개 실행 기록을 표시합니다. '+(runCursor?'이전 실행을 더 조회할 수 있습니다.':'현재 조건의 마지막 기록입니다.'):'현재 조건에 맞는 실행 기록이 없습니다.';
 }
 async function selectRun(id,initialRun) {
   selectedRunId = id;const sequence=++selectedRunSequence;$('receipt-navigation-status').textContent='';invalidateFinalGate();
@@ -403,7 +406,7 @@ function clearProjectData(){
   keyCursor=null;receiptCursor=null;$('ci-more').disabled=true;$('receipts-more').disabled=true;
   clearIssuedKey();clearReceiptInspection();$('ci-key-list').replaceChildren();$('receipt-list').replaceChildren();$('ci-project').replaceChildren();$('ci-name').value='';$('ci-status').textContent='';
   $('baseline-run').replaceChildren();$('comparison-result').textContent='';
-$('results').replaceChildren();$('history-body').replaceChildren();$('audit-list').replaceChildren();
+$('results').replaceChildren();$('history-body').replaceChildren();$('history-status').textContent='';$('audit-list').replaceChildren();
   $('gate-badge').textContent='실행 대기';$('gate-badge').className='gate idle';$('gate-title').textContent='배포 판단을 기다립니다';
   $('gate-reason').textContent='평가를 실행하면 정책을 기준으로 결과를 표시합니다.';$('allowed').textContent='—';$('run-state').textContent='대기';
   $('snapshot').textContent='아직 선택한 실행이 없습니다.';$('dataset-json').value='';$('usage-summary').textContent='';
