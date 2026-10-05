@@ -9,6 +9,7 @@ import {readTrustedReceiptKey} from './trusted-receipt-key.mjs';
 import {seededDemoScope,assertDemoSessionScope} from './demo-session-scope.mjs';
 import {localSmokeBase,fetchLocalSmoke} from './local-smoke-http.mjs';
 import {readReleaseResponse} from './release-gate.mjs';
+import {parseDemoOptions} from './demo-options.mjs';
 const exec=promisify(execFile);
 let cookie,base,scope;
 async function call(path,data){
@@ -17,8 +18,9 @@ async function call(path,data){
  if(!response.ok){await response.body?.cancel();throw Error('Local evidence history request failed');}return readReleaseResponse(response);
 }
 try{
-  const args=process.argv.slice(2);assert.ok(args.length<=2&&new Set(args).size===args.length&&args.every(arg=>['--with-reviews','--with-report'].includes(arg)));assert.ok(!args.includes('--with-report')||args.includes('--with-reviews'));
-  const {stdout}=await exec(process.execPath,['scripts/portfolio-demo.mjs','--compare','--export-receipts'],{timeout:120000,maxBuffer:65536,windowsHide:true});
+  const options=parseDemoOptions(process.argv.slice(2),['--with-reviews','--with-report']),withReviews=options['--with-reviews']===true,withReport=options['--with-report']===true;assert.ok(!withReport||withReviews);
+  const config=JSON.parse((await readFile('.local/credentials.json','utf8')).replace(/^\uFEFF/,'')),organization=config.organizations?.[options.organizationIndex];scope=seededDemoScope(organization);
+  const {stdout}=await exec(process.execPath,['scripts/portfolio-demo.mjs','--compare','--export-receipts','--organization-index',String(options.organizationIndex)],{timeout:120000,maxBuffer:65536,windowsHide:true});
   const report=JSON.parse(stdout.trim().split('\n').at(-1));
   assert.equal(report.status,'passed');assert.equal(report.steps,12);assert.equal(report.withBaselineComparison,true);
   let {directory,manifestSha256}=report.evidenceBundle;
@@ -28,24 +30,23 @@ try{
   assert.equal(verification.bundleVerified,true);assert.equal(verification.expectedManifestDigestMatched,true);
   const publicKey=await readTrustedReceiptKey('.local/receipt-signing/public.pem');
   const loaded=await loadPortfolioEvidence(directory,publicKey,manifestSha256);
-  const config=JSON.parse((await readFile('.local/credentials.json','utf8')).replace(/^\uFEFF/,'')),organization=config.organizations[0];scope=seededDemoScope(organization);
   assert.equal(loaded.manifest.organizationId,scope.organizationId);assert.equal(loaded.manifest.projectId,scope.projectId);base=localSmokeBase();
   await call('/v1/auth/login',{accessKey:organization.credentials.find(credential=>credential.role==='viewer').token});assertDemoSessionScope(await call('/v1/me'),scope,'viewer');
   let reviews;
   const history=await verifyPortfolioReceiptHistory({call,receipts:loaded.receipts,onVerifiedReviews:values=>{reviews=values;}});assert.equal(history.linkedReviewsVerified,2);
   await call('/v1/auth/logout',{});cookie=null;
   let finalVerification=verification;
-  if(args.length){
+  if(withReviews){
     const enriched=await writePortfolioEvidence({receipts:loaded.receipts,reviews,trustedPem:publicKey,report:{...report,completed:true,steps:loaded.manifest.receipts.map(row=>({name:row.step,receiptId:row.receiptId,runId:row.candidateRunId,...(row.baselineRunId?{baselineRunId:row.baselineRunId}:{})}))}});
     directory=enriched.directory;manifestSha256=enriched.manifestSha256;
     const result=await exec(process.execPath,['scripts/verify-portfolio-evidence.mjs',directory,'.local/receipt-signing/public.pem',manifestSha256],{timeout:30000,maxBuffer:65536,windowsHide:true});finalVerification=JSON.parse(result.stdout.trim());assert.equal(finalVerification.reviewBodiesVerifiedOffline,true);
   }
   let auditReport;
-  if(args.includes('--with-report')){
+  if(withReport){
     const path='.local/portfolio-audit-'+randomUUID()+'.html';
     const result=await exec(process.execPath,['scripts/write-portfolio-evidence-report.mjs',directory,'.local/receipt-signing/public.pem',path,manifestSha256],{timeout:30000,maxBuffer:65536,windowsHide:true}),written=JSON.parse(result.stdout.trim());assert.equal(written.reportCreated,true);assert.equal(written.reportCryptographicallySigned,false);auditReport={path,reportCreated:true,reportCryptographicallySigned:false};
   }
-  console.log(JSON.stringify({status:'passed',directory,...finalVerification,...history,...(auditReport?{auditReport}:{}),historySessionLoggedOut:true}));
+  console.log(JSON.stringify({status:'passed',organizationIndex:options.organizationIndex,...scope,directory,...finalVerification,...history,...(auditReport?{auditReport}:{}),historySessionLoggedOut:true}));
 }catch{
   console.error('Synthetic portfolio evidence export, offline verification or history check did not complete.');process.exitCode=1;
 }

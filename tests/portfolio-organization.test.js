@@ -5,7 +5,7 @@ import {once} from 'node:events';
 import {generateKeyPairSync} from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,rm,cp} from 'node:fs/promises';
 import {join,resolve,sep} from 'node:path';
 const exec=promisify(execFile);
 async function fixture(t){
@@ -52,4 +52,20 @@ test('role demo selects primary roles from organization one and an independent o
 test('role organization selector refuses missing or duplicated choices without authenticating',async t=>{
  const f=await fixture(t);let requests=0;const server=createServer((req,res)=>{requests++;res.end('{}');});server.listen(0,'127.0.0.1');await once(server,'listening');t.after(async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));});
  for(const args of [['--organization-index','2'],['--organization-index','01'],['--organization-index'],['--organization-index','0','--organization-index','1'],['--compare']]){const r=await run(f,server.address().port,'portfolio-roles.mjs',args);assert.equal(r.code,1);const summary=JSON.parse(r.stdout.trim().split('\n').at(-1));assert.equal(summary.status,'blocked');assert.equal(summary.sessionsLoggedOut,true);}assert.equal(requests,0);
+});
+
+test('evidence workflow forwards the selected organization to its real child demo and refuses its mismatched session before writes',async t=>{
+ const f=await fixture(t);await cp(join(f.repository,'scripts'),join(f.dir,'scripts'),{recursive:true});await cp(join(f.repository,'packages'),join(f.dir,'packages'),{recursive:true});await writeFile(join(f.dir,'package.json'),'{"type":"module"}');
+ const selected=f.organizations[1],session='synthetic-evidence-selected-session-canary';let logins=0,logouts=0,unexpected=0;
+ const server=createServer(async(req,res)=>{res.setHeader('Content-Type','application/json');assert.equal(req.headers['x-agenttrust-project'],selected.projectId);
+  if(req.url==='/v1/auth/login'){let raw='';for await(const chunk of req)raw+=chunk;assert.equal(JSON.parse(raw).accessKey,selected.credentials[0].token);logins++;res.setHeader('Set-Cookie',session+'=value; HttpOnly');res.end('{}');return;}
+  assert.equal(req.headers.cookie,session+'=value');if(req.url==='/v1/me'){res.end(JSON.stringify({organizationId:f.organizations[0].organizationId,projectId:selected.projectId,role:'admin'}));return;}if(req.url==='/v1/auth/logout'){logouts++;res.end('{}');return;}unexpected++;res.writeHead(500);res.end('{}');
+ });server.listen(0,'127.0.0.1');await once(server,'listening');t.after(async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));});
+ for(const args of [['--organization-index','1'],['--with-reviews','--organization-index','1'],['--organization-index','1','--with-report','--with-reviews']]){const result=await run(f,server.address().port,'portfolio-evidence-smoke.mjs',args);assert.equal(result.code,1);assert.equal(result.stdout,'');for(const secret of [session,...f.organizations.flatMap(o=>o.credentials.map(c=>c.token))]){assert.ok(!result.stderr.includes(secret));}}
+ assert.equal(logins,3);assert.equal(logouts,3);assert.equal(unexpected,0);
+});
+
+test('evidence organization selection and review/report option errors fail before starting a demo',async t=>{
+ const f=await fixture(t);let requests=0;const server=createServer((req,res)=>{requests++;res.end('{}');});server.listen(0,'127.0.0.1');await once(server,'listening');t.after(async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));});
+ for(const args of [['--organization-index','01'],['--organization-index'],['--organization-index','1','--organization-index','0'],['--with-report','--organization-index','1'],['--with-reviews','--with-reviews']]){const result=await run(f,server.address().port,'portfolio-evidence-smoke.mjs',args);assert.equal(result.code,1);assert.equal(result.stdout,'');}assert.equal(requests,0);
 });
