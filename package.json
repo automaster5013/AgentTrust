@@ -1,6 +1,6 @@
 {
   "name": "agenttrust",
-  "version": "0.153.0",
+  "version": "0.154.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -36,7 +36,8 @@
     "demo:evidence:verify": "node scripts/verify-portfolio-evidence.mjs",
     "demo:evidence:report": "node scripts/write-portfolio-evidence-report.mjs",
     "connector:contract": "node scripts/check-connector-contract.mjs",
-    "connector:replay": "node scripts/replay-connector-evidence.mjs"
+    "connector:replay": "node scripts/replay-connector-evidence.mjs",
+    "connector:compare": "node scripts/compare-connector-evidence.mjs"
   },
   "dependencies": {
     "ajv": "8.20.0",
