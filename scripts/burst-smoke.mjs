@@ -7,8 +7,9 @@ import {verifyReceipt} from '../packages/receipts/signature.js';
 import {localSmokeBase,fetchLocalSmoke} from './local-smoke-http.mjs';
 import {readReleaseResponse} from './release-gate.mjs';
 import {seededDemoScope,assertDemoSessionScope} from './demo-session-scope.mjs';
+import {readBurstRunCapacity} from './burst-run-capacity.mjs';
 import {parseBurstOptions,runBurstScenario} from './burst-smoke-scenario.mjs';
-let runs,base,scope,organizationIndex=0,sessionScopeVerified=false;
+let runs,base,scope,organizationIndex=0,sessionScopeVerified=false,capacityPreflight={status:'not_reached'};
 try{({runs,organizationIndex}=parseBurstOptions(process.argv.slice(2)));base=localSmokeBase();}catch{console.error('Use --runs 2..20 and --organization-index 0..99 once each and a valid local smoke port.');process.exit(2);}
 const reportPath='.local/burst-smoke-'+randomUUID()+'.json';let cookie,owner,report={schemaVersion:1,synthetic:true,completed:false,serverDeployed:false};
 async function call(path,data,key=randomUUID()){
@@ -20,6 +21,7 @@ try{
  const config=JSON.parse((await readFile('.local/credentials.json','utf8')).replace(/^\uFEFF/,'')),organization=config.organizations?.[organizationIndex];scope=seededDemoScope(organization);const key=organization.credentials.find(c=>c.role==='editor')?.token;
  assert.ok(key);const publicKey=await readFile('.local/receipt-signing/public.pem','utf8');owner=pool(process.env.OWNER_DATABASE_URL);
  const startedAt=new Date().toISOString();await call('/v1/auth/login',{accessKey:key});assert.ok(cookie);assertDemoSessionScope(await call('/v1/me'),scope,'editor');sessionScopeVerified=true;
+ capacityPreflight=await readBurstRunCapacity(owner,scope,runs);assert.equal(capacityPreflight.status,'passed');
  report=await runBurstScenario({call,runs,verify:receipt=>verifyReceipt(receipt,publicKey),wait:async id=>{
   const deadline=Date.now()+45000;
   while(Date.now()<deadline){const run=await call('/v1/runs/'+id);if(!['queued','running'].includes(run.state))return run;await sleep(100);}throw Error('Local synthetic burst deadline exceeded.');
@@ -31,12 +33,12 @@ try{
  }});report.startedAt=startedAt;
 }catch{report.failed=true;report.completed=false;}
 finally{
- Object.assign(report,{organizationIndex,...(scope||{}),sessionScopeVerified});
+ Object.assign(report,{capacityPreflight,organizationIndex,...(scope||{}),sessionScopeVerified});
  report.sessionLoggedOut=!cookie;
  if(cookie)try{await call('/v1/auth/logout',{});report.sessionLoggedOut=true;}catch{report.sessionLoggedOut=false;}
  await owner?.end();report.finishedAt=new Date().toISOString();
  try{await writeFile(reportPath,JSON.stringify(report,null,2)+'\n',{flag:'wx',mode:0o600});}catch{report.reportWriteFailed=true;}
  const passed=report.completed===true&&report.cleanupSucceeded===true&&report.sessionLoggedOut&&!report.reportWriteFailed;
- console.log(JSON.stringify({status:passed?'passed':'blocked',synthetic:true,organizationIndex,sessionScopeVerified,runs:report.runs?.length||0,duplicateCreationConverged:report.duplicateCreationConverged===true,peakConcurrentCreateRequests:report.peakConcurrentCreateRequests||0,exactlyOnceCreationUsageAndAudit:report.exactlyOnceCreationUsageAndAudit===true,sessionLoggedOut:report.sessionLoggedOut,cleanupSucceeded:report.cleanupSucceeded===true,creationOutcomeUnknown:report.creationOutcomeUnknown===true,reportPath,serverDeployed:false}));
+ console.log(JSON.stringify({status:passed?'passed':'blocked',synthetic:true,organizationIndex,sessionScopeVerified,capacityPreflightStatus:capacityPreflight.status,capacityPreflightRequestedRuns:capacityPreflight.requestedRuns??0,requiredActiveSlots:capacityPreflight.requiredActiveSlots??0,runs:report.runs?.length||0,duplicateCreationConverged:report.duplicateCreationConverged===true,peakConcurrentCreateRequests:report.peakConcurrentCreateRequests||0,exactlyOnceCreationUsageAndAudit:report.exactlyOnceCreationUsageAndAudit===true,sessionLoggedOut:report.sessionLoggedOut,cleanupSucceeded:report.cleanupSucceeded===true,creationOutcomeUnknown:report.creationOutcomeUnknown===true,reportPath,serverDeployed:false}));
  if(!passed){console.error('Local synthetic burst verification did not complete. Check private report and local records.');process.exitCode=1;}
 }

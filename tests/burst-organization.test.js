@@ -35,3 +35,16 @@ test('burst organization options preserve existing run bounds and reject duplica
  const {parseBurstOptions}=await import('../scripts/burst-smoke-scenario.mjs');assert.deepEqual(parseBurstOptions([]),{runs:12,organizationIndex:0});assert.deepEqual(parseBurstOptions(['--runs','20','--organization-index','1']),{runs:20,organizationIndex:1});assert.deepEqual(parseBurstOptions(['--organization-index','99','--runs','2']),{runs:2,organizationIndex:99});
  for(const args of [['--runs','1'],['--runs','21'],['--runs','02'],['--runs','2','--runs','3'],['--unknown','2'],['--organization-index','01'],['--organization-index','100'],['--organization-index','1','--organization-index','0']])assert.throws(()=>parseBurstOptions(args));
 });
+
+
+test('actual burst CLI stops before catalog or creates when scoped capacity database observation is unavailable and logs out',async t=>{
+ const f=await fixture(t),selected=f.organizations[1];let catalogOrWrites=0,logouts=0;
+ const server=createServer(async(req,res)=>{res.setHeader('Content-Type','application/json');
+  if(req.url==='/v1/auth/login'){res.setHeader('Set-Cookie','synthetic-capacity-session=value; HttpOnly');res.end('{}');return;}
+  if(req.url==='/v1/me'){res.end(JSON.stringify({role:'editor',organizationId:selected.organizationId,projectId:selected.projectId}));return;}
+  if(req.url==='/v1/auth/logout'){logouts++;res.end('{}');return;}
+  catalogOrWrites++;res.writeHead(500);res.end('{}');
+ });server.listen(0,'127.0.0.1');await once(server,'listening');t.after(async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));});
+ const result=await run(f,server.address().port,['--organization-index','1','--runs','6']);assert.equal(result.code,1);const summary=JSON.parse(result.stdout),report=JSON.parse(await readFile(join(f.dir,summary.reportPath),'utf8'));
+ assert.equal(summary.capacityPreflightStatus,'unavailable');assert.equal(report.capacityPreflight.requestedRuns,6);assert.equal(report.capacityPreflight.requiredActiveSlots,4);assert.equal(report.sessionScopeVerified,true);assert.equal(report.sessionLoggedOut,true);assert.equal(report.completed,false);assert.equal(catalogOrWrites,0);assert.equal(logouts,1);
+});
