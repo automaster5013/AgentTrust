@@ -26,7 +26,7 @@ function currentAuthentication(sequence,epoch,error){
 }
 let loading = false;
 let versionBusy=false,acceptanceBusy=false;
-let readinessBusy=false,readinessSequence=0,readinessResult=null;
+let readinessBusy=false,readinessSequence=0,readinessResult=null,readinessSelectionBusy=false;
 let workspaceMutation=null;
 let selectedRunId = null;
 let selectedRunSequence=0;
@@ -237,6 +237,7 @@ function node(tag, text, className) {
 }
 async function catalog(selectedDataset) {
   const epoch=scopeEpoch,data=await api('/v1/catalog');if(epoch!==scopeEpoch)return;
+  $('acceptance-selection-status').textContent='';
   inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전의 고정된 내용과 해시를 확인할 수 있습니다.';
   for (const [kind, id] of [['agent', 'agent'], ['dataset', 'dataset-select'], ['policy', 'policy']]) {
     const select = $(id); const previous = typeof selectedDataset==='object' && selectedDataset?.[kind] ? selectedDataset[kind] : kind === 'dataset' && typeof selectedDataset==='string' ? selectedDataset : select.value;
@@ -256,7 +257,8 @@ function updateButtons(){
   $('dataset-copy').disabled=!writer||!$('dataset-select').value||acceptanceBusy||readinessBusy;
   $('acceptance-prepare').disabled=actor?.role!=='admin'||!activeProjectId||versionBusy||acceptanceBusy||readinessBusy;
   $('acceptance-readiness').disabled=actor?.role!=='admin'||!activeProjectId||versionBusy||acceptanceBusy||readinessBusy;
-  $('run-button').disabled=!writer||loading||!$('agent').value||!$('dataset-select').value||!$('policy').value;
+  $('acceptance-select').disabled=loading||readinessSelectionBusy||versionBusy||acceptanceBusy||readinessBusy||!readinessSelectionAvailable();
+  $('run-button').disabled=!writer||loading||readinessSelectionBusy||!$('agent').value||!$('dataset-select').value||!$('policy').value;
   $('dataset-button').disabled=!writer||versionBusy||acceptanceBusy||readinessBusy;$('agent-create').disabled=!writer||versionBusy||acceptanceBusy||readinessBusy;$('policy-create').disabled=actor?.role!=='admin'||versionBusy||acceptanceBusy||readinessBusy;
 }
 function workspaceControls(){
@@ -364,7 +366,7 @@ async function selectRun(id,initialRun) {
   throw new Error('평가가 아직 완료되지 않았습니다. 실행 기록에서 다시 조회하세요.');
 }
 $('run-form').addEventListener('submit', async event => {
-  event.preventDefault(); if (loading) return;
+  event.preventDefault(); if (loading||readinessSelectionBusy) return;
   const epoch=scopeEpoch;let selection=selectedRunSequence;
   const isCurrent=()=>epoch===scopeEpoch&&selection===selectedRunSequence;
   loading = true; $('run-button').disabled = true; message('평가 실행을 요청했습니다…');
@@ -393,7 +395,7 @@ function clearProjectData(){
   cancelOperation=null;
   $('workspace-nav').hidden=true;$('nav-projects').hidden=true;
   operationsSequence++;$('operations-refresh').disabled=false;$('operations-status').textContent='';
-  reviewBusy=false;loading=false;versionBusy=false;acceptanceBusy=false;readinessBusy=false;readinessSequence++;clearReadinessResult();$('acceptance-readiness').disabled=true;$('acceptance-draft-status').textContent='';workspaceMutation=null;workspaceControls();
+  reviewBusy=false;loading=false;versionBusy=false;acceptanceBusy=false;readinessBusy=false;readinessSelectionBusy=false;readinessSequence++;clearReadinessResult();$('acceptance-readiness').disabled=true;$('acceptance-draft-status').textContent='';workspaceMutation=null;workspaceControls();
   recentBaselineRuns=[];
   $('gate-baseline-enabled').checked=false;$('gate-baseline-id').value='';$('gate-baseline-id').disabled=true;
   lookupSequence++;lookupBusy=false;$('run-lookup-button').disabled=false;$('run-lookup-id').value='';$('run-lookup-status').textContent='';$('receipt-navigation-status').textContent='';
@@ -793,7 +795,7 @@ $('current-receipt-download').addEventListener('click',()=>{
 });
 
 for(const [kind,selector] of [['agent','agent'],['dataset','dataset-select'],['policy','policy']]){
-  $(selector).addEventListener('change',()=>{inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전이 변경됐습니다. 내용을 다시 조회하세요.';});
+  $(selector).addEventListener('change',()=>{inspectionSequence++;$('acceptance-selection-status').textContent='';$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전이 변경됐습니다. 내용을 다시 조회하세요.';});
   $('inspect-'+kind).addEventListener('click',async()=>{
     const sequence=++inspectionSequence,id=$(selector).value;
     try{const version=await api('/v1/versions/'+id);if(sequence!==inspectionSequence||$(selector).value!==id)return;
@@ -805,7 +807,27 @@ for(const [kind,selector] of [['agent','agent'],['dataset','dataset-select'],['p
 
 function clearReadinessResult(text=''){
   readinessResult=null;$('acceptance-readiness-status').textContent=text;
+  $('acceptance-select').disabled=true;$('acceptance-selection-status').textContent='';
 }
+function readinessSelectionAvailable(plan=readinessResult){
+  const age=Date.now()-Date.parse(plan?.observedAt);
+  return actor?.role==='admin'&&Boolean(activeProjectId)&&plan?.organizationId===actor.organizationId&&plan?.projectId===activeProjectId&&plan.completed===true&&Number.isFinite(age)&&age>=-5000&&age<30000&&['dataset','policy'].every(kind=>plan.criteria?.[kind]?.reused===true&&Array.from($(kind==='dataset'?'dataset-select':'policy').children).some(option=>option.value===plan.criteria[kind].id));
+}
+$('acceptance-select').addEventListener('click',async()=>{
+  if($('acceptance-select').disabled||loading||readinessSelectionBusy||versionBusy||acceptanceBusy||readinessBusy||!readinessSelectionAvailable())return;
+  const epoch=scopeEpoch,sequence=readinessSequence,inspection=inspectionSequence,plan=readinessResult,before=acceptanceDraftSnapshot(),selected=[$('dataset-select').value,$('policy').value];
+  const current=()=>epoch===scopeEpoch&&sequence===readinessSequence&&readinessResult===plan;
+  readinessSelectionBusy=true;updateButtons();
+  try{
+    await verifyReadinessPlan(plan,readinessProfileFromDraft());
+    if(!current())return;
+    if(!readinessSelectionAvailable(plan)||inspectionSequence!==inspection||acceptanceDraftSnapshot().some((value,index)=>value!==before[index])||$('dataset-select').value!==selected[0]||$('policy').value!==selected[1])throw Error('Selection changed');
+    $('dataset-select').value=plan.criteria.dataset.id;$('policy').value=plan.criteria.policy.id;
+    inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전이 변경됐습니다. 내용을 다시 조회하세요.';
+    $('acceptance-selection-status').textContent='점검한 기존 데이터셋과 관리자 승인 정책을 평가 설정에 선택했습니다. 평가와 승인은 실행하지 않았습니다. 에이전트를 확인한 뒤 평가하세요.';
+  }catch{if(current())clearReadinessResult('점검한 기준을 선택하지 못했습니다. 기존 선택을 유지했습니다. 현재 초안을 다시 점검하세요.');}
+  finally{if(epoch===scopeEpoch){readinessSelectionBusy=false;updateButtons();}}
+});
 function readinessProfileFromDraft(){
   if(new TextEncoder().encode($('dataset-json').value).length>65536)throw Error('Oversized draft');
   const dataset=JSON.parse($('dataset-json').value),name=$('policy-name').value.trim(),minimumPassRate=Number($('policy-rate').value)/100,manualApprovalTtlSeconds=Number($('policy-review-ttl').value);
