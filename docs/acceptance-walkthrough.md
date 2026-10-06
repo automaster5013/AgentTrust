@@ -24,9 +24,11 @@ Docker와 접근 키 없이 공개 프로필의 두 사례·다섯 규칙을 검
 ## 같은 흐름을 CLI에서 재현하고 독립 검증한다
 
 ```powershell
-npm.cmd run demo:preflight -- --organization-index 1
+npm.cmd run demo:acceptance -- --organization-index 1 --plan-only
 npm.cmd run demo:acceptance -- --organization-index 1 --export-evidence
 ```
+
+`--plan-only`는 서명 키와 업무 데이터 생성 없이 전체 계획을 확인하고 자체 세션을 종료한다. 새 버전 필요 수와 기준 재사용·모의 에이전트 버전을 GET으로 확인한다. 결과는 용량 예약이 아니므로 실제 시연에서 다시 검증한다.
 
 선택한 기존 조직의 관리자·프로젝트 범위, 워커 신호, 실행 여섯 개의 보관 용량과 활성 슬롯을 확인한다. 기준의 이름·내용 해시를 정확히 재사용하거나 필요한 새 버전 0~2개를 등록할 수 있는지 확인한다. 실제 등록된 기준은 고정 ID·종류·내용 해시를 조회해 다시 검증한다.
 

@@ -1,15 +1,14 @@
 import assert from 'node:assert/strict';
-import {hash} from '../packages/contracts/hash.js';
-import {validate} from '../packages/contracts/index.js';
 import {acceptanceModes,validateAcceptanceProfile,ensureAcceptanceVersion} from './acceptance-profile.mjs';
 import {planAcceptanceVersions,checkAcceptanceVersionCapacity} from './acceptance-version-capacity.mjs';
+import {resolveAcceptanceAgents} from './acceptance-readiness.mjs';
 import {assertDemoReceiptBinding} from './demo-receipt-binding.mjs';
 export async function runAcceptanceScenario({profile,scope,operations,call,wait,verify,onRun=()=>{},onReceipt=()=>{},onReview=()=>{}}){
  assert.match(scope?.organizationId||'',/^[a-f0-9-]{36}$/);assert.match(scope?.projectId||'',/^[a-f0-9-]{36}$/);const checked=validateAcceptanceProfile(profile),report={schemaVersion:1,purpose:'synthetic-acceptance-demonstration',synthetic:true,serverDeployed:false,steps:[],completed:false},active=new Set();let reviewRun,approvalAttempted=false,rejected=false;
  const step=(name,data)=>report.steps.push({name,...data});
  try{
-  const catalog=await call('/v1/catalog'),agents=new Map();report.versionCapacityPreflight=checkAcceptanceVersionCapacity(operations,scope,planAcceptanceVersions(catalog,checked));assert.equal(report.versionCapacityPreflight.status,'passed');
-  for(const [mode] of acceptanceModes){const row=catalog.agent.find(a=>a.mode===mode);assert.match(row?.id||'',/^[a-f0-9-]{36}$/);const stored=await call('/v1/versions/'+row.id);assert.equal(stored.id,row.id);assert.equal(stored.kind,'agent');assert.equal(stored.contentHash,row.contentHash);const data=validate('agent',stored.data);assert.equal(hash(data),row.contentHash);assert.equal(data.mode,mode);agents.set(mode,row.id);}
+  const catalog=await call('/v1/catalog');report.versionCapacityPreflight=checkAcceptanceVersionCapacity(operations,scope,planAcceptanceVersions(catalog,checked));assert.equal(report.versionCapacityPreflight.status,'passed');
+  const agents=await resolveAcceptanceAgents({catalog,call});
   const dataset=await ensureAcceptanceVersion({call,catalog:catalog.dataset,kind:'dataset',data:checked.dataset}),policy=await ensureAcceptanceVersion({call,catalog:catalog.policy,kind:'policy',data:checked.policy});report.criteria={dataset,policy};
   const execute=async(mode,state,decision)=>{const input={agentVersionId:agents.get(mode),datasetVersionId:dataset.id,policyVersionId:policy.id};const created=await call('/v1/runs',{...input,timeoutMs:30000,caseBudget:100,maxAttempts:1});assert.match(created.id||'',/^[a-f0-9-]{36}$/);active.add(created.id);const run=await wait(created.id);assert.equal(run.id,created.id);assert.equal(run.organizationId,scope.organizationId);assert.equal(run.projectId,scope.projectId);for(const key of Object.keys(input))assert.equal(run[key],input[key]);assert.equal(run.state,state);assert.equal(run.gate.decision,decision);assert.equal(run.gate.deploymentAllowed,false);await onRun(run);active.delete(run.id);step('evaluation_'+mode,{runId:run.id,state,decision});return {run,input};};
   const baseline=(await execute('compliant','succeeded','pass')).run;
