@@ -1352,3 +1352,43 @@ test('logout disables readiness and a stale enabled control cannot bypass the cu
  await f.element('login-form').fire('submit');assert.equal(f.element('acceptance-readiness').disabled,false);await prepareReadinessDraft(f);f.overrides.set('/v1/acceptance-readiness',options=>syntheticReadinessPlan(JSON.parse(options.body)));await f.element('acceptance-readiness').fire('click');assert.match(f.element('acceptance-readiness-status').textContent,/준비 계획을 확인/);
  for(const role of ['editor','viewer']){const other=await fixture({initialOverrides:[['/v1/me',()=>({role,organizationId:'organization',projectId:'project',projects:[{id:'project',name:'Synthetic'}]})]]});other.element('acceptance-readiness').disabled=false;const count=other.httpRequests.length;await other.element('acceptance-readiness').fire('click');assert.equal(other.httpRequests.length,count);}
 });
+
+
+test('evaluation detail clears earlier gate and cases while a new selected request is pending',async()=>{
+ const f=await fixture(),wait=deferred();f.runs.B.results=[evidenceCase(1)];await f.view('B');f.overrides.set('/v1/runs/A',()=>wait.promise);
+ const pending=f.view('A');await settle();assert.equal(f.element('allowed').textContent,'—');assert.ok(!f.element('snapshot').textContent.includes('실행 B'));assert.ok(!f.element('results').textContent.includes('case-1'));assert.equal(f.element('case-count').textContent,'—');assert.equal(f.element('download').disabled,true);assert.equal(f.element('run-detail-retry').disabled,true);assert.match(f.element('run-detail-status').textContent,/조회하고 있습니다/);
+ wait.resolve(execution('A'));await pending;assert.match(f.element('snapshot').textContent,/실행 A/);assert.equal(f.element('run-detail-retry').disabled,false);
+});
+test('evaluation detail HTTP failure clears old evidence and retries locally without raw server text',async()=>{
+ const f=await fixture();f.runs.B.results=[evidenceCase(1)];await f.view('B');f.overrides.set('/v1/runs/A',()=>new Response(JSON.stringify({error:'Private remote text'}),{status:500}));await f.view('A');assert.equal(f.element('allowed').textContent,'—');assert.ok(!f.element('results').textContent.includes('case-1'));assert.match(f.element('run-detail-status').textContent,/다시 조회하세요/);assert.ok(!f.element('run-detail-status').textContent.includes('Private'));assert.equal(f.element('run-detail-retry').disabled,false);
+ f.overrides.set('/v1/runs/A',()=>execution('A'));const before=f.httpRequests.length;await f.element('run-detail-retry').fire('click');assert.equal(f.httpRequests.slice(before).filter(p=>p==='/v1/runs/A').length,1);assert.equal(f.element('status').textContent,'');assert.equal(f.element('status').className,'');assert.match(f.element('snapshot').textContent,/실행 A/);assert.match(f.element('run-detail-status').textContent,/판정과 근거를 표시/);
+});
+test('evaluation detail rejects a different execution identity before rendering its gate',async()=>{
+ const f=await fixture();f.overrides.set('/v1/runs/A',()=>execution('Private wrong run'));await f.view('A');assert.equal(f.element('allowed').textContent,'—');assert.ok(!f.element('snapshot').textContent.includes('Private'));assert.match(f.element('run-detail-status').textContent,/확인하지 못했습니다/);
+});
+test('late evaluation detail failure cannot erase a newer selected result',async()=>{
+ const f=await fixture(),wait=deferred();f.overrides.set('/v1/runs/A',()=>wait.promise);const pending=f.view('A');await settle();await f.view('B');const status=f.element('run-detail-status').textContent;wait.resolve(new Response(JSON.stringify({error:'Private older failure'}),{status:500}));await pending;assert.match(f.element('snapshot').textContent,/실행 B/);assert.equal(f.element('run-detail-status').textContent,status);assert.equal(f.element('allowed').textContent,'허용');
+});
+test('logout clears evaluation detail retry and late requests cannot restore it',async()=>{
+ const f=await fixture(),wait=deferred();f.overrides.set('/v1/runs/A',()=>wait.promise);const pending=f.view('A');await settle();await f.element('logout-button').fire('click');wait.resolve(execution('A'));await pending;assert.equal(f.element('run-detail-status').textContent,'');assert.equal(f.element('run-detail-retry').disabled,true);const before=f.httpRequests.length;await f.element('run-detail-retry').fire('click');assert.equal(f.httpRequests.length,before);
+});
+test('evaluation detail retry suppresses duplicate clicks during its selected request',async()=>{
+ const f=await fixture(),wait=deferred();f.overrides.set('/v1/runs/B',()=>new Response('{}',{status:500}));await f.view('B');f.overrides.set('/v1/runs/B',()=>wait.promise);const before=f.httpRequests.length,pending=f.element('run-detail-retry').fire('click');await settle();await f.element('run-detail-retry').fire('click');assert.equal(f.httpRequests.slice(before).filter(p=>p==='/v1/runs/B').length,1);wait.resolve(execution('B'));await pending;assert.equal(f.element('run-detail-retry').disabled,false);
+});
+test('same execution refresh cannot display a running gate older than its known terminal result',async()=>{
+ const f=await fixture();await f.view('B');f.overrides.set('/v1/runs/B',()=>execution('B','running'));await f.view('B');assert.equal(f.element('allowed').textContent,'—');assert.match(f.element('run-detail-status').textContent,/완료 상태보다 이전 응답/);assert.equal(f.element('run-detail-retry').disabled,false);
+});
+test('evaluation polling failure removes partial evidence and exposes an explicit retry',async()=>{
+ const f=await fixture();let reads=0;f.overrides.set('/v1/runs/A',()=>++reads===1?execution('A','running'):new Response('{}',{status:500}));const pending=f.view('A');await settle();assert.match(f.element('run-detail-status').textContent,/진행 중/);f.timers.shift()();await pending;assert.equal(f.element('allowed').textContent,'—');assert.equal(f.element('run-detail-retry').disabled,false);assert.match(f.element('run-detail-status').textContent,/다시 조회하세요/);
+});
+test('linked review read failure preserves the successfully loaded evaluation with distinct retry guidance',async()=>{
+ const f=await fixture({manual:true});f.overrides.set('/v1/runs/B/reviews?limit=25',()=>new Response(JSON.stringify({error:'Private linked error'}),{status:500}));await f.view('B');assert.match(f.element('snapshot').textContent,/실행 B/);assert.match(f.element('run-detail-status').textContent,/평가 상세는 표시했습니다/);assert.ok(!f.element('run-detail-status').textContent.includes('Private'));assert.equal(f.element('run-detail-retry').disabled,false);
+});
+
+test('explicit evaluation retry retains the known selected terminal boundary after a failed older response',async()=>{
+ const f=await fixture();await f.view('B');f.overrides.set('/v1/runs/B',()=>execution('B','running'));await f.view('B');await f.element('run-detail-retry').fire('click');assert.equal(f.element('allowed').textContent,'—');assert.match(f.element('run-detail-status').textContent,/완료 상태보다 이전 응답/);f.overrides.set('/v1/runs/B',()=>execution('B'));await f.element('run-detail-retry').fire('click');assert.equal(f.element('allowed').textContent,'허용');
+});
+
+test('same execution reread invalidates pending comparison before detail returns',async()=>{
+ const f=await fixture(),comparison=deferred(),detail=deferred();await f.view('B');f.element('baseline-run').value='A';f.overrides.set('/v1/compare',()=>comparison.promise);const pending=f.element('compare-form').fire('submit');await settle();f.overrides.set('/v1/runs/B',()=>detail.promise);const reread=f.view('B');await settle();const cleared=f.element('comparison-result').textContent;assert.notEqual(cleared,'');comparison.resolve({comparable:true,regressions:[],deploymentAllowed:true,passRateDelta:1,changes:[]});await pending;assert.equal(f.element('comparison-result').textContent,cleared);detail.resolve(execution('B'));await reread;
+});

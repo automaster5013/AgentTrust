@@ -10,6 +10,7 @@ function restorePanelLocation(){
 }
 globalThis.addEventListener?.('hashchange',updateNavigation);updateNavigation();
 let currentRun = null;
+let selectedTerminalRun=null;
 let evidencePage=0,evidenceCaseId=null;
 const evidencePageSize=10;
 let actor = null;
@@ -273,7 +274,7 @@ function render(run) {
   if(currentRun?.id===run.id&&terminal.has(currentRun.state)&&!terminal.has(run.state))return false;
   comparisonSequence++;
   if(currentRun?.id!==run.id){reviewCursor=null;reviewShown=0;$('review-history-status').textContent='';$('review-more').disabled=true;$('review-comment').value='';$('manual-gate-output').textContent='';evidencePage=0;evidenceCaseId=null;$('evidence-search').value='';$('evidence-filter').value='';}
-  currentRun = run;
+  currentRun = run;if(terminal.has(run.state))selectedTerminalRun={id:run.id,state:run.state};
   invalidateFinalGate();
   $('comparison-result').textContent='후보 실행을 조회한 뒤 기준 실행을 선택하세요.';
   const decision = run.gate.decision;
@@ -356,18 +357,52 @@ async function history(append=false) {
   const shown=$('history-body').children.length;
   $('history-status').textContent=shown?shown+'개 실행 기록을 표시합니다. '+(runCursor?'이전 실행을 더 조회할 수 있습니다.':'현재 조건의 마지막 기록입니다.'):'현재 조건에 맞는 실행 기록이 없습니다.';
 }
-async function selectRun(id,initialRun) {
-  selectedRunId = id;const sequence=++selectedRunSequence;$('receipt-navigation-status').textContent='';invalidateFinalGate();
-  reviewSequence++;$('review-panel').hidden=true;$('review-approve').disabled=true;$('review-reject').disabled=true;$('review-more').disabled=true;$('cancel-button').disabled=true;$('download').disabled=true;updateRunNavigation();
-  for (let attempt = 0; attempt < 800; attempt++) {
-    const run = attempt===0&&initialRun?initialRun:await api(`/v1/runs/${id}`);
-    if (selectedRunId !== id||sequence!==selectedRunSequence) return;
-    if(!render(run))return;await reviewHistory(run);
-    if (terminal.has(run.state)) { await history(); await auditHistory(); return; }
-    await new Promise(resolve => setTimeout(resolve, 150));
-  }
-  throw new Error('평가가 아직 완료되지 않았습니다. 실행 기록에서 다시 조회하세요.');
+function clearRunDetail(failed=false) {
+  comparisonSequence++;$('comparison-result').textContent='평가 상세를 확인한 뒤 기준 실행과 비교하세요.';
+  currentRun=null;reviewCursor=null;reviewShown=0;reviewSequence++;evidencePage=0;evidenceCaseId=null;
+  for(const id of ['evidence-search','evidence-filter','review-comment'])$(id).value='';
+  $('manual-gate-output').textContent='';$('review-history-status').textContent='';
+  $('review-list').replaceChildren();$('review-panel').hidden=true;$('review-more').disabled=true;$('review-approve').disabled=true;$('review-reject').disabled=true;
+  $('download').disabled=true;$('cancel-button').disabled=true;
+  $('gate-badge').textContent=failed?'조회 실패':'조회 중';$('gate-badge').className='gate idle';$('gate-title').textContent=failed?'배포 판단을 확인할 수 없습니다':'선택한 실행을 확인하고 있습니다';
+  $('gate-reason').textContent='선택한 실행의 평가 상세를 확인한 뒤 판정과 근거를 표시합니다.';$('allowed').textContent='—';$('run-state').textContent=failed?'조회 실패':'조회 중';
+  for(const id of ['case-count','pass-count','fail-count','unknown-count'])$(id).textContent='—';
+  $('snapshot').textContent=failed?'선택한 실행의 상세를 확인하지 못했습니다.':'선택한 실행의 상세를 조회하고 있습니다…';
+  invalidateFinalGate();renderEvidence();updateRunNavigation();
+  $('results').replaceChildren(node('div',failed?'상세 다시 조회로 선택한 실행의 근거를 확인하세요.':'선택한 실행의 평가 근거를 조회하고 있습니다…','empty'));
+  $('evidence-count').textContent='선택한 실행의 상세를 확인한 뒤 사례를 표시합니다.';
+  $('next-action-title').textContent=failed?'평가 상세를 다시 조회하세요':'상세 조회 완료를 기다리세요';$('next-action-detail').textContent='판정과 근거를 확인하기 전에는 이전 실행의 결과를 표시하지 않습니다.';$('next-action-link').href='#evidence';$('next-action-link').textContent='상세 조회 상태 보기';
 }
+async function selectRun(id,initialRun) {
+  const previousRun=currentRun?.id===id?currentRun:selectedTerminalRun?.id===id?selectedTerminalRun:null,epoch=scopeEpoch,projectId=activeProjectId;
+  if(selectedTerminalRun?.id!==id)selectedTerminalRun=null;
+  const previousEvidence=currentRun?.id===id?{page:evidencePage,caseId:evidenceCaseId,search:$('evidence-search').value,filter:$('evidence-filter').value}:null;
+  selectedRunId=id;const sequence=++selectedRunSequence,isCurrent=()=>epoch===scopeEpoch&&projectId===activeProjectId&&selectedRunId===id&&sequence===selectedRunSequence;
+  message('');$('receipt-navigation-status').textContent='';clearRunDetail();$('run-detail-retry').disabled=true;
+  $('run-detail-status').textContent='선택한 실행의 판정과 근거를 조회하고 있습니다…';
+  let stage='detail';
+  try {
+    for(let attempt=0;attempt<800;attempt++) {
+      stage='detail';
+      const run=attempt===0&&initialRun?initialRun:await api(`/v1/runs/${id}`);
+      if(!isCurrent())return;
+      if(run?.id!==id)throw new Error('Selected execution did not match the response.');
+      if(previousRun&&terminal.has(previousRun.state)&&!terminal.has(run.state)){clearRunDetail(true);$('run-detail-status').textContent='확인한 완료 상태보다 이전 응답을 받았습니다. 다시 조회하세요.';return;}
+      if(!render(run))return;if(attempt===0&&previousEvidence){evidencePage=previousEvidence.page;evidenceCaseId=previousEvidence.caseId;$('evidence-search').value=previousEvidence.search;$('evidence-filter').value=previousEvidence.filter;renderEvidence();}$('run-detail-status').textContent=terminal.has(run.state)?'선택한 실행의 판정과 근거를 표시합니다.':'선택한 실행이 진행 중입니다. 상세를 계속 확인하고 있습니다.';
+      stage='linked-read';await reviewHistory(run);if(!isCurrent())return;
+      if(terminal.has(run.state)){await history();if(!isCurrent())return;await auditHistory();return;}
+      await new Promise(resolve=>setTimeout(resolve,150));if(!isCurrent())return;
+    }
+    stage='detail';throw new Error('Execution polling exceeded its bound.');
+  } catch(error) {
+    if(!isCurrent())return;if(stage==='linked-read'){$('run-detail-status').textContent='평가 상세는 표시했습니다. 연결된 기록을 새로 확인하지 못했습니다. 다시 조회하세요.';throw new Error('연결된 기록을 새로 확인하지 못했습니다. 다시 조회하세요.');}clearRunDetail(true);$('run-detail-status').textContent='평가 상세를 확인하지 못했습니다. 연결·접근 권한을 확인하고 다시 조회하세요.';
+    throw new Error('평가 상세를 확인하지 못했습니다. 연결·접근 권한을 확인하고 다시 조회하세요.');
+  } finally {if(isCurrent())$('run-detail-retry').disabled=!actor||!activeProjectId;}
+}
+$('run-detail-retry').addEventListener('click',()=>{
+  if($('run-detail-retry').disabled||!selectedRunId||!actor||!activeProjectId)return;
+  return listAction(()=>selectRun(selectedRunId),()=>selectedRunSequence);
+});
 $('run-form').addEventListener('submit', async event => {
   event.preventDefault(); if (loading||readinessSelectionBusy) return;
   const epoch=scopeEpoch;let selection=selectedRunSequence;
@@ -401,13 +436,13 @@ function clearProjectData(){
   reviewBusy=false;loading=false;versionBusy=false;acceptanceBusy=false;readinessBusy=false;readinessSelectionBusy=false;readinessSequence++;clearReadinessResult();$('acceptance-readiness').disabled=true;$('acceptance-draft-status').textContent='';workspaceMutation=null;workspaceControls();
   recentBaselineRuns=[];
   $('gate-baseline-enabled').checked=false;$('gate-baseline-id').value='';$('gate-baseline-id').disabled=true;
-  lookupSequence++;lookupBusy=false;$('run-lookup-button').disabled=false;$('run-lookup-id').value='';$('run-lookup-status').textContent='';$('receipt-navigation-status').textContent='';
+  selectedTerminalRun=null;lookupSequence++;lookupBusy=false;$('run-lookup-button').disabled=false;$('run-lookup-id').value='';$('run-lookup-status').textContent='';$('receipt-navigation-status').textContent='';
   evidencePage=0;evidenceCaseId=null;$('evidence-search').value='';$('evidence-filter').value='';
   sessionSequence++;sessionBusy=false;sessionCursor=null;sessionButtons=[];$('session-list').replaceChildren();$('sessions-status').textContent='';$('sessions-more').disabled=true;sessionControls();
   comparisonSequence++;keyHistorySequence++;receiptHistorySequence++;reviewSequence++;reviewCursor=null;reviewShown=0;$('review-history-status').textContent='';$('review-more').disabled=true;
   inspectionCatalog=null;inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전의 고정된 내용과 해시를 확인할 수 있습니다.';
   auditSequence++;auditCursor=null;auditShown=0;$('audit-status').textContent='';$('audit-more').disabled=true;$('audit-action').value='';
-  currentRun=null;invalidateFinalGate();renderEvidence();selectedRunId=null;selectedRunSequence++;historySequence++;runCursor=null;$('history-more').disabled=true;$('history-state').value='';$('history-decision').value='';message('');$('run-button').disabled=true;$('dataset-button').disabled=true;
+  $('run-detail-status').textContent='';$('run-detail-retry').disabled=true;currentRun=null;invalidateFinalGate();renderEvidence();selectedRunId=null;selectedRunSequence++;historySequence++;runCursor=null;$('history-more').disabled=true;$('history-state').value='';$('history-decision').value='';message('');$('run-button').disabled=true;$('dataset-button').disabled=true;
   for(const id of ['agent-name','policy-name','project-name'])$(id).value='';
   for(const id of ['agent','dataset-select','policy'])$(id).replaceChildren();
   receiptFilters={decision:'',candidateRunId:''};receiptShown=0;$('receipt-decision').value='';$('receipt-candidate-id').value='';$('receipt-filter-status').textContent='';
