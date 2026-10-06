@@ -78,7 +78,7 @@ Compose 프로젝트는 `agenttrust`이며 API 4310, DB 55432 포트를 루프�
 
 ## 검증과 이미지 전달
 
-**고정 검증 기준선**: [v0.160 소스 커밋](https://github.com/automaster5013/AgentTrust/commit/653fa003212052a6a84ce41a2cd1e03996310bdc)의 [CI 실행 37392154932](https://github.com/automaster5013/AgentTrust/actions/runs/37392154932)에서 실제 541개 테스트와 네 작업 성공을 확인했습니다. 같은 digest의 기존 로컬 설치에서 저장 기록 보존·서명·비교·원래 검토 의견·읽기 전용 수용 계획·수용 기준 증거 묶음·조직 용량·역할·조회·병렬 평가를 확인하고 소스 v0.160로 복원했습니다. [합성 수용 시연 절차](docs/acceptance-walkthrough.md)와 [완료 범위](docs/portfolio-status.md)를 참고하세요. 상단 배지는 최신 main 실행을 표시합니다.
+**고정 검증 기준선**: [v0.162 소스 커밋](https://github.com/automaster5013/AgentTrust/commit/9cab446ba322c0be07caac038cd95e410033f8aa)의 [CI 실행 37435370683](https://github.com/automaster5013/AgentTrust/actions/runs/37435370683)에서 실제 554개 테스트와 네 작업 성공을 확인했습니다. 같은 digest의 기존 로컬 설치에서 새 입력 해시 기반 준비 계획과 기존 기록·서명·역할 흐름을 검증하고 소스 v0.162로 복원했습니다. 실제 화면의 현재 초안 점검·수정·30초 만료·재점검·로그아웃을 확인했습니다. [완료 범위](docs/portfolio-status.md#현재-v0162-검증-기준선)에 정확한 이미지와 출처를 기록했습니다. 상단 배지는 최신 main 실행을 표시합니다.
 
 1. 전체 테스트와 Docker 기반 평가·복구·시연 검증
 2. 같은 커밋의 후보 컨테이너를 GHCR에 발행
@@ -117,3 +117,7 @@ npm.cmd test
 관리자 API에서도 공개·편집 합성 기준의 준비 계획을 확인할 수 있습니다. `npm.cmd run acceptance:readiness -- --organization-index 1`의 조회·입력·역할 검증은 평가와 버전 등록을 생성하지 않습니다. [API 계약](docs/development.md)을 참고하세요.
 
 관리자는 **현재 합성 초안 준비 점검**으로 입력한 데이터셋과 정책의 준비 계획을 확인할 수 있습니다. 입력 해시·현재 프로젝트·관측 시각을 검증하고 수정·로그아웃·프로젝트 전환·30초 경과 시 결과를 지웁니다. 점검은 등록·평가·승인을 실행하거나 용량을 예약하지 않습니다.
+
+아래는 실제 v0.162 소스 Docker API에 자체 읽기 전용 프로젝트 세션으로 연결한 현재 초안 점검 화면입니다. 등록·평가·승인을 실행하지 않았고 종료 시 자체 로그아웃했습니다.
+
+![v0.162 현재 합성 초안 준비 점검](docs/evidence/acceptance-readiness-v162.jpg)

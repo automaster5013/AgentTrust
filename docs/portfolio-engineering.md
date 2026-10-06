@@ -1,10 +1,14 @@
 # AgentTrust 기술 설명과 검증 근거
 
-기업 개발팀이 에이전트 변경의 평가 근거를 확인하고 릴리스 여부를 결정하는 로컬 프로토타입이다. v0.160까지 검증한 구현과 최신 CI 이미지의 기존 로컬 설치 실행 점검을 설명하며 고객 파일럿이나 상용 배포 성과를 주장하지 않는다. [실행 시연](portfolio-demo.md) → [실제 아키텍처](architecture.md) → 아래 검증 근거 순서로 살펴볼 수 있다.
+기업 개발팀이 에이전트 변경의 평가 근거를 확인하고 릴리스 여부를 결정하는 로컬 프로토타입이다. v0.162까지 검증한 구현과 최신 CI 이미지의 기존 로컬 설치 실행 점검을 설명하며 고객 파일럿이나 상용 배포 성과를 주장하지 않는다. [실행 시연](portfolio-demo.md) → [실제 아키텍처](architecture.md) → 아래 검증 근거 순서로 살펴볼 수 있다.
 
-## 현재 수용 흐름과 검증 — v0.160
+## 현재 초안 준비 관측과 검증 — v0.162
 
-[v0.160 소스 커밋](https://github.com/automaster5013/AgentTrust/commit/653fa003212052a6a84ce41a2cd1e03996310bdc)의 [CI 실행 37392154932](https://github.com/automaster5013/AgentTrust/actions/runs/37392154932)의 541개 테스트·네 작업과 정확한 이미지의 기존 설치 실행을 검증했다. [수용 시연 절차](acceptance-walkthrough.md)는 오프라인 기준 점검 → 화면 초안 또는 선택 조직의 불변 기준 등록 → 읽기 전용 수용 계획 → 고정 평가와 승인·반려 → 과거 증거의 독립 검증을 연결한다. 실제 실행과 [최신 고정 완료 범위](portfolio-status.md#현재-v0160-검증-기준선)를 따른다.
+[v0.162 소스 커밋](https://github.com/automaster5013/AgentTrust/commit/9cab446ba322c0be07caac038cd95e410033f8aa)의 [CI 실행 37435370683](https://github.com/automaster5013/AgentTrust/actions/runs/37435370683)의 실제 554개 테스트·네 작업과 같은 digest의 기존 설치 실행을 확인했다. 화면은 현재 합성 입력의 정규 해시·조직·프로젝트·최신 관측을 대조하고 입력 수정·범위 전환·로그아웃·30초 경과 후 결과를 지운다. 재사용 기준의 내용 해시를 확인하고 필요 신규 버전 수와 실행·등록 공간을 표시한다. [고정 완료 범위](portfolio-status.md#현재-v0162-검증-기준선)에 실제 화면과 이미지 출처를 기록했다.
+
+## 이전 수용 흐름과 검증 — v0.160
+
+[v0.160 소스 커밋](https://github.com/automaster5013/AgentTrust/commit/653fa003212052a6a84ce41a2cd1e03996310bdc)의 [CI 실행 37392154932](https://github.com/automaster5013/AgentTrust/actions/runs/37392154932)의 541개 테스트·네 작업과 정확한 이미지의 기존 설치 실행을 검증했다. [수용 시연 절차](acceptance-walkthrough.md)는 오프라인 기준 점검 → 화면 초안 또는 선택 조직의 불변 기준 등록 → 읽기 전용 수용 계획 → 고정 평가와 승인·반려 → 과거 증거의 독립 검증을 연결한다. 실제 실행과 [최신 고정 완료 범위](portfolio-status.md#현재-v0162-검증-기준선)를 따른다.
 
 v0.159에서 촬영한 [용량 화면](evidence/operations-capacity-details-v159.jpg)은 조직 전체 등록·실행 용량을 표시한다. [초안 화면](evidence/acceptance-draft-v159.jpg)은 두 사례·다섯 규칙과 관리자 승인 정책을 양식에 준비하되 기존 선택을 유지한다. 실제 소스 Docker API에 자체 읽기 전용 프록시로 연결해 확인했고 업무 데이터 생성 없이 자체 로그아웃과 화면 초기화를 완료했다. 직접 브라우저 로그인·고객 연결·상용 배포 검증과 구분한다.
 
