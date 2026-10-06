@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { PgStore } from './pg-store.js';
-import { Auth,cookieToken,sessionCookie,sessionPageContext } from './auth.js';
+import { Auth,cookieToken,sessionCookie,sessionPageContext,requireWrite } from './auth.js';
 import { pool } from './database.js';
 import { validateDatabaseRole } from './role-guard.js';
 import { parseJson } from '../../packages/contracts/json.js';
@@ -16,6 +16,7 @@ import {RunQuotaError} from '../../packages/contracts/run-quota-error.js';
 import { sampleDataset } from '../../packages/contracts/samples.js';
 import acceptanceProfile from '../../examples/connector-contract/acceptance-profile.json' with {type:'json'};
 import {validateAcceptanceProfile} from '../../packages/evaluator/acceptance-profile.js';
+import {inspectAcceptanceReadiness} from '../../packages/evaluator/acceptance-readiness.js';
 import packageMetadata from '../../package.json' with {type:'json'};
 
 validateAcceptanceProfile(acceptanceProfile);
@@ -23,11 +24,11 @@ const webRoot=new URL('../web/',import.meta.url);
 const applicationVersion=packageMetadata.version;
 if(typeof applicationVersion!=='string'||!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(applicationVersion))throw new Error('Invalid application version.');
 const assets={'/':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/styles.css':['styles.css','text/css']};
-async function body(req) {
+async function body(req,maximumBytes=262144) {
   if(!/^application\/json(?:;|$)/i.test(req.headers['content-type']||'')) throw new InputError('Content-Type must be application/json.',415);
   if(req.headers['x-agenttrust-request']!=='local-ui') throw new InputError('Missing local request header.',403);
   let size=0;const chunks=[];
-  for await(const chunk of req){size+=chunk.length;if(size>262144)throw new InputError('JSON body exceeds 256 KiB.',413);chunks.push(chunk);}
+  for await(const chunk of req){size+=chunk.length;if(size>maximumBytes)throw new InputError(`JSON body exceeds ${maximumBytes/1024} KiB.`,413);chunks.push(chunk);}
   try{return parseJson(Buffer.concat(chunks));}catch{throw new InputError('Invalid JSON body.');}
 }
 export function createApp({database,store=new PgStore(database),auth=new Auth(database),ci=new CI(database),reviews=new Reviews(database),maxConcurrentRequests=32}={}) {
@@ -97,6 +98,21 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       if(req.method==='GET'&&path==='/v1/catalog') return send(200,await store.catalog(context));
       if(req.method==='GET'&&path==='/v1/operations')return send(200,await store.operations(context));
       if(req.method==='GET'&&path==='/v1/sample-acceptance-profile'){if(requestUrl.search)throw new InputError('Unexpected sample profile query.',400);return send(200,validateAcceptanceProfile(acceptanceProfile));}
+      if(['GET','POST'].includes(req.method)&&path==='/v1/acceptance-readiness'){
+        requireWrite(context,true);
+        if(requestUrl.search)throw new InputError('Acceptance readiness does not accept query parameters.');
+        const input=req.method==='POST'?await body(req,65536):acceptanceProfile;
+        let profile;
+        try{profile=validateAcceptanceProfile(input);}catch{throw new InputError('Invalid synthetic acceptance profile.');}
+        const operations=await store.operations(context);
+        const plan=await inspectAcceptanceReadiness({profile,scope:context,operations,call:async resource=>{
+          if(resource==='/v1/catalog')return store.catalog(context);
+          const match=/^\/v1\/versions\/([a-f0-9-]{36})$/.exec(resource);
+          if(!match)throw new Error('Unexpected readiness resource.');
+          return store.getVersion(context,match[1]);
+        }});
+        return send(200,{...plan,organizationId:context.organizationId,projectId:context.projectId,observedAt:operations.observedAt});
+      }
       if(req.method==='GET'&&path==='/v1/sample-dataset') return send(200,sampleDataset);
       if(req.method==='GET'&&path==='/v1/runs') return send(200,await store.listRuns(context,runPagination(requestUrl.searchParams,context)));
       if(req.method==='GET'&&path==='/v1/audit-events') return send(200,await store.auditEvents(context,auditPagination(requestUrl.searchParams,context)));

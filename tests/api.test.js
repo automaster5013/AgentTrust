@@ -901,3 +901,47 @@ test('synthetic acceptance sample is authenticated, project scoped and creates n
  assert.equal((await f.request(path+'?unexpected=1')).status,400);assert.equal((await f.request(path,{extra:{'X-AgentTrust-Project':f.other.projectId}})).status,404);const issued=await f.request('/v1/ci-credentials',{method:'POST',json:{name:'Synthetic acceptance sample access',projectId:f.first.projectId,ttlSeconds:60}});assert.equal(issued.status,201);const key=await issued.json();const ci=await fetch(f.base+path,{headers:{Authorization:'Bearer '+key.token}});assert.equal(ci.status,403);
  const after=await f.owner.query('SELECT (SELECT count(*)::int FROM agenttrust.versions WHERE organization_id=$1) AS versions,(SELECT count(*)::int FROM agenttrust.runs WHERE organization_id=$1) AS runs',[f.first.organizationId]);assert.equal(after.rows[0].versions,before.rows[0].versions);assert.equal(after.rows[0].runs,before.rows[0].runs);
 });
+
+async function readinessBusinessCounts(f,organizationId=f.first.organizationId){
+ const counts={};
+ for(const table of ['versions','runs','run_reviews','release_receipts','usage_events','audit_events'])counts[table]=(await f.owner.query(`SELECT count(*)::int AS total FROM agenttrust.${table} WHERE organization_id=$1`,[organizationId])).rows[0].total;
+ return counts;
+}
+test('read-only acceptance readiness requires administrator and binds its result to the selected project',async t=>{
+ const f=await fixture(t),path='/v1/acceptance-readiness';await heartbeat(f.workerDb);
+ assert.equal((await fetch(f.base+path)).status,401);
+ for(const role of ['editor','viewer'])for(const method of ['GET','POST'])assert.equal((await f.request(path,{role,method,...(method==='POST'?{json:sampleAcceptanceProfile}:{})})).status,403);
+ const key=await(await f.request('/v1/ci-credentials',{method:'POST',json:{name:'Readiness access fixture',projectId:f.first.projectId,ttlSeconds:60}})).json();
+ assert.equal((await fetch(f.base+path,{headers:{Authorization:'Bearer '+key.token}})).status,403);
+ const before=await readinessBusinessCounts(f),foreignBefore=await readinessBusinessCounts(f,f.other.organizationId);
+ for(const role of ['admin','other_admin']){const response=await f.request(path,{role});assert.equal(response.status,200);const r=await response.json(),scope=role==='admin'?f.first:f.other;assert.equal(r.organizationId,scope.organizationId);assert.equal(r.projectId,scope.projectId);assert.equal(r.purpose,'synthetic-acceptance-readiness-plan');assert.equal(r.completed,true);assert.equal(r.agentVersionsVerified,5);assert.equal(r.versionCapacityPreflight.requestedVersions,2);assert.equal(r.runsCreated,0);assert.equal(r.businessDataWrites,false);assert.equal(r.releaseGateEvaluated,false);assert.equal(r.currentReleasePermissionVerified,false);}
+ for(const method of ['GET','POST']){assert.equal((await f.request(path+'?unexpected=1',{method,...(method==='POST'?{json:sampleAcceptanceProfile}:{})})).status,400);assert.equal((await f.request(path,{method,extra:{'X-AgentTrust-Project':f.other.projectId},...(method==='POST'?{json:sampleAcceptanceProfile}:{})})).status,404);}
+ assert.deepEqual(await readinessBusinessCounts(f),before);assert.deepEqual(await readinessBusinessCounts(f,f.other.organizationId),foreignBefore);
+});
+test('posted synthetic readiness verifies exact criterion reuse without registering edited drafts',async t=>{
+ const f=await fixture(t),path='/v1/acceptance-readiness';await heartbeat(f.workerDb);
+ for(const kind of ['dataset','policy'])await f.store.createVersion(f.contexts.admin,kind,sampleAcceptanceProfile[kind]);
+ const before=await readinessBusinessCounts(f);let r=await(await f.request(path,{method:'POST',json:sampleAcceptanceProfile})).json();
+ assert.equal(r.completed,true);assert.equal(r.versionCapacityPreflight.requestedVersions,0);assert.ok(r.criteria.dataset.reused&&r.criteria.policy.reused);
+ const edited=structuredClone(sampleAcceptanceProfile);edited.dataset.name='private-readiness-input-canary';edited.policy.name='private-readiness-policy-canary';
+ r=await(await f.request(path,{method:'POST',json:edited})).json();assert.equal(r.completed,true);assert.equal(r.versionCapacityPreflight.requestedVersions,2);assert.equal(r.criteria.dataset.reused,false);assert.equal(r.criteria.policy.reused,false);assert.ok(!JSON.stringify(r).includes('private-readiness'));
+ const project=await f.store.createProject(f.contexts.admin,{name:'Readiness isolated project'},randomUUID());const projectBefore=await readinessBusinessCounts(f);
+ r=await(await f.request(path,{extra:{'X-AgentTrust-Project':project.id}})).json();assert.equal(r.projectId,project.id);assert.equal(r.completed,false);assert.equal(r.failedStage,'agent-versions');assert.equal(r.runsCreated,0);assert.deepEqual(await readinessBusinessCounts(f),projectBefore);
+ assert.equal(before.versions,projectBefore.versions);assert.equal(before.runs,projectBefore.runs);
+});
+test('readiness API keeps worker, capacity and stored-evidence failures bounded and performs no business writes',async t=>{
+ const f=await fixture(t),path='/v1/acceptance-readiness',operations=f.store.operations.bind(f.store),getVersion=f.store.getVersion.bind(f.store);await heartbeat(f.workerDb);
+ const before=await readinessBusinessCounts(f);
+ for(const [mutate,stage] of [[o=>o.worker.state='stale','worker'],[o=>o.executionCapacity.organizationId=randomUUID(),'execution-capacity'],[o=>{o.versionCapacity.used=999;o.versionCapacity.remaining=1;},'version-capacity']]){
+  f.store.operations=async context=>{const o=await operations(context);mutate(o);return o;};const response=await f.request(path);assert.equal(response.status,200);const r=await response.json();assert.equal(r.completed,false);assert.equal(r.failedStage,stage);assert.equal(r.runsCreated,0);assert.equal(r.businessDataWrites,false);
+ }
+ f.store.operations=operations;f.store.getVersion=async(context,id)=>{const v=await getVersion(context,id);v.data.name='private-stored-version-canary';return v;};const r=await(await f.request(path)).json();assert.equal(r.completed,false);assert.equal(r.failedStage,'agent-versions');assert.ok(!JSON.stringify(r).includes('private-stored-version-canary'));assert.deepEqual(await readinessBusinessCounts(f),before);
+});
+test('posted readiness accepts the exact 64 KiB boundary and rejects malformed or weak profiles before operations',async t=>{
+ const f=await fixture(t),path='/v1/acceptance-readiness';await heartbeat(f.workerDb);let reads=0;const operations=f.store.operations.bind(f.store);f.store.operations=async context=>{reads++;return operations(context);};
+ const before=await readinessBusinessCounts(f),text=JSON.stringify(sampleAcceptanceProfile),send=body=>fetch(f.base+path,{method:'POST',headers:{...headers,Cookie:f.cookies.admin},body});
+ const exact=text+' '.repeat(65536-Buffer.byteLength(text));assert.equal((await send(exact)).status,200);assert.equal(reads,1);
+ const tooLarge=await send(exact+' ');assert.equal(tooLarge.status,413);assert.equal((await tooLarge.json()).error,'JSON body exceeds 64 KiB.');
+ for(const input of [null,{...sampleAcceptanceProfile,synthetic:false},{...sampleAcceptanceProfile,policy:{...sampleAcceptanceProfile.policy,minimumPassRate:0.5}}]){const r=await send(JSON.stringify(input));assert.equal(r.status,400);assert.equal((await r.json()).error,'Invalid synthetic acceptance profile.');}
+ assert.equal((await send(Buffer.from([0xff]))).status,400);assert.equal((await send('{')).status,400);assert.equal(reads,1);assert.deepEqual(await readinessBusinessCounts(f),before);
+});
