@@ -922,9 +922,9 @@ test('posted synthetic readiness verifies exact criterion reuse without register
  const f=await fixture(t),path='/v1/acceptance-readiness';await heartbeat(f.workerDb);
  for(const kind of ['dataset','policy'])await f.store.createVersion(f.contexts.admin,kind,sampleAcceptanceProfile[kind]);
  const before=await readinessBusinessCounts(f);let r=await(await f.request(path,{method:'POST',json:sampleAcceptanceProfile})).json();
- assert.equal(r.completed,true);assert.equal(r.versionCapacityPreflight.requestedVersions,0);assert.ok(r.criteria.dataset.reused&&r.criteria.policy.reused);
+ assert.equal(r.profileHash,hash(sampleAcceptanceProfile));assert.equal(r.completed,true);assert.equal(r.versionCapacityPreflight.requestedVersions,0);assert.ok(r.criteria.dataset.reused&&r.criteria.policy.reused);
  const edited=structuredClone(sampleAcceptanceProfile);edited.dataset.name='private-readiness-input-canary';edited.policy.name='private-readiness-policy-canary';
- r=await(await f.request(path,{method:'POST',json:edited})).json();assert.equal(r.completed,true);assert.equal(r.versionCapacityPreflight.requestedVersions,2);assert.equal(r.criteria.dataset.reused,false);assert.equal(r.criteria.policy.reused,false);assert.ok(!JSON.stringify(r).includes('private-readiness'));
+ r=await(await f.request(path,{method:'POST',json:edited})).json();assert.equal(r.profileHash,hash(edited));assert.equal(r.completed,true);assert.equal(r.versionCapacityPreflight.requestedVersions,2);assert.equal(r.criteria.dataset.reused,false);assert.equal(r.criteria.policy.reused,false);assert.ok(!JSON.stringify(r).includes('private-readiness'));
  const project=await f.store.createProject(f.contexts.admin,{name:'Readiness isolated project'},randomUUID());const projectBefore=await readinessBusinessCounts(f);
  r=await(await f.request(path,{extra:{'X-AgentTrust-Project':project.id}})).json();assert.equal(r.projectId,project.id);assert.equal(r.completed,false);assert.equal(r.failedStage,'agent-versions');assert.equal(r.runsCreated,0);assert.deepEqual(await readinessBusinessCounts(f),projectBefore);
  assert.equal(before.versions,projectBefore.versions);assert.equal(before.runs,projectBefore.runs);

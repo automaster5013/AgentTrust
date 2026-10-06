@@ -26,6 +26,7 @@ function currentAuthentication(sequence,epoch,error){
 }
 let loading = false;
 let versionBusy=false,acceptanceBusy=false;
+let readinessBusy=false,readinessSequence=0,readinessResult=null;
 let workspaceMutation=null;
 let selectedRunId = null;
 let selectedRunSequence=0;
@@ -252,10 +253,11 @@ function updateButtons(){
   workspaceControls();
   const writer=actor&&actor.role!=='viewer';
   for(const [kind,id] of [['agent','agent'],['dataset','dataset-select'],['policy','policy']])$('inspect-'+kind).disabled=!$(id).value;
-  $('dataset-copy').disabled=!writer||!$('dataset-select').value||acceptanceBusy;
-  $('acceptance-prepare').disabled=actor?.role!=='admin'||!activeProjectId||versionBusy||acceptanceBusy;
+  $('dataset-copy').disabled=!writer||!$('dataset-select').value||acceptanceBusy||readinessBusy;
+  $('acceptance-prepare').disabled=actor?.role!=='admin'||!activeProjectId||versionBusy||acceptanceBusy||readinessBusy;
+  $('acceptance-readiness').disabled=actor?.role!=='admin'||!activeProjectId||versionBusy||acceptanceBusy||readinessBusy;
   $('run-button').disabled=!writer||loading||!$('agent').value||!$('dataset-select').value||!$('policy').value;
-  $('dataset-button').disabled=!writer||versionBusy||acceptanceBusy;$('agent-create').disabled=!writer||versionBusy||acceptanceBusy;$('policy-create').disabled=actor?.role!=='admin'||versionBusy||acceptanceBusy;
+  $('dataset-button').disabled=!writer||versionBusy||acceptanceBusy||readinessBusy;$('agent-create').disabled=!writer||versionBusy||acceptanceBusy||readinessBusy;$('policy-create').disabled=actor?.role!=='admin'||versionBusy||acceptanceBusy||readinessBusy;
 }
 function workspaceControls(){
   const busy=workspaceMutation!==null;
@@ -374,7 +376,7 @@ $('run-form').addEventListener('submit', async event => {
   finally { if(epoch===scopeEpoch){loading = false; updateButtons();} }
 });
 $('dataset-form').addEventListener('submit', async event => {
-  event.preventDefault();if(versionBusy||$('dataset-button').disabled)return;const epoch=scopeEpoch;versionBusy=true;updateButtons();
+  event.preventDefault();if(versionBusy||$('dataset-button').disabled)return;const epoch=scopeEpoch;versionBusy=true;clearReadinessResult();updateButtons();
   try {
     const value = JSON.parse($('dataset-json').value);
     const version = await api('/v1/dataset-versions', { method: 'POST', body: JSON.stringify(value) });
@@ -391,7 +393,7 @@ function clearProjectData(){
   cancelOperation=null;
   $('workspace-nav').hidden=true;$('nav-projects').hidden=true;
   operationsSequence++;$('operations-refresh').disabled=false;$('operations-status').textContent='';
-  reviewBusy=false;loading=false;versionBusy=false;acceptanceBusy=false;$('acceptance-draft-status').textContent='';workspaceMutation=null;workspaceControls();
+  reviewBusy=false;loading=false;versionBusy=false;acceptanceBusy=false;readinessBusy=false;readinessSequence++;clearReadinessResult();$('acceptance-draft-status').textContent='';workspaceMutation=null;workspaceControls();
   recentBaselineRuns=[];
   $('gate-baseline-enabled').checked=false;$('gate-baseline-id').value='';$('gate-baseline-id').disabled=true;
   lookupSequence++;lookupBusy=false;$('run-lookup-button').disabled=false;$('run-lookup-id').value='';$('run-lookup-status').textContent='';$('receipt-navigation-status').textContent='';
@@ -630,7 +632,7 @@ $('project-form').addEventListener('submit',async event=>{
   }catch(e){if(isCurrent())message(e.message,true);}finally{if(isCurrent()){workspaceMutation=null;workspaceControls();}}
 });
 for(const kind of ['agent','policy'])$(kind+'-form').addEventListener('submit',async event=>{
-  event.preventDefault();if(versionBusy||$(kind+'-create').disabled)return;const epoch=scopeEpoch;versionBusy=true;updateButtons();
+  event.preventDefault();if(versionBusy||$(kind+'-create').disabled)return;const epoch=scopeEpoch;versionBusy=true;clearReadinessResult();updateButtons();
   try{const input=kind==='agent'?{name:$('agent-name').value,mode:$('agent-mode').value}:{name:$('policy-name').value,minimumPassRate:Number($('policy-rate').value)/100,...($('policy-manual').checked?{requiresManualApproval:true,manualApprovalTtlSeconds:Number($('policy-review-ttl').value)}:{})};
     const version=await api('/v1/'+kind+'-versions',{method:'POST',body:JSON.stringify(input)});if(epoch!==scopeEpoch)return;
     await catalog({[kind]:version.id});if(epoch!==scopeEpoch)return;await auditHistory();if(epoch===scopeEpoch)message((kind==='agent'?'에이전트':'정책')+' 새 버전을 등록했습니다: '+version.name);
@@ -800,9 +802,54 @@ for(const [kind,selector] of [['agent','agent'],['dataset','dataset-select'],['p
     }catch(error){if(sequence===inspectionSequence)message(error.message,true);}
   });
 }
+
+function clearReadinessResult(text=''){
+  readinessResult=null;$('acceptance-readiness-status').textContent=text;
+}
+function readinessProfileFromDraft(){
+  if(new TextEncoder().encode($('dataset-json').value).length>65536)throw Error('Oversized draft');
+  const dataset=JSON.parse($('dataset-json').value),name=$('policy-name').value.trim(),minimumPassRate=Number($('policy-rate').value)/100,manualApprovalTtlSeconds=Number($('policy-review-ttl').value);
+  if(!name||name.length>100||minimumPassRate!==1||$('policy-manual').checked!==true||!Number.isInteger(manualApprovalTtlSeconds)||manualApprovalTtlSeconds<60||manualApprovalTtlSeconds>86400||!Array.isArray(dataset?.cases)||dataset.cases.length<1||dataset.cases.length>100||dataset.cases.some(c=>!Array.isArray(c?.rules)||c.rules.length<1||c.rules.length>20))throw Error('Invalid draft');
+  const profile={schemaVersion:1,synthetic:true,dataset,policy:{name,minimumPassRate,requiresManualApproval:true,manualApprovalTtlSeconds}};
+  if(new TextEncoder().encode(JSON.stringify(profile)).length>65536)throw Error('Oversized profile');
+  return profile;
+}
+async function verifyReadinessPlan(plan,profile){
+  if(plan?.schemaVersion!==1||plan.purpose!=='synthetic-acceptance-readiness-plan'||plan.synthetic!==true||plan.organizationId!==actor?.organizationId||plan.projectId!==activeProjectId||plan.businessDataReadOnly!==true||plan.businessDataWrites!==false||plan.runsCreated!==0||plan.releaseGateEvaluated!==false||plan.currentReleasePermissionVerified!==false||plan.serverDeployed!==false||typeof plan.completed!=='boolean')throw Error('Invalid readiness plan');
+  const observed=Date.parse(plan.observedAt),age=Date.now()-observed;
+  if(!Number.isFinite(observed)||age< -5000||age>30000)throw Error('Stale readiness plan');
+  await verifyArtifactBody(profile,plan.profileHash);
+  if(plan.completed){
+    const capacity=plan.capacityPreflight,versions=plan.versionCapacityPreflight,criteria=plan.criteria;
+    if(plan.failed===true||capacity?.status!=='passed'||capacity.requestedRuns!==6||capacity.observedAt!==plan.observedAt||!Number.isSafeInteger(capacity.retainedRemaining)||capacity.retainedRemaining<6||capacity.retainedRemaining>10000||!Number.isSafeInteger(capacity.activeRemaining)||capacity.activeRemaining<1||capacity.activeRemaining>10||versions?.status!=='passed'||!Number.isSafeInteger(versions.requestedVersions)||versions.requestedVersions<0||versions.requestedVersions>2||!Number.isSafeInteger(versions.remainingVersions)||versions.remainingVersions<versions.requestedVersions||versions.remainingVersions>1000||plan.agentVersionsVerified!==5||plan.cases!==profile.dataset.cases.length||plan.rules!==profile.dataset.cases.reduce((n,c)=>n+c.rules.length,0))throw Error('Invalid readiness counts');
+    let missing=0;
+    for(const kind of ['dataset','policy']){const row=criteria?.[kind];if(typeof row?.reused!=='boolean')throw Error('Invalid criterion');if(row.reused){if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(row.id||''))throw Error('Invalid criterion id');await verifyArtifactBody(profile[kind],row.contentHash);}else missing++;}
+    if(missing!==versions.requestedVersions)throw Error('Invalid criterion plan');
+  }else if(plan.failed!==true||!['execution-capacity','worker','version-capacity','agent-versions','criteria-versions'].includes(plan.failedStage))throw Error('Invalid readiness failure');
+  return observed;
+}
+const readinessFailureLabels={'execution-capacity':'평가 여섯 개의 실행·보관 용량을 확인하지 못했습니다.','worker':'최근 워커 신호가 없습니다.','version-capacity':'기준 재사용과 신규 등록 용량을 확인하지 못했습니다.','agent-versions':'모의 에이전트 버전 다섯 개를 확인하지 못했습니다.','criteria-versions':'저장된 수용 기준의 내용과 해시를 확인하지 못했습니다.'};
+$('acceptance-readiness').addEventListener('click',async()=>{
+  if($('acceptance-readiness').disabled)return;
+  const epoch=scopeEpoch,sequence=++readinessSequence,before=acceptanceDraftSnapshot();readinessBusy=true;clearReadinessResult('현재 합성 초안의 준비 계획을 점검하고 있습니다…');updateButtons();
+  const current=()=>epoch===scopeEpoch&&sequence===readinessSequence;
+  try{
+    const profile=readinessProfileFromDraft(),plan=await api('/v1/acceptance-readiness',{method:'POST',body:JSON.stringify(profile)});if(!current())return;
+    const observed=await verifyReadinessPlan(plan,profile);if(!current())return;
+    if(acceptanceDraftSnapshot().some((value,index)=>value!==before[index])){clearReadinessResult('요청 중 수정한 초안을 유지했습니다. 현재 초안을 다시 점검하세요.');return;}
+    const remaining=Math.min(30000,30000-(Date.now()-observed));if(remaining<=0)throw Error('Stale readiness plan');
+    readinessResult=plan;
+    const detail=plan.completed?`사례 ${plan.cases}개 · 규칙 ${plan.rules}개 · 에이전트 ${plan.agentVersionsVerified}개 확인. 평가 보관 공간 ${plan.capacityPreflight.retainedRemaining}개 · 동시 슬롯 ${plan.capacityPreflight.activeRemaining}개. 신규 기준 ${plan.versionCapacityPreflight.requestedVersions}개 필요 · 등록 공간 ${plan.versionCapacityPreflight.remainingVersions}개. 데이터셋 ${plan.criteria.dataset.reused?'재사용':'새 등록 필요'} · 정책 ${plan.criteria.policy.reused?'재사용':'새 등록 필요'}.`:readinessFailureLabels[plan.failedStage];
+    $('acceptance-readiness-status').textContent=`${plan.completed?'합성 초안의 준비 계획을 확인했습니다.':'준비 점검이 차단됐습니다.'} ${detail} 등록·평가·승인은 실행하지 않았습니다. 관측은 용량 예약이 아닙니다. 30초가 지나면 결과를 지웁니다.`;
+    setTimeout(()=>{if(current()&&readinessResult===plan){clearReadinessResult('준비 관측의 유효 시간이 지났습니다. 현재 초안을 다시 점검하세요.');}},remaining);
+  }catch{if(current())clearReadinessResult('준비 계획을 확인하지 못했습니다. 완전 통과·관리자 승인 기준의 초안을 준비한 뒤 다시 점검하세요.');}
+  finally{if(current()){readinessBusy=false;updateButtons();}}
+});
+for(const [id,event] of [['dataset-json','input'],['policy-name','input'],['policy-rate','input'],['policy-manual','change'],['policy-review-ttl','input']])$(id).addEventListener(event,()=>{if(readinessResult||readinessBusy)clearReadinessResult('초안이 변경됐습니다. 현재 초안을 다시 점검하세요.');});
+
 function acceptanceDraftSnapshot(){return ['dataset-json','policy-name','policy-rate','policy-review-ttl'].map(id=>$(id).value).concat($('policy-manual').checked);}
 $('acceptance-prepare').addEventListener('click',async()=>{
-  if($('acceptance-prepare').disabled)return;const epoch=scopeEpoch,before=acceptanceDraftSnapshot();acceptanceBusy=true;updateButtons();$('acceptance-draft-status').textContent='합성 수용 기준 초안을 준비하고 있습니다…';
+  if($('acceptance-prepare').disabled)return;clearReadinessResult();const epoch=scopeEpoch,before=acceptanceDraftSnapshot();acceptanceBusy=true;updateButtons();$('acceptance-draft-status').textContent='합성 수용 기준 초안을 준비하고 있습니다…';
   try{
     const profile=await api('/v1/sample-acceptance-profile');if(epoch!==scopeEpoch)return;
     const data=profile?.dataset,policy=profile?.policy;
@@ -815,6 +862,7 @@ $('acceptance-prepare').addEventListener('click',async()=>{
   finally{if(epoch===scopeEpoch){acceptanceBusy=false;updateButtons();}}
 });
 $('dataset-copy').addEventListener('click',async()=>{
+  if(!$('dataset-copy').disabled)clearReadinessResult();
   if($('dataset-copy').disabled)return;const id=$('dataset-select').value,draft=$('dataset-json').value,epoch=scopeEpoch;$('dataset-copy').disabled=true;
   try{const version=await api('/v1/versions/'+id);if(epoch!==scopeEpoch||$('dataset-select').value!==id)return;
     if($('dataset-json').value!==draft){message('초안이 수정되어 불러온 내용으로 덮어쓰지 않았습니다.');return;}

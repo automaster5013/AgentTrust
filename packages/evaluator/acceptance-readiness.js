@@ -10,7 +10,7 @@ export async function resolveAcceptanceAgents({catalog,call}){
 }
 export async function inspectAcceptanceReadiness({profile,scope,operations,call}){
  const checked=validateAcceptanceProfile(profile);assert.match(scope?.organizationId||'',/^[a-f0-9-]{36}$/);assert.match(scope?.projectId||'',/^[a-f0-9-]{36}$/);
- const report={schemaVersion:1,purpose:'synthetic-acceptance-readiness-plan',synthetic:true,completed:false,cleanupSucceeded:true,businessDataReadOnly:true,businessDataWrites:false,runsCreated:0,releaseGateEvaluated:false,currentReleasePermissionVerified:false,serverDeployed:false};let stage='execution-capacity';
+ const report={schemaVersion:1,purpose:'synthetic-acceptance-readiness-plan',synthetic:true,profileHash:hash(checked),completed:false,cleanupSucceeded:true,businessDataReadOnly:true,businessDataWrites:false,runsCreated:0,releaseGateEvaluated:false,currentReleasePermissionVerified:false,serverDeployed:false};let stage='execution-capacity';
  try{
   report.capacityPreflight=checkDemoRunCapacity(operations,scope,6);assert.equal(report.capacityPreflight.status,'passed');stage='worker';assert.equal(operations.worker?.state,'recent');stage='version-capacity';
   const catalog=await call('/v1/catalog');report.versionCapacityPreflight=checkAcceptanceVersionCapacity(operations,scope,planAcceptanceVersions(catalog,checked));assert.equal(report.versionCapacityPreflight.status,'passed');stage='agent-versions';const agents=await resolveAcceptanceAgents({catalog,call});report.agentVersionsVerified=agents.size;stage='criteria-versions';report.criteria={};
