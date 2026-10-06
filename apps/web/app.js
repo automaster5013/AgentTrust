@@ -393,7 +393,7 @@ function clearProjectData(){
   cancelOperation=null;
   $('workspace-nav').hidden=true;$('nav-projects').hidden=true;
   operationsSequence++;$('operations-refresh').disabled=false;$('operations-status').textContent='';
-  reviewBusy=false;loading=false;versionBusy=false;acceptanceBusy=false;readinessBusy=false;readinessSequence++;clearReadinessResult();$('acceptance-draft-status').textContent='';workspaceMutation=null;workspaceControls();
+  reviewBusy=false;loading=false;versionBusy=false;acceptanceBusy=false;readinessBusy=false;readinessSequence++;clearReadinessResult();$('acceptance-readiness').disabled=true;$('acceptance-draft-status').textContent='';workspaceMutation=null;workspaceControls();
   recentBaselineRuns=[];
   $('gate-baseline-enabled').checked=false;$('gate-baseline-id').value='';$('gate-baseline-id').disabled=true;
   lookupSequence++;lookupBusy=false;$('run-lookup-button').disabled=false;$('run-lookup-id').value='';$('run-lookup-status').textContent='';$('receipt-navigation-status').textContent='';
@@ -830,7 +830,7 @@ async function verifyReadinessPlan(plan,profile){
 }
 const readinessFailureLabels={'execution-capacity':'평가 여섯 개의 실행·보관 용량을 확인하지 못했습니다.','worker':'최근 워커 신호가 없습니다.','version-capacity':'기준 재사용과 신규 등록 용량을 확인하지 못했습니다.','agent-versions':'모의 에이전트 버전 다섯 개를 확인하지 못했습니다.','criteria-versions':'저장된 수용 기준의 내용과 해시를 확인하지 못했습니다.'};
 $('acceptance-readiness').addEventListener('click',async()=>{
-  if($('acceptance-readiness').disabled)return;
+  if($('acceptance-readiness').disabled||actor?.role!=='admin'||!activeProjectId)return;
   const epoch=scopeEpoch,sequence=++readinessSequence,before=acceptanceDraftSnapshot();readinessBusy=true;clearReadinessResult('현재 합성 초안의 준비 계획을 점검하고 있습니다…');updateButtons();
   const current=()=>epoch===scopeEpoch&&sequence===readinessSequence;
   try{
