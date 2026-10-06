@@ -37,6 +37,7 @@ let historySequence=0;
 let lookupSequence=0,lookupBusy=false;
 let auditCursor=null,auditSequence=0,auditShown=0,operationsSequence=0;
 let inspectionSequence=0,comparisonSequence=0,keyHistorySequence=0,receiptHistorySequence=0,receiptListGeneration=0,reviewSequence=0;
+let inspectionCatalog=null;
 let receiptInspectionSequence=0,receiptInspectionTrigger=null;
 let receiptFilters={decision:'',candidateRunId:''},receiptShown=0;
 let reviewBusy=false,reviewCursor=null,reviewShown=0;
@@ -236,7 +237,9 @@ function node(tag, text, className) {
   return element;
 }
 async function catalog(selectedDataset) {
+  inspectionCatalog=null;inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='버전 목록을 확인하고 있습니다…';
   const epoch=scopeEpoch,data=await api('/v1/catalog');if(epoch!==scopeEpoch)return;
+  inspectionCatalog=data;
   $('acceptance-selection-status').textContent='';
   inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전의 고정된 내용과 해시를 확인할 수 있습니다.';
   for (const [kind, id] of [['agent', 'agent'], ['dataset', 'dataset-select'], ['policy', 'policy']]) {
@@ -402,7 +405,7 @@ function clearProjectData(){
   evidencePage=0;evidenceCaseId=null;$('evidence-search').value='';$('evidence-filter').value='';
   sessionSequence++;sessionBusy=false;sessionCursor=null;sessionButtons=[];$('session-list').replaceChildren();$('sessions-status').textContent='';$('sessions-more').disabled=true;sessionControls();
   comparisonSequence++;keyHistorySequence++;receiptHistorySequence++;reviewSequence++;reviewCursor=null;reviewShown=0;$('review-history-status').textContent='';$('review-more').disabled=true;
-  inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전의 고정된 내용과 해시를 확인할 수 있습니다.';
+  inspectionCatalog=null;inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전의 고정된 내용과 해시를 확인할 수 있습니다.';
   auditSequence++;auditCursor=null;auditShown=0;$('audit-status').textContent='';$('audit-more').disabled=true;$('audit-action').value='';
   currentRun=null;invalidateFinalGate();renderEvidence();selectedRunId=null;selectedRunSequence++;historySequence++;runCursor=null;$('history-more').disabled=true;$('history-state').value='';$('history-decision').value='';message('');$('run-button').disabled=true;$('dataset-button').disabled=true;
   for(const id of ['agent-name','policy-name','project-name'])$(id).value='';
@@ -797,11 +800,19 @@ $('current-receipt-download').addEventListener('click',()=>{
 for(const [kind,selector] of [['agent','agent'],['dataset','dataset-select'],['policy','policy']]){
   $(selector).addEventListener('change',()=>{inspectionSequence++;$('acceptance-selection-status').textContent='';$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전이 변경됐습니다. 내용을 다시 조회하세요.';});
   $('inspect-'+kind).addEventListener('click',async()=>{
-    const sequence=++inspectionSequence,id=$(selector).value;
-    try{const version=await api('/v1/versions/'+id);if(sequence!==inspectionSequence||$(selector).value!==id)return;
-      $('version-inspection-meta').textContent=`${version.data.name} · 버전 UUID ${version.id} · ${new Date(version.createdAt).toLocaleString('ko-KR')} · SHA-256 ${version.contentHash}`;
+    if($('inspect-'+kind).disabled||!actor||!activeProjectId)return;
+    const sequence=++inspectionSequence,id=$(selector).value,epoch=scopeEpoch,catalogSnapshot=inspectionCatalog;
+    const current=()=>sequence===inspectionSequence&&epoch===scopeEpoch&&inspectionCatalog===catalogSnapshot&&$(selector).value===id;
+    $('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전의 내용과 해시를 확인하고 있습니다…';
+    try{
+      const entries=catalogSnapshot?.[kind]?.filter(row=>row.id===id);
+      if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id)||entries?.length!==1||!/^[a-f0-9]{64}$/.test(entries[0].contentHash||'')||typeof entries[0].name!=='string'||!entries[0].name.trim()||entries[0].name.length>100||typeof entries[0].createdAt!=='string'||!Number.isFinite(Date.parse(entries[0].createdAt)))throw Error('Invalid catalog version');
+      const expected=entries[0],version=await api('/v1/versions/'+id);if(!current())return;
+      if(version?.id!==id||version.kind!==kind||version.contentHash!==expected.contentHash||version.data?.name!==expected.name||typeof version.createdAt!=='string'||version.createdAt!==expected.createdAt)throw Error('Version mismatch');
+      await verifyArtifactBody(version.data,expected.contentHash);if(!current())return;
+      $('version-inspection-meta').textContent=`목록과 내용 해시 일치 · ${version.data.name} · 버전 UUID ${version.id} · ${new Date(version.createdAt).toLocaleString('ko-KR')} · SHA-256 ${version.contentHash} · 평가·승인 결과와는 별도의 내용 확인입니다.`;
       $('version-inspection-output').textContent=JSON.stringify(version.data,null,2);
-    }catch(error){if(sequence===inspectionSequence)message(error.message,true);}
+    }catch{if(current()){$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전의 내용과 해시를 확인하지 못했습니다. 버전 목록을 새로고침하거나 같은 내용 버튼으로 다시 조회하세요.';}}
   });
 }
 

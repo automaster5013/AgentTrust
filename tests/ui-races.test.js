@@ -20,6 +20,61 @@ class Element{
 }
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return {promise,resolve};};
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
+async function versionInspectionFixture({catalogChange,...options}={}){
+ const versions=Object.fromEntries(['agent','dataset','policy'].map((kind,index)=>{
+  const data=kind==='agent'?{name:'Synthetic inspection agent',mode:'compliant'}:structuredClone(sampleAcceptanceProfile[kind]);
+  return [kind,{id:'00000000-0000-0000-0000-00000000000'+(index+1),kind,data,contentHash:hash(data),createdAt:'2026-10-06T00:00:00.000Z'}];
+ }));
+ const catalog=Object.fromEntries(Object.entries(versions).map(([kind,v])=>[kind,[{id:v.id,name:v.data.name,contentHash:v.contentHash,createdAt:v.createdAt,mode:v.data.mode,minimumPassRate:v.data.minimumPassRate}]]));
+ catalogChange?.(catalog);
+ const f=await fixture({...options,initialOverrides:[['/v1/catalog',()=>catalog]]});
+ for(const v of Object.values(versions))f.overrides.set('/v1/versions/'+v.id,()=>v);
+ return {...f,versions,catalog};
+}
+test('version inspection verifies each selected scoped catalog body and only makes a read request',async()=>{
+ const f=await versionInspectionFixture();for(const kind of ['agent','dataset','policy']){
+  const before=f.httpRequests.length;let method;f.overrides.set('/v1/versions/'+f.versions[kind].id,options=>{method=options.method;assert.equal(options.headers['X-AgentTrust-Project'],'project');return f.versions[kind];});
+  await f.element('inspect-'+kind).fire('click');assert.deepEqual(f.httpRequests.slice(before),['/v1/versions/'+f.versions[kind].id]);assert.equal(method,undefined);assert.match(f.element('version-inspection-meta').textContent,/목록과 내용 해시 일치/);assert.deepEqual(JSON.parse(f.element('version-inspection-output').textContent),f.versions[kind].data);
+ }
+});
+for(const [label,change] of [
+ ['identity',v=>({...v,id:'00000000-0000-0000-0000-000000000009'})],['kind',v=>({...v,kind:'agent'})],['hash',v=>({...v,contentHash:'0'.repeat(64)})],['name',v=>({...v,data:{...v.data,name:'Private wrong name'}})],['body',v=>({...v,data:{...v.data,minimumPassRate:0}})],['timestamp',v=>({...v,createdAt:'Invalid private timestamp'})],['different valid timestamp',v=>({...v,createdAt:'2026-10-05T00:00:00.000Z'})]
+])test('version inspection rejects mismatched '+label+' without displaying unverified content',async()=>{
+ const f=await versionInspectionFixture();f.element('version-inspection-output').textContent='Old verified content';f.overrides.set('/v1/versions/'+f.versions.policy.id,()=>change(f.versions.policy));await f.element('inspect-policy').fire('click');assert.equal(f.element('version-inspection-output').textContent,'');assert.match(f.element('version-inspection-meta').textContent,/확인하지 못했습니다/);assert.ok(!f.element('version-inspection-meta').textContent.includes('Private'));assert.equal(f.element('inspect-policy').disabled,false);
+});
+test('version inspection accepts reordered canonical JSON keys',async()=>{
+ const f=await versionInspectionFixture();f.overrides.set('/v1/versions/'+f.versions.policy.id,()=>({...f.versions.policy,data:Object.fromEntries(Object.entries(f.versions.policy.data).reverse())}));await f.element('inspect-policy').fire('click');assert.match(f.element('version-inspection-meta').textContent,/목록과 내용 해시 일치/);
+});
+test('version inspection rejects missing duplicate or unhashed catalog entries before a version request',async()=>{
+ for(const mode of ['missing','duplicate','hash','path']){const f=await versionInspectionFixture({catalogChange:c=>{if(mode==='duplicate')c.policy.push({...c.policy[0]});if(mode==='hash')c.policy[0].contentHash='bad';}});if(mode==='missing')f.element('policy').value='00000000-0000-0000-0000-000000000009';if(mode==='path')f.element('policy').value='../private';const before=f.httpRequests.length;await f.element('inspect-policy').fire('click');assert.equal(f.httpRequests.length,before);assert.equal(f.element('version-inspection-output').textContent,'');assert.match(f.element('version-inspection-meta').textContent,/확인하지 못했습니다/);}
+});
+test('version inspection clears old content while reading and provides a local safe retry after HTTP failure',async()=>{
+ const f=await versionInspectionFixture(),wait=deferred();f.element('version-inspection-output').textContent='Old content';f.overrides.set('/v1/versions/'+f.versions.policy.id,()=>wait.promise);const pending=f.element('inspect-policy').fire('click');await settle();assert.equal(f.element('version-inspection-output').textContent,'');assert.match(f.element('version-inspection-meta').textContent,/확인하고 있습니다/);wait.resolve(new Response(JSON.stringify({error:'Private remote secret'}),{status:500}));await pending;assert.match(f.element('version-inspection-meta').textContent,/다시 조회하세요/);assert.ok(!f.element('version-inspection-meta').textContent.includes('Private remote secret'));f.overrides.set('/v1/versions/'+f.versions.policy.id,()=>f.versions.policy);await f.element('inspect-policy').fire('click');assert.match(f.element('version-inspection-meta').textContent,/목록과 내용 해시 일치/);
+});
+test('a later inspection keeps its own result when an older response completes or fails',async()=>{
+ for(const fail of [false,true]){const f=await versionInspectionFixture(),wait=deferred();f.overrides.set('/v1/versions/'+f.versions.dataset.id,async()=>{await wait.promise;if(fail)throw Error('Private old failure');return f.versions.dataset;});const pending=f.element('inspect-dataset').fire('click');await settle();await f.element('inspect-policy').fire('click');const before=f.element('version-inspection-meta').textContent,body=f.element('version-inspection-output').textContent;wait.resolve();await pending;assert.equal(f.element('version-inspection-meta').textContent,before);assert.equal(f.element('version-inspection-output').textContent,body);}
+});
+test('selection changed away and back during hashing invalidates an inspection',async()=>{
+ const wait=deferred();let hold=false;const f=await versionInspectionFixture({digest:async(...args)=>{if(hold)await wait.promise;return webcrypto.subtle.digest(...args);}});hold=true;const pending=f.element('inspect-policy').fire('click');await settle();f.element('policy').value=f.versions.dataset.id;await f.element('policy').fire('change');f.element('policy').value=f.versions.policy.id;await f.element('policy').fire('change');wait.resolve();await pending;assert.equal(f.element('version-inspection-output').textContent,'');assert.match(f.element('version-inspection-meta').textContent,/선택한 버전이 변경/);
+});
+test('late inspection response cannot restore content after logout or project change',async()=>{
+ for(const transition of ['logout','project']){const f=await versionInspectionFixture(),wait=deferred();f.overrides.set('/v1/versions/'+f.versions.policy.id,()=>wait.promise);const pending=f.element('inspect-policy').fire('click');await settle();if(transition==='logout')await f.element('logout-button').fire('click');else{f.element('workspace-project').value='next-project';await f.element('workspace-project').fire('change');}const before=f.element('version-inspection-meta').textContent;wait.resolve(f.versions.policy);await pending;assert.equal(f.element('version-inspection-output').textContent,'');assert.equal(f.element('version-inspection-meta').textContent,before);}
+});
+test('late inspection hash success or failure cannot replace a new login inspection',async()=>{
+ for(const fail of [false,true]){const wait=deferred();let hold=false;const f=await versionInspectionFixture({digest:async(...args)=>{if(hold){await wait.promise;if(fail)throw Error('Private digest failure');}return webcrypto.subtle.digest(...args);}});hold=true;const pending=f.element('inspect-policy').fire('click');await settle();hold=false;await f.element('logout-button').fire('click');await f.element('login-form').fire('submit');await f.element('inspect-agent').fire('click');const before=f.element('version-inspection-meta').textContent,body=f.element('version-inspection-output').textContent;wait.resolve();await pending;assert.equal(f.element('version-inspection-meta').textContent,before);assert.equal(f.element('version-inspection-output').textContent,body);}
+});
+test('catalog refresh clears an in-flight inspection and rejects its late hash completion',async()=>{
+ const wait=deferred(),catalogWait=deferred();let hold=false;const f=await versionInspectionFixture({digest:async(...args)=>{if(hold)await wait.promise;return webcrypto.subtle.digest(...args);}});hold=true;const pending=f.element('inspect-policy').fire('click');await settle();f.element('dataset-json').value=JSON.stringify(sampleAcceptanceProfile.dataset);f.overrides.set('/v1/dataset-versions',()=>({id:f.versions.dataset.id,name:f.versions.dataset.data.name}));f.overrides.set('/v1/catalog',()=>catalogWait.promise);const refresh=f.element('dataset-form').fire('submit');await settle();assert.equal(f.element('version-inspection-output').textContent,'');assert.match(f.element('version-inspection-meta').textContent,/목록을 확인하고/);wait.resolve();await pending;assert.match(f.element('version-inspection-meta').textContent,/목록을 확인하고/);catalogWait.resolve(f.catalog);await refresh;assert.equal(f.element('version-inspection-output').textContent,'');assert.ok(!f.element('version-inspection-meta').textContent.includes('목록과 내용 해시 일치'));hold=false;await f.element('inspect-policy').fire('click');assert.match(f.element('version-inspection-meta').textContent,/목록과 내용 해시 일치/);
+});
+test('stale enabled version inspection buttons cannot request after logout',async()=>{
+ const f=await versionInspectionFixture();await f.element('logout-button').fire('click');const before=f.httpRequests.length;for(const kind of ['agent','dataset','policy']){f.element('inspect-'+kind).disabled=false;await f.element('inspect-'+kind).fire('click');}assert.equal(f.httpRequests.length,before);assert.equal(f.element('version-inspection-output').textContent,'');
+});
+test('version inspection hash failure gives safe local feedback and permits another attempt',async()=>{
+ let fail=false;const f=await versionInspectionFixture({digest:async(...args)=>{if(fail)throw Error('Private local hashing failure');return webcrypto.subtle.digest(...args);}});fail=true;await f.element('inspect-policy').fire('click');assert.equal(f.element('version-inspection-output').textContent,'');assert.match(f.element('version-inspection-meta').textContent,/확인하지 못했습니다/);assert.ok(!f.element('version-inspection-meta').textContent.includes('Private'));fail=false;await f.element('inspect-policy').fire('click');assert.match(f.element('version-inspection-meta').textContent,/목록과 내용 해시 일치/);
+});
+test('version inspection rejects invalid catalogue metadata before requesting the body',async()=>{
+ for(const change of [c=>{c.policy[0].name='';},c=>{c.policy[0].name='a'.repeat(101);},c=>{delete c.policy[0].createdAt;},c=>{c.policy[0].createdAt='Invalid';}]){const f=await versionInspectionFixture({catalogChange:change});const before=f.httpRequests.length;await f.element('inspect-policy').fire('click');assert.equal(f.httpRequests.length,before);assert.equal(f.element('version-inspection-output').textContent,'');assert.match(f.element('version-inspection-meta').textContent,/확인하지 못했습니다/);}
+});
 for(const [code,expected] of [['run_active_limit',/진행 중인 평가/],['run_history_limit',/기록 보관 한도/]])test(`execution ${code} offers the matching recovery guidance without locking the form`,async()=>{
  const f=await fixture();f.overrides.set('/v1/runs',()=>new Response(JSON.stringify({error:'Organization execution quota reached.',code}),{status:429,headers:{'Content-Type':'application/json'}}));
  await f.element('run-form').fire('submit');assert.match(f.element('status').textContent,expected);assert.equal(f.element('run-button').disabled,false);assert.equal(f.element('history-body').children.length,2);
