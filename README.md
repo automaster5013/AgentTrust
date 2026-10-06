@@ -80,7 +80,7 @@ Compose 프로젝트는 `agenttrust`이며 API 4310, DB 55432 포트를 루프�
 
 ## 검증과 이미지 전달
 
-**고정 검증 기준선**: [v0.163 소스 커밋](https://github.com/automaster5013/AgentTrust/commit/f4704bc152eb90bf70f12822019937a916e8a90e)의 [CI 실행 37462992473](https://github.com/automaster5013/AgentTrust/actions/runs/37462992473)에서 실제 564개 테스트와 네 작업 성공을 확인했습니다. 정확한 digest의 기존 설치에서 준비 계획·저장 기록·서명·승인·역할 흐름을 검증하고 소스 v0.163으로 복원했습니다. 실제 화면에서 점검한 기존 기준의 함께 선택·수정·만료·재점검·로그아웃을 확인했습니다. [완료 범위](docs/portfolio-status.md#현재-v0163-검증-기준선)에 이미지와 출처를 기록했습니다. 상단 배지는 최신 main 실행을 표시합니다.
+**고정 검증 기준선**: [v0.164 소스 커밋](https://github.com/automaster5013/AgentTrust/commit/25ce9e53e02fbcacc69f4d98f80e54288f2a3701)의 [CI 실행 37509368931](https://github.com/automaster5013/AgentTrust/actions/runs/37509368931)에서 실제 583개 테스트와 네 작업 성공을 확인했습니다. 정확한 이미지의 기존 설치에서 커밋의 웹 파일·버전 확인 코드·기록 보존·서명·승인·역할 흐름 등 25개 검증 항목을 확인하고 소스로 복원했습니다. 실제 소스 Docker 화면에서 다섯 버전 본문과 선택 변경·로그아웃을 확인했습니다. [완료 범위](docs/portfolio-status.md#v0164-선택한-버전의-내용-확인)에 이미지와 출처를 기록했습니다. 상단 배지는 최신 main 실행을 표시합니다.
 
 1. 전체 테스트와 Docker 기반 평가·복구·시연 검증
 2. 같은 커밋의 후보 컨테이너를 GHCR에 발행
