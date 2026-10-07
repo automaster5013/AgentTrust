@@ -24,6 +24,8 @@ test('manual approvals and baseline evidence are historical, bounded and interna
  a.request.baselineRunId=id(5);a.evidence.baseline={runId:id(5),snapshotHash:'d'.repeat(64),resultHash:'e'.repeat(64)};
  a.result.comparison={candidateRunId:id(4),baselineRunId:id(5),comparable:true,passRateDelta:0,changes:[],regressions:[],requiresManualApproval:true,evaluationPassed:true,deploymentAllowed:false};
  const summary=inspectHistoricalReceipt(signed(a),key);assert.equal(summary.manualApprovalStatus,'approved');assert.equal(summary.reviewBodyVerified,false);assert.equal(summary.comparison.regressions,0);
+ assert.equal(inspectHistoricalReceipt(signed(a),key,{organizationId:id(2),projectId:id(3),candidateRunId:id(4),baselineRunId:id(5)}).expectedBaselineVerified,true);
+ assert.throws(()=>inspectHistoricalReceipt(signed(a),key,{organizationId:id(2),projectId:id(3),candidateRunId:id(4),baselineRunId:null}));
  for(const mutate of [b=>b.result.manualApproval.status='rejected',b=>b.result.manualApproval.reviewHash=undefined,b=>b.result.comparison.requiresManualApproval=false,b=>b.result.comparison.baselineRunId=id(8),b=>b.evidence.baseline.runId=id(8),b=>b.result.comparison.passRateDelta=2,b=>b.result.comparison.changes=[{caseId:'c',ruleId:'r',before:'pass',after:'fail'}]]){const b=structuredClone(a);mutate(b);assert.throws(()=>inspectHistoricalReceipt(signed(b),key));}
 });
 test('blocked receipt summarizes counts without echoing reasons or rule identities',()=>{
@@ -35,4 +37,24 @@ test('inspection rejects untrusted keys, tampered bodies and excessive nested in
  const receipt=signed(artifact());assert.throws(()=>inspectHistoricalReceipt(receipt,generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'})));
  receipt.artifact.result.decision='block';assert.throws(()=>inspectHistoricalReceipt(receipt,key));
  const a=artifact();let cursor=a;for(let i=0;i<65;i++){cursor.extra={};cursor=cursor.extra;}assert.throws(()=>inspectHistoricalReceipt({artifact:a},key));
+});
+test('explicit expected tenant and execution reject other valid signed records',()=>{
+ const receipt=signed(artifact()),expected={organizationId:id(2),projectId:id(3),candidateRunId:id(4),baselineRunId:null};
+ const summary=inspectHistoricalReceipt(receipt,key,expected);assert.equal(summary.expectedScopeVerified,true);assert.equal(summary.expectedCandidateVerified,true);assert.equal(summary.expectedBaselineVerified,true);
+ for(const field of ['organizationId','projectId','candidateRunId'])assert.throws(()=>inspectHistoricalReceipt(receipt,key,{...expected,[field]:id(9)}));
+ assert.throws(()=>inspectHistoricalReceipt(receipt,key,{...expected,baselineRunId:id(9)}));
+ for(const expected of [{},{organizationId:id(2)},{projectId:id(3)},{candidateRunId:id(4)},{organizationId:id(2),projectId:id(3),unknown:true},{organizationId:id(2),projectId:id(3),baselineRunId:null},{organizationId:'bad',projectId:id(3)},null,[]])assert.throws(()=>inspectHistoricalReceipt(receipt,key,expected));
+});
+test('expected scope IDs normalize case while omitted expectations remain unverified',()=>{
+ const a=artifact();a.organizationId='abcdef01-2345-4000-8000-000000000002';a.projectId='abcdef01-2345-4000-8000-000000000003';const receipt=signed(a);
+ assert.equal(inspectHistoricalReceipt(receipt,key,{organizationId:a.organizationId.toUpperCase(),projectId:a.projectId.toUpperCase()}).expectedScopeVerified,true);
+ const summary=inspectHistoricalReceipt(receipt,key);for(const field of ['expectedScopeVerified','expectedCandidateVerified','expectedBaselineVerified'])assert.equal(summary[field],false);
+});
+test('signed blocked receipts preserve explicit missing result hashes without treating evidence as complete',()=>{
+ const a=artifact();a.result={runId:id(4),decision:'block',deploymentAllowed:false,reasons:['A completed passing evaluation is required.']};a.evidence.candidate.resultHash=null;
+ const summary=inspectHistoricalReceipt(signed(a),key);assert.equal(summary.historicalDecision,'block');assert.equal(summary.evidenceReferenceHashesComplete,false);assert.equal(summary.evidenceBodiesVerified,false);assert.equal(summary.deploymentAllowed,false);
+ a.request.baselineRunId=id(5);a.evidence.baseline={runId:id(5),snapshotHash:'c'.repeat(64),resultHash:null};a.result.comparison={candidateRunId:id(4),baselineRunId:id(5),comparable:false,passRateDelta:0,changes:[],regressions:[],deploymentAllowed:false};assert.equal(inspectHistoricalReceipt(signed(a),key).evidenceReferenceHashesComplete,false);
+ a.result.comparison.comparable=true;assert.throws(()=>inspectHistoricalReceipt(signed(a),key));delete a.request.baselineRunId;delete a.evidence.baseline;delete a.result.comparison;
+ a.result={runId:id(4),decision:'pass',deploymentAllowed:true,reasons:[]};assert.throws(()=>inspectHistoricalReceipt(signed(a),key));
+ a.result={runId:id(4),decision:'block',deploymentAllowed:false,reasons:['missing']};delete a.evidence.candidate.resultHash;assert.throws(()=>inspectHistoricalReceipt(signed(a),key));
 });

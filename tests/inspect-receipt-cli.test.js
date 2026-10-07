@@ -19,6 +19,9 @@ test('inspection CLI explains signed blocks without exposing raw reasons or gran
   await save();await writeFile(key,pair.publicKey.export({type:'spki',format:'pem'}));
   const output=await exec(process.execPath,['scripts/inspect-receipt.mjs',file,key]),result=JSON.parse(output.stdout);
   assert.equal(result.historicalDecision,'block');assert.equal(result.reasonCount,1);assert.equal(result.currentReleasePermissionVerified,false);assert.equal(result.deploymentAllowed,false);assert.ok(!output.stdout.includes('sensitive synthetic'));assert.equal(output.stderr,'');
+  const selected=['--organization-id',id(2),'--project-id',id(3),'--candidate-run-id',id(4),'--baseline-run-id','none'];
+  const scoped=JSON.parse((await exec(process.execPath,['scripts/inspect-receipt.mjs',file,key,...selected])).stdout);assert.equal(scoped.expectedScopeVerified,true);assert.equal(scoped.expectedCandidateVerified,true);assert.equal(scoped.expectedBaselineVerified,true);assert.equal(scoped.deploymentAllowed,false);
+  for(const [index,value] of [[1,id(9)],[3,id(9)],[5,id(9)],[7,id(9)]]){const wrong=[...selected];wrong[index]=value;await assert.rejects(exec(process.execPath,['scripts/inspect-receipt.mjs',file,key,...wrong]),error=>error.code===2&&!error.stdout&&!error.stderr.includes('sensitive synthetic')&&!error.stderr.includes(dir));}
   artifact.result.decision='pass';await save();
   await assert.rejects(exec(process.execPath,['scripts/inspect-receipt.mjs',file,key]),error=>error.code===2&&!error.stdout&&error.stderr.includes('Historical receipt inspection failed.')&&!error.stderr.includes('sensitive synthetic')&&!error.stderr.includes(dir));
   artifact.result.decision='block';await save();await writeFile(key,pair.privateKey.export({type:'pkcs8',format:'pem'}));

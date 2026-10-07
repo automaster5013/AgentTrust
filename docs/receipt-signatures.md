@@ -8,6 +8,18 @@ JSON 출력은 `historicalDecision`, 사유·변경·회귀 개수와 과거 승
 
 입력은 기존 16 MiB 파일 제한에 더해 깊이 64·방문 항목 100,000개·사유 64개(각 500자)·비교 변경 및 회귀 각 2,000개로 제한한다. 잘못된 서명·모순·형식·입력 파일·공개키는 원문이나 파일 경로를 출력하지 않고 종료 코드 2로 실패한다. 기존 `receipt:verify`는 서명 인증 전용이며 구조 설명 검사를 대체하지 않는다.
 
+v0.171에서는 기록을 선택하기 전에 확인한 ID로 기대 범위를 지정할 수 있다:
+
+```powershell
+npm.cmd run receipt:inspect -- receipt.json trusted-public.pem --organization-id <organization-uuid> --project-id <project-uuid> --candidate-run-id <candidate-uuid> --baseline-run-id none
+```
+
+조직·프로젝트는 함께 지정해야 한다. 후보 실행은 선택 사항이며, 기준 실행 ID 또는 `none`은 후보 실행을 지정한 경우에만 허용한다. 비교한 기록은 `none` 대신 예상 기준 UUID를 사용한다. 서명이 유효하더라도 기대 ID가 다르면 종료 코드 2로 거부한다. ID를 검사 대상 기록 자체에서 그대로 복사하면 독립적인 범위 확인이 되지 않으므로 사전에 선택한 조직·프로젝트·실행에서 가져온다. UUID 대소문자는 정규화한다. 옵션 중복·부분 입력·알 수 없는 옵션은 파일 읽기 전에 거부한다.
+
+`expectedScopeVerified`, `expectedCandidateVerified`, `expectedBaselineVerified`는 각각 지정해 일치한 기대만 true로 표시한다. 기대를 생략하면 false다. 이 값은 현재 조직 접근 권한·실행 근거 원문·관리자 승인 유효성이나 배포 권한을 증명하지 않는다.
+
+아직 결과가 없는 실행의 정상 차단 기록은 결과 해시가 명시적으로 null일 수 있다. 이 경우 `evidenceReferenceHashesComplete: false`로 설명한다. 필드 누락·잘못된 해시나, 해시가 없는데 통과·비교 가능·승인 유효를 주장하는 기록은 거부한다. 해시 참조가 모두 있어도 근거 원문을 검증했다는 뜻은 아니다.
+
 v0.8의 로컬 setup은 `.local/receipt-signing/private.pem`과 `public.pem`에 Ed25519 키 쌍을 만든다. 기존 키를 재사용하고 서로 일치하지 않으면 setup을 중단한다. private 키는 Git/Docker build에서 제외하며 사용자/SYSTEM 전용 디렉터리 권한을 상속한다. Docker API만 Compose secret으로 읽는다. 워커에는 서명 키를 전달하지 않는다.
 
 새 검증 기록은 기존 schemaVersion 1 artifact와 artifactHash를 유지하고, 별도 signature에 algorithm·keyId·value를 기록한다. 키 ID는 공개키 SPKI DER의 SHA-256이다. 서명 메시지는 고정 도메인 `AgentTrust release receipt v1`과 canonical artifact의 SHA-256으로 구성한다. 서명은 조직·프로젝트·실행·버전 기대값·검증 시간·판정·증거 해시를 모두 결합한다. 기록과 서명은 동일 INSERT에서 저장하며 기존 불변성 트리거로 수정·삭제를 막는다. 중복 요청은 당시 저장한 서명을 그대로 반환한다.

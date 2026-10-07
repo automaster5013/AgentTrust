@@ -35,7 +35,13 @@ function comparison(result,candidateId,baselineId,manual){
 }
 
 // Authentication is necessary but does not establish current policy, evidence or actor authority.
-export function inspectHistoricalReceipt(receipt,trustedKey){
+export function normalizeReceiptExpectation(expected){
+ if(expected===undefined)return undefined;
+ if(!object(expected)||Object.keys(expected).some(key=>!['organizationId','projectId','candidateRunId','baselineRunId'].includes(key))||!uuid(expected.organizationId)||!uuid(expected.projectId)||expected.candidateRunId!==undefined&&!uuid(expected.candidateRunId)||Object.hasOwn(expected,'baselineRunId')&&(!uuid(expected.candidateRunId)||expected.baselineRunId!==null&&!uuid(expected.baselineRunId)))invalid();
+ return Object.fromEntries(Object.entries(expected).map(([key,value])=>[key,value===null?null:value.toLowerCase()]));
+}
+export function inspectHistoricalReceipt(receipt,trustedKey,expectation){
+ const expected=normalizeReceiptExpectation(expectation);
  bounded(receipt);const verified=verifyReceipt(receipt,trustedKey),a=receipt.artifact;
  if(!object(a)||a.schemaVersion!==1||!['receiptId','organizationId','projectId'].every(key=>uuid(a[key]))||typeof a.checkedAt!=='string'||a.checkedAt.length>40||!Number.isFinite(Date.parse(a.checkedAt))||!object(a.request)||!object(a.result)||!object(a.evidence))invalid();
  const request=a.request,result=a.result;
@@ -44,7 +50,7 @@ export function inspectHistoricalReceipt(receipt,trustedKey){
  for(const key of ['agentVersionId','datasetVersionId','policyVersionId'])if(request[key]!==undefined&&(typeof request[key]!=='string'||request[key].length>80))invalid();
  if(request.maxAgeSeconds!==undefined&&(!Number.isInteger(request.maxAgeSeconds)||request.maxAgeSeconds<1||request.maxAgeSeconds>86400))invalid();
  for(const [name,id] of [['candidate',request.candidateRunId],...(request.baselineRunId?[['baseline',request.baselineRunId]]:[])]){
-  const evidence=a.evidence[name];if(!object(evidence)||evidence.runId!==id||!digest(evidence.snapshotHash)||!digest(evidence.resultHash))invalid();
+  const evidence=a.evidence[name];if(!object(evidence)||evidence.runId!==id||!digest(evidence.snapshotHash)||!digest(evidence.resultHash)&&!(evidence.resultHash===null&&!result.deploymentAllowed))invalid();
  }
  if(!request.baselineRunId&&a.evidence.baseline!==undefined)invalid();
  const manual=result.manualApproval;
@@ -55,7 +61,12 @@ export function inspectHistoricalReceipt(receipt,trustedKey){
  }
  const compared=request.baselineRunId?comparison(result.comparison,request.candidateRunId,request.baselineRunId,manual!==undefined):{performed:false};
  if(!request.baselineRunId&&result.comparison!==undefined&&result.comparison!==null||result.deploymentAllowed&&compared.performed&&!compared.evaluationPassed)invalid();
+ const completeHashes=digest(a.evidence.candidate.resultHash)&&(!request.baselineRunId||digest(a.evidence.baseline.resultHash));
+ if(compared.performed&&compared.comparable&&!completeHashes||manual?.status==='approved'&&!digest(a.evidence.candidate.resultHash))invalid();
  const wrapper=Object.fromEntries(Object.entries(receipt).filter(([key])=>!['artifact','artifactHash','signature'].includes(key)));
  if(Object.keys(wrapper).length&&hash(wrapper)!==hash(result))invalid();
- return {schemaVersion:1,purpose:'historical-receipt-inspection',receiptId:verified.receiptId,organizationId:verified.organizationId,projectId:verified.projectId,checkedAt:verified.checkedAt,keyId:verified.keyId,artifactHash:receipt.artifactHash,signatureVerified:true,structureVerified:true,historicalDecision:result.decision,reasonCount:result.reasons.length,manualApprovalStatus:manual?.status??'not_required',comparison:compared,historicalEvidenceOnly:true,evidenceBodiesVerified:false,reviewBodyVerified:false,currentReleasePermissionVerified:false,deploymentAllowed:false};
+ if(expected){
+  if(a.organizationId.toLowerCase()!==expected.organizationId||a.projectId.toLowerCase()!==expected.projectId||expected.candidateRunId!==undefined&&request.candidateRunId.toLowerCase()!==expected.candidateRunId||Object.hasOwn(expected,'baselineRunId')&&(request.baselineRunId?.toLowerCase()??null)!==expected.baselineRunId)invalid();
+ }
+ return {schemaVersion:1,purpose:'historical-receipt-inspection',receiptId:verified.receiptId,organizationId:verified.organizationId,projectId:verified.projectId,checkedAt:verified.checkedAt,keyId:verified.keyId,artifactHash:receipt.artifactHash,signatureVerified:true,structureVerified:true,historicalDecision:result.decision,reasonCount:result.reasons.length,manualApprovalStatus:manual?.status??'not_required',comparison:compared,evidenceReferenceHashesComplete:completeHashes,expectedScopeVerified:expected!==undefined,expectedCandidateVerified:expected?.candidateRunId!==undefined,expectedBaselineVerified:expected!==undefined&&Object.hasOwn(expected,'baselineRunId'),historicalEvidenceOnly:true,evidenceBodiesVerified:false,reviewBodyVerified:false,currentReleasePermissionVerified:false,deploymentAllowed:false};
 }
