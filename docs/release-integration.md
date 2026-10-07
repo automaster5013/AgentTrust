@@ -1,6 +1,6 @@
-# v0.3 연결·비교·CI 게이트
+# HTTPS 연결·비교·CI 게이트
 
-2026-10-04 구현. 기본 환경은 합성 데이터와 모의 응답을 사용한다. 실제 고객 엔드포인트와 원격 CI 배포는 아직 검증하지 않았다.
+최초 v0.3 구현(2026-10-04) 이후의 연결·비교·CI 계약을 설명한다. 기본 환경은 합성 데이터와 모의 응답이다. 현재 소스·Docker 이미지의 원격 CI 검증은 [완료 범위](portfolio-status.md)를 따르며 실제 고객 엔드포인트 호출과 서버 배포는 수행하지 않았다.
 
 ## HTTPS 연결
 
@@ -14,7 +14,7 @@
 
 ## 버전 비교
 
-UI에서 후보 실행을 조회한 다음 기준 실행을 선택해 비교한다. `POST /v1/compare`는 `{ baselineRunId, candidateRunId }`를 받는다. 기존 세션·조직·프로젝트 경계를 그대로 적용한다. 데이터셋과 정책 contentHash가 같아야 한다. 모든 사례·규칙의 완료 증거가 있어야 비교 가능하며 pass → fail/inconclusive 변화는 회귀다. 후보가 pass이고 회귀가 없을 때만 비교에서 배포 허용을 반환한다. 정책 또는 데이터셋이 달라지면 409다.
+UI에서 후보 실행을 조회한 다음 기준 실행을 선택해 비교한다. `POST /v1/compare`는 `{ baselineRunId, candidateRunId }`를 받는다. 기존 세션·조직·프로젝트 경계를 그대로 적용한다. 데이터셋과 정책 contentHash가 같아야 한다. 모든 사례·규칙의 완료 증거가 있어야 비교 가능하며 pass → fail/inconclusive 변화는 회귀다. 완전한 후보 평가가 pass이고 회귀가 없을 때 비교 기준을 통과한다. 관리자 승인 정책에서는 `evaluationPassed: true`, `requiresManualApproval: true`여도 비교의 `deploymentAllowed`는 false다. 비교 API는 현재 관리자 승인을 확인하지 않으므로 배포 직전에 별도 최종 게이트를 호출한다. 기본 자동 정책의 비교 통과 역시 현재 권한·결과 유효 시간 등을 재확인하는 최종 게이트를 대신하지 않는다. 정책 또는 데이터셋이 달라지면 409다.
 
 ## CI 게이트
 
@@ -32,7 +32,7 @@ UI에서 후보 실행을 조회한 다음 기준 실행을 선택해 비교한�
 
 검증 근거: Node HTTPS의 TLS/lookup 옵션은 [Node 공식 HTTPS 문서](https://github.com/nodejs/node/blob/main/doc/api/https.md)를 기준으로 구현했다. HTTPS 전송은 주입한 합성 transport로 보안 옵션·주소 고정·오류를 검증했고 실제 고객 서버 호출은 수행하지 않았다.
 
-최종 검증: 자동 테스트 33개 통과, Docker 재빌드/health 및 실제 기본 worker egress 차단 확인, 정지·재시작 후 결과·해시·계량·감사 보존 확인, 브라우저 비교 완료(회귀 0개) 확인, npm audit 알려진 취약점 0개.
+v0.3 당시 검증(역사 기록): 자동 테스트 33개 통과, Docker 재빌드/health 및 실제 기본 worker egress 차단 확인, 정지·재시작 후 결과·해시·계량·감사 보존 확인, 브라우저 비교 완료(회귀 0개) 확인, npm audit 알려진 취약점 0개.
 
 ## v0.4 변경
 

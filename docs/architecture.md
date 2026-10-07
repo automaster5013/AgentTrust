@@ -1,6 +1,19 @@
 # 구현된 시스템 아키텍처
 
-v0.133의 구현 기준. 실제 코드와 로컬 Docker·GitHub CI에서 검증한 구조를 설명한다. 초기의 TypeScript·독립 객체 저장소·서명 웹훅 제안은 현재 구현에 포함되지 않는다. 제품 목표는 [제품 문서](product.md), 시연은 [포트폴리오 시연](portfolio-demo.md), 설계 판단과 검증 근거는 [기술 설명](portfolio-engineering.md)을 따른다.
+현재 v0.167의 코드와 로컬 Docker·지정한 GitHub CI에서 확인한 구조를 설명한다. v0.133 이후의 핵심 API·DB·워커 경계를 유지하며 오프라인 시연과 화면 조회 검증을 추가했다. 초기의 TypeScript·독립 객체 저장소·서명 웹훅 제안은 현재 구현에 포함되지 않는다. 제품 목표는 [제품 문서](product.md), 시연은 [포트폴리오 시연](portfolio-demo.md), 설계 판단과 검증 근거는 [기술 설명](portfolio-engineering.md)을 따른다.
+
+## 처음 확인하는 오프라인 경로
+
+```mermaid
+flowchart LR
+  Example[공개 합성 JSON] --> Core[기존 평가 / 기록 재현 / 비교 코어]
+  Core --> Offline[demo:offline: 기대 판정 확인]
+  Offline --> Guide[로컬 API 시연 절차]
+  Guide --> Review[평가 근거 / 관리자 검토]
+  Review --> Gate[별도 현재 최종 게이트]
+```
+
+오프라인 시연은 Docker·비밀 파일·외부 연결·업무 데이터 저장 없이 공개 예제를 읽는다. 정상·회귀·누락 판정 확인은 관리자 승인이나 서명 게이트를 대체하지 않는다. 실제 평가·검토·게이트 경로는 아래 구조와 [시연 안내](reviewer-guide.md)를 따른다.
 
 ## 실행 구성과 경계
 
