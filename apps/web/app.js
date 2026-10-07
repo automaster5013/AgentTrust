@@ -46,9 +46,9 @@ function comparisonControls(){
 function clearComparison(text=''){
   comparisonSequence++;comparisonOperation=null;$('comparison-status').textContent='';$('comparison-result').textContent=text;comparisonControls();
 }
-function verifiedComparison(result,run,baselineId){
+function verifiedComparisonStructure(result,candidateId,baselineId){
   const invalid=()=>{throw Error('Invalid selected comparison response');};
-  if(!result||typeof result!=='object'||result.candidateRunId!==run.id||result.baselineRunId!==baselineId||typeof result.comparable!=='boolean'||typeof result.deploymentAllowed!=='boolean'||!Number.isFinite(result.passRateDelta)||Math.abs(result.passRateDelta)>1||!Array.isArray(result.changes)||!Array.isArray(result.regressions)||result.changes.length>2000||result.regressions.length>2000)invalid();
+  if(!result||typeof result!=='object'||result.candidateRunId!==candidateId||result.baselineRunId!==baselineId||typeof result.comparable!=='boolean'||typeof result.deploymentAllowed!=='boolean'||!Number.isFinite(result.passRateDelta)||Math.abs(result.passRateDelta)>1||!Array.isArray(result.changes)||!Array.isArray(result.regressions)||result.changes.length>2000||result.regressions.length>2000)invalid();
   const changes=new Map(),statuses=new Set(['pass','fail','inconclusive']);
   for(const change of result.changes){
     if(!change||typeof change.caseId!=='string'||!change.caseId||change.caseId.length>10000||typeof change.ruleId!=='string'||!change.ruleId||change.ruleId.length>10000||!statuses.has(change.before)||!statuses.has(change.after)&&change.after!=='missing'||change.before===change.after||result.comparable&&(change.before==='inconclusive'||!['pass','fail'].includes(change.after)))invalid();
@@ -60,6 +60,12 @@ function verifiedComparison(result,run,baselineId){
     if(!regression)invalid();const key=JSON.stringify([regression.caseId,regression.ruleId]),change=changes.get(key);
     if(seen.has(key)||!change||change.before!=='pass'||change.after==='pass'||regression.before!==change.before||regression.after!==change.after)invalid();seen.add(key);
   }
+  const manual=result.requiresManualApproval===true,passed=result.evaluationPassed??result.deploymentAllowed;
+  if(result.requiresManualApproval!==undefined&&typeof result.requiresManualApproval!=='boolean'||result.evaluationPassed!==undefined&&typeof result.evaluationPassed!=='boolean'||manual&&typeof result.evaluationPassed!=='boolean'||passed&&(!result.comparable||result.regressions.length!==0)||manual&&result.deploymentAllowed||result.evaluationPassed!==undefined&&result.deploymentAllowed!==(result.evaluationPassed&&!manual))invalid();
+}
+function verifiedComparison(result,run,baselineId){
+  verifiedComparisonStructure(result,run.id,baselineId);
+  const invalid=()=>{throw Error('Invalid selected comparison response');};
   const manual=run.snapshot.policy.requiresManualApproval===true;
   const passed=result.comparable&&run.state==='succeeded'&&run.gate.decision==='pass'&&(manual?run.gate.evaluationPassed:run.gate.deploymentAllowed)===true&&result.regressions.length===0;
   if((result.requiresManualApproval===true)!==manual||result.requiresManualApproval!==undefined&&typeof result.requiresManualApproval!=='boolean'||result.evaluationPassed!==undefined&&(typeof result.evaluationPassed!=='boolean'||result.evaluationPassed!==passed)||manual&&result.evaluationPassed!==passed||result.deploymentAllowed!==(passed&&!manual))invalid();
@@ -193,14 +199,14 @@ function clearReceiptInspection(restoreFocus=false){
 }
 function receiptInspectionText(data){
   const artifact=data.artifact,{request,result}=artifact;
-  if(!Array.isArray(result.reasons)||!result.reasons.every(reason=>typeof reason==='string'&&reason.length<=500))throw Error('Invalid historical reasons');
+  if(!Array.isArray(result.reasons)||result.reasons.length>64||!result.reasons.every(reason=>typeof reason==='string'&&reason.length<=500)||result.deploymentAllowed&&result.reasons.length||!result.deploymentAllowed&&result.reasons.length===0)throw Error('Invalid historical reasons');
   const approvals={approved:'승인 유효',rejected:'반려',missing:'승인 대기',expired:'승인 만료',invalid:'승인 무효'};
-  if(result.manualApproval&&(!Object.hasOwn(approvals,result.manualApproval.status)||result.manualApproval.required!==true))throw Error('Invalid historical approval');
-  if(result.comparison){
+  if(result.manualApproval&&(!Object.hasOwn(approvals,result.manualApproval.status)||result.manualApproval.required!==true||result.deploymentAllowed&&result.manualApproval.status!=='approved'))throw Error('Invalid historical approval');
+  if(request.baselineRunId){
     const c=result.comparison;
-    if(c.candidateRunId!==request.candidateRunId||c.baselineRunId!==request.baselineRunId||typeof c.comparable!=='boolean'||typeof(c.evaluationPassed??c.deploymentAllowed)!=='boolean'||!Array.isArray(c.changes)||!Array.isArray(c.regressions)||c.changes.length>2000||c.regressions.length>2000)throw Error('Invalid historical comparison');
-    for(const r of c.regressions.slice(0,10))if(!['caseId','ruleId','before','after'].every(key=>typeof r[key]==='string'&&r[key].length<=100))throw Error('Invalid historical regression');
-  }
+    verifiedComparisonStructure(c,request.candidateRunId,request.baselineRunId);
+    if((c.requiresManualApproval===true)!==Boolean(result.manualApproval)||result.deploymentAllowed&&!(c.evaluationPassed??c.deploymentAllowed))throw Error('Invalid historical comparison permission');
+  }else if(result.comparison!==undefined&&result.comparison!==null)throw Error('Unexpected historical comparison');
   const version=key=>typeof request[key]==='string'&&request[key].length<=80?request[key]:'(미지정)';
   const evidence=artifact.evidence.candidate;
   const evidenceHash=key=>typeof evidence[key]==='string'&&evidence[key].length<=64?evidence[key]:'(기록 없음)';

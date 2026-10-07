@@ -1041,6 +1041,50 @@ async function receiptInspectionFixture(options={}){
  const f=await fixture(options),sample=historicalReceiptSample();f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[sample.row],nextCursor:null}));f.overrides.set('/v1/release-receipts/'+sample.row.id,()=>sample.data);await f.element('receipts-refresh').fire('click');
  const button=f.element('receipt-list').children[0].children.find(c=>c.textContent==='기록 상세 보기');return {...f,sample,inspect:button};
 }
+
+async function historicalResultFixture(allowed=false,baselineRunId,extra={}){
+ const f=await fixture(),signed=signedUiReceipt('B',allowed,baselineRunId,extra),{artifact,artifactHash,signature}=signed.report;
+ const data={artifact,artifactHash,signature},row={id:artifact.receiptId,candidate_run_id:'B',baseline_run_id:baselineRunId??null,created_at:artifact.checkedAt,artifact_hash:artifactHash,decision:artifact.result.decision,signing_key_id:signature.keyId};
+ f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[row],nextCursor:null}));f.overrides.set('/v1/release-receipts/'+row.id,()=>data);await f.element('receipts-refresh').fire('click');
+ await f.view('B');
+ return {...f,data,publicKey:signed.publicKey,inspect:f.element('receipt-list').children[0].children.find(c=>c.textContent==='기록 상세 보기')};
+}
+
+test('historical result inspection rejects a passing decision with blocking reasons or invalid approval',async()=>{
+ for(const extra of [{reasons:['A required rule failed.']},{manualApproval:{required:true,status:'rejected'}},{manualApproval:{required:true,status:'expired'}},{manualApproval:{required:false,status:'approved'}}]){
+  const f=await historicalResultFixture(true,undefined,extra);await f.inspect.fire('click');assert.match(f.element('receipt-inspection-output').textContent,/확인하지 못했습니다/);assert.equal(f.inspect.disabled,false);assert.equal(f.element('current-receipt-download').disabled,true);
+  await f.element('receipt-list').children[0].children.at(-1).fire('click');assert.equal(f.downloads.length,1);assert.deepEqual(JSON.parse(await f.downloads[0].text()),f.data);assert.equal(verifyReceipt(f.data,f.publicKey).signatureVerified,true);
+ }
+});
+
+test('historical comparison inspection rejects permissive flags contradicted by regression evidence',async()=>{
+ const change={caseId:'case',ruleId:'required',before:'pass',after:'fail'};
+ for(const comparison of [{candidateRunId:'B',baselineRunId:'baseline',comparable:true,deploymentAllowed:true,passRateDelta:0,changes:[change],regressions:[change]},{candidateRunId:'B',baselineRunId:'baseline',comparable:false,deploymentAllowed:true,passRateDelta:0,changes:[],regressions:[]}]){
+  const f=await historicalResultFixture(false,'baseline',{comparison});await f.inspect.fire('click');const text=f.element('receipt-inspection-output').textContent;assert.match(text,/확인하지 못했습니다/);assert.ok(!text.includes('회귀 비교: 통과'));assert.equal(f.element('current-receipt-download').disabled,true);
+ }
+});
+
+test('historical comparison inspection checks every change and regression beyond its display limit',async()=>{
+ const changes=Array.from({length:12},(_,i)=>({caseId:'case-'+i,ruleId:'required',before:'pass',after:'fail'}));
+ for(const mutate of [c=>c.regressions[11].after='pass',c=>c.changes[11].before='private-status-canary',c=>c.changes.push({...c.changes[0]}),c=>c.passRateDelta=2]){
+  const comparison={candidateRunId:'B',baselineRunId:'baseline',comparable:true,deploymentAllowed:false,passRateDelta:0,changes:structuredClone(changes),regressions:structuredClone(changes)};mutate(comparison);
+  const f=await historicalResultFixture(false,'baseline',{comparison});await f.inspect.fire('click');const text=f.element('receipt-inspection-output').textContent;assert.match(text,/확인하지 못했습니다/);assert.ok(!text.includes('private-status-canary'));assert.equal(f.inspect.disabled,false);
+ }
+});
+
+test('historical comparison inspection requires exactly the baseline evidence requested by its receipt',async()=>{
+ for(const [baselineRunId,comparison] of [['baseline',undefined],[undefined,{candidateRunId:'B',comparable:true,deploymentAllowed:true,passRateDelta:0,changes:[],regressions:[]}],['baseline',{candidateRunId:'B',baselineRunId:'baseline',comparable:true,requiresManualApproval:true,evaluationPassed:true,deploymentAllowed:false,passRateDelta:0,changes:[],regressions:[]}]]){
+  const f=await historicalResultFixture(false,baselineRunId,{comparison});await f.inspect.fire('click');assert.match(f.element('receipt-inspection-output').textContent,/확인하지 못했습니다/);assert.equal(f.element('current-receipt-download').disabled,true);
+ }
+});
+
+test('historical comparison inspection preserves complete evidence and separates comparison pass from expired approval',async()=>{
+ for(const status of ['approved','expired','rejected','missing']){
+  const allowed=status==='approved',comparison={candidateRunId:'B',baselineRunId:'baseline',comparable:true,requiresManualApproval:true,evaluationPassed:true,deploymentAllowed:false,passRateDelta:0,changes:[],regressions:[]};
+  const f=await historicalResultFixture(allowed,'baseline',{manualApproval:{required:true,status},comparison});await f.view('B');await f.inspect.fire('click');const text=f.element('receipt-inspection-output').textContent;assert.match(text,/본문 SHA-256 확인됨/);assert.match(text,/회귀 비교: 통과/);assert.match(text,allowed?/과거 확인 시점의 판정: 통과/:/과거 확인 시점의 판정: 차단/);assert.equal(f.element('current-receipt-download').disabled,true);
+  await f.element('receipt-list').children[0].children.at(-1).fire('click');const exported=JSON.parse(await f.downloads[0].text());assert.deepEqual(exported,f.data);assert.equal(verifyReceipt(exported,f.publicKey).signatureVerified,true);
+ }
+});
 test('historical receipt inspection displays verified body metadata and reasons without assigning a current gate or downloading',async()=>{
  const f=await receiptInspectionFixture();await f.view('B');await f.inspect.fire('click');assert.equal(f.element('receipt-inspection').hidden,false);
  const text=f.element('receipt-inspection-output').textContent;for(const pattern of [/과거 확인 시점의 판정: 차단/,/본문 SHA-256 확인됨/,/필수 규칙이 실패/,/공개키 검증은 별도 CLI/])assert.match(text,pattern);
@@ -1126,7 +1170,7 @@ test('a superseded historical inspection cannot overwrite a newer selected recei
 
 test('historical inspection distinguishes approval expiry from completed comparison evidence',async()=>{
  const f=await fixture(),sample=historicalReceiptSample(false,'baseline');
- Object.assign(sample.data.artifact.result,{reasons:['A current administrator approval is required.'],manualApproval:{required:true,status:'expired'},comparison:{candidateRunId:'B',baselineRunId:'baseline',comparable:true,evaluationPassed:true,requiresManualApproval:true,changes:[],regressions:[]}});
+ Object.assign(sample.data.artifact.result,{reasons:['A current administrator approval is required.'],manualApproval:{required:true,status:'expired'},comparison:{candidateRunId:'B',baselineRunId:'baseline',comparable:true,evaluationPassed:true,requiresManualApproval:true,deploymentAllowed:false,passRateDelta:0,changes:[],regressions:[]}});
  delete sample.data.signature;sample.row.signing_key_id=null;sample.row.artifact_hash=sample.data.artifactHash=hash(sample.data.artifact);
  f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[sample.row],nextCursor:null}));f.overrides.set('/v1/release-receipts/'+sample.row.id,()=>sample.data);await f.element('receipts-refresh').fire('click');await f.view('B');await f.element('receipt-list').children[0].children.find(c=>c.textContent==='기록 상세 보기').fire('click');
  const text=f.element('receipt-inspection-output').textContent;assert.match(text,/관리자 검토: 승인 만료/);assert.match(text,/회귀 비교: 통과/);assert.match(text,/현재 유효한 관리자 승인이 필요/);assert.match(text,/서명 없음/);assert.equal(f.element('current-receipt-download').disabled,true);
@@ -1134,7 +1178,7 @@ test('historical inspection distinguishes approval expiry from completed compari
 
 test('historical inspection displays exact regression rules as text and rejects mismatched comparison identifiers',async()=>{
  for(const mismatch of [false,true]){
-  const f=await fixture(),sample=historicalReceiptSample(false,'baseline');Object.assign(sample.data.artifact.result,{comparison:{candidateRunId:mismatch?'unrelated':'B',baselineRunId:'baseline',comparable:true,evaluationPassed:false,changes:[{}],regressions:[{caseId:'<case>',ruleId:'required',before:'pass',after:'fail'}]}});
+  const f=await fixture(),sample=historicalReceiptSample(false,'baseline'),change={caseId:'<case>',ruleId:'required',before:'pass',after:'fail'};Object.assign(sample.data.artifact.result,{comparison:{candidateRunId:mismatch?'unrelated':'B',baselineRunId:'baseline',comparable:true,evaluationPassed:false,deploymentAllowed:false,passRateDelta:0,changes:[change],regressions:[change]}});
   delete sample.data.signature;sample.row.signing_key_id=null;sample.row.artifact_hash=sample.data.artifactHash=hash(sample.data.artifact);
   f.overrides.set('/v1/release-receipts?limit=25',()=>({items:[sample.row],nextCursor:null}));f.overrides.set('/v1/release-receipts/'+sample.row.id,()=>sample.data);await f.element('receipts-refresh').fire('click');await f.view('B');await f.element('receipt-list').children[0].children.find(c=>c.textContent==='기록 상세 보기').fire('click');
   const text=f.element('receipt-inspection-output').textContent;if(mismatch)assert.match(text,/확인하지 못했습니다/);else{assert.match(text,/회귀 비교: 차단/);assert.ok(text.includes('사례 <case> · 규칙 required · pass → fail'));}assert.equal(f.element('current-receipt-download').disabled,true);
