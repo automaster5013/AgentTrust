@@ -30,6 +30,8 @@ jobs:
       - run: npm run connector:replay
       - run: npm run connector:compare
       - run: npm run acceptance:check
+      - name: Verify credential-free offline reviewer demonstration
+        run: npm run demo:offline -- --json
       - run: node packages/evaluator/connector-contract-smoke.js
       - run: npm test
       - run: npm audit --audit-level=high --cache .cache/npm
@@ -160,6 +162,7 @@ jobs:
           npm run connector:replay
           npm run connector:compare
           npm run acceptance:check
+          docker compose -f compose.yaml -f compose.image.yaml exec -T worker node scripts/portfolio-offline.mjs --json
           docker compose -f compose.yaml -f compose.image.yaml exec -T worker node packages/evaluator/connector-contract-smoke.js
       - name: Verify evaluation, restart, signed gates and accounting from registry image
         run: |
