@@ -48,6 +48,10 @@ npm.cmd run demo:portfolio -- --compare --organization-index 0 --export-receipts
 
 ![v0.166 비교 기준 통과와 관리자 승인 필요](evidence/comparison-scope-v166.jpg)
 
+v0.169에서는 저장된 과거 기록의 비교 통과와 관리자 반려를 함께 설명한다. 아래 화면은 기존 기록을 읽은 결과이며 현재 릴리스 허용을 뜻하지 않는다. 일치하는 본문 해시가 있어도 판정·사유·비교가 모순되면 상세 설명을 거부한다.
+
+![v0.169 과거 기록의 비교 통과와 관리자 반려](evidence/historical-result-v169.jpg)
+
 [8분 발표 구성](portfolio-demo.md#8분-발표-구성)과 [기술 설명](portfolio-engineering.md)에서 화면 설명과 구현 근거를 확인한다. 예전 버전의 화면은 촬영 버전을 표시한 역사 자료다.
 
 ## 4. CI와 수동 배포 준비를 확인한다
