@@ -12,6 +12,8 @@
 
 서명된 기록은 `npm.cmd run receipt:inspect -- receipt.json trusted-public.pem`으로 오프라인에서 검사할 수 있습니다. 과거 판정과 비교·승인 상태를 설명하며 현재 배포 권한은 허용하지 않습니다. [검사 범위와 제한](docs/receipt-signatures.md#과거-판정의-오프라인-설명-v0170)을 확인하세요.
 
+현재 고정 소스 기준선은 [v0.171 CI](https://github.com/automaster5013/AgentTrust/actions/runs/37700645134)의 646개 테스트와 네 작업을 통과했습니다. 정확한 이미지에서 기대 범위 검사와 다른 프로젝트 거부를 확인했습니다. [완료 범위와 검증 제한](docs/portfolio-status.md#v0171-오프라인-기록의-기대-조직프로젝트실행-결합)을 따릅니다.
+
 ## 처음 살펴보기
 
 [처음 보는 사람을 위한 실행·시연 순서](docs/reviewer-guide.md)에 핵심 판정, 실제 평가·승인 시연, CI와 수동 배포 준비를 연결했습니다. Node.js 24와 의존성 설치 후 아래 명령으로 Docker·접근 키 없이 다섯 합성 판정과 기록 응답의 회귀·누락 비교를 확인할 수 있습니다.
