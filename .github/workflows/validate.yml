@@ -48,6 +48,7 @@ jobs:
         run: |
           node --env-file-if-exists=.env scripts/ci-smoke.mjs
           node --env-file-if-exists=.env scripts/manual-review-smoke.mjs
+          node scripts/inspect-receipt.mjs .local/ci-smoke-receipt.json .local/receipt-signing/public.pem
       - name: Verify reproducible synthetic portfolio scenario
         run: |
           npm run demo:preflight
@@ -172,6 +173,7 @@ jobs:
           node --env-file-if-exists=.env scripts/smoke.mjs after
           node --env-file-if-exists=.env scripts/ci-smoke.mjs
           node --env-file-if-exists=.env scripts/manual-review-smoke.mjs
+          docker run --rm --user "$(id -u):$(id -g)" --network none --read-only --cap-drop ALL --security-opt no-new-privileges --mount "type=bind,source=$PWD/.local/ci-smoke-receipt.json,target=/receipt.json,readonly" --mount "type=bind,source=$PWD/.local/receipt-signing/public.pem,target=/trusted.pem,readonly" --entrypoint node "$AGENTTRUST_IMAGE" scripts/inspect-receipt.mjs /receipt.json /trusted.pem
           npm run demo:evidence
           npm run demo:evidence -- --with-reviews --with-report
           npm run demo:preflight -- --organization-index 1

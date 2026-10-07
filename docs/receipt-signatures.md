@@ -1,5 +1,13 @@
 # 릴리스 검증 기록의 서명
 
+## 과거 판정의 오프라인 설명 (v0.170)
+
+`npm.cmd run receipt:inspect -- receipt.json trusted-public.pem`은 독립적으로 신뢰한 Ed25519 공개키로 서명을 확인한 뒤 기록의 판정·사유·실행 ID·근거 해시·비교·관리자 승인 상태의 내부 일관성을 검사한다. Docker 이미지에서도 `node scripts/inspect-receipt.mjs /evidence/receipt.json /evidence/trusted-public.pem`으로 실행할 수 있다. 공개키와 기록만 읽기 전용으로 연결하고 `--network none --read-only --cap-drop ALL --security-opt no-new-privileges`를 사용한다.
+
+JSON 출력은 `historicalDecision`, 사유·변경·회귀 개수와 과거 승인 상태를 제공하며 원문 사유·규칙 이름·검토 의견을 출력하지 않는다. `deploymentAllowed`와 `currentReleasePermissionVerified`는 항상 `false`다. 서명된 해시 참조의 일관성을 확인해도 실행 근거 원문·검토 원문·검토자의 현재 권한은 검증하지 않으므로 `evidenceBodiesVerified`와 `reviewBodyVerified`도 `false`다. 실제 배포 직전에는 서버의 새 릴리스 게이트를 확인해야 한다.
+
+입력은 기존 16 MiB 파일 제한에 더해 깊이 64·방문 항목 100,000개·사유 64개(각 500자)·비교 변경 및 회귀 각 2,000개로 제한한다. 잘못된 서명·모순·형식·입력 파일·공개키는 원문이나 파일 경로를 출력하지 않고 종료 코드 2로 실패한다. 기존 `receipt:verify`는 서명 인증 전용이며 구조 설명 검사를 대체하지 않는다.
+
 v0.8의 로컬 setup은 `.local/receipt-signing/private.pem`과 `public.pem`에 Ed25519 키 쌍을 만든다. 기존 키를 재사용하고 서로 일치하지 않으면 setup을 중단한다. private 키는 Git/Docker build에서 제외하며 사용자/SYSTEM 전용 디렉터리 권한을 상속한다. Docker API만 Compose secret으로 읽는다. 워커에는 서명 키를 전달하지 않는다.
 
 새 검증 기록은 기존 schemaVersion 1 artifact와 artifactHash를 유지하고, 별도 signature에 algorithm·keyId·value를 기록한다. 키 ID는 공개키 SPKI DER의 SHA-256이다. 서명 메시지는 고정 도메인 `AgentTrust release receipt v1`과 canonical artifact의 SHA-256으로 구성한다. 서명은 조직·프로젝트·실행·버전 기대값·검증 시간·판정·증거 해시를 모두 결합한다. 기록과 서명은 동일 INSERT에서 저장하며 기존 불변성 트리거로 수정·삭제를 막는다. 중복 요청은 당시 저장한 서명을 그대로 반환한다.

@@ -5,6 +5,6 @@ RUN npm ci --omit=dev --ignore-scripts
 COPY apps ./apps
 COPY packages ./packages
 COPY examples ./examples
-COPY scripts/portfolio-offline.mjs scripts/check-connector-contract.mjs ./scripts/
+COPY scripts/portfolio-offline.mjs scripts/check-connector-contract.mjs scripts/inspect-receipt.mjs scripts/verify-receipt.mjs scripts/trusted-receipt-key.mjs ./scripts/
 USER node
 CMD ["node", "apps/api/server.js"]
