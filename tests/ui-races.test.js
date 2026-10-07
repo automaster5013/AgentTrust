@@ -634,11 +634,15 @@ test('expired authentication between an API read and hydration continuation stop
  await Promise.all([f.initialized,expired]);assert.equal(catalogs,0);assert.equal(f.element('workspace-ui').hidden,true);assert.equal(f.element('login-panel').hidden,false);
 });
 
-const releaseResult=(allowed=true,baselineRunId,extra={})=>{const result={runId:'B',decision:allowed?'pass':'block',deploymentAllowed:allowed,reasons:allowed?[]:['A required rule failed.'],...extra};const response={...result,artifact:{organizationId:'organization',projectId:'project',checkedAt:'2026-01-01T00:00:00Z',receiptId:'synthetic-receipt',request:{candidateRunId:'B',agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy',...(baselineRunId?{baselineRunId}:{})},result:structuredClone(result),evidence:{candidate:{runId:'B',snapshotHash:'synthetic-B',resultHash:'synthetic-result-B'},...(baselineRunId?{baseline:{runId:baselineRunId}}:{})}}};return {...response,artifactHash:hash(response.artifact)};};
+const releaseResult=(allowed=true,baselineRunId,extra={})=>{
+ const result={runId:'B',decision:allowed?'pass':'block',deploymentAllowed:allowed,reasons:allowed?[]:['A required rule failed.'],...extra};
+ if(result.comparison)result.comparison={candidateRunId:'B',baselineRunId,passRateDelta:0,changes:result.comparison.regressions??[],regressions:[],...result.comparison};
+ const response={...result,artifact:{schemaVersion:1,organizationId:'organization',projectId:'project',checkedAt:'2026-01-01T00:00:00Z',receiptId:'00000000-0000-0000-0000-000000000456',request:{candidateRunId:'B',agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy',...(baselineRunId?{baselineRunId}:{})},result:structuredClone(result),evidence:{candidate:{runId:'B',snapshotHash:'synthetic-B',resultHash:'synthetic-result-B'},...(baselineRunId?{baseline:{runId:baselineRunId}}:{})}}};return {...response,artifactHash:hash(response.artifact)};
+};
 test('completed evaluations without manual approval expose a version-bound final gate check',async()=>{
  const f=await fixture();await f.view('B');assert.equal(f.element('review-panel').hidden,true);assert.equal(f.element('release-check-panel').hidden,false);assert.equal(f.element('manual-gate-check').disabled,false);
  let input;f.overrides.set('/v1/release-gate',options=>{input=JSON.parse(options.body);return releaseResult();});await f.element('manual-gate-check').fire('click');
- assert.deepEqual(input,{candidateRunId:'B',agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy'});assert.match(f.element('manual-gate-output').textContent,/확인 시점의 최종 게이트: 통과/);assert.match(f.element('manual-gate-output').textContent,/synthetic-receipt/);
+ assert.deepEqual(input,{candidateRunId:'B',agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy'});assert.match(f.element('manual-gate-output').textContent,/확인 시점의 최종 게이트: 통과/);assert.match(f.element('manual-gate-output').textContent,/00000000-0000-0000-0000-000000000456/);
 });
 test('running evaluations cannot request the final gate and blocked results remain blocked',async()=>{
  const f=await fixture();let requests=0;f.overrides.set('/v1/release-gate',()=>{requests++;return releaseResult(false);});const pending=f.view('A');await settle();assert.equal(f.element('manual-gate-check').disabled,true);await f.element('manual-gate-check').fire('click');assert.equal(requests,0);
@@ -693,11 +697,59 @@ test('logout clears direct lookup state and an older response cannot restore it'
 });
 
 function signedUiReceipt(runId='B',allowed=true,baselineRunId,extra={}){
+ if(extra.comparison)extra={...extra,comparison:{passRateDelta:0,...extra.comparison}};
  const pair=generateKeyPairSync('ed25519'),signer=new ReceiptSigner(pair.privateKey.export({type:'pkcs8',format:'pem'}));
  const artifact={schemaVersion:1,organizationId:'organization',projectId:'project',receiptId:'00000000-0000-0000-0000-000000000456',checkedAt:'2026-01-01T00:00:00Z',request:{candidateRunId:runId,agentVersionId:'agent',datasetVersionId:'dataset',policyVersionId:'policy'},result:{runId,decision:allowed?'pass':'block',deploymentAllowed:allowed,reasons:allowed?[]:['A required rule failed.'],...extra},evidence:{candidate:{runId,snapshotHash:'synthetic-'+runId,resultHash:'synthetic-result-'+runId}}};
  if(baselineRunId){artifact.request.baselineRunId=baselineRunId;artifact.evidence.baseline={runId:baselineRunId,snapshotHash:'synthetic-baseline',resultHash:'synthetic-baseline-result'};}
  return {report:{...artifact.result,artifact,artifactHash:hash(artifact),signature:signer.sign(artifact)},publicKey:signer.publicMetadata().publicKey};
 }
+
+test('final gate rejects malformed receipt metadata even when its body hash is correct',async()=>{
+ const f=await fixture();await f.view('B');
+ for(const mutate of [a=>delete a.schemaVersion,a=>a.schemaVersion=2,a=>a.receiptId='private-receipt-canary',a=>a.checkedAt='private-time-canary',a=>a.checkedAt=null,a=>a.evidence.baseline={runId:'private-baseline-canary'}]){
+  const response=signedUiReceipt().report;mutate(response.artifact);response.artifactHash=hash(response.artifact);
+  f.overrides.set('/v1/release-gate',()=>response);await f.element('manual-gate-check').fire('click');
+  assert.match(f.element('manual-gate-output').textContent,/확인 실패/);assert.ok(!f.element('manual-gate-output').textContent.includes('canary'));assert.equal(f.element('current-receipt-download').disabled,true);assert.equal(f.element('manual-gate-check').disabled,false);
+ }
+ f.overrides.set('/v1/release-gate',()=>signedUiReceipt().report);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/최종 게이트: 통과/);assert.equal(f.element('current-receipt-download').disabled,false);
+});
+
+test('final gate HTTP failures omit private server messages and allow an explicit retry',async()=>{
+ const f=await fixture();await f.view('B');
+ f.overrides.set('/v1/release-gate',()=>new Response(JSON.stringify({error:'private-server-canary'}),{status:500}));await f.element('manual-gate-check').fire('click');
+ assert.match(f.element('manual-gate-output').textContent,/확인 실패/);assert.ok(!f.element('manual-gate-output').textContent.includes('canary'));assert.equal(f.element('current-receipt-download').disabled,true);assert.equal(f.element('manual-gate-check').disabled,false);
+ f.overrides.set('/v1/release-gate',()=>signedUiReceipt().report);await f.element('manual-gate-check').fire('click');assert.equal(f.element('current-receipt-download').disabled,false);
+});
+
+test('blocked final gate reasons are bounded before any receipt or result is displayed',async()=>{
+ const f=await fixture();await f.view('B');
+ for(const reasons of [[],['private-reason-canary'.repeat(100)],Array.from({length:65},()=> 'A required rule failed.')]){
+  f.overrides.set('/v1/release-gate',()=>signedUiReceipt('B',false,undefined,{reasons}).report);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/확인 실패/);assert.ok(!f.element('manual-gate-output').textContent.includes('canary'));assert.equal(f.element('current-receipt-download').disabled,true);
+ }
+});
+
+test('blocked final gates cannot show comparison evidence belonging to another execution pair',async()=>{
+ const f=await fixture();await f.view('B');await enableBaseline(f);
+ const base={candidateRunId:'B',baselineRunId:gateBaseline,comparable:false,deploymentAllowed:false,changes:[],regressions:[],passRateDelta:0};
+ for(const comparison of [{...base,candidateRunId:'private-candidate-canary'},{...base,baselineRunId:'private-baseline-canary'},{...base,changes:null},{...base,regressions:null}]){
+  f.overrides.set('/v1/release-gate',()=>signedUiReceipt('B',false,gateBaseline,{comparison}).report);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/확인 실패/);assert.ok(!f.element('manual-gate-output').textContent.includes('canary'));assert.equal(f.element('current-receipt-download').disabled,true);
+ }
+ f.overrides.set('/v1/release-gate',()=>signedUiReceipt('B',false,gateBaseline,{comparison:base}).report);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/회귀 비교: 미완료/);assert.equal(f.element('current-receipt-download').disabled,false);
+});
+
+test('final gates without a requested baseline reject unsolicited comparison details',async()=>{
+ const f=await fixture();await f.view('B');f.overrides.set('/v1/release-gate',()=>signedUiReceipt('B',false,undefined,{comparison:{candidateRunId:'B',baselineRunId:'private-baseline-canary',comparable:false,deploymentAllowed:false,changes:[],regressions:[]}}).report);await f.element('manual-gate-check').fire('click');
+ assert.match(f.element('manual-gate-output').textContent,/확인 실패/);assert.ok(!f.element('manual-gate-output').textContent.includes('canary'));assert.equal(f.element('current-receipt-download').disabled,true);
+});
+
+test('final gate regression names are bounded on screen while the verified receipt stays complete',async()=>{
+ const f=await fixture();await f.view('B');await enableBaseline(f);
+ const change={caseId:'case-'+ 'x'.repeat(180),ruleId:'rule-'+ 'y'.repeat(180),before:'pass',after:'fail'};
+ const comparison={candidateRunId:'B',baselineRunId:gateBaseline,comparable:true,deploymentAllowed:false,passRateDelta:0,changes:[change],regressions:[change]};
+ const signed=signedUiReceipt('B',false,gateBaseline,{comparison});f.overrides.set('/v1/release-gate',()=>signed.report);await f.element('manual-gate-check').fire('click');
+ const output=f.element('manual-gate-output').textContent;assert.match(output,/최종 게이트: 차단/);assert.match(output,/160자/);assert.ok(!output.includes('x'.repeat(180)));assert.ok(!output.includes('y'.repeat(180)));
+ await f.element('current-receipt-download').fire('click');const downloaded=JSON.parse(await f.downloads[0].text());assert.deepEqual(downloaded,signed.report.artifact?{artifact:signed.report.artifact,artifactHash:signed.report.artifactHash,signature:signed.report.signature}:null);assert.equal(verifyReceipt(downloaded,signed.publicKey).signatureVerified,true);assert.equal(downloaded.artifact.result.comparison.regressions[0].caseId,change.caseId);
+});
 function historicalReceiptSample(allowed=false,baselineRunId){
  const signed=signedUiReceipt('B',allowed,baselineRunId),{artifact,artifactHash,signature}=signed.report;
  return {data:{artifact,artifactHash,signature},publicKey:signed.publicKey,row:{id:artifact.receiptId,candidate_run_id:'B',baseline_run_id:baselineRunId??null,created_at:artifact.checkedAt,artifact_hash:artifactHash,decision:artifact.result.decision,signing_key_id:signature.keyId}};
@@ -737,7 +789,7 @@ const gateBaseline='00000000-0000-0000-0000-000000000789';
 async function enableBaseline(f,id=gateBaseline){f.element('gate-baseline-enabled').checked=true;await f.element('gate-baseline-enabled').fire('change');f.element('gate-baseline-id').value=id;await f.element('gate-baseline-id').fire('input');}
 test('optional baseline is normalized and regression blocks final release',async()=>{
  const f=await fixture();await f.view('B');assert.equal(f.element('gate-comparison-inputs').hidden,true);await enableBaseline(f,' '+gateBaseline.toUpperCase()+' ');assert.equal(f.element('gate-comparison-inputs').hidden,false);let input;
- f.overrides.set('/v1/release-gate',options=>{input=JSON.parse(options.body);return releaseResult(false,gateBaseline,{comparison:{comparable:true,deploymentAllowed:false},reasons:['Baseline comparison is incomplete or regressed.']});});await f.element('manual-gate-check').fire('click');
+ const regressions=[{caseId:'case',ruleId:'rule',before:'pass',after:'fail'}];f.overrides.set('/v1/release-gate',options=>{input=JSON.parse(options.body);return releaseResult(false,gateBaseline,{comparison:{comparable:true,deploymentAllowed:false,changes:regressions,regressions},reasons:['Baseline comparison is incomplete or regressed.']});});await f.element('manual-gate-check').fire('click');
  assert.equal(input.baselineRunId,gateBaseline);assert.match(f.element('manual-gate-output').textContent,/회귀 비교: 차단/);assert.match(f.element('manual-gate-output').textContent,new RegExp(gateBaseline));assert.match(f.element('next-action-title').textContent,/차단 사유/);
 });
 test('invalid and identical baseline IDs make no final gate request',async()=>{
@@ -752,7 +804,7 @@ test('changing baseline invalidates receipt and late response even after restori
 });
 test('baseline-bound signed receipt exports unchanged and mismatched baseline cannot enable download',async()=>{
  const f=await fixture();await f.view('B');await enableBaseline(f);const signed=signedUiReceipt(),artifact=signed.report.artifact;artifact.request.baselineRunId=gateBaseline;artifact.evidence.baseline={runId:gateBaseline};
- const pair=generateKeyPairSync('ed25519'),signer=new ReceiptSigner(pair.privateKey.export({type:'pkcs8',format:'pem'}));signed.report.artifactHash=hash(artifact);signed.report.signature=signer.sign(artifact);signed.report.comparison={baselineRunId:gateBaseline,candidateRunId:'B',comparable:true,deploymentAllowed:true,changes:[],regressions:[]};artifact.result.comparison=structuredClone(signed.report.comparison);signed.report.artifactHash=hash(artifact);signed.report.signature=signer.sign(artifact);
+ const pair=generateKeyPairSync('ed25519'),signer=new ReceiptSigner(pair.privateKey.export({type:'pkcs8',format:'pem'}));signed.report.artifactHash=hash(artifact);signed.report.signature=signer.sign(artifact);signed.report.comparison={baselineRunId:gateBaseline,candidateRunId:'B',comparable:true,deploymentAllowed:true,changes:[],regressions:[],passRateDelta:0};artifact.result.comparison=structuredClone(signed.report.comparison);signed.report.artifactHash=hash(artifact);signed.report.signature=signer.sign(artifact);
  f.overrides.set('/v1/release-gate',()=>signed.report);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/회귀 비교: 통과/);await f.element('current-receipt-download').fire('click');const downloaded=JSON.parse(await f.downloads[0].text());assert.deepEqual(downloaded.artifact,artifact);assert.equal(verifyReceipt(downloaded,signer.publicMetadata().publicKey).signatureVerified,true);
  await enableBaseline(f,lookupId);assert.equal(f.element('current-receipt-download').disabled,true);await f.element('manual-gate-check').fire('click');assert.equal(f.element('current-receipt-download').disabled,true);assert.match(f.element('manual-gate-output').textContent,/확인 실패/);assert.ok(!f.element('manual-gate-output').textContent.includes('최종 게이트: 통과'));
 });
@@ -776,7 +828,7 @@ test('regression details render as bounded text with complete counts retained',a
  const output=f.element('manual-gate-output').textContent;assert.match(output,/변경 규칙 12개 · 회귀 12개/);assert.match(output,/<script>0/);assert.match(output,/rule-9/);assert.ok(!output.includes('rule-10'));assert.match(output,/나머지 회귀 2개/);assert.equal(f.element('manual-gate-output').children.length,0);
 });
 test('incomplete comparison never displays a pass despite permissive flags',async()=>{
- const f=await fixture();await f.view('B');await enableBaseline(f);f.overrides.set('/v1/release-gate',()=>releaseResult(false,gateBaseline,{comparison:{comparable:false,evaluationPassed:true,deploymentAllowed:true}}));await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/회귀 비교: 미완료/);assert.ok(!f.element('manual-gate-output').textContent.includes('회귀 비교: 통과'));
+ const f=await fixture();await f.view('B');await enableBaseline(f);f.overrides.set('/v1/release-gate',()=>releaseResult(false,gateBaseline,{comparison:{comparable:false,evaluationPassed:true,deploymentAllowed:true}}));await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/확인 실패/);assert.ok(!f.element('manual-gate-output').textContent.includes('회귀 비교: 통과'));assert.equal(f.element('current-receipt-download').disabled,true);
 });
 
 async function regressionFixture(){
@@ -861,7 +913,7 @@ test('invalid UTF-8 and excessive HTTP evidence cannot display a passing final g
 
 test('gate record comparison is bounded and preserves supported large regression evidence',async()=>{
  const f=await fixture();await f.view('B');const changes=Array.from({length:2000},(_,i)=>({caseId:'case-'+i,ruleId:'rule',before:'pass',after:'fail'}));
- const normal=releaseResult(false,undefined,{comparison:{comparable:true,deploymentAllowed:false,changes,regressions:changes}});f.overrides.set('/v1/release-gate',()=>normal);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/최종 게이트: 차단/);
+ await enableBaseline(f);const normal=releaseResult(false,gateBaseline,{comparison:{comparable:true,deploymentAllowed:false,changes,regressions:changes}});f.overrides.set('/v1/release-gate',()=>normal);await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/최종 게이트: 차단/);f.element('gate-baseline-enabled').checked=false;await f.element('gate-baseline-enabled').fire('change');
  let nested={value:true};for(let i=0;i<70;i++)nested={child:nested};
  for(const extra of [nested,Array.from({length:100001},()=>true)]){f.overrides.set('/v1/release-gate',()=>releaseResult(true,undefined,{unexpected:extra}));await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/확인 실패/);assert.equal(f.element('current-receipt-download').disabled,true);assert.equal(f.element('manual-gate-check').disabled,false);}
  f.overrides.set('/v1/release-gate',()=>releaseResult());await f.element('manual-gate-check').fire('click');assert.match(f.element('manual-gate-output').textContent,/최종 게이트: 통과/);

@@ -65,6 +65,13 @@ function verifiedComparison(result,run,baselineId){
   if((result.requiresManualApproval===true)!==manual||result.requiresManualApproval!==undefined&&typeof result.requiresManualApproval!=='boolean'||result.evaluationPassed!==undefined&&(typeof result.evaluationPassed!=='boolean'||result.evaluationPassed!==passed)||manual&&result.evaluationPassed!==passed||result.deploymentAllowed!==(passed&&!manual))invalid();
   return {passed,manual};
 }
+function verifyFinalGateEnvelope(result,run,baselineId){
+  const artifact=result?.artifact;
+  if(artifact?.schemaVersion!==1||typeof artifact.receiptId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(artifact.receiptId)||typeof artifact.checkedAt!=='string'||artifact.checkedAt.length>40||!Number.isFinite(Date.parse(artifact.checkedAt)))throw Error('Invalid final gate receipt metadata');
+  if(!Array.isArray(result.reasons)||result.reasons.length>64||!result.reasons.every(reason=>typeof reason==='string'&&reason.length<=500)||result.decision==='block'&&result.reasons.length===0)throw Error('Invalid final gate reasons');
+  if(baselineId)verifiedComparison(result.comparison,run,baselineId);
+  else if(result.comparison!==undefined&&result.comparison!==null||Object.hasOwn(artifact.evidence??{},'baseline'))throw Error('Unexpected final gate baseline');
+}
 let receiptInspectionSequence=0,receiptInspectionTrigger=null;
 let receiptFilters={decision:'',candidateRunId:''},receiptShown=0;
 let reviewBusy=false,reviewCursor=null,reviewShown=0;
@@ -85,14 +92,15 @@ function finalComparisonText(comparison){
   const regressions=Array.isArray(comparison.regressions)?comparison.regressions:[];
   return '회귀 비교: '+(passed?'통과':'차단')+' · 변경 규칙 '+changes.length+'개 · 회귀 '+regressions.length+'개\n'+
     (comparison.requiresManualApproval?'관리자 승인은 별도로 확인합니다.\n':'')+
-    regressions.slice(0,10).map(r=>'회귀: 사례 '+r.caseId+' · 규칙 '+r.ruleId+' · '+r.before+' → '+r.after+'\n').join('')+
+    regressions.slice(0,10).map(r=>'회귀: 사례 '+r.caseId.slice(0,160)+' · 규칙 '+r.ruleId.slice(0,160)+' · '+r.before+' → '+r.after+'\n').join('')+
+    (regressions.slice(0,10).some(r=>r.caseId.length>160||r.ruleId.length>160)?'긴 사례·규칙 이름은 160자까지만 표시합니다. 전체 내용은 검증 기록 JSON에서 확인하세요.\n':'')+
     (regressions.length>10?'나머지 회귀 '+(regressions.length-10)+'개는 검증 기록 JSON에서 확인하세요.\n':'');
 }
 function renderRegressionLinks(comparison){
   const runId=selectedRunId,sequence=finalGateSequence,selection=selectedRunSequence,epoch=scopeEpoch;
   const regressions=Array.isArray(comparison?.regressions)?comparison.regressions:[];
   $('gate-regression-links').replaceChildren(...regressions.slice(0,10).filter(r=>currentRun?.results.some(c=>c.caseId===r.caseId)).map(r=>{
-    const link=node('a','사례 '+r.caseId+' · 규칙 '+r.ruleId+' 근거 보기','secondary');link.href='#evidence';
+    const link=node('a','사례 '+r.caseId.slice(0,160)+' · 규칙 '+r.ruleId.slice(0,160)+' 근거 보기','secondary');link.href='#evidence';
     link.addEventListener('click',event=>{
       if(sequence!==finalGateSequence||selection!==selectedRunSequence||epoch!==scopeEpoch||selectedRunId!==runId||currentRun?.id!==runId){event.preventDefault();return;}
       evidenceCaseId=r.caseId;evidencePage=0;$('evidence-search').value='';$('evidence-filter').value='';renderEvidence();
@@ -236,7 +244,7 @@ async function readApiResponse(response){
   const body=new Uint8Array(bytes);let offset=0;for(const chunk of chunks){body.set(chunk,offset);offset+=chunk.byteLength;}
   return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(body));
 }
-async function api(path, options = {}) {
+async function api(path, options = {},safeFailureMessage) {
   const epoch=scopeEpoch;
   let response,data;
   try{
@@ -251,7 +259,7 @@ async function api(path, options = {}) {
   if (!response.ok){
     const executionLimits={run_active_limit:'진행 중인 평가가 많습니다. 실행 기록에서 완료 상태를 확인한 뒤 다시 요청하세요.',run_history_limit:'조직의 실행 기록 보관 한도에 도달했습니다. 기존 기록은 보존되며 관리자에게 운영 한도를 문의하세요.'};
     const guidance=response.status===429&&Object.hasOwn(executionLimits,data?.code)?executionLimits[data.code]:null;
-    const error=new Error(guidance||(typeof data?.error==='string'&&data.error.length<=500?data.error:'요청을 완료하지 못했습니다.'));
+    const error=new Error(safeFailureMessage||guidance||(typeof data?.error==='string'&&data.error.length<=500?data.error:'요청을 완료하지 못했습니다.'));
     if(response.status===401){showLogin();error.authenticationSequence=authenticationSequence;error.authenticationEpoch=scopeEpoch;}
     throw error;
   }
@@ -837,9 +845,12 @@ $('manual-gate-check').addEventListener('click',async()=>{
   const projectId=activeProjectId,organizationId=actor?.organizationId;
   const isCurrent=()=>sequence===finalGateSequence&&selection===selectedRunSequence&&epoch===scopeEpoch&&selectedRunId===run.id;
   currentReceipt=null;$('gate-regression-links').replaceChildren();$('current-receipt-download').disabled=true;finalGateBusy=true;$('manual-gate-check').disabled=true;$('manual-gate-output').textContent='최종 게이트를 확인하고 있습니다…';
+  let stage='request';
   try{
-    const result=await api('/v1/release-gate',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify(request)});
+    const result=await api('/v1/release-gate',{method:'POST',headers:{'Idempotency-Key':crypto.randomUUID()},body:JSON.stringify(request)},'최종 게이트 요청을 완료하지 못했습니다. 기록과 접근 권한을 확인한 뒤 다시 요청하세요.');
     if(!isCurrent())return;
+    stage='response';
+    verifyFinalGateEnvelope(result,run,baselineRunId);
     if(typeof result?.deploymentAllowed!=='boolean'||!['pass','block'].includes(result.decision)||result.deploymentAllowed!==(result.decision==='pass')||!Array.isArray(result.reasons)||!result.reasons.every(reason=>typeof reason==='string')||(result.deploymentAllowed&&result.reasons.length))throw new Error('최종 게이트 응답의 판정과 허용 여부가 일치하지 않습니다.');
     if(result.deploymentAllowed&&(run.state!=='succeeded'||run.gate.decision!=='pass'||(run.snapshot.policy.requiresManualApproval===true?run.gate.evaluationPassed:run.gate.deploymentAllowed)!==true))throw new Error('최종 게이트 통과 응답이 선택한 평가의 통과 상태와 일치하지 않습니다.');
     if(result.deploymentAllowed&&baselineRunId&&(!result.comparison||result.comparison.baselineRunId!==baselineRunId||result.comparison.candidateRunId!==run.id||result.comparison.comparable!==true||(result.comparison.requiresManualApproval===true)!==(run.snapshot.policy.requiresManualApproval===true)||(result.comparison.evaluationPassed??result.comparison.deploymentAllowed)!==true||(run.snapshot.policy.requiresManualApproval===true?result.comparison.evaluationPassed:result.comparison.deploymentAllowed)!==true||!Array.isArray(result.comparison.regressions)||result.comparison.regressions.length))throw new Error('최종 게이트 통과 응답에 완전하고 회귀 없는 기준 비교가 없습니다.');
@@ -858,7 +869,7 @@ $('manual-gate-check').addEventListener('click',async()=>{
       $('current-receipt-download').disabled=false;
     }
     await receiptHistory().catch(()=>{if(isCurrent())message('최종 게이트 기록은 저장됐지만 기록 목록을 새로고침하지 못했습니다.',true);});
-  }catch(e){if(isCurrent()){$('manual-gate-output').textContent='최종 게이트 확인 실패: '+e.message;renderNextAction();$('next-action-title').textContent='최종 게이트 확인을 다시 요청하세요';$('next-action-detail').textContent='확인을 완료하지 못했습니다. 성공 판정으로 사용할 수 없습니다.';$('next-action-link').href='#release-check-panel';$('next-action-link').textContent='최종 게이트 보기';}}
+  }catch(e){if(isCurrent()){currentReceipt=null;$('current-receipt-download').disabled=true;$('gate-regression-links').replaceChildren();$('manual-gate-output').textContent='최종 게이트 확인 실패: '+(stage==='request'?e.message:'응답과 선택한 평가·비교 근거를 확인하지 못했습니다. 기록을 조회한 뒤 다시 요청하세요.');renderNextAction();$('next-action-title').textContent='최종 게이트 확인을 다시 요청하세요';$('next-action-detail').textContent='확인을 완료하지 못했습니다. 성공 판정으로 사용할 수 없습니다.';$('next-action-link').href='#release-check-panel';$('next-action-link').textContent='최종 게이트 보기';}}
   finally{if(isCurrent()){finalGateBusy=false;$('manual-gate-check').disabled=reviewBusy;}}
 });
 
