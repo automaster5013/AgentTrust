@@ -39,6 +39,32 @@ let lookupSequence=0,lookupBusy=false;
 let auditCursor=null,auditSequence=0,auditShown=0,operationsSequence=0;
 let inspectionSequence=0,comparisonSequence=0,keyHistorySequence=0,receiptHistorySequence=0,receiptListGeneration=0,reviewSequence=0;
 let inspectionCatalog=null;
+let comparisonOperation=null;
+function comparisonControls(){
+  $('compare-button').disabled=!actor||!activeProjectId||!currentRun||currentRun.id!==selectedRunId||!terminal.has(currentRun.state)||!$('baseline-run').value||comparisonOperation!==null;
+}
+function clearComparison(text=''){
+  comparisonSequence++;comparisonOperation=null;$('comparison-status').textContent='';$('comparison-result').textContent=text;comparisonControls();
+}
+function verifiedComparison(result,run,baselineId){
+  const invalid=()=>{throw Error('Invalid selected comparison response');};
+  if(!result||typeof result!=='object'||result.candidateRunId!==run.id||result.baselineRunId!==baselineId||typeof result.comparable!=='boolean'||typeof result.deploymentAllowed!=='boolean'||!Number.isFinite(result.passRateDelta)||Math.abs(result.passRateDelta)>1||!Array.isArray(result.changes)||!Array.isArray(result.regressions)||result.changes.length>2000||result.regressions.length>2000)invalid();
+  const changes=new Map(),statuses=new Set(['pass','fail','inconclusive']);
+  for(const change of result.changes){
+    if(!change||typeof change.caseId!=='string'||!change.caseId||change.caseId.length>10000||typeof change.ruleId!=='string'||!change.ruleId||change.ruleId.length>10000||!statuses.has(change.before)||!statuses.has(change.after)&&change.after!=='missing'||change.before===change.after||result.comparable&&(change.before==='inconclusive'||!['pass','fail'].includes(change.after)))invalid();
+    const key=JSON.stringify([change.caseId,change.ruleId]);if(changes.has(key))invalid();changes.set(key,change);
+  }
+  const expectedRegressions=[...changes.values()].filter(c=>c.before==='pass'&&c.after!=='pass'),seen=new Set();
+  if(expectedRegressions.length!==result.regressions.length)invalid();
+  for(const regression of result.regressions){
+    if(!regression)invalid();const key=JSON.stringify([regression.caseId,regression.ruleId]),change=changes.get(key);
+    if(seen.has(key)||!change||change.before!=='pass'||change.after==='pass'||regression.before!==change.before||regression.after!==change.after)invalid();seen.add(key);
+  }
+  const manual=run.snapshot.policy.requiresManualApproval===true;
+  const passed=result.comparable&&run.state==='succeeded'&&run.gate.decision==='pass'&&(manual?run.gate.evaluationPassed:run.gate.deploymentAllowed)===true&&result.regressions.length===0;
+  if((result.requiresManualApproval===true)!==manual||result.requiresManualApproval!==undefined&&typeof result.requiresManualApproval!=='boolean'||result.evaluationPassed!==undefined&&(typeof result.evaluationPassed!=='boolean'||result.evaluationPassed!==passed)||manual&&result.evaluationPassed!==passed||result.deploymentAllowed!==(passed&&!manual))invalid();
+  return {passed,manual};
+}
 let receiptInspectionSequence=0,receiptInspectionTrigger=null;
 let receiptFilters={decision:'',candidateRunId:''},receiptShown=0;
 let reviewBusy=false,reviewCursor=null,reviewShown=0;
@@ -272,9 +298,10 @@ function workspaceControls(){
 }
 function render(run) {
   if(currentRun?.id===run.id&&terminal.has(currentRun.state)&&!terminal.has(run.state))return false;
-  comparisonSequence++;
+  clearComparison();
   if(currentRun?.id!==run.id){reviewCursor=null;reviewShown=0;$('review-history-status').textContent='';$('review-more').disabled=true;$('review-comment').value='';$('manual-gate-output').textContent='';evidencePage=0;evidenceCaseId=null;$('evidence-search').value='';$('evidence-filter').value='';}
   currentRun = run;if(terminal.has(run.state))selectedTerminalRun={id:run.id,state:run.state};
+  comparisonControls();
   invalidateFinalGate();
   $('comparison-result').textContent='후보 실행을 조회한 뒤 기준 실행을 선택하세요.';
   const decision = run.gate.decision;
@@ -333,7 +360,7 @@ async function history(append=false) {
   if($('history-state').value)params.set('state',$('history-state').value);
   if($('history-decision').value)params.set('decision',$('history-decision').value);
   if(append)params.set('cursor',runCursor);
-  if(!append){runCursor=null;$('history-more').disabled=true;$('history-body').replaceChildren();recentBaselineRuns=[];renderBaselineChoices();$('baseline-run').replaceChildren();comparisonSequence++;$('comparison-result').textContent='실행 기록을 새로 조회하고 있습니다. 완료 후 기준 실행을 선택해 비교하세요.';}
+  if(!append){runCursor=null;$('history-more').disabled=true;$('history-body').replaceChildren();recentBaselineRuns=[];renderBaselineChoices();$('baseline-run').replaceChildren();clearComparison('실행 기록을 새로 조회하고 있습니다. 완료 후 기준 실행을 선택해 비교하세요.');}
   $('history-status').textContent=append?'이전 실행 기록을 조회하고 있습니다…':'현재 조건의 실행 기록을 조회하고 있습니다…';
   let page,baselines;
   try{[page,baselines]=await Promise.all([api('/v1/runs?'+params.toString()),append?Promise.resolve(null):api('/v1/runs?limit=100&state=succeeded')]);}
@@ -344,6 +371,7 @@ async function history(append=false) {
   const runs=baselines.items;recentBaselineRuns=runs;renderBaselineChoices();
   $('baseline-run').replaceChildren(...runs.map(r=>{const option=node('option',`${r.agentName} · ${stateLabels[r.state]} · ${r.id.slice(0,8)}`);option.value=r.id;return option;}));
   if(runs.some(r=>r.id===previousBaseline))$('baseline-run').value=previousBaseline;
+  comparisonControls();
   $('comparison-result').textContent='후보 실행을 조회한 뒤 기준 실행을 선택하세요.';
   }
   $('history-body').append(...page.items.map(r => {
@@ -358,8 +386,9 @@ async function history(append=false) {
   $('history-status').textContent=shown?shown+'개 실행 기록을 표시합니다. '+(runCursor?'이전 실행을 더 조회할 수 있습니다.':'현재 조건의 마지막 기록입니다.'):'현재 조건에 맞는 실행 기록이 없습니다.';
 }
 function clearRunDetail(failed=false) {
-  comparisonSequence++;$('comparison-result').textContent='평가 상세를 확인한 뒤 기준 실행과 비교하세요.';
+  clearComparison('평가 상세를 확인한 뒤 기준 실행과 비교하세요.');
   currentRun=null;reviewCursor=null;reviewShown=0;reviewSequence++;evidencePage=0;evidenceCaseId=null;
+  comparisonControls();
   for(const id of ['evidence-search','evidence-filter','review-comment'])$(id).value='';
   $('manual-gate-output').textContent='';$('review-history-status').textContent='';
   $('review-list').replaceChildren();$('review-panel').hidden=true;$('review-more').disabled=true;$('review-approve').disabled=true;$('review-reject').disabled=true;
@@ -439,7 +468,7 @@ function clearProjectData(){
   selectedTerminalRun=null;lookupSequence++;lookupBusy=false;$('run-lookup-button').disabled=false;$('run-lookup-id').value='';$('run-lookup-status').textContent='';$('receipt-navigation-status').textContent='';
   evidencePage=0;evidenceCaseId=null;$('evidence-search').value='';$('evidence-filter').value='';
   sessionSequence++;sessionBusy=false;sessionCursor=null;sessionButtons=[];$('session-list').replaceChildren();$('sessions-status').textContent='';$('sessions-more').disabled=true;sessionControls();
-  comparisonSequence++;keyHistorySequence++;receiptHistorySequence++;reviewSequence++;reviewCursor=null;reviewShown=0;$('review-history-status').textContent='';$('review-more').disabled=true;
+  clearComparison();keyHistorySequence++;receiptHistorySequence++;reviewSequence++;reviewCursor=null;reviewShown=0;$('review-history-status').textContent='';$('review-more').disabled=true;
   inspectionCatalog=null;inspectionSequence++;$('version-inspection-output').textContent='';$('version-inspection-meta').textContent='선택한 버전의 고정된 내용과 해시를 확인할 수 있습니다.';
   auditSequence++;auditCursor=null;auditShown=0;$('audit-status').textContent='';$('audit-more').disabled=true;$('audit-action').value='';
   $('run-detail-status').textContent='';$('run-detail-retry').disabled=true;currentRun=null;invalidateFinalGate();renderEvidence();selectedRunId=null;selectedRunSequence++;historySequence++;runCursor=null;$('history-more').disabled=true;$('history-state').value='';$('history-decision').value='';message('');$('run-button').disabled=true;$('dataset-button').disabled=true;
@@ -449,6 +478,7 @@ function clearProjectData(){
   keyCursor=null;receiptCursor=null;$('ci-more').disabled=true;$('receipts-more').disabled=true;
   clearIssuedKey();clearReceiptInspection();$('ci-key-list').replaceChildren();$('receipt-list').replaceChildren();$('ci-project').replaceChildren();$('ci-name').value='';$('ci-status').textContent='';
   $('baseline-run').replaceChildren();$('comparison-result').textContent='';
+  comparisonControls();
 $('results').replaceChildren();$('history-body').replaceChildren();$('history-status').textContent='';$('audit-list').replaceChildren();
   $('gate-badge').textContent='실행 대기';$('gate-badge').className='gate idle';$('gate-title').textContent='배포 판단을 기다립니다';
   $('gate-reason').textContent='평가를 실행하면 정책을 기준으로 결과를 표시합니다.';$('allowed').textContent='—';$('run-state').textContent='대기';
@@ -529,15 +559,22 @@ $('audit-more').addEventListener('click',()=>{if($('audit-more').disabled)return
 $('audit-refresh').addEventListener('click',()=>listAction(()=>auditHistory(),()=>auditSequence));
 
 
-$('baseline-run').addEventListener('change',()=>{comparisonSequence++;$('comparison-result').textContent='기준 실행이 변경됐습니다. 다시 비교하세요.';});
+$('baseline-run').addEventListener('change',()=>clearComparison('기준 실행이 변경됐습니다. 다시 비교하세요.'));
 $('compare-form').addEventListener('submit',async event=>{
-  event.preventDefault();if(!currentRun){message('먼저 후보 실행을 조회하세요.',true);return;}
-  const sequence=++comparisonSequence,candidateId=currentRun.id,baselineId=$('baseline-run').value;
-  const current=()=>sequence===comparisonSequence&&selectedRunId===candidateId&&$('baseline-run').value===baselineId;
+  event.preventDefault();const run=currentRun,baselineId=$('baseline-run').value;
+  if(!actor||!activeProjectId||!run||run.id!==selectedRunId||!terminal.has(run.state)||!baselineId||comparisonOperation)return;
+  const sequence=++comparisonSequence,epoch=scopeEpoch,projectId=activeProjectId,selection=selectedRunSequence,candidateId=run.id;
+  const operation={sequence};comparisonOperation=operation;
+  const current=()=>sequence===comparisonSequence&&epoch===scopeEpoch&&projectId===activeProjectId&&selection===selectedRunSequence&&selectedRunId===candidateId&&currentRun===run&&$('baseline-run').value===baselineId;
+  $('comparison-result').textContent='';$('comparison-status').textContent='선택한 후보와 기준 실행을 비교하고 있습니다…';comparisonControls();
   try{const result=await api('/v1/compare',{method:'POST',body:JSON.stringify({candidateRunId:candidateId,baselineRunId:baselineId})});
     if(!current())return;
-    $('comparison-result').textContent=`${result.comparable?'비교 완료':'비교 불가: 불완전한 평가'} · 회귀 ${result.regressions.length}개 · 배포 ${result.deploymentAllowed?'허용':'차단'}\n통과율 변화 ${(result.passRateDelta*100).toFixed(1)}%p\n`+result.changes.map(c=>`${c.caseId} / ${c.ruleId}: ${c.before} → ${c.after}`).join('\n');
-  }catch(e){if(current())$('comparison-result').textContent=e.message;}
+    const {passed,manual}=verifiedComparison(result,run,baselineId);
+    $('comparison-status').textContent='선택한 후보·기준 실행의 비교 응답을 확인했습니다. 현재 배포 허용은 최종 게이트에서 확인하세요.';
+    const clipped=result.changes.some(c=>c.caseId.length>160||c.ruleId.length>160);
+    $('comparison-result').textContent=`후보 실행 ${candidateId}\n기준 실행 ${baselineId}\n${result.comparable?'비교 완료':'비교 미완료: 불완전한 평가'} · 회귀 ${result.regressions.length}개 · 비교 기준 ${passed?'통과':'차단'}\n${manual?'관리자 승인은 별도로 확인합니다.\n':''}통과율 변화 ${(result.passRateDelta*100).toFixed(1)}%p\n`+result.changes.slice(0,20).map(c=>`${c.caseId.slice(0,160)} / ${c.ruleId.slice(0,160)}: ${c.before} → ${c.after}`).join('\n')+(result.changes.length>20?'\n나머지 변경 '+(result.changes.length-20)+'개는 비교 API의 원본 결과에서 확인하세요.':'')+(clipped?'\n긴 사례·규칙 이름은 160자까지만 표시합니다. 전체 이름은 비교 API의 원본 결과에서 확인하세요.':'');
+  }catch(e){if(current()){$('comparison-result').textContent='';$('comparison-status').textContent='비교 결과를 확인하지 못했습니다. 같은 후보와 기준으로 다시 비교하세요.';}}
+  finally{if(current()&&comparisonOperation===operation){comparisonOperation=null;comparisonControls();}}
 });
 
 async function ciHistory(append=false){

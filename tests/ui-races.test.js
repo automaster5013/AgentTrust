@@ -1392,3 +1392,49 @@ test('explicit evaluation retry retains the known selected terminal boundary aft
 test('same execution reread invalidates pending comparison before detail returns',async()=>{
  const f=await fixture(),comparison=deferred(),detail=deferred();await f.view('B');f.element('baseline-run').value='A';f.overrides.set('/v1/compare',()=>comparison.promise);const pending=f.element('compare-form').fire('submit');await settle();f.overrides.set('/v1/runs/B',()=>detail.promise);const reread=f.view('B');await settle();const cleared=f.element('comparison-result').textContent;assert.notEqual(cleared,'');comparison.resolve({comparable:true,regressions:[],deploymentAllowed:true,passRateDelta:1,changes:[]});await pending;assert.equal(f.element('comparison-result').textContent,cleared);detail.resolve(execution('B'));await reread;
 });
+
+test('comparison reread removes a previous successful result while waiting',async()=>{
+ const f=await fixture(),wait=deferred();await f.view('B');f.element('baseline-run').value='A';f.element('comparison-result').textContent='Old successful comparison';f.overrides.set('/v1/compare',()=>wait.promise);
+ const pending=f.element('compare-form').fire('submit');await settle();assert.ok(!f.element('comparison-result').textContent.includes('Old successful'));assert.match(f.element('comparison-status').textContent,/비교하고 있습니다/);assert.equal(f.element('compare-button').disabled,true);
+ wait.resolve({candidateRunId:'B',baselineRunId:'A',comparable:true,regressions:[],changes:[],passRateDelta:0,deploymentAllowed:true});await pending;
+});
+
+test('comparison rejects another execution response without displaying its result',async()=>{
+ const f=await fixture();await f.view('B');f.element('baseline-run').value='A';f.overrides.set('/v1/compare',()=>({candidateRunId:'Private other run',baselineRunId:'A',comparable:true,regressions:[],changes:[],passRateDelta:0,deploymentAllowed:true}));await f.element('compare-form').fire('submit');assert.equal(f.element('comparison-result').textContent,'');assert.match(f.element('comparison-status').textContent,/확인하지 못했습니다/);assert.ok(!f.element('comparison-status').textContent.includes('Private'));
+});
+
+const selectedComparison=(overrides={})=>({candidateRunId:'B',baselineRunId:'A',comparable:true,regressions:[],changes:[],passRateDelta:0,deploymentAllowed:true,...overrides});
+test('comparison suppresses duplicate submission and permits safe retry after HTTP failure',async()=>{
+ const f=await fixture(),wait=deferred();await f.view('B');f.element('baseline-run').value='A';f.overrides.set('/v1/compare',()=>wait.promise);const before=f.httpRequests.length,pending=f.element('compare-form').fire('submit');await settle();await f.element('compare-form').fire('submit');assert.equal(f.httpRequests.slice(before).filter(p=>p==='/v1/compare').length,1);wait.resolve(new Response(JSON.stringify({error:'Private comparison secret'}),{status:500}));await pending;assert.equal(f.element('comparison-result').textContent,'');assert.match(f.element('comparison-status').textContent,/다시 비교하세요/);assert.ok(!f.element('comparison-status').textContent.includes('Private'));assert.equal(f.element('compare-button').disabled,false);
+ f.overrides.set('/v1/compare',()=>selectedComparison());await f.element('compare-form').fire('submit');assert.match(f.element('comparison-result').textContent,/후보 실행 B\n기준 실행 A/);assert.match(f.element('comparison-result').textContent,/비교 기준 통과/);assert.match(f.element('comparison-status').textContent,/최종 게이트/);
+});
+
+for(const [label,change] of [
+ ['baseline identity',{baselineRunId:'other'}],['missing identity',{candidateRunId:undefined}],['nonboolean comparability',{comparable:'true'}],['incomplete permissive result',{comparable:false}],['invalid rate',{passRateDelta:null}],['rate outside bounds',{passRateDelta:1.1}],['missing changes',{changes:null}],['mismatched approval',{requiresManualApproval:true,evaluationPassed:true}],['contradictory evaluation',{evaluationPassed:false}],['oversized changes',{changes:Array(2001).fill({caseId:'c',ruleId:'r',before:'fail',after:'pass'})}],['missing regressions',{changes:[{caseId:'c',ruleId:'r',before:'pass',after:'fail'}]}],['invented regression',{regressions:[{caseId:'c',ruleId:'r',before:'pass',after:'fail'}]}],['unchanged rule',{changes:[{caseId:'c',ruleId:'r',before:'pass',after:'pass'}]}],['duplicate changed rule',{changes:Array(2).fill({caseId:'c',ruleId:'r',before:'fail',after:'pass'})}],['incomplete evidence declared complete',{changes:[{caseId:'c',ruleId:'r',before:'inconclusive',after:'pass'}]}]
+])test('comparison rejects '+label+' before showing a decision',async()=>{
+ const f=await fixture();await f.view('B');f.element('baseline-run').value='A';f.overrides.set('/v1/compare',()=>selectedComparison(change));await f.element('compare-form').fire('submit');assert.equal(f.element('comparison-result').textContent,'');assert.match(f.element('comparison-status').textContent,/확인하지 못했습니다/);assert.equal(f.element('compare-button').disabled,false);
+});
+
+test('a passing manual-policy comparison remains distinct from current administrator approval',async()=>{
+ const f=await fixture({manual:true});await f.view('B');f.element('baseline-run').value='A';f.overrides.set('/v1/compare',()=>selectedComparison({deploymentAllowed:false,evaluationPassed:true,requiresManualApproval:true}));const allowed=f.element('allowed').textContent,gate=f.element('manual-gate-output').textContent;await f.element('compare-form').fire('submit');assert.match(f.element('comparison-result').textContent,/비교 기준 통과/);assert.match(f.element('comparison-result').textContent,/관리자 승인은 별도로/);assert.ok(!f.element('comparison-result').textContent.includes('배포 허용'));assert.equal(f.element('allowed').textContent,allowed);assert.equal(f.element('manual-gate-output').textContent,gate);
+});
+
+test('incomplete comparison displays an incomplete blocked result and never changes the selected evaluation',async()=>{
+ const f=await fixture();await f.view('B');f.element('baseline-run').value='A';const allowed=f.element('allowed').textContent;f.overrides.set('/v1/compare',()=>selectedComparison({comparable:false,deploymentAllowed:false}));await f.element('compare-form').fire('submit');assert.match(f.element('comparison-result').textContent,/비교 미완료/);assert.match(f.element('comparison-result').textContent,/비교 기준 차단/);assert.equal(f.element('allowed').textContent,allowed);
+});
+
+test('a consistent regression is displayed as blocked with bounded plain text',async()=>{
+ const f=await fixture();await f.view('B');f.element('baseline-run').value='A';const changes=Array.from({length:25},(_,i)=>({caseId:'<script>'+i+'x'.repeat(170),ruleId:'rule-'+i,before:'pass',after:'fail'}));f.overrides.set('/v1/compare',()=>selectedComparison({deploymentAllowed:false,changes,regressions:changes}));await f.element('compare-form').fire('submit');assert.match(f.element('comparison-result').textContent,/회귀 25개 · 비교 기준 차단/);assert.match(f.element('comparison-result').textContent,/나머지 변경 5개/);assert.match(f.element('comparison-result').textContent,/160자/);assert.ok(!f.element('comparison-result').textContent.includes('x'.repeat(170)));assert.equal(f.element('comparison-result').children.length,0);
+});
+
+test('a changed baseline allows a new comparison without the obsolete failure unlocking its pending button',async()=>{
+ const f=await fixture(),old=deferred(),latest=deferred();await f.view('B');f.element('baseline-run').value='A';f.overrides.set('/v1/compare',()=>old.promise);const pending=f.element('compare-form').fire('submit');await settle();f.element('baseline-run').value='B';await f.element('baseline-run').fire('change');assert.equal(f.element('compare-button').disabled,false);f.overrides.set('/v1/compare',()=>latest.promise);const newPending=f.element('compare-form').fire('submit');await settle();old.resolve(new Response('{}',{status:500}));await pending;assert.equal(f.element('compare-button').disabled,true);assert.match(f.element('comparison-status').textContent,/비교하고 있습니다/);latest.resolve(selectedComparison({baselineRunId:'B'}));await newPending;assert.match(f.element('comparison-result').textContent,/기준 실행 B/);assert.equal(f.element('compare-button').disabled,false);
+});
+
+test('comparison controls stay unavailable after logout and its late response cannot restore results',async()=>{
+ const f=await fixture(),wait=deferred();await f.view('B');f.element('baseline-run').value='A';f.overrides.set('/v1/compare',()=>wait.promise);const pending=f.element('compare-form').fire('submit');await settle();await f.element('logout-button').fire('click');wait.resolve(selectedComparison());await pending;assert.equal(f.element('comparison-result').textContent,'');assert.equal(f.element('comparison-status').textContent,'');assert.equal(f.element('compare-button').disabled,true);f.element('compare-button').disabled=false;const before=f.httpRequests.length;await f.element('compare-form').fire('submit');assert.equal(f.httpRequests.length,before);
+});
+
+test('refreshing the execution catalog invalidates a comparison and restores its controls after success',async()=>{
+ const f=await fixture(),wait=deferred();await f.view('B');f.element('baseline-run').value='A';f.overrides.set('/v1/compare',()=>wait.promise);const pending=f.element('compare-form').fire('submit');await settle();await f.element('history-filter-form').fire('submit');const text=f.element('comparison-result').textContent;wait.resolve(selectedComparison());await pending;assert.equal(f.element('comparison-result').textContent,text);assert.equal(f.element('comparison-status').textContent,'');assert.equal(f.element('compare-button').disabled,false);
+});
