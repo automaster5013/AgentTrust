@@ -12,7 +12,7 @@
 
 서명된 기록은 `npm.cmd run receipt:inspect -- receipt.json trusted-public.pem`으로 오프라인에서 검사할 수 있습니다. 과거 판정과 비교·승인 상태를 설명하며 현재 배포 권한은 허용하지 않습니다. [검사 범위와 제한](docs/receipt-signatures.md#과거-판정의-오프라인-설명-v0170)을 확인하세요.
 
-현재 고정 소스 기준선은 [v0.173 CI](https://github.com/automaster5013/AgentTrust/actions/runs/37741283099)의 659개 테스트와 네 작업을 통과했습니다. 정확한 이미지에서 원래 의견·평가 본문 결합과 다른 범위·변조 본문 거부를 확인했습니다. [완료 범위와 검증 제한](docs/portfolio-status.md#v0173-서명된-스냅샷과-평가-결과-본문-결합)을 따릅니다.
+현재 고정 소스 기준선은 [v0.174 CI](https://github.com/automaster5013/AgentTrust/actions/runs/37757876518)의 661개 테스트와 네 작업을 통과했습니다. 게시 이미지에서 원래 의견·평가 본문 결합을 확인했습니다. 기존 설치의 v0.174 이미지 교체·복귀와 새 백업 복원은 후속 확인 대상입니다. [완료 범위와 검증 제한](docs/portfolio-status.md#v0174-windows-이미지-증거-검사-호환성)을 따릅니다.
 
 ## 처음 살펴보기
 
