@@ -19,3 +19,10 @@ test('linked opinion file combines with optional scope and rejects duplicate or 
  assert.equal(parseReceiptInspectionArguments(all).reviewFile,'review.json');assert.equal(parseReceiptInspectionArguments(all).expected.baselineRunId,null);
  for(const options of [['--review-file'],['--review-file',''],['--review-file','a','--review-file','b'],['--review-file','a','--organization-id',id]])assert.throws(()=>parseReceiptInspectionArguments([...base,...options]));
 });
+test('evidence files require a candidate and combine with all expectation and opinion options',()=>{
+ const base=['receipt.json','trusted.pem'];
+ assert.equal(parseReceiptInspectionArguments([...base,'--candidate-evidence-file','candidate.json']).candidateEvidenceFile,'candidate.json');
+ const all=[...base,'--organization-id',id,'--project-id',id,'--candidate-run-id',id,'--baseline-run-id',id,'--review-file','review.json','--candidate-evidence-file','candidate.json','--baseline-evidence-file','baseline.json'];
+ assert.equal(parseReceiptInspectionArguments(all).baselineEvidenceFile,'baseline.json');
+ for(const args of [['--baseline-evidence-file','baseline.json'],['--candidate-evidence-file'],['--candidate-evidence-file',''],['--candidate-evidence-file','a','--candidate-evidence-file','b']])assert.throws(()=>parseReceiptInspectionArguments([...base,...args]));
+});

@@ -1,7 +1,7 @@
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
+import {readFile,writeFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {join,resolve} from 'node:path';
 import {loadPortfolioEvidence,writePortfolioEvidence} from './portfolio-evidence.mjs';
@@ -35,6 +35,13 @@ try{
   await call('/v1/auth/login',{accessKey:organization.credentials.find(credential=>credential.role==='viewer').token});assertDemoSessionScope(await call('/v1/me'),scope,'viewer');
   let reviews;
   const history=await verifyPortfolioReceiptHistory({call,receipts:loaded.receipts,onVerifiedReviews:values=>{reviews=values;}});assert.equal(history.linkedReviewsVerified,2);
+  const runBodies=new Map();
+  if(withReviews){
+    for(const receipt of loaded.receipts)for(const id of [receipt.artifact.request.candidateRunId,receipt.artifact.request.baselineRunId]){
+      if(runBodies.has(id))continue;
+      const run=await call('/v1/runs/'+id);assert.equal(run.id,id);assert.equal(run.organizationId,scope.organizationId);assert.equal(run.projectId,scope.projectId);runBodies.set(id,run);
+    }
+  }
   await call('/v1/auth/logout',{});cookie=null;
   let finalVerification=verification;
   let linkedOpinionCliChecks=0,packagedLinkedOpinionCliChecks=0;
@@ -43,16 +50,19 @@ try{
     directory=enriched.directory;manifestSha256=enriched.manifestSha256;
     const result=await exec(process.execPath,['scripts/verify-portfolio-evidence.mjs',directory,'.local/receipt-signing/public.pem',manifestSha256],{timeout:30000,maxBuffer:65536,windowsHide:true});finalVerification=JSON.parse(result.stdout.trim());assert.equal(finalVerification.reviewBodiesVerifiedOffline,true);
     const bundle=await loadPortfolioEvidence(directory,publicKey,manifestSha256);
+    const runFiles=new Map();
+    for(const [id,run] of runBodies){const path='.local/historical-run-body-'+randomUUID()+'.json';await writeFile(path,JSON.stringify(run,null,2)+'\n',{flag:'wx',mode:0o600});runFiles.set(id,path);}
     for(const [index,receipt] of bundle.receipts.entries()){
       const reviewIndex=bundle.reviews.findIndex(review=>review.id===receipt.artifact.result.manualApproval?.reviewId);
       if(reviewIndex<0)continue;
       const receiptFile=join(directory,`receipt-${index+1}.json`),reviewFile=join(directory,`review-${reviewIndex+1}.json`);
       const selected=['--organization-id',scope.organizationId,'--project-id',scope.projectId,'--candidate-run-id',receipt.artifact.request.candidateRunId,'--baseline-run-id',receipt.artifact.request.baselineRunId];
-      const result=await exec(process.execPath,['scripts/inspect-receipt.mjs',receiptFile,'.local/receipt-signing/public.pem',...selected,'--review-file',reviewFile],{timeout:30000,maxBuffer:10000,windowsHide:true});
-      const inspected=JSON.parse(result.stdout);assert.equal(inspected.reviewBodyVerified,true);assert.equal(inspected.linkedReviewId,bundle.reviews[reviewIndex].id);assert.equal(inspected.deploymentAllowed,false);assert.equal(inspected.currentReviewerAuthorityVerified,false);linkedOpinionCliChecks++;
+      const candidateFile=runFiles.get(receipt.artifact.request.candidateRunId),baselineFile=runFiles.get(receipt.artifact.request.baselineRunId);assert.ok(candidateFile&&baselineFile);
+      const result=await exec(process.execPath,['scripts/inspect-receipt.mjs',receiptFile,'.local/receipt-signing/public.pem',...selected,'--review-file',reviewFile,'--candidate-evidence-file',candidateFile,'--baseline-evidence-file',baselineFile],{timeout:30000,maxBuffer:10000,windowsHide:true});
+      const inspected=JSON.parse(result.stdout);assert.equal(inspected.reviewBodyVerified,true);assert.equal(inspected.evidenceBodiesVerified,true);assert.equal(inspected.evidenceMetadataAuthenticated,false);assert.equal(inspected.linkedReviewId,bundle.reviews[reviewIndex].id);assert.equal(inspected.deploymentAllowed,false);assert.equal(inspected.currentReviewerAuthorityVerified,false);linkedOpinionCliChecks++;
       if(process.env.AGENTTRUST_IMAGE){
         assert.match(process.env.AGENTTRUST_IMAGE,/^ghcr\.io\/automaster5013\/agenttrust@sha256:[a-f0-9]{64}$/);
-        const image=await exec('docker',['run','--rm','--user',`${process.getuid()}:${process.getgid()}`,'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--mount',`type=bind,source=${resolve(receiptFile)},target=/receipt.json,readonly`,'--mount',`type=bind,source=${resolve(reviewFile)},target=/review.json,readonly`,'--mount',`type=bind,source=${resolve('.local/receipt-signing/public.pem')},target=/trusted.pem,readonly`,'--entrypoint','node',process.env.AGENTTRUST_IMAGE,'scripts/inspect-receipt.mjs','/receipt.json','/trusted.pem',...selected,'--review-file','/review.json'],{timeout:30000,maxBuffer:10000,windowsHide:true});
+        const image=await exec('docker',['run','--rm','--user',`${process.getuid()}:${process.getgid()}`,'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--mount',`type=bind,source=${resolve(receiptFile)},target=/receipt.json,readonly`,'--mount',`type=bind,source=${resolve(reviewFile)},target=/review.json,readonly`,'--mount',`type=bind,source=${resolve(candidateFile)},target=/candidate.json,readonly`,'--mount',`type=bind,source=${resolve(baselineFile)},target=/baseline.json,readonly`,'--mount',`type=bind,source=${resolve('.local/receipt-signing/public.pem')},target=/trusted.pem,readonly`,'--entrypoint','node',process.env.AGENTTRUST_IMAGE,'scripts/inspect-receipt.mjs','/receipt.json','/trusted.pem',...selected,'--review-file','/review.json','--candidate-evidence-file','/candidate.json','--baseline-evidence-file','/baseline.json'],{timeout:30000,maxBuffer:10000,windowsHide:true});
         assert.deepEqual(JSON.parse(image.stdout),inspected);packagedLinkedOpinionCliChecks++;
       }
     }
@@ -63,7 +73,7 @@ try{
     const path='.local/portfolio-audit-'+randomUUID()+'.html';
     const result=await exec(process.execPath,['scripts/write-portfolio-evidence-report.mjs',directory,'.local/receipt-signing/public.pem',path,manifestSha256],{timeout:30000,maxBuffer:65536,windowsHide:true}),written=JSON.parse(result.stdout.trim());assert.equal(written.reportCreated,true);assert.equal(written.reportCryptographicallySigned,false);auditReport={path,reportCreated:true,reportCryptographicallySigned:false};
   }
-  console.log(JSON.stringify({status:'passed',organizationIndex:options.organizationIndex,...scope,directory,...finalVerification,...history,linkedOpinionCliChecks,packagedLinkedOpinionCliChecks,...(auditReport?{auditReport}:{}),historySessionLoggedOut:true}));
+  console.log(JSON.stringify({status:'passed',organizationIndex:options.organizationIndex,...scope,directory,...finalVerification,...history,linkedOpinionCliChecks,packagedLinkedOpinionCliChecks,linkedBodyCliChecks:linkedOpinionCliChecks,packagedLinkedBodyCliChecks:packagedLinkedOpinionCliChecks,...(auditReport?{auditReport}:{}),historySessionLoggedOut:true}));
 }catch{
   console.error('Synthetic portfolio evidence export, offline verification or history check did not complete.');process.exitCode=1;
 }
