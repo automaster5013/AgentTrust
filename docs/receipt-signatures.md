@@ -81,3 +81,17 @@ npm.cmd run receipt:inspect -- receipt.json trusted-public.pem --candidate-evide
 `evidenceBodiesVerified`, `candidateEvidenceVerified`, `baselineEvidenceVerified`는 해당 서명된 본문 해시의 일치를 설명한다. `evidenceVerificationScope`는 `signed-snapshot-and-result-bodies`, `evidenceMetadataAuthenticated`는 false다. 실행 상태·요약·시각·시도 수 등 해시 밖의 메타데이터는 인증하지 않으며 원문을 재평가하거나 에이전트를 실행하지 않는다. 과거 배포 판정은 서명 기록의 값으로만 설명하고 현재 배포 허용은 항상 false다. 원문을 지정하지 않으면 기존 검사와 `evidenceBodiesVerified: false`를 유지한다.
 
 기대 범위와 `--review-file` 옵션을 함께 지정할 수 있다. 서명·기대 범위를 확인한 뒤 원문 파일을 각각 최대 16 MiB의 엄격한 UTF-8 JSON으로 읽으며 후보·기준 원문을 묶어 깊이 64·항목 100,000개 제한을 적용한다. 실패는 종료 코드 2와 안전한 오류만 출력한다. 원문 파일의 입력·출력·주석은 요약에 포함하지 않는다. 원문은 기밀일 수 있으므로 공개 저장소에 올리지 않는다. Docker에는 해당 원문·의견·기록·신뢰 공개키만 읽기 전용으로 연결하고 네트워크를 끈다.
+
+## 여섯 기록 묶음의 오프라인 설명 v0.175
+
+```powershell
+npm.cmd run demo:evidence:inspect -- "bundle-directory" trusted-public.pem --manifest-sha256 <expected-sha256> --organization-id <organization-uuid> --project-id <project-uuid>
+```
+
+기존 v1(일곱 파일)·v2(원래 의견을 포함한 아홉 파일) 자료 묶음을 그대로 읽는다. 고정된 파일 목록·크기·엄격한 UTF-8·원본 해시와 여섯 서명을 확인하고, 각 기록에 개별 `receipt:inspect`와 같은 판정·비교·의견 구조 검사를 적용한다. v2 의견은 인증된 기록 참조에 결합하며 v1에서 의견 원문을 확인했다고 주장하지 않는다. 서명이 유효해도 내부 판정이나 비교가 모순되면 실패한다. 원본 파일은 수정하지 않고 평가·승인·게이트·네트워크 요청을 만들지 않는다.
+
+기대 조직·프로젝트는 반드시 쌍으로 지정하며 여섯 서명 모두에 대조한다. 후보·기준 실행 선택 옵션은 이 묶음 명령에서 지원하지 않는다. 기대 범위를 생략하면 `expectedScopeVerified`는 false다. `--manifest-sha256`은 별도로 전달받아 신뢰한 지문을 지정할 때 사용하며 생략하면 `expectedManifestDigestMatched`는 false다. manifest 자체는 별도 서명되지 않아 `manifestCryptographicallySigned`는 항상 false다. 여섯 artifact의 조직·프로젝트·판정과 참조는 신뢰 공개키 서명으로 인증한다.
+
+성공은 여섯 기록 전체를 검사한 후 한 JSON으로 출력한다. 과거 판정·원문 사유의 개수·비교 수치·원래 의견 결합 여부를 표시하되 사유·검토 의견·평가 입력과 출력을 포함하지 않는다. 평가 본문 파일을 받지 않으므로 `evidenceBodiesVerified`는 false이고 현재 검토자 권한·배포 권한 및 `deploymentAllowed`도 false다. 평가 본문까지 대조하려면 개별 기록 검사에 해당 원문 파일을 명시한다. 잘못된 인수·서명·범위·본문·구조는 종료 코드 2와 안전한 오류만 반환하고 부분 성공 JSON은 출력하지 않는다.
+
+Docker 이미지에 같은 명령을 포함한다. 묶음 디렉터리와 독립 신뢰 공개키만 읽기 전용으로 연결하고 `--network none --read-only --cap-drop ALL --security-opt no-new-privileges`를 적용한다. 비밀키·접근 키·설정 또는 전체 작업 폴더를 연결하지 않는다. Unix는 호스트 UID/GID를 사용하며 Windows는 이미지의 기본 node 사용자를 유지한다.

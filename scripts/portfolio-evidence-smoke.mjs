@@ -69,12 +69,22 @@ try{
     }
     assert.equal(linkedOpinionCliChecks,2);if(process.env.AGENTTRUST_IMAGE)assert.equal(packagedLinkedOpinionCliChecks,2);
   }
+  const bundleOptions=['--manifest-sha256',manifestSha256,'--organization-id',scope.organizationId,'--project-id',scope.projectId];
+  const inspectedBundle=JSON.parse((await exec(process.execPath,['scripts/inspect-portfolio-evidence.mjs',directory,'.local/receipt-signing/public.pem',...bundleOptions],{timeout:30000,maxBuffer:65536,windowsHide:true})).stdout);
+  assert.equal(inspectedBundle.semanticStructuresVerified,6);assert.equal(inspectedBundle.expectedScopeVerified,true);assert.equal(inspectedBundle.expectedManifestDigestMatched,true);assert.equal(inspectedBundle.deploymentAllowed,false);assert.equal(inspectedBundle.records.filter(row=>row.reviewBodyVerified).length,withReviews?2:0);
+  assert.ok(inspectedBundle.records.every(row=>row.signatureVerified&&row.structureVerified&&row.expectedScopeVerified&&!row.evidenceBodiesVerified&&!row.currentReleasePermissionVerified&&!row.currentReviewerAuthorityVerified&&!row.deploymentAllowed));
+  let packagedBundleSemanticCliChecks=0;
+  if(process.env.AGENTTRUST_IMAGE){
+    assert.match(process.env.AGENTTRUST_IMAGE,/^ghcr\.io\/automaster5013\/agenttrust@sha256:[a-f0-9]{64}$/);
+    const result=await exec('docker',['run','--rm',...containerUserArgs(),'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--mount',`type=bind,source=${resolve(directory)},target=/bundle,readonly`,'--mount',`type=bind,source=${resolve('.local/receipt-signing/public.pem')},target=/trusted.pem,readonly`,'--entrypoint','node',process.env.AGENTTRUST_IMAGE,'scripts/inspect-portfolio-evidence.mjs','/bundle','/trusted.pem',...bundleOptions],{timeout:30000,maxBuffer:65536,windowsHide:true});
+    assert.deepEqual(JSON.parse(result.stdout),inspectedBundle);packagedBundleSemanticCliChecks=6;
+  }
   let auditReport;
   if(withReport){
     const path='.local/portfolio-audit-'+randomUUID()+'.html';
     const result=await exec(process.execPath,['scripts/write-portfolio-evidence-report.mjs',directory,'.local/receipt-signing/public.pem',path,manifestSha256],{timeout:30000,maxBuffer:65536,windowsHide:true}),written=JSON.parse(result.stdout.trim());assert.equal(written.reportCreated,true);assert.equal(written.reportCryptographicallySigned,false);auditReport={path,reportCreated:true,reportCryptographicallySigned:false};
   }
-  console.log(JSON.stringify({status:'passed',organizationIndex:options.organizationIndex,...scope,directory,...finalVerification,...history,linkedOpinionCliChecks,packagedLinkedOpinionCliChecks,linkedBodyCliChecks:linkedOpinionCliChecks,packagedLinkedBodyCliChecks:packagedLinkedOpinionCliChecks,...(auditReport?{auditReport}:{}),historySessionLoggedOut:true}));
+  console.log(JSON.stringify({status:'passed',organizationIndex:options.organizationIndex,...scope,directory,...finalVerification,...history,linkedOpinionCliChecks,packagedLinkedOpinionCliChecks,bundleSemanticCliChecks:6,packagedBundleSemanticCliChecks,bundleScopeVerified:inspectedBundle.expectedScopeVerified,linkedBodyCliChecks:linkedOpinionCliChecks,packagedLinkedBodyCliChecks:packagedLinkedOpinionCliChecks,...(auditReport?{auditReport}:{}),historySessionLoggedOut:true}));
 }catch{
   console.error('Synthetic portfolio evidence export, offline verification or history check did not complete.');process.exitCode=1;
 }
