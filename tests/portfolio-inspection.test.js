@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {generateKeyPairSync,randomUUID} from 'node:crypto';
-import {readFile,writeFile,rm,mkdtemp,readdir} from 'node:fs/promises';
+import {readFile,writeFile,rm,mkdtemp,readdir,unlink} from 'node:fs/promises';
 import {resolve,join,sep} from 'node:path';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -82,4 +82,27 @@ test('bundle inspection options reject ambiguous digests, partial scopes and unk
  const scope={organizationId:randomUUID(),projectId:randomUUID()};assert.deepEqual(parsePortfolioInspectionArguments(['bundle','key','--project-id',scope.projectId,'--organization-id',scope.organizationId]).expected,scope);
  assert.equal(parsePortfolioInspectionArguments(['bundle','key']).expected,undefined);
  for(const args of [[],['bundle'],['bundle','key','--manifest-sha256','bad'],['bundle','key','--organization-id',scope.organizationId],['bundle','key','--project-id',scope.projectId],['bundle','key','--candidate-run-id',randomUUID()],['bundle','key','--manifest-sha256','a'.repeat(64),'--manifest-sha256','a'.repeat(64)],['bundle','key','--organization-id',scope.organizationId,'--organization-id',scope.organizationId],['bundle','key','--manifest-sha256']])assert.throws(()=>parsePortfolioInspectionArguments(args));
+});
+
+test('requiring original opinions refuses a downgraded bundle while preserving all six signed receipts',async t=>{
+ const f=await bundle(t,fixture(true,true)),scope={organizationId:f.organizationId,projectId:f.projectId};
+ const approved=await inspectPortfolioEvidence(f.directory,f.trustedPem,f.manifestSha256,scope,true);assert.equal(approved.reviewBodiesRequired,true);assert.equal(approved.records.filter(row=>row.reviewBodyVerified).length,2);
+ const originals=await Promise.all(Array.from({length:6},(_,i)=>readFile(join(f.directory,`receipt-${i+1}.json`))));
+ const manifest=JSON.parse(await readFile(join(f.directory,'manifest.json'),'utf8'));manifest.schemaVersion=1;delete manifest.reviews;
+ await unlink(join(f.directory,'review-1.json'));await unlink(join(f.directory,'review-2.json'));await writeFile(join(f.directory,'manifest.json'),JSON.stringify(manifest));
+ const optional=await inspectPortfolioEvidence(f.directory,f.trustedPem,undefined,scope);assert.equal(optional.reviewBodiesRequired,false);assert.ok(optional.records.every(row=>!row.reviewBodyVerified));
+ await assert.rejects(inspectPortfolioEvidence(f.directory,f.trustedPem,undefined,scope,true),/Original review bodies are required/);
+ assert.deepEqual(await Promise.all(Array.from({length:6},(_,i)=>readFile(join(f.directory,`receipt-${i+1}.json`)))),originals);
+ for(const value of [null,'true',1,{},[]])await assert.rejects(inspectPortfolioEvidence('missing',f.trustedPem,undefined,scope,value),/Invalid review requirement/);
+});
+
+test('the review requirement CLI flag composes with pinned scope and refuses missing bodies without partial output',async t=>{
+ const f=await bundle(t,fixture(true,true)),legacy=await bundle(t,fixture(true)),dir=await mkdtemp(join(resolve('.local'),'portfolio-inspection-required-review-test-'));
+ t.after(async()=>{assert.ok(resolve(dir).startsWith(resolve('.local')+sep));await rm(dir,{recursive:true,force:true});});const key=join(dir,'trusted.pem'),legacyKey=join(dir,'legacy.pem');await writeFile(key,f.trustedPem);await writeFile(legacyKey,legacy.trustedPem);
+ const options=['--manifest-sha256',f.manifestSha256,'--organization-id',f.organizationId,'--project-id',f.projectId];
+ for(const args of [[f.directory,key,'--require-reviews',...options],[f.directory,key,...options,'--require-reviews']]){
+  assert.equal(parsePortfolioInspectionArguments(args).requireReviewBodies,true);const result=await exec(process.execPath,['scripts/inspect-portfolio-evidence.mjs',...args],{windowsHide:true,timeout:15000,maxBuffer:65536});assert.equal(JSON.parse(result.stdout).reviewBodiesRequired,true);
+ }
+ await assert.rejects(exec(process.execPath,['scripts/inspect-portfolio-evidence.mjs',legacy.directory,legacyKey,'--require-reviews'],{windowsHide:true,timeout:15000}),e=>e.code===2&&!e.stdout&&!e.stderr.includes(canary));
+ for(const args of [['bundle','key','--require-reviews','--require-reviews'],['bundle','key','--require-reviews','true'],['bundle','key','--require-reviews','--manifest-sha256']])assert.throws(()=>parsePortfolioInspectionArguments(args));
 });

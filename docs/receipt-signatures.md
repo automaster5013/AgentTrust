@@ -95,3 +95,9 @@ npm.cmd run demo:evidence:inspect -- "bundle-directory" trusted-public.pem --man
 성공은 여섯 기록 전체를 검사한 후 한 JSON으로 출력한다. 과거 판정·원문 사유의 개수·비교 수치·원래 의견 결합 여부를 표시하되 사유·검토 의견·평가 입력과 출력을 포함하지 않는다. 평가 본문 파일을 받지 않으므로 `evidenceBodiesVerified`는 false이고 현재 검토자 권한·배포 권한 및 `deploymentAllowed`도 false다. 평가 본문까지 대조하려면 개별 기록 검사에 해당 원문 파일을 명시한다. 잘못된 인수·서명·범위·본문·구조는 종료 코드 2와 안전한 오류만 반환하고 부분 성공 JSON은 출력하지 않는다.
 
 Docker 이미지에 같은 명령을 포함한다. 묶음 디렉터리와 독립 신뢰 공개키만 읽기 전용으로 연결하고 `--network none --read-only --cap-drop ALL --security-opt no-new-privileges`를 적용한다. 비밀키·접근 키·설정 또는 전체 작업 폴더를 연결하지 않는다. Unix는 호스트 UID/GID를 사용하며 Windows는 이미지의 기본 node 사용자를 유지한다.
+
+## 원래 의견을 필수로 지정하는 묶음 검사 v0.176
+
+앞의 일괄 검사 명령에 `--require-reviews`를 추가하면 원래 승인·반려 의견 본문 두 개가 모두 있어야 성공한다. 의견 파일을 제외하고 manifest를 v1으로 바꾸더라도 여섯 서명만으로는 이 요구를 통과하지 못한다. 반복 지정이나 `--require-reviews true`처럼 값을 붙이는 잘못된 사용은 거부한다. 프로그램 호출의 요구 값도 boolean만 허용한다.
+
+성공 요약의 `reviewBodiesRequired`는 실제 지정 여부를 표시한다. 기본 false는 의견 포함을 요구하지 않았다는 뜻이며 v1의 `reviewBodyVerified`는 각 기록에서 false다. true는 원래 의견 결합까지 요구한 과거 자료 검사다. 현재 검토자 권한·승인 효력·배포 허용은 여전히 확인하지 않는다. 기존 자료와 키를 수정하거나 API 세션·평가·게이트를 만들지 않는다.
