@@ -11,6 +11,7 @@ import {seededDemoScope,assertDemoSessionScope} from './demo-session-scope.mjs';
 import {localSmokeBase,fetchLocalSmoke} from './local-smoke-http.mjs';
 import {readReleaseResponse} from './release-gate.mjs';
 import {parseDemoOptions} from './demo-options.mjs';
+import {containerUserArgs} from '../packages/receipts/container-user.js';
 const exec=promisify(execFile);
 let cookie,base,scope;
 async function call(path,data){
@@ -62,7 +63,7 @@ try{
       const inspected=JSON.parse(result.stdout);assert.equal(inspected.reviewBodyVerified,true);assert.equal(inspected.evidenceBodiesVerified,true);assert.equal(inspected.evidenceMetadataAuthenticated,false);assert.equal(inspected.linkedReviewId,bundle.reviews[reviewIndex].id);assert.equal(inspected.deploymentAllowed,false);assert.equal(inspected.currentReviewerAuthorityVerified,false);linkedOpinionCliChecks++;
       if(process.env.AGENTTRUST_IMAGE){
         assert.match(process.env.AGENTTRUST_IMAGE,/^ghcr\.io\/automaster5013\/agenttrust@sha256:[a-f0-9]{64}$/);
-        const image=await exec('docker',['run','--rm','--user',`${process.getuid()}:${process.getgid()}`,'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--mount',`type=bind,source=${resolve(receiptFile)},target=/receipt.json,readonly`,'--mount',`type=bind,source=${resolve(reviewFile)},target=/review.json,readonly`,'--mount',`type=bind,source=${resolve(candidateFile)},target=/candidate.json,readonly`,'--mount',`type=bind,source=${resolve(baselineFile)},target=/baseline.json,readonly`,'--mount',`type=bind,source=${resolve('.local/receipt-signing/public.pem')},target=/trusted.pem,readonly`,'--entrypoint','node',process.env.AGENTTRUST_IMAGE,'scripts/inspect-receipt.mjs','/receipt.json','/trusted.pem',...selected,'--review-file','/review.json','--candidate-evidence-file','/candidate.json','--baseline-evidence-file','/baseline.json'],{timeout:30000,maxBuffer:10000,windowsHide:true});
+        const image=await exec('docker',['run','--rm',...containerUserArgs(),'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--mount',`type=bind,source=${resolve(receiptFile)},target=/receipt.json,readonly`,'--mount',`type=bind,source=${resolve(reviewFile)},target=/review.json,readonly`,'--mount',`type=bind,source=${resolve(candidateFile)},target=/candidate.json,readonly`,'--mount',`type=bind,source=${resolve(baselineFile)},target=/baseline.json,readonly`,'--mount',`type=bind,source=${resolve('.local/receipt-signing/public.pem')},target=/trusted.pem,readonly`,'--entrypoint','node',process.env.AGENTTRUST_IMAGE,'scripts/inspect-receipt.mjs','/receipt.json','/trusted.pem',...selected,'--review-file','/review.json','--candidate-evidence-file','/candidate.json','--baseline-evidence-file','/baseline.json'],{timeout:30000,maxBuffer:10000,windowsHide:true});
         assert.deepEqual(JSON.parse(image.stdout),inspected);packagedLinkedOpinionCliChecks++;
       }
     }
