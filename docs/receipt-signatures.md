@@ -80,4 +80,4 @@ npm.cmd run receipt:inspect -- receipt.json trusted-public.pem --candidate-evide
 
 `evidenceBodiesVerified`, `candidateEvidenceVerified`, `baselineEvidenceVerified`는 해당 서명된 본문 해시의 일치를 설명한다. `evidenceVerificationScope`는 `signed-snapshot-and-result-bodies`, `evidenceMetadataAuthenticated`는 false다. 실행 상태·요약·시각·시도 수 등 해시 밖의 메타데이터는 인증하지 않으며 원문을 재평가하거나 에이전트를 실행하지 않는다. 과거 배포 판정은 서명 기록의 값으로만 설명하고 현재 배포 허용은 항상 false다. 원문을 지정하지 않으면 기존 검사와 `evidenceBodiesVerified: false`를 유지한다.
 
-기대 범위와 `--review-file` 옵션을 함께 지정할 수 있다. 서명·기대 범위를 확인한 뒤 원문 파일을 각각 최대 16 MiB의 엄격한 UTF-8 JSON으로 읽으며 깊이 64·항목 100,000개 제한을 적용한다. 실패는 종료 코드 2와 안전한 오류만 출력한다. 원문 파일의 입력·출력·주석은 요약에 포함하지 않는다. 원문은 기밀일 수 있으므로 공개 저장소에 올리지 않는다. Docker에는 해당 원문·의견·기록·신뢰 공개키만 읽기 전용으로 연결하고 네트워크를 끈다.
+기대 범위와 `--review-file` 옵션을 함께 지정할 수 있다. 서명·기대 범위를 확인한 뒤 원문 파일을 각각 최대 16 MiB의 엄격한 UTF-8 JSON으로 읽으며 후보·기준 원문을 묶어 깊이 64·항목 100,000개 제한을 적용한다. 실패는 종료 코드 2와 안전한 오류만 출력한다. 원문 파일의 입력·출력·주석은 요약에 포함하지 않는다. 원문은 기밀일 수 있으므로 공개 저장소에 올리지 않는다. Docker에는 해당 원문·의견·기록·신뢰 공개키만 읽기 전용으로 연결하고 네트워크를 끈다.

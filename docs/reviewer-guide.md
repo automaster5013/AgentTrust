@@ -72,3 +72,5 @@ v0.169에서는 저장된 과거 기록의 비교 통과와 관리자 반려를 
 ## 서명된 과거 기록의 오프라인 검사
 
 내보낸 서명 기록과 별도 경로로 신뢰한 공개키를 준비한 뒤 `npm.cmd run receipt:inspect -- receipt.json trusted-public.pem`을 실행한다. 사유·변경·회귀 개수와 과거 승인 상태를 출력하며 현재 배포는 허용하지 않는다. 조직·프로젝트·실행 기대값 옵션을 사용하면 다른 범위의 유효한 서명도 거부한다. [사용법과 확인 범위](receipt-signatures.md#과거-판정의-오프라인-설명-v0170)를 참고한다. 기대값은 검사 대상 기록을 그대로 복사하지 않고 사전에 선택한 범위에서 가져온다.
+
+원래 의견을 함께 확인하려면 `--review-file original-review.json`을 추가한다. 후보 원문은 `--candidate-evidence-file candidate-run.json`, 비교 기록의 기준 원문은 `--baseline-evidence-file baseline-run.json`으로 지정한다. [의견 결합 범위](receipt-signatures.md#원래-검토-의견의-오프라인-결합-v0172)와 [원문 해시 결합 범위](receipt-signatures.md#스냅샷과-평가-결과-원문의-오프라인-결합-v0173)를 따른다. 의견·평가 원문은 기밀일 수 있으므로 공개 저장소에 올리지 않는다. 검증 성공도 현재 승인이나 배포 권한을 뜻하지 않으며 실행 상태·요약·시각 등 서명 해시 밖의 메타데이터를 인증하지 않는다.
