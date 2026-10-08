@@ -37,9 +37,9 @@ export class PgStore {
   async operations(context){
     requireWrite(context,true);
     return transaction(this.database,async client=>{
-      const now=(await client.query('SELECT clock_timestamp() AS now')).rows[0].now;
-      const health=(await client.query("SELECT last_seen FROM agenttrust.service_health WHERE service='worker'")).rows[0];
-      const age=health?(now-health.last_seen)/1000:null;
+      // One statement snapshot prevents a heartbeat committed after an earlier clock read appearing future-dated.
+      const observation=(await client.query("SELECT clock_timestamp() AS now,h.last_seen,EXTRACT(EPOCH FROM (clock_timestamp()-h.last_seen))::double precision AS age_seconds FROM (SELECT 1) observed LEFT JOIN agenttrust.service_health h ON h.service='worker'")).rows[0];
+      const now=observation.now,health=observation.last_seen===null?null:observation,age=health?observation.age_seconds:null;
       const row=(await client.query(`SELECT count(*) FILTER(WHERE state='queued') AS queued,
         count(*) FILTER(WHERE state='running') AS running,
         count(*) FILTER(WHERE state IN ('queued','running') AND deadline<=$3) AS overdue,

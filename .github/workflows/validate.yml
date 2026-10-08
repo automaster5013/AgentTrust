@@ -34,6 +34,8 @@ jobs:
         run: npm run demo:offline -- --json
       - run: node packages/evaluator/connector-contract-smoke.js
       - run: npm test
+      - name: Verify isolated source staging workload and cleanup
+        run: npm run benchmark:staging -- --duration-minutes 1
       - run: npm audit --audit-level=high --cache .cache/npm
       - name: Match API user to private signing-file owner
         run: echo "AGENTTRUST_API_USER=$(id -u):$(id -g)" >> "$GITHUB_ENV"

@@ -406,6 +406,14 @@ test('operational alerts require an admin and keep overdue execution alerts in t
  assert.equal((await f.request('/v1/operations-alerts',{extra:{'X-AgentTrust-Project':f.other.projectId}})).status,404);
 });
 
+test('operations avoid a false future heartbeat when a newer signal commits after an earlier clock read',async t=>{
+ const f=await fixture(t),prior=(await f.owner.query("SELECT last_seen FROM agenttrust.service_health WHERE service='worker'")).rows[0];
+ t.after(async()=>{const db=pool(process.env.TEST_OWNER_DATABASE_URL);try{if(prior)await db.query("UPDATE agenttrust.service_health SET last_seen=$1 WHERE service='worker'",[prior.last_seen]);else await db.query("DELETE FROM agenttrust.service_health WHERE service='worker'");}finally{await db.end();}});
+ await heartbeat(f.workerDb);
+ const interleaving={connect:async()=>{const client=await f.database.connect();return {release:()=>client.release(),query:async(...args)=>{const result=await client.query(...args);if(args[0]==='SELECT clock_timestamp() AS now'){await new Promise(resolve=>setTimeout(resolve,20));await heartbeat(f.workerDb);}return result;}};}};
+ const operations=await new PgStore(interleaving).operations(f.contexts.admin);assert.equal(operations.worker.state,'recent');assert.ok(operations.worker.ageSeconds>=0&&operations.worker.ageSeconds<=15);
+});
+
 test('operational alert HTTP responses fail closed on contradictory or foreign operational evidence',async t=>{
  const f=await fixture(t),original=f.store.operations.bind(f.store);
  for(const mutate of [o=>o.versionCapacity.organizationId=randomUUID(),o=>o.executionCapacity.retained.remaining=-1,o=>{o.worker={state:'recent',ageSeconds:16};}]){
