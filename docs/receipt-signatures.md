@@ -101,3 +101,17 @@ Docker 이미지에 같은 명령을 포함한다. 묶음 디렉터리와 독립
 앞의 일괄 검사 명령에 `--require-reviews`를 추가하면 원래 승인·반려 의견 본문 두 개가 모두 있어야 성공한다. 의견 파일을 제외하고 manifest를 v1으로 바꾸더라도 여섯 서명만으로는 이 요구를 통과하지 못한다. 반복 지정이나 `--require-reviews true`처럼 값을 붙이는 잘못된 사용은 거부한다. 프로그램 호출의 요구 값도 boolean만 허용한다.
 
 성공 요약의 `reviewBodiesRequired`는 실제 지정 여부를 표시한다. 기본 false는 의견 포함을 요구하지 않았다는 뜻이며 v1의 `reviewBodyVerified`는 각 기록에서 false다. true는 원래 의견 결합까지 요구한 과거 자료 검사다. 현재 검토자 권한·승인 효력·배포 허용은 여전히 확인하지 않는다. 기존 자료와 키를 수정하거나 API 세션·평가·게이트를 만들지 않는다.
+
+## 기록된 평가 근거의 구조 검사 v0.177
+
+```powershell
+npm.cmd run receipt:inspect -- receipt.json trusted-public.pem --candidate-evidence-file candidate-run.json --baseline-evidence-file baseline-run.json --check-evidence-structure
+```
+
+기준 없는 기록은 기준 파일을 생략한다. 기대 범위와 원래 의견 옵션도 함께 사용할 수 있다. 이 선택 옵션은 반드시 후보 원문을 요구하며 기준 있는 기록에는 두 원문을 모두 요구한다. 중복 옵션이나 boolean 값을 붙이는 잘못된 사용은 파일 읽기 전에 거부한다. 기본 서명·범위·해시 결합이 먼저 성공해야 구조 검사를 진행한다.
+
+기존 evaluator의 순수 근거 검사로 서명된 버전 내용·사례 입력·규칙 타입/필수 여부/상태·커버리지·정책 판정과 기준 비교 수치를 대조한다. unsigned `state`, `summary`, `completedAt`, 최상위 버전 ID를 사용하지 않고 서명된 snapshot/results에서 필요한 상태와 집계를 유도한다. 당시 릴리스가 pass였으면 지정 요청 버전과 후보 버전도 일치해야 한다. 원문 사유 문장의 의미나 현재 승인자 권한을 인증하지 않는다.
+
+성공은 `evidenceStructuresVerified`, `candidateEvidenceStructureVerified`, 해당 시 `baselineEvidenceStructureVerified`로 표시한다. `evidenceStructureSource`는 `authenticated-snapshot-and-result-bodies`, `unsignedMetadataUsedForStructure`는 false다. `rulesRecheckedFromRecordedEvidence`는 true이고 `agentReexecuted`는 false다. 실제 에이전트·도구·외부 서비스를 호출하지 않는다. `evidenceMetadataAuthenticated`, 현재 권한 및 `deploymentAllowed`는 계속 false다.
+
+규칙이 실패하거나 근거가 누락되어도 온전한 기록 구조에서 그 판정이 일치하면 과거 차단으로 설명한다. 미완료·잘린 평가처럼 사례별 기록이 없는 본문은 이 엄격한 옵션에서 거부될 수 있다. 기존 해시 결합만 사용하면 이러한 원문도 서명된 참조의 일치 여부까지 확인할 수 있다. evaluator 결과의 60,000개 JSON 항목·8 MiB 제한과 기존 계약/본문 한도를 적용한다. 저장 규칙 근거를 확인하는 선택적 재검사이며 원래 에이전트 응답을 다시 생성하지 않는다.
