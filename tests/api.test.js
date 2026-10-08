@@ -393,6 +393,28 @@ test('operations expose only the selected project queue to admins and report sta
 });
 
 
+test('operational alerts require an admin and keep overdue execution alerts in the selected project',async t=>{
+ const f=await fixture(t),prior=(await f.owner.query("SELECT last_seen FROM agenttrust.service_health WHERE service='worker'")).rows[0];
+ t.after(async()=>{const db=pool(process.env.TEST_OWNER_DATABASE_URL);try{if(prior)await db.query("UPDATE agenttrust.service_health SET last_seen=$1 WHERE service='worker'",[prior.last_seen]);else await db.query("DELETE FROM agenttrust.service_health WHERE service='worker'");}finally{await db.end();}});
+ await heartbeat(f.workerDb);
+ for(const role of ['editor','viewer'])assert.equal((await f.request('/v1/operations-alerts',{role})).status,403);
+ assert.equal((await f.request('/v1/operations-alerts?unknown=1')).status,400);
+ const initial=await(await f.request('/v1/operations-alerts')).json();assert.equal(initial.status,'ok');assert.equal(initial.organizationId,f.first.organizationId);assert.equal(initial.projectId,f.first.projectId);assert.equal(initial.readOnly,true);assert.deepEqual(initial.alerts,[]);
+ await f.create('compliant',{timeoutMs:100});await new Promise(resolve=>setTimeout(resolve,120));await heartbeat(f.workerDb);
+ const overdue=await(await f.request('/v1/operations-alerts')).json();assert.equal(overdue.status,'critical');assert.deepEqual(overdue.alerts,[{code:'execution-deadline-exceeded',severity:'critical',scope:'project'}]);assert.equal(overdue.releasePermissionVerified,false);
+ const other=await(await f.request('/v1/operations-alerts',{role:'other_admin'})).json();assert.equal(other.status,'ok');assert.equal(other.organizationId,f.other.organizationId);assert.deepEqual(other.alerts,[]);
+ assert.equal((await f.request('/v1/operations-alerts',{extra:{'X-AgentTrust-Project':f.other.projectId}})).status,404);
+});
+
+test('operational alert HTTP responses fail closed on contradictory or foreign operational evidence',async t=>{
+ const f=await fixture(t),original=f.store.operations.bind(f.store);
+ for(const mutate of [o=>o.versionCapacity.organizationId=randomUUID(),o=>o.executionCapacity.retained.remaining=-1,o=>{o.worker={state:'recent',ageSeconds:16};}]){
+  f.store.operations=async context=>{const evidence=await original(context);mutate(evidence);evidence.private='private-model-body';return evidence;};
+  const response=await f.request('/v1/operations-alerts');assert.equal(response.status,503);const body=await response.json();assert.equal(body.error,'Service unavailable.');assert.equal(body.status,undefined);assert.doesNotMatch(JSON.stringify(body),/private-model-body/);
+ }
+ f.store.operations=async()=>{throw Error('private-model-body');};assert.equal((await f.request('/v1/operations-alerts',{role:'viewer'})).status,403);
+});
+
 test('run history pages preserve evidence summaries, filters and cursor scope',async t=>{
   const f=await fixture(t),ids=[];
   for(const mode of ['compliant','regression','error','compliant','regression']){const {run}=await f.create(mode);await f.engine.tick();ids.push(run.id);}

@@ -1,5 +1,17 @@
 # 로컬 운영 상태 확인
 
+## 조직별 운영 경고 — v0.179
+
+`GET /v1/operations-alerts`는 세션으로 인증된 관리자와 선택 프로젝트에 한정하며 query parameter를 허용하지 않는다. 조직 전체 저장량·동시 실행 사용량은 `organization`, 선택 프로젝트의 실행 기한과 lease는 `project`, 공용 워커 신호는 `service` 범위다. 원문 결과·규칙·쿠키·서명 키를 반환하지 않는다. 신호 누락 또는 15초 초과/미래 신호, 실행 기한 초과, lease 만료, 보관·버전 저장 한도 도달은 `critical`이다. 보관·버전 사용량 95% 이상과 동시 실행 한도 도달은 `warning`이다. 이전 모의 평가의 예상 실패는 경고 조건으로 쓰지 않는다.
+
+`npm run operations:alerts`와 `npm run operations:alerts -- --organization-index 1`은 기존 시연 조직을 조회하고 자신의 관리자 세션을 로그아웃한다. 정상·경고는 종료 코드 0, 심각 상태는 2, 조회·증거·정리 실패는 1이다. 심각 상태의 조회 자체가 완료되어도 시스템 정상 판정은 아니다. 고유 로컬 보고서를 생성하며 평가·버전·승인·릴리스 권한을 만들거나 자동 정리하지 않는다. 한 번의 관측 결과이며 외부 모니터링·호출 알림·상용 SLA를 구축한 것은 아니다. 높은 저장량에서는 보존 요구를 확인하고 용량 확장/이관을 계획하며 오래된 평가 기록을 자동 삭제하지 않는다.
+
+## 동일 스키마 롤백 사전 점검 — v0.179
+
+현재 이미지와 revision은 `AGENTTRUST_IMAGE`, `AGENTTRUST_EXPECTED_REVISION`, 이전 것은 `AGENTTRUST_ROLLBACK_IMAGE`, `AGENTTRUST_ROLLBACK_REVISION`으로 설정하고 `npm run rollback:preflight`를 실행한다. 두 이미지는 지정 GHCR 저장소의 서로 다른 sha256 digest, 두 revision은 서로 다른 전체 40자리 SHA여야 한다. 캐시된 이미지의 revision·보안 설정, 현재 호스트의 loopback DB 대상, 두 소스의 동일한 SQL와 실제 ledger, 인증된 최근 복원 근거를 확인한다. 기본 백업 유효 기간은 24시간이며 168시간 이내에서 설정할 수 있다. 읽기 전용이며 마이그레이션이나 컨테이너 교체를 실행하지 않는다.
+
+이전 Git revision의 Compose 설정을 별도로 검토해야 한다. 예를 들어 v0.178의 워커 healthcheck를 v0.177 이미지에 그대로 적용하면 이전 이미지에 없는 점검 파일을 실행하므로 호환되지 않는다. 이전 Compose와 이미지의 조합, GitHub CI, 데이터 의미 호환성, 실제 이전 실행 및 현재 버전 복귀를 별도로 검증해야 한다. 사전 점검 결과의 `previousRuntimeConfigVerified`, `ciSuccessChecked`, `rollbackCompatibilityVerified`는 false를 유지한다. 스키마가 바뀐 배포의 downgrade나 고객 서버 무중단 롤백을 지원한다는 의미가 아니다.
+
 ## 의존 서비스 준비 상태 — v0.178
 
 `GET /ready`는 로그인 없이 DB 애플리케이션 역할의 안전성과 DB 시계 기준 워커 신호를 읽기 전용으로 확인한다. 신호가 0~15초 이내이면 HTTP 200과 `status: ready`를 반환한다. 신호 없음·오래됨·미래 시각·비정상 값·DB/역할 검사 실패는 HTTP 503과 `status: not-ready`, `Retry-After: 2`로 반환한다. DB 오류·연결 설정·조직·실행·원래 시각은 응답에 포함하지 않는다. 기존 loopback Host·Origin·동시 요청 제한을 적용한다.

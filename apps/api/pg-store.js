@@ -39,7 +39,7 @@ export class PgStore {
     return transaction(this.database,async client=>{
       const now=(await client.query('SELECT clock_timestamp() AS now')).rows[0].now;
       const health=(await client.query("SELECT last_seen FROM agenttrust.service_health WHERE service='worker'")).rows[0];
-      const age=health?Math.floor((now-health.last_seen)/1000):null;
+      const age=health?(now-health.last_seen)/1000:null;
       const row=(await client.query(`SELECT count(*) FILTER(WHERE state='queued') AS queued,
         count(*) FILTER(WHERE state='running') AS running,
         count(*) FILTER(WHERE state IN ('queued','running') AND deadline<=$3) AS overdue,

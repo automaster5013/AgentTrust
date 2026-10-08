@@ -1,6 +1,6 @@
 {
   "name": "agenttrust",
-  "version": "0.178.0",
+  "version": "0.179.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -44,7 +44,9 @@
     "demo:acceptance:verify": "node scripts/verify-acceptance-evidence.mjs",
     "acceptance:check": "node scripts/check-acceptance-profile.mjs",
     "acceptance:readiness": "node --env-file-if-exists=.env scripts/acceptance-readiness-smoke.mjs",
-    "demo:offline": "node scripts/portfolio-offline.mjs"
+    "demo:offline": "node scripts/portfolio-offline.mjs",
+    "rollback:preflight": "node --env-file-if-exists=.env scripts/rollback-preflight.mjs",
+    "operations:alerts": "node --env-file-if-exists=.env scripts/operational-alert-probe.mjs"
   },
   "dependencies": {
     "ajv": "8.20.0",

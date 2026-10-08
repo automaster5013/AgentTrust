@@ -18,6 +18,7 @@ import acceptanceProfile from '../../examples/connector-contract/acceptance-prof
 import {validateAcceptanceProfile} from '../../packages/evaluator/acceptance-profile.js';
 import {inspectAcceptanceReadiness} from '../../packages/evaluator/acceptance-readiness.js';
 import packageMetadata from '../../package.json' with {type:'json'};
+import {assessOperationalAlerts} from '../../packages/operations/alerts.js';
 import {inspectServiceReadiness} from '../../packages/operations/readiness.js';
 
 validateAcceptanceProfile(acceptanceProfile);
@@ -102,6 +103,11 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       if(req.method==='GET'&&versionMatch)return send(200,await store.getVersion(context,versionMatch[1]));
       if(req.method==='GET'&&path==='/v1/catalog') return send(200,await store.catalog(context));
       if(req.method==='GET'&&path==='/v1/operations')return send(200,await store.operations(context));
+      if(req.method==='GET'&&path==='/v1/operations-alerts'){
+        requireWrite(context,true);
+        if(requestUrl.search)throw new InputError('Operational alerts do not accept query parameters.');
+        return send(200,assessOperationalAlerts(await store.operations(context),context));
+      }
       if(req.method==='GET'&&path==='/v1/sample-acceptance-profile'){if(requestUrl.search)throw new InputError('Unexpected sample profile query.',400);return send(200,validateAcceptanceProfile(acceptanceProfile));}
       if(['GET','POST'].includes(req.method)&&path==='/v1/acceptance-readiness'){
         requireWrite(context,true);

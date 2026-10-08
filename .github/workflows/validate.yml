@@ -40,6 +40,10 @@ jobs:
       - run: docker compose up --build -d --wait api worker
       - name: Verify dependency readiness and worker restoration
         run: node --env-file-if-exists=.env scripts/readiness-smoke.mjs --worker-restart
+      - name: Verify scoped operational alerts and session cleanup
+        run: |
+          npm run operations:alerts
+          npm run operations:alerts -- --organization-index 1
       - name: Verify independent Docker evaluation and persisted evidence
         run: |
           node --env-file-if-exists=.env scripts/smoke.mjs before
@@ -161,6 +165,8 @@ jobs:
           docker compose -f compose.yaml -f compose.image.yaml pull api worker
           docker compose -f compose.yaml -f compose.image.yaml up -d --no-build --wait api worker
           node --env-file-if-exists=.env scripts/readiness-smoke.mjs --worker-restart
+          npm run operations:alerts
+          npm run operations:alerts -- --organization-index 1
           npm run smoke:image
           npm run connector:contract
           npm run connector:replay
