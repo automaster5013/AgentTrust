@@ -4,7 +4,7 @@
 
 `npm.cmd run receipt:inspect -- receipt.json trusted-public.pem`은 독립적으로 신뢰한 Ed25519 공개키로 서명을 확인한 뒤 기록의 판정·사유·실행 ID·근거 해시·비교·관리자 승인 상태의 내부 일관성을 검사한다. Docker 이미지에서도 `node scripts/inspect-receipt.mjs /evidence/receipt.json /evidence/trusted-public.pem`으로 실행할 수 있다. 공개키와 기록만 읽기 전용으로 연결하고 `--network none --read-only --cap-drop ALL --security-opt no-new-privileges`를 사용한다.
 
-JSON 출력은 `historicalDecision`, 사유·변경·회귀 개수와 과거 승인 상태를 제공하며 원문 사유·규칙 이름·검토 의견을 출력하지 않는다. `deploymentAllowed`와 `currentReleasePermissionVerified`는 항상 `false`다. 서명된 해시 참조의 일관성을 확인해도 실행 근거 원문·검토 원문·검토자의 현재 권한은 검증하지 않으므로 `evidenceBodiesVerified`와 `reviewBodyVerified`도 `false`다. 실제 배포 직전에는 서버의 새 릴리스 게이트를 확인해야 한다.
+JSON 출력은 `historicalDecision`, 사유·변경·회귀 개수와 과거 승인 상태를 제공하며 원문 사유·규칙 이름·검토 의견을 출력하지 않는다. `deploymentAllowed`와 `currentReleasePermissionVerified`는 항상 `false`다. 서명된 해시 참조의 일관성을 확인해도 실행 근거 원문·검토 원문·검토자의 현재 권한은 검증하지 않으므로 `evidenceBodiesVerified`는 `false`이며, 의견 파일을 지정하지 않은 기본 검사의 `reviewBodyVerified`도 `false`다. 실제 배포 직전에는 서버의 새 릴리스 게이트를 확인해야 한다.
 
 입력은 기존 16 MiB 파일 제한에 더해 깊이 64·방문 항목 100,000개·사유 64개(각 500자)·비교 변경 및 회귀 각 2,000개로 제한한다. 잘못된 서명·모순·형식·입력 파일·공개키는 원문이나 파일 경로를 출력하지 않고 종료 코드 2로 실패한다. 기존 `receipt:verify`는 서명 인증 전용이며 구조 설명 검사를 대체하지 않는다.
 
@@ -57,3 +57,15 @@ CI 기록 저장과 오프라인 읽기는 같은 16 MiB UTF-8 바이트 한도�
 CI·오프라인 검증은 1 KiB 이하의 단일 SPKI 공개키 파일을 엄격한 UTF-8로 읽는다. 다른 PEM이나 원문을 이어 붙인 파일·잘못된 인코딩·디렉터리·private key를 거절한다. 앞뒤 ASCII 공백과 CRLF는 한도 안에서 허용한다. CI는 이 검사에 성공하기 전에 인증 요청을 시작하지 않는다. 오류 안내는 파일·키 원문을 포함하지 않으며 기존 종료 코드 2를 유지한다.
 
 시연·배포 준비 검사도 v0.106부터 같은 공개키 reader를 사용한다. 기존 개인키 파일은 키 쌍 확인에만 사용하고 public.pem에 개인키를 넣은 설정은 거절한다.
+
+## 원래 검토 의견의 오프라인 결합 v0.172
+
+```powershell
+npm.cmd run receipt:inspect -- receipt.json trusted-public.pem --review-file original-review.json
+```
+
+기대 조직·프로젝트·후보·기준 옵션과 함께 사용할 수 있다. 서명과 기대 범위를 먼저 인증한 뒤 의견 파일을 최대 64 KiB의 엄격한 UTF-8 JSON으로 읽는다. 원본 파일은 바꾸지 않는다. 의견 ID·본문 해시·조직·프로젝트·실행·근거 해시가 서명된 참조와 같아야 하며 의견 판정·시각·본문 필드도 대조한다. 의견 해시를 다시 계산해도 서명된 참조가 다르면 거부한다. 원래 검토가 없는 기록에 의견을 붙이거나 의견 파일을 중복 지정하면 실패한다.
+
+성공 시 `reviewBodyVerified: true`, `linkedReviewId`, `linkedReviewHash`만 추가하고 의견·검토자 원문은 출력하지 않는다. 의견 자체가 별도로 서명된 것은 아니다. 독립 신뢰 공개키로 인증한 기록의 참조를 통해 의견을 결합하며 `currentReviewerAuthorityVerified`, `currentReleasePermissionVerified`, `deploymentAllowed`는 항상 false다. 과거 승인 만료·반려·권한 무효 기록의 원래 의견도 검증할 수 있으나 현재 승인으로 되돌리지 않는다. 파일을 생략하면 기존 동작과 `reviewBodyVerified: false`를 유지한다.
+
+Docker 검사에는 공개키·기록·의견 세 파일만 읽기 전용으로 연결하고 네트워크를 끈다. 비밀키·접근 키나 전체 작업 폴더를 연결하지 않는다. 실패 시 종료 코드 2와 안전한 오류만 반환한다. 의견 파일은 기밀일 수 있으므로 보관과 전달 대상은 운영자가 정한다.

@@ -1,5 +1,6 @@
 import {verifyReceipt} from './signature.js';
 import {hash} from '../contracts/hash.js';
+import {assertHistoricalReviewBinding} from './review.js';
 
 const invalid=()=>{throw new Error('Invalid historical receipt structure.');};
 const uuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
@@ -40,7 +41,7 @@ export function normalizeReceiptExpectation(expected){
  if(!object(expected)||Object.keys(expected).some(key=>!['organizationId','projectId','candidateRunId','baselineRunId'].includes(key))||!uuid(expected.organizationId)||!uuid(expected.projectId)||expected.candidateRunId!==undefined&&!uuid(expected.candidateRunId)||Object.hasOwn(expected,'baselineRunId')&&(!uuid(expected.candidateRunId)||expected.baselineRunId!==null&&!uuid(expected.baselineRunId)))invalid();
  return Object.fromEntries(Object.entries(expected).map(([key,value])=>[key,value===null?null:value.toLowerCase()]));
 }
-export function inspectHistoricalReceipt(receipt,trustedKey,expectation){
+export function inspectHistoricalReceipt(receipt,trustedKey,expectation,review){
  const expected=normalizeReceiptExpectation(expectation);
  bounded(receipt);const verified=verifyReceipt(receipt,trustedKey),a=receipt.artifact;
  if(!object(a)||a.schemaVersion!==1||!['receiptId','organizationId','projectId'].every(key=>uuid(a[key]))||typeof a.checkedAt!=='string'||a.checkedAt.length>40||!Number.isFinite(Date.parse(a.checkedAt))||!object(a.request)||!object(a.result)||!object(a.evidence))invalid();
@@ -68,5 +69,6 @@ export function inspectHistoricalReceipt(receipt,trustedKey,expectation){
  if(expected){
   if(a.organizationId.toLowerCase()!==expected.organizationId||a.projectId.toLowerCase()!==expected.projectId||expected.candidateRunId!==undefined&&request.candidateRunId.toLowerCase()!==expected.candidateRunId||Object.hasOwn(expected,'baselineRunId')&&(request.baselineRunId?.toLowerCase()??null)!==expected.baselineRunId)invalid();
  }
- return {schemaVersion:1,purpose:'historical-receipt-inspection',receiptId:verified.receiptId,organizationId:verified.organizationId,projectId:verified.projectId,checkedAt:verified.checkedAt,keyId:verified.keyId,artifactHash:receipt.artifactHash,signatureVerified:true,structureVerified:true,historicalDecision:result.decision,reasonCount:result.reasons.length,manualApprovalStatus:manual?.status??'not_required',comparison:compared,evidenceReferenceHashesComplete:completeHashes,expectedScopeVerified:expected!==undefined,expectedCandidateVerified:expected?.candidateRunId!==undefined,expectedBaselineVerified:expected!==undefined&&Object.hasOwn(expected,'baselineRunId'),historicalEvidenceOnly:true,evidenceBodiesVerified:false,reviewBodyVerified:false,currentReleasePermissionVerified:false,deploymentAllowed:false};
+ if(review!==undefined){bounded(review);if(!manual||manual.status==='missing')invalid();assertHistoricalReviewBinding(review,receipt);}
+ return {schemaVersion:1,purpose:'historical-receipt-inspection',receiptId:verified.receiptId,organizationId:verified.organizationId,projectId:verified.projectId,checkedAt:verified.checkedAt,keyId:verified.keyId,artifactHash:receipt.artifactHash,signatureVerified:true,structureVerified:true,historicalDecision:result.decision,reasonCount:result.reasons.length,manualApprovalStatus:manual?.status??'not_required',comparison:compared,evidenceReferenceHashesComplete:completeHashes,expectedScopeVerified:expected!==undefined,expectedCandidateVerified:expected?.candidateRunId!==undefined,expectedBaselineVerified:expected!==undefined&&Object.hasOwn(expected,'baselineRunId'),historicalEvidenceOnly:true,evidenceBodiesVerified:false,reviewBodyVerified:review!==undefined,...(review!==undefined?{linkedReviewId:review.id,linkedReviewHash:review.reviewHash}:{}),currentReviewerAuthorityVerified:false,currentReleasePermissionVerified:false,deploymentAllowed:false};
 }
