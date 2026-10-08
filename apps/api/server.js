@@ -18,6 +18,7 @@ import acceptanceProfile from '../../examples/connector-contract/acceptance-prof
 import {validateAcceptanceProfile} from '../../packages/evaluator/acceptance-profile.js';
 import {inspectAcceptanceReadiness} from '../../packages/evaluator/acceptance-readiness.js';
 import packageMetadata from '../../package.json' with {type:'json'};
+import {inspectServiceReadiness} from '../../packages/operations/readiness.js';
 
 validateAcceptanceProfile(acceptanceProfile);
 const webRoot=new URL('../web/',import.meta.url);
@@ -61,6 +62,10 @@ export function createApp({database,store=new PgStore(database),auth=new Auth(da
       const finish=()=>{responseDone=true;release();};
       res.once('finish',finish);res.once('close',finish);
       completeWork=()=>{workDone=true;release();};
+      if(req.method==='GET'&&path==='/ready') {
+        const readiness=await inspectServiceReadiness(database,'api');
+        return send(readiness.status==='ready'?200:503,readiness,readiness.status==='ready'?{}:{'Retry-After':'2'});
+      }
       await validateDatabaseRole(database,'api');
       if(req.method==='GET'&&path==='/health') {await database.query('SELECT 1');return send(200,{status:'ok',mode:'local-mock',persistent:true});}
       if(req.method==='POST'&&path==='/v1/auth/login') {

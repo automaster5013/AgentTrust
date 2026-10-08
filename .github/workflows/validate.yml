@@ -38,6 +38,8 @@ jobs:
       - name: Match API user to private signing-file owner
         run: echo "AGENTTRUST_API_USER=$(id -u):$(id -g)" >> "$GITHUB_ENV"
       - run: docker compose up --build -d --wait api worker
+      - name: Verify dependency readiness and worker restoration
+        run: node --env-file-if-exists=.env scripts/readiness-smoke.mjs --worker-restart
       - name: Verify independent Docker evaluation and persisted evidence
         run: |
           node --env-file-if-exists=.env scripts/smoke.mjs before
@@ -158,6 +160,7 @@ jobs:
         run: |
           docker compose -f compose.yaml -f compose.image.yaml pull api worker
           docker compose -f compose.yaml -f compose.image.yaml up -d --no-build --wait api worker
+          node --env-file-if-exists=.env scripts/readiness-smoke.mjs --worker-restart
           npm run smoke:image
           npm run connector:contract
           npm run connector:replay

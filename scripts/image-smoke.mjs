@@ -17,6 +17,7 @@ export function verifyImageDeployment({expectedImage,expectedRevision,api,worker
     assert.ok(container.HostConfig.SecurityOpt.some(option=>option==='no-new-privileges:true'||option==='no-new-privileges'));
   }
   assert.equal(api.State.Health.Status,'healthy');
+  assert.equal(worker.State.Health?.Status,'healthy');
   const bindings=Object.values(api.NetworkSettings.Ports).flatMap(value=>value||[]);
   assert.equal(bindings.length,1);assert.equal(bindings[0].HostIp,'127.0.0.1');
   assert.equal(Object.values(worker.NetworkSettings.Ports).flatMap(value=>value||[]).length,0);

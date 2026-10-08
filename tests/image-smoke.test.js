@@ -8,6 +8,9 @@ function fixture(){
  return {expectedImage:digest,expectedRevision:revision,api,worker:container,image:{Id:'sha256:local',Config:{Labels:{'org.opencontainers.image.revision':revision,'org.opencontainers.image.source':'https://github.com/automaster5013/AgentTrust'}}},network:{Name:'backend',Internal:true}};
 }
 test('exact registry digest and unprivileged isolated runtime permit promotion evidence',()=>{assert.equal(verifyImageDeployment(fixture()).imageIdentityVerified,true);});
+test('unhealthy or missing worker readiness blocks registry promotion evidence',()=>{
+ for(const health of [undefined,{Status:'starting'},{Status:'unhealthy'}]){const f=fixture();f.worker.State.Health=health;assert.throws(()=>verifyImageDeployment(f));}
+});
 test('mixed runtime images, mutable tags and mismatched source revisions reject promotion evidence',()=>{
  for(const change of [f=>f.expectedImage=digest.split('@')[0]+':main',f=>f.worker.Image='sha256:older',f=>f.worker.Config.Image=digest.replace(/a$/,'c'),f=>f.image.Config.Labels['org.opencontainers.image.revision']='c'.repeat(40),f=>f.image.Config.Labels['org.opencontainers.image.source']='https://github.com/another/AgentTrust']){const f=fixture();change(f);assert.throws(()=>verifyImageDeployment(f));}
 });

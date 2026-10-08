@@ -48,6 +48,12 @@ services:
     pull_policy: never
     image: agenttrust-app:local
     command: ["node", "apps/worker/main.js"]
+    healthcheck:
+      test: ["CMD", "node", "apps/worker/readiness.js"]
+      interval: 10s
+      timeout: 8s
+      start_period: 10s
+      retries: 3
     environment:
       AGENTTRUST_HTTPS_TARGETS: ${AGENTTRUST_HTTPS_TARGETS:-{}}
       WORKER_DATABASE_URL: postgres://agenttrust_worker:${DB_WORKER_PASSWORD:?Missing worker password}@db:5432/agenttrust
