@@ -12,7 +12,7 @@
 
 서명된 기록은 `npm.cmd run receipt:inspect -- receipt.json trusted-public.pem`으로 오프라인에서 검사할 수 있습니다. 과거 판정과 비교·승인 상태를 설명하며 현재 배포 권한은 허용하지 않습니다. [검사 범위와 제한](docs/receipt-signatures.md#과거-판정의-오프라인-설명-v0170)을 확인하세요.
 
-현재 전달 검증 기준선은 [v0.179 CI](https://github.com/automaster5013/AgentTrust/actions/runs/37856635940)의 694개 테스트와 네 작업입니다. 정확한 게시 이미지의 운영 경고·워커 복귀와 기존 설치의 동일 스키마 이전 버전 전환·복구를 검증했습니다. v0.180 분리된 다중 사용자 부하 검증의 전체 전달 검증은 진행 중입니다. [완료 범위](docs/portfolio-status.md)를 따릅니다.
+현재 기능 기준선은 [v0.180 CI](https://github.com/automaster5013/AgentTrust/actions/runs/37858432094)의 700개 테스트와 네 작업입니다. 정확한 게시 이미지의 준비 상태·운영 경고·증거 검사를 통과했습니다. 별도 DB에서 20명 조회자와 두 워커의 225분 반복 부하로 합성 평가 4,500개와 메타데이터 측정 90,000건을 확인했고, 종료 후 세션·임시 DB를 정리했습니다. [측정 범위와 완료 근거](docs/portfolio-status.md)를 따릅니다.
 
 ## 처음 살펴보기
 
