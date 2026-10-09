@@ -9,7 +9,10 @@ import {inspectObservationFile} from './inspect-operations-observation.mjs';
 const exec=promisify(execFile);
 const args=process.argv.slice(2);assert.ok(args.length===0||args.length===2&&args[0]==='--image'&&/^ghcr\.io\/automaster5013\/agenttrust@sha256:[a-f0-9]{64}$/.test(args[1]));
 const image=args[1],revision=(await exec('git',['rev-parse','HEAD'],{windowsHide:true})).stdout.trim();const version=JSON.parse(await readFile('package.json','utf8')).version;
-if(image){const metadata=JSON.parse((await exec('docker',['image','inspect',image],{windowsHide:true})).stdout)[0];assert.equal(metadata.Config.Labels['org.opencontainers.image.revision'],revision);assert.equal(metadata.Config.Labels['org.opencontainers.image.version'],version);}
+if(image){
+ const metadata=JSON.parse((await exec('docker',['image','inspect',image],{windowsHide:true})).stdout)[0];assert.equal(metadata.Config.Labels['org.opencontainers.image.revision'],revision);
+ const actualVersion=(await exec('docker',['run','--rm','--user','node','--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--memory','128m','--cpus','0.5','--pids-limit','64','--entrypoint','node',image,'-p',"require('./package.json').version"],{windowsHide:true,timeout:30000})).stdout.trim();assert.equal(actualVersion,version);
+}
 const report={schemaVersion:1,completed:false,revision,version,syntheticLocalObservations:true,sourceCliVerified:false,packagedCliVerified:false,packagedNetworkDisabled:false,packagedCredentialsNotMounted:false,wrongScopeRefused:false,authenticityVerified:false,runtimeVerified:false,currentReleasePermissionVerified:false,proofs:[]};
 try{
  for(const organizationIndex of [0,1]){
