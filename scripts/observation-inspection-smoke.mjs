@@ -28,7 +28,17 @@ try{
    const docker=['run','--rm','--user',user,'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--memory','128m','--cpus','0.5','--pids-limit','64','--mount','type=bind,source='+resolve(observation.reportPath)+',target=/input/report.json,readonly',image,'node','scripts/inspect-operations-observation.mjs','/input/report.json'];
    const packaged=JSON.parse((await exec('docker',[...docker,...flags],{windowsHide:true,timeout:30000})).stdout);assert.deepEqual(packaged,expectedSummary);await refuse('docker',[...docker,...wrong]);
   }
-  report.proofs.push({organizationIndex,samples:2,ownSessionScopeVerified:true,ownSessionLoggedOut:true,sourceCliVerified:true,packagedCliVerified:!!image,wrongScopeNativeExitCode:2,structureVerified:true,authenticityVerified:false,runtimeVerified:false,currentReleasePermissionVerified:false});
+  const fixture=JSON.parse(await readFile(observation.reportPath,'utf8'));Object.assign(fixture,{completed:false,failed:true,failureStage:'sampling',failureCode:'authentication-denied',sessionLoggedOut:false,cleanupFailed:true,cleanupFailureCode:'access-denied'});
+  const fixturePath='.local/observation-inspection-incomplete-'+randomUUID()+'.json';await writeFile(fixturePath,JSON.stringify(fixture),{flag:'wx',mode:0o600});const fixtureExpected=await inspectObservationFile({path:fixturePath,expected});assert.equal(fixtureExpected.status,'incomplete');assert.equal(fixtureExpected.diagnosticAuthenticityVerified,false);
+  async function inspectIncomplete(exe,argv){let result;try{await exec(exe,argv,{windowsHide:true,timeout:30000});assert.fail('Incomplete observation must return exit 1.');}catch(error){assert.equal(error.code,1);result=JSON.parse(error.stdout);}assert.deepEqual(result,fixtureExpected);}
+  await inspectIncomplete(process.execPath,['scripts/inspect-operations-observation.mjs',fixturePath,...flags]);
+  const invalidPath='.local/observation-inspection-invalid-'+randomUUID()+'.json';await writeFile(invalidPath,JSON.stringify({...fixture,failureCode:'UNSUPPORTED-DIAGNOSTIC'}),{flag:'wx',mode:0o600});await refuse(process.execPath,['scripts/inspect-operations-observation.mjs',invalidPath,...flags]);
+  if(image){
+   const user=typeof process.getuid==='function'?String(process.getuid())+':'+process.getgid():'node';assert.notEqual(user.split(':')[0],'0');
+   const docker=file=>['run','--rm','--user',user,'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--memory','128m','--cpus','0.5','--pids-limit','64','--mount','type=bind,source='+resolve(file)+',target=/input/report.json,readonly',image,'node','scripts/inspect-operations-observation.mjs','/input/report.json',...flags];
+   await inspectIncomplete('docker',docker(fixturePath));await refuse('docker',docker(invalidPath));
+  }
+  report.proofs.push({organizationIndex,samples:2,ownSessionScopeVerified:true,ownSessionLoggedOut:true,sourceCliVerified:true,packagedCliVerified:!!image,wrongScopeNativeExitCode:2,structureVerified:true,syntheticDiagnosticFixtures:true,incompleteDiagnosticFixtureNativeExitCode:1,unsupportedDiagnosticFixtureNativeExitCode:2,diagnosticAuthenticityVerified:false,authenticityVerified:false,runtimeVerified:false,currentReleasePermissionVerified:false});
  }
  report.sourceCliVerified=true;report.packagedCliVerified=!!image;report.packagedNetworkDisabled=!!image;report.packagedCredentialsNotMounted=!!image;report.wrongScopeRefused=true;report.completed=true;
 }catch{report.failed=true;process.exitCode=1;}
