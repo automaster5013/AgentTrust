@@ -88,3 +88,14 @@ npm.cmd run smoke:sustained -- --organization-index 1 --cycles 30 --interval-ms 
 v0.140부터 연속 검증 CLI는 선택한 조직·프로젝트의 관리자 세션을 확인한 뒤 운영 용량을 조회한다. 요청 주기당 9개 실행에 필요한 보관 공간과 최소 한 개 동시 실행 슬롯을 관측한다. 부족하면 새 실행을 만들기 전에 실패하며 자체 세션을 종료한다. 비공개 보고서와 마지막 CLI 요약의 `capacityPreflightStatus`는 `passed`, `insufficient_retained`, `no_active_slot`, `invalid_capacity`, `not_reached`로 구분한다. 다른 조직의 응답, 필수 용량 누락, 잘못된 한도/숫자는 신뢰하지 않는다.
 
 사전 검사는 용량을 예약하지 않으므로 이후 외부 요청이 공간을 사용하면 실제 생성 시 한도 오류가 발생할 수 있다. 도구는 한도를 올리거나 기존 실행을 삭제하지 않는다. 서버 v0.139 이상의 관리자 용량 응답이 필요하다. 기존 v0.137 이하 서버에는 용량 사전 검사가 없는 해당 버전의 CLI를 사용하거나 검증된 최신 서버 이미지를 먼저 적용한다.
+
+## 운영 경고 반복 관찰과 혼합 부하 — v0.182
+
+```powershell
+npm run operations:observe -- --organization-index 0 --samples 3 --interval-seconds 5
+npm run benchmark:staging -- --scenario mixed --duration-minutes 1
+```
+
+반복 관찰은 자신이 만든 새 세션만 종료하고 평가·검토·최종 게이트를 생성하지 않는다. 진행 중 JSON은 자체 새 디렉터리에서 임시 파일을 원자적으로 교체한다. 표본의 시각은 조회 시점보다 30초 이상 오래되거나 5초 이상 미래이거나 이전 DB 관측보다 역행하면 거부한다. 중단 또는 로그아웃/저장 실패는 완료가 아니다. 로그인 응답을 잃어 세션을 알 수 없으면 정리를 확인했다고 주장하지 않는다. SIGINT/SIGTERM은 새 관측을 멈추되 자체 로그아웃은 별도 제한 시간 안에 시도한다. 강제 프로세스 종료는 이 정리를 보장하지 않는다.
+
+혼합 부하는 별도 임시 DB에서만 평가와 서명 게이트·합성 검토를 생성한다. 기본 `pass` 시나리오는 기존 동작이다. `mixed`는 pass 8, 필수 회귀 block 4, 근거 누락/실행 오류 inconclusive 8, 서명 게이트 28개, 승인 후 반려 네 주기를 매 반복 확인한다. 임시 승인 게이트는 서버 배포를 수행하지 않으며 검토 실행을 반려한 뒤 자신이 생성한 DB만 제거한다. source API/워커 루프의 로컬 합성 관측이며 고객 성능이나 정확한 Docker 이미지 처리량을 증명하지 않는다.

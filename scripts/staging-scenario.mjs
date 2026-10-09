@@ -1,0 +1,3 @@
+import assert from 'node:assert/strict';
+const mixed=[{mode:'compliant',state:'succeeded',decision:'pass',manual:false},{mode:'regression',state:'succeeded',decision:'block',manual:false},{mode:'missing_evidence',state:'succeeded',decision:'inconclusive',manual:false},{mode:'error',state:'failed',decision:'inconclusive',manual:false},{mode:'compliant',state:'succeeded',decision:'pass',manual:true}];
+export function stagingScenario(scenario,index){assert.ok(['pass','mixed'].includes(scenario));assert.ok(Number.isInteger(index)&&index>=0&&index<10);return {...mixed[scenario==='pass'?0:index%5]};}
