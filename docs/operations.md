@@ -1,5 +1,20 @@
 # 로컬 운영 상태 확인
 
+## 운영 관찰 파일의 오프라인 검사 — v0.184
+
+관찰 명령이 출력한 `reportPath`를 `npm.cmd run operations:inspect -- <기록 파일 경로>`에 전달한다. 예를 들어 PowerShell에서 새 합성 관찰을 만든 뒤 검사할 수 있다.
+
+```powershell
+$observation = node --env-file-if-exists=.env scripts/operations-observe.mjs --samples 2 --interval-seconds 1 | ConvertFrom-Json
+node scripts/inspect-operations-observation.mjs $observation.reportPath
+```
+
+첫 명령은 로컬 관리자 키로 운영 메타데이터를 읽고 자신의 세션을 종료한다. 두 번째 명령은 파일만 읽는다. 별도로 신뢰한 조직·프로젝트 UUID를 알고 있다면 `--organization-id`와 `--project-id`를 함께 지정한다. 생략하면 `expectedScopeVerified`는 false다. 파일 안의 ID를 그대로 기대값으로 복사해 조직 출처를 인증했다고 판단하면 안 된다.
+
+검사는 1 MiB 이하의 엄격한 UTF-8 JSON에서 요청/실제 표본 수, 관측 시각·순서, 코드·심각도·범위와 완료/중단/세션 정리 선언의 일관성을 확인한다. 원문 메시지나 추가 비밀 필드가 있는 기록은 거부한다. 정상 완료 기록은 종료 코드 0, 불완전 기록은 1, 잘못된 입력 또는 심각 경고를 담은 완료 기록은 2다. `recordedSessionLoggedOut`은 파일의 선언을 뜻한다. 기록에는 서명이 없으므로 `authenticityVerified`, `runtimeVerified`, `currentHealthVerified`, `currentReleasePermissionVerified`, `continuousMonitoringProven`은 항상 false다. 구조 검사를 실제 실행 인증·현재 건강 상태나 배포 허가로 사용하지 않는다.
+
+운영 관찰과 별도 DB 부하 검증은 자체 새 파일을 배타적으로 생성한다. 이후 checkpoint는 새 임시 파일을 완전히 닫은 뒤 원자적으로 교체하며 부분 쓰기·교체 실패는 이전 정상 JSON을 유지한다. 생성 소유권이 확인된 임시 파일만 제거한다. 이는 강제 프로세스 종료 후 세션/DB 정리나 전원 장애에 대한 영구 저장 보장을 뜻하지 않는다.
+
 ## 분리된 합성 다중 사용자 부하 — v0.180
 
 `npm run benchmark:staging`은 기존 generated loopback DB 연결 6개를 모두 검사한 뒤 `agenttrust_stage_<UUID hex>`라는 새 DB에 기존 스키마 20개와 두 합성 조직을 구성한다. 기존 주 DB와 테스트 DB에 업무 기록을 쓰지 않으며 `.env`, 시연 자격증명과 저장 이력을 바꾸지 않는다. 역할과 권한을 포함한 기존 DB 보안 지문도 검사한다. API는 임시 loopback 포트에서 실행하고 임시 키를 메모리에 생성한다. 두 조직의 20개 평가를 접수한 뒤 두 워커 루프가 처리하며, 20명 조회자의 네 메타데이터 경로를 20개 요청까지 병렬로 측정한다. 접수된 대기·실행 수와 실제 관측한 실행 중 수는 별개다.

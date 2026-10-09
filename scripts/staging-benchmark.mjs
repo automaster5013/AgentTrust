@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {randomUUID,generateKeyPairSync} from 'node:crypto';
-import {writeFile,mkdir} from 'node:fs/promises';
+import {privateJournal} from './private-journal.mjs';
+import {mkdir} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import packageMetadata from '../package.json' with {type:'json'};
@@ -45,9 +46,10 @@ export async function stagingBenchmark(options,env=process.env,{signal}={}){
   if(path==='/v1/auth/login')session.cookie=response.headers.get('set-cookie')?.split(';')[0];
   if(!response.ok){await response.body?.cancel();throw Error('Isolated staging request failed.');}return readReleaseResponse(response);
  }
- const checkpoint=()=>writeFile(reportPath,JSON.stringify({...report,results:[...timings].filter(([,values])=>values.length).map(([path,values])=>({path,...summarizeDurations(values)}))},null,2)+'\n',{mode:0o600});
+ const journal=privateJournal(reportPath);
+ const checkpoint=()=>journal.checkpoint({...report,results:[...timings].filter(([,values])=>values.length).map(([path,values])=>({path,...summarizeDurations(values)}))});
  try{
-  await mkdir('.local',{recursive:true});await writeFile(reportPath,JSON.stringify(report)+'\n',{flag:'wx',mode:0o600});
+  await mkdir('.local',{recursive:true});await journal.initialize(report);
   controller.signal.throwIfAborted();report.sourceVersion=packageMetadata.version;report.sourceRevision=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8',windowsHide:true,stdio:['ignore','pipe','pipe'],timeout:15000}).trim();assert.match(report.sourceRevision,/^[a-f0-9]{40}$/);report.sourceWorkspaceClean=execFileSync('git',['status','--porcelain'],{encoding:'utf8',windowsHide:true,stdio:['ignore','pipe','pipe'],timeout:15000}).trim()==='';report.privateDraftImplementation=import.meta.url.includes('/.local/');main=pool(env.OWNER_DATABASE_URL);const client=await main.connect();try{await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');securityBefore=await securityFingerprint(client);await client.query('ROLLBACK');}finally{client.release();}
   // This generated name is the only database this process may create or drop.
   await main.query('CREATE DATABASE "'+target.name+'"');createdName=target.name;report.stage='database-created';await checkpoint();

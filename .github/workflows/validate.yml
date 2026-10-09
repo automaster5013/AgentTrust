@@ -50,6 +50,7 @@ jobs:
           npm run operations:alerts -- --organization-index 1
           npm run operations:observe -- --samples 2 --interval-seconds 1
           npm run operations:observe -- --organization-index 1 --samples 2 --interval-seconds 1
+          node --env-file-if-exists=.env scripts/observation-inspection-smoke.mjs
       - name: Verify independent Docker evaluation and persisted evidence
         run: |
           node --env-file-if-exists=.env scripts/smoke.mjs before
@@ -175,6 +176,7 @@ jobs:
           npm run operations:alerts -- --organization-index 1
           npm run operations:observe -- --samples 2 --interval-seconds 1
           npm run operations:observe -- --organization-index 1 --samples 2 --interval-seconds 1
+          node --env-file-if-exists=.env scripts/observation-inspection-smoke.mjs --image "$AGENTTRUST_IMAGE"
           npm run smoke:image
           npm run connector:contract
           npm run connector:replay
