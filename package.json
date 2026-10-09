@@ -1,6 +1,6 @@
 {
   "name": "agenttrust",
-  "version": "0.186.0",
+  "version": "0.187.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -50,7 +50,9 @@
     "benchmark:staging": "node --env-file-if-exists=.env scripts/staging-benchmark.mjs",
     "operations:observe": "node --env-file-if-exists=.env scripts/operations-observe.mjs",
     "operations:inspect": "node scripts/inspect-operations-observation.mjs",
-    "operations:report": "node scripts/write-operations-observation-report.mjs"
+    "operations:report": "node scripts/write-operations-observation-report.mjs",
+    "operations:compare": "node scripts/compare-operations-observations.mjs",
+    "operations:compare:report": "node scripts/write-operations-comparison-report.mjs"
   },
   "dependencies": {
     "ajv": "8.20.0",
