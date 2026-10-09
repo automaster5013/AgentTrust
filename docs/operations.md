@@ -120,3 +120,17 @@ npm run benchmark:staging -- --scenario mixed --duration-minutes 1
 관찰 JSON과 CLI 결과의 `failureCode`, `cleanupFailureCode`, `reportWriteFailureCode`는 요청 실패·세션 정리·최종 checkpoint 실패를 따로 표시한다. 값은 고정 코드이며 원문 오류나 접근 키를 포함하지 않는다. `authentication-denied`는 해당 요청이 HTTP 401로 거부됐음을 뜻한다. 세션 취소 주체·원인을 단정하거나 새 세션으로 자동 재로그인하지 않는다. `response-invalid`는 응답 처리 또는 범위/시각 검증의 실패, `checkpoint-write-failed`는 기록 교체 실패다. `operation-failed`는 안전하게 분류하지 못한 실패다.
 
 미완료 기록은 계속 종료 코드 1이다. `sessionLoggedOut=false`와 정리 실패 코드는 로그아웃 완료를 주장하지 않는다. 진단 코드가 없는 기존 기록은 그대로 검사하며 진단을 새로 추정하지 않는다. 관찰 JSON은 서명되지 않은 기록이므로 진단의 진위를 인증하거나 현재 배포 권한을 부여하지 않는다.
+
+## 관찰 기록의 정적 보고서
+
+검사한 기록을 리뷰어에게 전달할 때는 다음처럼 새 HTML 파일로 내보낸다.
+
+```powershell
+npm run operations:report -- .local/operations-observation-UUID/report.json .local/observation-review.html
+```
+
+기대 범위도 대조하려면 `--organization-id ORGANIZATION_UUID --project-id PROJECT_UUID`를 함께 지정한다. 두 UUID 중 하나만 지정하거나 기대 범위가 다르면 파일을 만들지 않는다. 기존 출력 파일은 덮어쓰지 않으며 출력 폴더는 먼저 준비해야 한다. 입력과 출력 파일은 달라야 한다. 입력은 엄격한 UTF-8·1 MiB로 제한하고 출력도 1 MiB 이하로 제한한다.
+
+완료된 비심각 기록의 보고서 생성은 종료 코드 0이다. 미완료 기록은 보고서를 생성해도 1, 심각 경고가 있는 완료 기록은 생성해도 2다. 잘못된 입력이나 파일 쓰기 실패는 2이며 보고서 생성 성공과 구분한다. 쓰기나 닫기 실패 때는 자체 신규 출력만 제거하고 기존 출력은 보존한다. 이 파일은 프로세스 강제 종료·전원 장애에 대한 원자적 발행이나 내구성을 보장하지 않는다.
+
+보고서는 스크립트·외부 자산·네트워크 요청 없이 읽는 정적 HTML이다. 표본과 완료·범위·세션 정리의 기록된 선언을 보여주며 서명 인증·현재 권한·실제 실행·현재 서비스 상태를 증명하지 않는다. 원문 오류·응답 메시지·접근 키·세션 쿠키를 출력하지 않는다. 브라우저 시각 검증을 완료한 화면 캡처나 PDF 결과로 소개하지 않는다.
