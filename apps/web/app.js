@@ -499,6 +499,7 @@ $('results').replaceChildren();$('history-body').replaceChildren();$('history-st
   $('snapshot').textContent='아직 선택한 실행이 없습니다.';$('dataset-json').value='';$('usage-summary').textContent='';
   $('review-panel').hidden=true;$('review-list').replaceChildren();$('review-comment').value='';$('manual-gate-output').textContent='';
   $('operations-detail').textContent='';$('execution-capacity').textContent='';$('version-capacity').textContent='';$('operations-alert').textContent='';
+  $('operational-alert-summary').textContent='';$('operational-alert-list').replaceChildren();
   for(const id of ['worker-signal','queue-waiting','queue-running','queue-overdue'])$(id).textContent='—';
   for(const id of ['case-count','pass-count','fail-count','unknown-count'])$(id).textContent='—';
   $('download').disabled=true;$('cancel-button').disabled=true;
@@ -757,19 +758,47 @@ function renderOperations(data){
 function clearOperationsObservation(){
   for(const id of ['worker-signal','queue-waiting','queue-running','queue-overdue'])$(id).textContent='—';
   for(const id of ['operations-detail','execution-capacity','version-capacity','operations-alert'])$(id).textContent='';
+  $('operational-alert-summary').textContent='';$('operational-alert-list').replaceChildren();
+}
+const operationalAlertLabels={
+ 'worker-not-recent':['critical','service','최근 워커 신호가 없습니다. 워커와 DB 연결을 확인하세요.'],
+ 'execution-deadline-exceeded':['critical','project','기한이 지난 평가가 있습니다. 실행 상태를 확인하세요.'],
+ 'worker-lease-expired':['critical','project','워커 점유 시간이 만료된 평가가 있습니다. 워커 복구를 확인하세요.'],
+ 'retained-capacity-full':['critical','organization','평가 보관 한도에 도달했습니다. 기존 기록을 보존하며 운영 한도를 검토하세요.'],
+ 'retained-capacity-high':['warning','organization','평가 보관 용량이 95% 이상입니다. 운영 한도를 검토하세요.'],
+ 'versions-capacity-full':['critical','organization','버전 등록 한도에 도달했습니다. 운영 한도를 검토하세요.'],
+ 'versions-capacity-high':['warning','organization','버전 등록 용량이 95% 이상입니다. 운영 한도를 검토하세요.'],
+ 'active-capacity-full':['warning','organization','동시 평가 슬롯이 모두 사용 중입니다. 완료 상태를 확인하세요.']
+};
+function verifiedOperationalAlerts(value,organizationId,projectId){
+ const invalid=()=>{throw Error('Invalid operational alert assessment');};
+ if(value?.schemaVersion!==1||value.organizationId!==organizationId||value.projectId!==projectId||value.readOnly!==true||value.automatedRemediationPerformed!==false||value.releasePermissionVerified!==false||value.continuousMonitoringProven!==false||typeof value.observedAt!=='string'||!Number.isFinite(Date.parse(value.observedAt))||new Date(value.observedAt).toISOString()!==value.observedAt||!Array.isArray(value.alerts)||value.alerts.length>6)invalid();
+ const seen=new Set(),rows=value.alerts.map(a=>{if(!a||!Object.hasOwn(operationalAlertLabels,a.code))invalid();const label=operationalAlertLabels[a.code];if(seen.has(a.code)||a.severity!==label[0]||a.scope!==label[1])invalid();seen.add(a.code);return {severity:label[0],scope:label[1],text:label[2]};});
+ for(const name of ['retained','versions'])if(seen.has(name+'-capacity-full')&&seen.has(name+'-capacity-high'))invalid();
+ const status=rows.some(a=>a.severity==='critical')?'critical':rows.length?'warning':'ok';if(value.status!==status)invalid();return {status,rows,observedAt:value.observedAt};
+}
+async function refreshOperationalAlerts(sequence){
+ const epoch=scopeEpoch,organizationId=actor?.organizationId,projectId=activeProjectId;
+ if(actor?.role!=='admin'||!organizationId||!projectId)return;
+ const current=()=>epoch===scopeEpoch&&sequence===operationsSequence&&actor?.role==='admin'&&actor.organizationId===organizationId&&activeProjectId===projectId;
+ $('operational-alert-summary').textContent='현재 운영 경고를 조회하고 있습니다…';
+ try{const value=await api('/v1/operations-alerts');if(!current())return;const report=verifiedOperationalAlerts(value,organizationId,projectId);
+  $('operational-alert-summary').textContent={critical:'심각',warning:'주의',ok:'감지된 경고 없음'}[report.status]+' · 조회 '+new Date(report.observedAt).toLocaleTimeString('ko-KR')+' · 운영 관측이며 배포 승인과 별개입니다.';
+  $('operational-alert-list').replaceChildren(...report.rows.map(a=>node('li',({service:'서비스',project:'프로젝트',organization:'조직'}[a.scope])+' · '+a.text)));
+ }catch{if(current()){$('operational-alert-list').replaceChildren();$('operational-alert-summary').textContent='운영 경고를 확인하지 못했습니다. 상태 새로고침으로 다시 조회하세요.';}}
 }
 function beginOperationsRead(){
   const sequence=++operationsSequence;clearOperationsObservation();$('operations-refresh').disabled=true;
   $('operations-status').textContent='현재 프로젝트 운영 상태를 조회하고 있습니다…';return sequence;
 }
 function completeOperationsRead(sequence,data){
-  if(sequence!==operationsSequence)return;renderOperations(data);$('operations-status').textContent='운영 상태 조회를 완료했습니다.';$('operations-refresh').disabled=false;
+  if(sequence!==operationsSequence)return;renderOperations(data);$('operations-status').textContent='운영 상태 조회를 완료했습니다.';$('operations-refresh').disabled=false;void refreshOperationalAlerts(sequence);
 }
 function failOperationsRead(sequence){
   if(sequence!==operationsSequence)return;clearOperationsObservation();$('operations-status').textContent='운영 상태 조회를 완료하지 못했습니다. 연결을 확인하고 상태 새로고침으로 다시 조회하세요.';$('operations-refresh').disabled=false;
 }
 $('operations-refresh').addEventListener('click',async()=>{
-  if($('operations-refresh').disabled)return;const epoch=scopeEpoch,sequence=beginOperationsRead();
+  if($('operations-refresh').disabled||actor?.role!=='admin'||!activeProjectId)return;const epoch=scopeEpoch,sequence=beginOperationsRead();
   try{const data=await api('/v1/operations');if(epoch===scopeEpoch)completeOperationsRead(sequence,data);}catch{if(epoch===scopeEpoch)failOperationsRead(sequence);}
 });
 
