@@ -42,3 +42,8 @@ test('interruption during logout preserves cleanup but never claims uninterrupte
 test('programmatic observation rejects unexpected options before login and strips unrelated scope fields',async()=>{
  let loginCalls=0;const deps={login:async()=>{loginCalls++;},me:async()=>({...scope,role:'admin'}),call:async()=>assessment(),now:()=>at,pause:async()=>{},logout:async()=>true,checkpoint:async()=>{}};await assert.rejects(observeAlertSession({...options,private:'secret'},scope,deps));assert.equal(loginCalls,0);const r=await observeAlertSession(options,{...scope,private:'secret'},deps);assert.equal(r.completed,true);assert.doesNotMatch(JSON.stringify(r),/secret/);
 });
+
+test('initial observation failures distinguish requested samples from an empty verified sample list',async()=>{
+ const scope={organizationId:randomUUID(),projectId:randomUUID()},options=observationOptions([]);
+ for(const stage of ['pre-interrupted','foreign-session']){const c=new AbortController();if(stage==='pre-interrupted')c.abort();const checkpoints=[];const r=await observeAlertSession(options,scope,{signal:c.signal,login:async()=>{},me:async()=>({...scope,role:'viewer'}),call:async()=>assert.fail('No alert request is allowed'),logout:async()=>true,checkpoint:async r=>checkpoints.push(structuredClone(r))});assert.equal(r.completed,false);assert.equal(r.requestedSamples,3);assert.deepEqual(r.samples,[]);assert.equal(r.sessionLoggedOut,true);assert.deepEqual(checkpoints.at(-1).samples,[]);assert.equal(checkpoints.at(-1).requestedSamples,3);}
+});

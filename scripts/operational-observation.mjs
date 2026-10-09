@@ -21,7 +21,7 @@ export async function observeAlertSamples(options,scope,{call,checkpoint,signal,
 }
 export async function observeAlertSession(options,scope,{login,me,call,logout,checkpoint,signal,now,pause}){
  options=validatedObservationOptions(options);scope=seededDemoScope(scope);
- const report={schemaVersion:1,completed:false,stage:'planned',samples:[],criticalObserved:false,sessionScopeVerified:false,sessionLoggedOut:false,readOnlyMetadata:true,businessDataWrites:false,automatedRemediationPerformed:false,continuousMonitoringProven:false,releasePermissionVerified:false,serverDeployed:false,...scope,...options};
+ const report={schemaVersion:1,completed:false,stage:'planned',criticalObserved:false,sessionScopeVerified:false,sessionLoggedOut:false,readOnlyMetadata:true,businessDataWrites:false,automatedRemediationPerformed:false,continuousMonitoringProven:false,releasePermissionVerified:false,serverDeployed:false,...scope,...options,requestedSamples:options.samples,samples:[]};
  try{
   signal?.throwIfAborted();report.stage='login';await login();signal?.throwIfAborted();report.stage='session-scope';assertDemoSessionScope(await me(),scope,'admin');report.sessionScopeVerified=true;
   report.stage='sampling';Object.assign(report,await observeAlertSamples(options,scope,{call,signal,now,pause,checkpoint:async progress=>{Object.assign(report,progress);await checkpoint(report);}}));report.completed=true;
