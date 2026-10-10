@@ -21,6 +21,7 @@ jobs:
       - name: Build pinned source security tools
         run: |
           python3 scripts/stack-execution-profiles.py --check
+          python3 scripts/stack-delivery-verifier-test.py
           docker build -t agenttrust-security:local tools/security
       - name: Verify rules and scan tracked source and full Git history
         run: python3 scripts/stack-security-source.py
@@ -76,6 +77,7 @@ jobs:
       - name: Verify immutable versions and authenticated campaign aggregation
         run: |
           python3 scripts/stack-campaign-smoke.py
+          python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-execution-profile-smoke.py
           python3 scripts/stack-campaign-recovery.py
           python3 scripts/stack-campaign-recovery.py --deadline
@@ -230,6 +232,7 @@ jobs:
           python3 scripts/stack-database-smoke.py
           python3 scripts/stack-database-init-smoke.py
           python3 scripts/stack-campaign-smoke.py
+          python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-execution-profile-smoke.py
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-evidence-test.py
@@ -333,6 +336,10 @@ jobs:
         run: python3 scripts/stack-signing-setup.py
       - name: Keyless sign and verify exact digests and SBOM attestations
         run: python3 scripts/stack-security-sign.py
+      - name: Independently verify the consumer delivery bundle
+        run: |
+          CHECKSUMS_SHA256=$(sha256sum stack-security-delivery/checksums.json | cut -d ' ' -f 1)
+          python3 scripts/stack-delivery-verify.py --bundle stack-security-delivery --expected-revision "$GITHUB_SHA" --expected-checksums-sha256 "$CHECKSUMS_SHA256" --repository "$GITHUB_REPOSITORY" --docker-tools
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: original-stack-security-delivery-${{ github.sha }}
