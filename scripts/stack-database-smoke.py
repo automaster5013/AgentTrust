@@ -20,6 +20,12 @@ try:
    IF own_run IS NULL THEN RAISE EXCEPTION 'No synthetic test run'; END IF;
    SELECT count(*) INTO foreign_visible FROM stack_runs WHERE organization_id='{foreign['organizationId']}';
    IF foreign_visible <> 0 THEN RAISE EXCEPTION 'Foreign rows visible'; END IF;
+   SELECT count(*) INTO foreign_visible FROM stack_run_results WHERE organization_id='{foreign['organizationId']}';
+   IF foreign_visible <> 0 THEN RAISE EXCEPTION 'Foreign completions visible'; END IF;
+   BEGIN
+     UPDATE stack_run_results SET decision='pass' WHERE run_id=own_run;
+     RAISE EXCEPTION 'Completion update permitted';
+   EXCEPTION WHEN insufficient_privilege THEN NULL; END;
    BEGIN
      UPDATE stack_runs SET decision='pass' WHERE id=own_run;
      RAISE EXCEPTION 'Immutable result update permitted';

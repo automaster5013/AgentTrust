@@ -23,13 +23,15 @@ services:
       STACK_MIGRATION_USER: agenttrust_stack
       STACK_MIGRATION_PASSWORD: ${STACK_DATABASE_PASSWORD:?Prepare separate stack settings}
       STACK_DEMO_CREDENTIALS_FILE: /run/secrets/stack-demo-credentials
-    secrets: [stack-demo-credentials, stack-worker-token]
+    secrets: [stack-demo-credentials, stack-worker-token, stack-nats-token]
     ports: [127.0.0.1:4321:8080]
     networks: [stack-backend, stack-host-access]
     depends_on:
       stack-db:
         condition: service_healthy
       stack-ai-worker:
+        condition: service_healthy
+      stack-nats:
         condition: service_healthy
     read_only: true
     tmpfs: ['/tmp:size=128m,mode=1777']
@@ -41,8 +43,11 @@ services:
   stack-ai-worker:
     build: services/ai-worker
     image: agenttrust-ai-worker:local
-    secrets: [stack-worker-token]
+    secrets: [stack-worker-token, stack-nats-token]
     networks: [stack-backend]
+    depends_on:
+      stack-nats:
+        condition: service_healthy
     read_only: true
     tmpfs: ['/tmp:size=32m,mode=1777']
     cap_drop: [ALL]
@@ -50,6 +55,24 @@ services:
     mem_limit: 256m
     cpus: 1
     pids_limit: 64
+  stack-nats:
+    image: nats:2.12-alpine@sha256:b270f5e2428354c0335612694d7dd2fb588148e567a5757fdff325ef9c9332e6
+    command: [-c, /run/secrets/stack-nats-config]
+    user: '10001'
+    secrets: [stack-nats-config]
+    volumes: [stack-nats-data:/tmp]
+    networks: [stack-backend]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 1
+    pids_limit: 64
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8222/healthz]
+      interval: 3s
+      timeout: 3s
+      retries: 20
   stack-console:
     build: apps/console
     image: agenttrust-console:local
@@ -71,6 +94,7 @@ services:
     pids_limit: 128
 volumes:
   stack-postgres-data:
+  stack-nats-data:
 networks:
   stack-backend:
     internal: true
@@ -81,3 +105,7 @@ secrets:
     file: .local/stack/demo-credentials.json
   stack-worker-token:
     file: .local/stack/worker-token
+  stack-nats-token:
+    file: .local/stack/nats-token
+  stack-nats-config:
+    file: .local/stack/nats.conf

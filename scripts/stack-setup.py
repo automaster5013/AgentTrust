@@ -31,6 +31,14 @@ try:
  if not token.exists():token.open('x',encoding='utf-8').write(secrets.token_hex(32))
  assert re.fullmatch('[a-f0-9]{64}',token.read_text(encoding='utf-8'));protect(token)
  if os.name!='nt':token.chmod(0o444)
+ nats_token=directory/'nats-token'
+ if not nats_token.exists():nats_token.open('x',encoding='utf-8').write(secrets.token_hex(32))
+ nats_value=nats_token.read_text(encoding='utf-8');assert re.fullmatch('[a-f0-9]{64}',nats_value);protect(nats_token)
+ nats_config=directory/'nats.conf'
+ configuration='port: 4222\nhttp: 8222\nmax_payload: 4096\nauthorization { token: "'+nats_value+'" }\njetstream { store_dir: "/tmp/jetstream", max_memory_store: 16MB, max_file_store: 32MB }\n'
+ if not nats_config.exists():nats_config.open('x',encoding='utf-8').write(configuration)
+ assert nats_config.read_text(encoding='utf-8')==configuration;protect(nats_config)
+ if os.name!='nt':nats_token.chmod(0o444);nats_config.chmod(0o444)
  compose=['docker','compose','--env-file',str(env),'-f','compose.stack.yaml'];command(compose+['up','-d','--wait','stack-db'])
  state=json.loads(command(['docker','inspect','agenttrust-stack-db-1']))[0];assert state['Config']['Labels']['com.docker.compose.project']=='agenttrust' and state['Config']['Labels']['com.docker.compose.service']=='stack-db'
  sql="SELECT 1 FROM pg_roles WHERE rolname='agenttrust_stack_api';"

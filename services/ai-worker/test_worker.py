@@ -1,7 +1,8 @@
 from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
-from app import app, evaluate
+from app import app, evaluate, scoped_job
+import json
 
 
 @pytest.fixture
@@ -37,3 +38,13 @@ def test_auth_scope_and_strict_body(client):
 def test_body_bound_and_media_type(client):
     assert client.post('/evaluate', content=b'x' * 4097, headers={'Content-Type': 'application/json'}).status_code == 413
     assert client.post('/evaluate', content='text').status_code == 415
+
+
+def test_jobs_refuse_extra_fields_bad_scope_and_oversized_data():
+    body = request()
+    assert scoped_job(json.dumps(body).encode()).runId == body['runId']
+    for invalid in [{**body, 'callbackUrl': 'http://outside.invalid'}, {**body, 'organizationId': 'bad'}, {**body, 'scenario': 'external'}]:
+        with pytest.raises(ValueError):
+            scoped_job(json.dumps(invalid).encode())
+    with pytest.raises(ValueError):
+        scoped_job(b'x' * 4097)

@@ -14,3 +14,6 @@ target/
 __pycache__/
 .pytest_cache/
 *.tsbuildinfo
+/stack-delivery/
+/apps/console/test-results/
+/apps/console/playwright-report/

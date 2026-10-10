@@ -1,16 +1,97 @@
 """Bounded synthetic evaluator. No provider calls, code execution, or caller-selected URLs."""
 import hmac
+import asyncio
+import contextlib
+import json
 import os
 import pathlib
 import re
 from typing import Literal
 from uuid import UUID
+from contextlib import asynccontextmanager
+import httpx
+import nats
+from nats.js.api import AckPolicy, ConsumerConfig, RetentionPolicy, StorageType, StreamConfig
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
-app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+worker_state = {'ready': False}
+
+
+def scoped_job(raw: bytes):
+    if len(raw) > 4096:
+        raise ValueError('Oversized job')
+    body = EvaluationRequest.model_validate_json(raw)
+    for value in (body.runId, body.organizationId, body.projectId):
+        if str(UUID(value)) != value:
+            raise ValueError('Invalid job scope')
+    return body
+
+
+async def consume(connection, subscription):
+    async with httpx.AsyncClient(timeout=5, follow_redirects=False, trust_env=False) as client:
+        token = pathlib.Path('/run/secrets/stack-worker-token').read_text(encoding='utf-8')
+        while True:
+            worker_state['ready'] = connection.is_connected
+            try:
+                messages = await subscription.fetch(batch=1, timeout=2)
+            except nats.errors.TimeoutError:
+                continue
+            except Exception:
+                worker_state['ready'] = False
+                await asyncio.sleep(1)
+                continue
+            worker_state['ready'] = connection.is_connected
+            for message in messages:
+                try:
+                    body = scoped_job(message.data)
+                except (ValueError, TypeError):
+                    with contextlib.suppress(Exception):
+                        await message.term()
+                    continue
+                try:
+                    payload = {**body.model_dump(), 'result': evaluate(body.scenario)}
+                    response = await client.post('http://stack-core-api:8080/internal/completions', json=payload, headers={'X-AgentTrust-Worker-Token': token})
+                    if response.status_code == 200 and response.json().get('accepted') is True and response.json().get('runId') == body.runId:
+                        await message.ack_sync(timeout=2)
+                    elif response.status_code in (400, 404, 409, 422):
+                        await message.term()
+                    else:
+                        await message.nak(delay=3)
+                except Exception:
+                    with contextlib.suppress(Exception):
+                        await message.nak(delay=3)
+
+
+@asynccontextmanager
+async def lifespan(application):
+    token = pathlib.Path('/run/secrets/stack-nats-token').read_text(encoding='utf-8')
+    if not re.fullmatch('[a-f0-9]{64}', token):
+        raise RuntimeError('Queue configuration unavailable')
+    connection = await nats.connect('nats://stack-nats:4222', token=token, connect_timeout=2, max_reconnect_attempts=-1)
+    stream = connection.jetstream()
+    configuration = StreamConfig(name='STACK_EVALUATIONS', subjects=['stack.evaluations'], retention=RetentionPolicy.WORK_QUEUE, storage=StorageType.FILE, max_msgs=10000, max_bytes=16*1024*1024, max_msg_size=4096, max_age=86400, duplicate_window=120)
+    try:
+        await stream.stream_info('STACK_EVALUATIONS')
+    except nats.js.errors.NotFoundError:
+        await stream.add_stream(config=configuration)
+    subscription = await stream.pull_subscribe('stack.evaluations', durable='python-evaluator', stream='STACK_EVALUATIONS', config=ConsumerConfig(durable_name='python-evaluator', ack_policy=AckPolicy.EXPLICIT, ack_wait=15, max_deliver=20, max_ack_pending=32))
+    task = asyncio.create_task(consume(connection, subscription))
+    task.add_done_callback(lambda completed: worker_state.update(ready=False))
+    worker_state['ready'] = True
+    try:
+        yield
+    finally:
+        worker_state['ready'] = False
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        await connection.close()
+
+
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
 class EvaluationRequest(BaseModel):
@@ -60,6 +141,8 @@ def authorized(token: str | None):
 
 @app.get('/health')
 def health():
+    if not worker_state['ready']:
+        raise HTTPException(503, detail='Consumer unavailable')
     return {'status': 'UP', 'runtime': 'python-fastapi'}
 
 
