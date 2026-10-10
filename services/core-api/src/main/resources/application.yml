@@ -1,0 +1,42 @@
+server:
+  port: 8080
+  error:
+    include-message: never
+    include-stacktrace: never
+  servlet:
+    session:
+      timeout: 30m
+      cookie:
+        name: AGENTTRUST_STACK_SESSION
+        http-only: true
+        same-site: strict
+spring:
+  application:
+    name: agenttrust-core-api
+  datasource:
+    url: ${STACK_DATABASE_URL}
+    username: ${STACK_DATABASE_USER:agenttrust_stack}
+    password: ${STACK_DATABASE_PASSWORD}
+    hikari:
+      maximum-pool-size: 8
+  flyway:
+    enabled: true
+    url: ${STACK_DATABASE_URL}
+    user: ${STACK_MIGRATION_USER}
+    password: ${STACK_MIGRATION_PASSWORD}
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+agenttrust:
+  demo-credentials-file: ${STACK_DEMO_CREDENTIALS_FILE}
+logging:
+  level:
+    org.springframework.security: WARN

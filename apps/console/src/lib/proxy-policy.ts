@@ -1,0 +1,4 @@
+const routes=/^(csrf|login|logout|me|runs|runs\/[a-f0-9-]{36}(?:\/(reviews|gate))?)$/i;
+export function proxyPath(segments:string[],method:string):string{const path=segments.join('/');if(!routes.test(path)||segments.some(x=>x.includes('%')||x.includes('..')))throw Error('INVALID_ROUTE');const writable=path==='login'||path==='logout'||path==='runs'||/^runs\/[a-f0-9-]{36}\/reviews$/i.test(path);if(method!=='GET'&&!(method==='POST'&&writable)||method==='GET'&&(path==='login'||path==='logout'))throw Error('INVALID_METHOD');return '/api/'+path}
+export function sameOrigin(origin:string|null,url:string):boolean{try{return origin!==null&&new URL(origin).origin===new URL(url).origin}catch{return false}}
+export function sessionCookies(raw:string|null):string{return (raw??'').split(';').map(x=>x.trim()).filter(x=>/^AGENTTRUST_STACK_SESSION=[A-Za-z0-9.-]{1,128}$/.test(x)).join('; ')}

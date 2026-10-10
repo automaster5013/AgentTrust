@@ -9,3 +9,8 @@ coverage/
 .local/
 
 delivery-artifacts/
+.next/
+target/
+__pycache__/
+.pytest_cache/
+*.tsbuildinfo

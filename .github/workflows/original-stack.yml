@@ -1,0 +1,96 @@
+name: Original stack integration
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: original-stack-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Prepare separate PostgreSQL and synthetic identities
+        run: python3 scripts/stack-setup.py
+      - name: Build Java 21, Python and TypeScript with their tests
+        run: docker compose --env-file .local/stack/stack.env -f compose.stack.yaml build stack-core-api stack-ai-worker stack-console
+      - name: Verify real authenticated evaluation and review flow
+        run: |
+          docker compose --env-file .local/stack/stack.env -f compose.stack.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console
+          python3 scripts/stack-http-smoke.py
+          python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
+          python3 scripts/stack-database-smoke.py
+      - name: Verify persisted results after service restart
+        run: |
+          docker compose --env-file .local/stack/stack.env -f compose.stack.yaml restart stack-core-api stack-ai-worker stack-console
+          docker compose --env-file .local/stack/stack.env -f compose.stack.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console
+          python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
+      - name: Stop isolated runner services
+        if: always()
+        run: docker compose --env-file .local/stack/stack.env -f compose.stack.yaml down
+  images:
+    needs: integration
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Authenticate to registry
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          export DOCKER_CONFIG="$RUNNER_TEMP/stack-docker-config"
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG" >> "$GITHUB_ENV"
+      - name: Build, publish and record immutable image references
+        shell: bash
+        run: |
+          mkdir -p stack-delivery
+          for spec in 'core-api:services/core-api' 'ai-worker:services/ai-worker' 'console:apps/console'; do
+            service=${spec%%:*}
+            context=${spec#*:}
+            image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/agenttrust-$service:$GITHUB_SHA"
+            docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" -t "$image" "$context"
+            docker push "$image"
+            docker pull "$image"
+            docker image inspect "$image" --format '{{index .RepoDigests 0}}' > "stack-delivery/$service.txt"
+          done
+          printf '%s\n' "$GITHUB_SHA" > stack-delivery/revision.txt
+      - name: Prepare isolated registry-image verification
+        shell: bash
+        run: |
+          python3 scripts/stack-setup.py
+          echo "STACK_CORE_IMAGE=$(cat stack-delivery/core-api.txt)" >> "$GITHUB_ENV"
+          echo "STACK_WORKER_IMAGE=$(cat stack-delivery/ai-worker.txt)" >> "$GITHUB_ENV"
+          echo "STACK_CONSOLE_IMAGE=$(cat stack-delivery/console.txt)" >> "$GITHUB_ENV"
+      - name: Execute exact registry images without rebuilding
+        run: |
+          docker compose --env-file .local/stack/stack.env -f compose.stack.yaml -f compose.stack.image.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console
+          python3 scripts/stack-image-smoke.py
+          python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
+          python3 scripts/stack-database-smoke.py
+          python3 scripts/stack-delivery-manifest.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: original-stack-delivery-${{ github.sha }}
+          path: stack-delivery/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove registry login
+        if: always()
+        run: docker logout ghcr.io
+      - name: Stop isolated registry-image services
+        if: always()
+        run: docker compose --env-file .local/stack/stack.env -f compose.stack.yaml -f compose.stack.image.yaml down

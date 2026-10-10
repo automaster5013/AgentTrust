@@ -9,3 +9,6 @@
 - 비밀을 저장소나 로그에 기록하지 않는다. 조직 경계와 버전 불변성을 유지한다.
 - 사용자 결정(2026-10-03)으로 LogiTrack 컨테이너 정지는 완료했다. 기존 이미지·볼륨·컨테이너는 보존한다. 새 명시적 요청 없이 재시작·삭제·prune하지 않는다.
 - AgentTrust Docker 작업은 compose.yaml의 agenttrust 프로젝트에 한정한다. 비밀 설정 .env와 .local은 출력/커밋하지 않는다.
+- 사용자 결정(2026-10-10): 원래 제안한 Next.js/TypeScript, Java 21/Spring Boot, Python/FastAPI 및 전체 기술 스택으로 개발 방향을 복원한다. 기술 대체·제외는 사용자 합의 없이 하지 않는다. 기존 JavaScript 설치는 전환의 비교 기준으로 보존한다.
+- 전환용 compose.stack.yaml도 동일한 agenttrust 프로젝트를 사용한다. stack-* 서비스·전용 네트워크·전용 볼륨만 대상으로 실행한다. 기존 api/worker/db와 기존 .env·infra/migrations의 변경·업무 데이터 생성은 전환 구현의 기본 경로가 아니다.
+- 기술 적용 완료는 실제 기능 경로·테스트·통합 결과로 증명한다. 빈 서비스, 의존성 추가, 설치만으로 통합 완료를 주장하지 않는다.

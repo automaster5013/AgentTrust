@@ -1,0 +1,83 @@
+name: agenttrust
+services:
+  stack-db:
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    environment:
+      POSTGRES_DB: agenttrust_stack
+      POSTGRES_USER: agenttrust_stack
+      POSTGRES_PASSWORD: ${STACK_DATABASE_PASSWORD:?Prepare separate stack settings}
+    volumes: [stack-postgres-data:/var/lib/postgresql/data]
+    networks: [stack-backend]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U agenttrust_stack -d agenttrust_stack]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  stack-core-api:
+    build: services/core-api
+    image: agenttrust-core-api:local
+    environment:
+      STACK_DATABASE_URL: jdbc:postgresql://stack-db:5432/agenttrust_stack
+      STACK_DATABASE_USER: agenttrust_stack_api
+      STACK_DATABASE_PASSWORD: ${STACK_API_PASSWORD:?Prepare restricted stack role}
+      STACK_MIGRATION_USER: agenttrust_stack
+      STACK_MIGRATION_PASSWORD: ${STACK_DATABASE_PASSWORD:?Prepare separate stack settings}
+      STACK_DEMO_CREDENTIALS_FILE: /run/secrets/stack-demo-credentials
+    secrets: [stack-demo-credentials, stack-worker-token]
+    ports: [127.0.0.1:4321:8080]
+    networks: [stack-backend, stack-host-access]
+    depends_on:
+      stack-db:
+        condition: service_healthy
+      stack-ai-worker:
+        condition: service_healthy
+    read_only: true
+    tmpfs: ['/tmp:size=128m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 768m
+    cpus: 2
+    pids_limit: 128
+  stack-ai-worker:
+    build: services/ai-worker
+    image: agenttrust-ai-worker:local
+    secrets: [stack-worker-token]
+    networks: [stack-backend]
+    read_only: true
+    tmpfs: ['/tmp:size=32m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 1
+    pids_limit: 64
+  stack-console:
+    build: apps/console
+    image: agenttrust-console:local
+    environment:
+      CORE_API_URL: http://stack-core-api:8080
+      PORT: '3000'
+      HOSTNAME: 0.0.0.0
+    ports: [127.0.0.1:4320:3000]
+    networks: [stack-backend, stack-host-access]
+    depends_on:
+      stack-core-api:
+        condition: service_healthy
+    read_only: true
+    tmpfs: ['/tmp:size=64m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 128
+volumes:
+  stack-postgres-data:
+networks:
+  stack-backend:
+    internal: true
+  stack-host-access:
+    internal: false
+secrets:
+  stack-demo-credentials:
+    file: .local/stack/demo-credentials.json
+  stack-worker-token:
+    file: .local/stack/worker-token

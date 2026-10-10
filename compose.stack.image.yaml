@@ -1,0 +1,7 @@
+services:
+  stack-core-api:
+    image: ${STACK_CORE_IMAGE:?Provide verified core image digest}
+  stack-ai-worker:
+    image: ${STACK_WORKER_IMAGE:?Provide verified worker image digest}
+  stack-console:
+    image: ${STACK_CONSOLE_IMAGE:?Provide verified console image digest}
