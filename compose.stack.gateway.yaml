@@ -1,0 +1,53 @@
+services:
+  stack-console:
+    environment:
+      CORE_API_URL: http://stack-gateway:8080
+    depends_on:
+      stack-gateway:
+        condition: service_healthy
+  stack-gateway:
+    build: services/gateway
+    image: agenttrust-gateway:local
+    secrets: [stack-redis-token]
+    ports: [127.0.0.1:4323:8080]
+    networks: [stack-backend, stack-host-access]
+    depends_on:
+      stack-core-api:
+        condition: service_healthy
+      stack-redis:
+        condition: service_healthy
+    read_only: true
+    tmpfs: ['/tmp:size=64m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 384m
+    cpus: 1
+    pids_limit: 128
+  stack-redis:
+    image: redis:8.2-alpine@sha256:b51665e66f00759be7c3152ad5ac3c66fb2f619c13ef62dea7cc1f9914524635
+    command: [redis-server, /run/secrets/stack-redis-config]
+    user: '999'
+    secrets: [stack-redis-token, stack-redis-acl, stack-redis-config]
+    volumes: [stack-redis-data:/data]
+    networks: [stack-backend]
+    read_only: true
+    tmpfs: ['/tmp:size=32m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 96m
+    cpus: 1
+    pids_limit: 64
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$(cat /run/secrets/stack-redis-token)" redis-cli --user stack-gateway ping | grep -q PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+volumes:
+  stack-redis-data:
+secrets:
+  stack-redis-token:
+    file: .local/stack/redis-token
+  stack-redis-acl:
+    file: .local/stack/redis.acl
+  stack-redis-config:
+    file: .local/stack/redis.conf

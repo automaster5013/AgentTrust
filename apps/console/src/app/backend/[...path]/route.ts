@@ -8,7 +8,7 @@ async function forward(request:NextRequest,context:{params:Promise<{path:string[
   const publicHost=request.headers.get('host');
   if(!['127.0.0.1:4320','localhost:4320'].includes(publicHost??'')||request.method==='POST'&&!sameOrigin(request.headers.get('origin'),'http://'+publicHost))return Response.json({code:'ORIGIN_REFUSED'},{status:403});
   const base=new URL(process.env.CORE_API_URL??'http://127.0.0.1:4321');
-  if(!['http://stack-core-api:8080','http://127.0.0.1:4321'].includes(base.origin)||base.pathname!=='/')throw Error('INVALID_API_CONFIGURATION');
+  if(!['http://stack-core-api:8080','http://stack-gateway:8080','http://127.0.0.1:4321'].includes(base.origin)||base.pathname!=='/')throw Error('INVALID_API_CONFIGURATION');
   const headers=new Headers({'Accept':'application/json'});const cookie=sessionCookies(request.headers.get('cookie'));if(cookie)headers.set('Cookie',cookie);
   let body:string|undefined;
   if(request.method==='POST'){

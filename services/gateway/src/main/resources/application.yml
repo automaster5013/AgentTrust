@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: agenttrust-gateway
+  codec:
+    max-in-memory-size: 1MB
+server:
+  port: 8080
+  error:
+    include-message: never
+    include-stacktrace: never
+management:
+  health:
+    redis:
+      enabled: false
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+logging:
+  level:
+    org.springframework.web: WARN
+    io.lettuce.core: WARN

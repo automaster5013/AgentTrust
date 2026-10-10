@@ -9,3 +9,5 @@ services:
     image: ${STACK_OPA_IMAGE:?Provide verified policy image digest}
   stack-identity:
     image: ${STACK_IDENTITY_IMAGE:?Provide verified identity image digest}
+  stack-gateway:
+    image: ${STACK_GATEWAY_IMAGE:?Provide verified gateway image digest}

@@ -3,10 +3,10 @@ import http.cookiejar,json,urllib.request,urllib.error,urllib.parse,html.parser
 class LoopbackCookiePolicy(http.cookiejar.DefaultCookiePolicy):
  def return_ok_secure(self,cookie,request):
   # Browsers treat loopback as trustworthy; never extend this exception to any remote host.
-  return urllib.parse.urlsplit(request.full_url).netloc=='127.0.0.1:4322' or super().return_ok_secure(cookie,request)
+  parsed=urllib.parse.urlsplit(request.full_url);return parsed.scheme=='http' and parsed.netloc=='127.0.0.1:4322' or super().return_ok_secure(cookie,request)
 class FixedRedirects(urllib.request.HTTPRedirectHandler):
  def redirect_request(self,req,fp,code,msg,headers,newurl):
-  parsed=urllib.parse.urlsplit(newurl);assert parsed.scheme=='http' and parsed.netloc in ['127.0.0.1:4320','127.0.0.1:4321','127.0.0.1:4322'] and not parsed.username and not parsed.password and len(newurl)<8192
+  parsed=urllib.parse.urlsplit(newurl);assert parsed.scheme=='http' and parsed.netloc in ['127.0.0.1:4320','127.0.0.1:4321','127.0.0.1:4322','127.0.0.1:4323'] and not parsed.username and not parsed.password and len(newurl)<8192
   return super().redirect_request(req,fp,code,msg,headers,newurl)
 class IdentityForm(html.parser.HTMLParser):
  def __init__(self):super().__init__();self.action=None;self.fields={};self.active=False
@@ -18,7 +18,7 @@ class IdentityForm(html.parser.HTMLParser):
   if tag=='form':self.active=False
 class StackClient:
  def __init__(self,base,credentials,report=None,clients=None):
-  assert base in ['http://127.0.0.1:4321','http://127.0.0.1:4320'];self.base=base;self.prefix='/backend/' if base.endswith('4320') else '/api/';self.credentials=credentials;self.report={} if report is None else report;self.jar=http.cookiejar.CookieJar(policy=LoopbackCookiePolicy());self.opener=urllib.request.build_opener(FixedRedirects(),urllib.request.HTTPCookieProcessor(self.jar));self.token=None;self.logged=False;self.provider=None
+  assert base in ['http://127.0.0.1:4321','http://127.0.0.1:4320','http://127.0.0.1:4323'];self.base=base;self.prefix='/backend/' if base.endswith('4320') else '/api/';self.credentials=credentials;self.report={} if report is None else report;self.jar=http.cookiejar.CookieJar(policy=LoopbackCookiePolicy());self.opener=urllib.request.build_opener(FixedRedirects(),urllib.request.HTTPCookieProcessor(self.jar));self.token=None;self.logged=False;self.provider=None
   if clients is not None:clients.append(self)
  def request(self,path,method='GET',data=None,headers=None,expected=200):
   hs={'Accept':'application/json',**(headers or {})};body=None
