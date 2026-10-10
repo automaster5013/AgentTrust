@@ -20,6 +20,8 @@ COPY --from=assets /cpu/lib/ollama/ /usr/lib/ollama/
 COPY --from=assets /cpu/LICENSE /licenses/ollama-MIT.txt
 COPY --from=patched /source/go.mod /source/go.sum /licenses/patched-dependencies/
 ENV HOME=/tmp OLLAMA_NO_CLOUD=true OLLAMA_NOPRUNE=true OLLAMA_DEBUG_LOG_REQUESTS=false OLLAMA_VULKAN=false
+COPY model-sha256.txt model-entrypoint.sh /opt/agenttrust/
+RUN chmod 0444 /opt/agenttrust/model-sha256.txt && chmod 0555 /opt/agenttrust/model-entrypoint.sh
 USER 10001:10001
-ENTRYPOINT ["/usr/bin/ollama"]
+ENTRYPOINT ["/opt/agenttrust/model-entrypoint.sh"]
 CMD ["serve"]

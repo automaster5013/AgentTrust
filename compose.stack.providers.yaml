@@ -25,6 +25,7 @@ services:
         for attempt in $$(seq 1 40); do ollama list >/dev/null 2>&1 && break; sleep 1; done
         timeout 600 ollama pull qwen3:0.6b >/tmp/pull.log 2>&1
         echo '6f76d4346c34ba89df6e137fb661b4bb4daf322c1151b6ef0dfda981070a851f  /models/manifests/registry.ollama.ai/library/qwen3/0.6b' | sha256sum -c -
+        sha256sum --quiet -c /opt/agenttrust/model-sha256.txt
     environment:
       OLLAMA_MODELS: /models
       OLLAMA_NO_CLOUD: 'true'

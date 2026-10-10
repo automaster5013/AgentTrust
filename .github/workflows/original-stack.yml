@@ -104,6 +104,7 @@ jobs:
           docker build -t agenttrust-local-model:local services/local-model
           python3 scripts/stack-provider-setup.py
           python3 scripts/stack-provider-start.py
+          python3 scripts/stack-provider-integrity-smoke.py
           python3 scripts/stack-provider-smoke.py
           python3 scripts/stack-observability-smoke.py
           cd apps/console
@@ -122,6 +123,7 @@ jobs:
             .local/stack-observability-smoke-*.json
             .local/stack-database-init-smoke-*.json
             .local/stack-provider-smoke-*.json
+            .local/stack-provider-integrity-*/summary.json
           if-no-files-found: ignore
           retention-days: 7
       - name: Stop isolated runner services
@@ -191,6 +193,7 @@ jobs:
           python3 scripts/stack-gateway-smoke.py
           python3 scripts/stack-provider-setup.py
           python3 scripts/stack-provider-start.py
+          python3 scripts/stack-provider-integrity-smoke.py
           python3 scripts/stack-provider-smoke.py
           python3 scripts/stack-observability-smoke.py
           python3 scripts/stack-image-smoke.py

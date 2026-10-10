@@ -4,12 +4,13 @@
 docker build -t agenttrust-local-model:local services/local-model
 python scripts/stack-provider-setup.py
 python scripts/stack-provider-start.py
+python scripts/stack-provider-integrity-smoke.py
 python scripts/stack-provider-smoke.py
 ```
 
 Ollama 0.40.2의 소스 commit `b061384d90ff455462bc32745dd0de479de717a3`·archive SHA-256과 공식 CPU 추론 라이브러리 archive SHA-256을 고정한다. 실행 바이너리는 Go 1.27.2와 수정 라이브러리로 재빌드하며 GPU 라이브러리를 포함하지 않는다. 기존 공식 이미지의 Go 의존성에서 HIGH/CRITICAL 50건이 발견되어 예외 없이 수정했고 같은 검사에서 0건을 확인했다. CPU 이미지 약 263MB이며 최초 공식 이미지 약 9.36GB의 GPU 부분을 포함하지 않는다. 전달 시 로컬 모델을 포함한 아홉 이미지 모두 검사·서명한다. 최초 준비 컨테이너만 모델 다운로드 네트워크를 사용하고, 실행 서비스에는 내부망·호스트 포트 없음·cloud 비활성·비루트 사용자·읽기 전용 모델 볼륨·CPU 2·메모리 1.5GiB를 적용한다. 기존 서비스·볼륨은 삭제하지 않는다. 모델 준비에는 약 523MB와 빌드 단계 공식 archive 약 1.4GB 다운로드 공간이 필요하다.
 
-`qwen3:0.6b`의 원본 manifest는 `sha256:7df6b6e09427a769808717c0a93cadc4ae99ed4eb8bf5ca557c90846becea435`다. Ollama 0.40.2는 원본 manifest를 layer로 감싼 저장 파일을 만들므로 디스크 포장 manifest의 SHA-256 `6f76d4346c34ba89df6e137fb661b4bb4daf322c1151b6ef0dfda981070a851f`도 따로 고정한다. 준비 때 포장 manifest와 실행 때 실제 `/api/tags`의 원본 digest를 모두 확인한다. 태그 이름만 일치하면 허용하는 방식이 아니다.
+`qwen3:0.6b`의 원본 manifest는 `sha256:7df6b6e09427a769808717c0a93cadc4ae99ed4eb8bf5ca557c90846becea435`다. Ollama 0.40.2는 원본 manifest를 layer로 감싼 저장 파일을 만들므로 디스크 포장 manifest의 SHA-256 `6f76d4346c34ba89df6e137fb661b4bb4daf322c1151b6ef0dfda981070a851f`도 따로 고정한다. 준비와 daemon 시작 전에 포장 manifest·설정·가중치·template·license·params·원본 manifest의 7개 파일 SHA-256을 모두 검사하며, 실제 `/api/tags`의 원본 digest도 확인한다. 정상 읽기 전용 볼륨 검증과 별도 손상·누락 fixture의 실행 거부 3개 검사를 통과했다. 기존 모델 파일을 변경하지 않는다. 태그 이름만 일치하면 허용하는 방식이 아니다.
 
 Next.js에서 실행 공급자를 고르면 Java admission의 불변 `provider`에 기록되고 NATS 작업과 결과 engine을 대조한다. 공급자 변경에 같은 멱등성 키를 사용하면 409다. 기존 합성 요청의 fingerprint는 유지한다. 단순 내부 `/evaluate` 주소는 실제 공급자 호출을 허용하지 않으며, NATS 워커가 인증된 Java 예약을 받은 경우만 실행한다.
 
