@@ -4,7 +4,7 @@ import base64,hashlib,importlib.util,json,pathlib,subprocess,sys,unittest,uuid
 spec=importlib.util.spec_from_file_location('delivery',pathlib.Path(__file__).with_name('stack-delivery-verify.py'))
 delivery=importlib.util.module_from_spec(spec);spec.loader.exec_module(delivery)
 root=pathlib.Path(__file__).resolve().parent.parent
-directory=root/'.local'/('stack-delivery-verifier-test-'+str(uuid.uuid4()));directory.mkdir()
+directory=root/'.local'/('stack-delivery-verifier-test-'+str(uuid.uuid4()));directory.mkdir(parents=True)
 revision='1'*40;repository='automaster5013/AgentTrust'
 
 def raw(value):return json.dumps(value,separators=(',',':')).encode()
