@@ -16,9 +16,9 @@ try:
  if registry:assert all(re.fullmatch(r'ghcr\.io/[a-z0-9-]+/agenttrust-'+name+r'@sha256:[a-f0-9]{64}',os.environ.get(env,'')) for name,env in names.items())
  for name,env in names.items():
   reference=os.environ[env] if registry else 'agenttrust-'+name+':local';image=json.loads(run(['docker','image','inspect',reference]).stdout)[0];image_id=image['Id'];assert re.fullmatch('sha256:[a-f0-9]{64}',image_id)
-  archive=inputs/(name+'.tar');run(['docker','image','save','-o',str(archive),image_id]);checksum=hashlib.file_digest(archive.open('rb'),'sha256').hexdigest()
+  archive=inputs/(name+'.tar');run(['docker','image','save','-o',str(archive),image_id]);archive.chmod(0o644);report['exportedArchiveMode']=oct(archive.stat().st_mode & 0o777);checksum=hashlib.file_digest(archive.open('rb'),'sha256').hexdigest()
   report['currentImage']=name;report['currentStage']='sbom'
-  sbom=scanner(['syft','docker-archive:/in/'+name+'.tar','-o','cyclonedx-json=/out/'+name+'.cdx.json','--quiet'],'none');(output/(name+'.syft.log')).write_text(sbom.stderr,encoding='utf-8');assert sbom.returncode==0
+  sbom=scanner(['syft','docker-archive:/in/'+name+'.tar','-o','cyclonedx-json=/out/'+name+'.cdx.json','--quiet'],'none');(output/(name+'.syft.log')).write_text(sbom.stderr,encoding='utf-8');report['currentTool']='syft';report['currentToolExitCode']=sbom.returncode;assert sbom.returncode==0
   inventory=json.loads((output/(name+'.cdx.json')).read_text(encoding='utf-8'));assert inventory['bomFormat']=='CycloneDX' and len(inventory.get('components',[]))>0
   report['currentStage']='vulnerabilities'
   scan=scanner(['trivy','image','--input','/in/'+name+'.tar','--cache-dir','/cache','--scanners','vuln','--severity','HIGH,CRITICAL','--format','json','--output','/out/'+name+'.trivy.json','--exit-code','1','--timeout','8m','--no-progress','--quiet'],'bridge');(output/(name+'.trivy.log')).write_text(scan.stderr,encoding='utf-8');assert scan.returncode in [0,1] and (output/(name+'.trivy.json')).is_file()
