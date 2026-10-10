@@ -1,5 +1,5 @@
 """Read-only supply-chain verification. Requires independently pinned revision and checksum-map hash."""
-import argparse,base64,hashlib,json,pathlib,re,shutil,subprocess,sys
+import argparse,base64,hashlib,json,os,pathlib,re,shutil,subprocess,sys
 
 IMAGES=('core-api','ai-worker','console','opa','identity','gateway','object-store','database','local-model','messaging')
 FILES={name+'.'+suffix for name in IMAGES for suffix in ['cdx.json','trivy.json','signature.bundle.json','sbom.bundle.json']}|{'revision.txt','manifest.json','runtime-identity.json','security-proof.json','checksums.json'}
@@ -118,6 +118,11 @@ class Verifier:
               '--security-opt','no-new-privileges:true','--tmpfs','/tmp:size=128m,mode=1777',
               '--memory','512m','--cpus','2','--pids-limit','128','-e','HOME=/tmp','-e','XDG_CACHE_HOME=/tmp/cache',
               '--mount','type=bind,source='+str(self.directory)+',target=/bundle,readonly']
+        # Cosign creates owner-only (0600) bundles. Match the non-root host owner
+        # on Linux instead of broadening file permissions or running as root.
+        if os.name!='nt':
+            require(os.getuid()>0)
+            base+=['--user',str(os.getuid())+':'+str(os.getgid())]
         if self.root:base+=['--mount','type=bind,source='+str(self.root.resolve())+',target=/trusted-root.json,readonly']
         return self.command(base+[self.image,'cosign']+args)
 

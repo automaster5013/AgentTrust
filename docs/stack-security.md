@@ -33,6 +33,8 @@ CI는 소스 보안→소스 통합→정확한 registry digest 실행→이미�
 
 ## 수동 전달물 검증
 
+Linux Docker 검증기는 호스트와 같은 비루트 UID/GID로 실행한다. Cosign이 생성한 소유자 전용 `0600` 번들을 다른 UID가 읽지 못하는 문제를 해결하며 파일 권한을 넓히지 않는다. 실제 Linux 임시 파일시스템에서 다른 UID의 읽기 거부와 소유자 UID의 서명 20개 검증을 확인했다. Windows는 검사 이미지의 기본 비루트 사용자를 유지한다.
+
 `scripts/stack-delivery-verify.py`는 CI artifact를 받은 환경에서 사용할 읽기 전용 검증기다. 신뢰할 수 있는 CI 실행과 artifact archive digest를 먼저 확인하고, 별도로 확정한 revision 및 `checksums.json`의 SHA-256을 입력해야 한다. 출처가 확인되지 않은 bundle의 자체 checksum만 복사하면 독립적인 신뢰 기준이 되지 않는다.
 
 ```powershell

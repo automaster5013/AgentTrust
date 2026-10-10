@@ -1,5 +1,6 @@
 """Negative trust-boundary tests; fake metadata is never accepted as a signed delivery."""
 import base64,hashlib,importlib.util,json,pathlib,subprocess,sys,unittest,uuid
+from unittest.mock import patch
 
 spec=importlib.util.spec_from_file_location('delivery',pathlib.Path(__file__).with_name('stack-delivery-verify.py'))
 delivery=importlib.util.module_from_spec(spec);spec.loader.exec_module(delivery)
@@ -43,6 +44,20 @@ def checksum(folder):
     return delivery.digest((folder/'checksums.json').read_bytes())
 
 class Boundaries(unittest.TestCase):
+    def test_linux_docker_verifier_matches_nonroot_bundle_owner(self):
+        verifier=delivery.Verifier.__new__(delivery.Verifier)
+        verifier.directory=directory;verifier.docker_tools=True;verifier.root=None;verifier.image='sha256:'+'1'*64
+        commands=[];verifier.command=lambda args:commands.append(args)
+        with patch.object(delivery.os,'name','posix'),patch.object(delivery.os,'getuid',return_value=1001,create=True),patch.object(delivery.os,'getgid',return_value=1001,create=True):
+            verifier.run(['version','--json'])
+        command=commands[0]
+        self.assertEqual('1001:1001',command[command.index('--user')+1])
+        self.assertIn('--read-only',command);self.assertIn('ALL',command)
+        commands.clear()
+        with patch.object(delivery.os,'name','posix'),patch.object(delivery.os,'getuid',return_value=0,create=True),patch.object(delivery.os,'getgid',return_value=0,create=True):
+            with self.assertRaises(ValueError):verifier.run(['version','--json'])
+        self.assertEqual([],commands)
+
     def test_duplicate_nested_json_and_noncanonical_dsse_cannot_be_parsed(self):
         with self.assertRaises(ValueError):delivery.json_bytes(b'{"digest":{"sha256":"a","sha256":"b"}}')
         with self.assertRaises(Exception):delivery.statement({'dsseEnvelope':{'payloadType':'application/vnd.in-toto+json','payload':'invalid base64'}})
