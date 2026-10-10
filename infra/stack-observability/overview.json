@@ -1,0 +1,42 @@
+{
+  "uid": "agenttrust-overview",
+  "title": "AgentTrust operational signals",
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": false,
+  "tags": ["AgentTrust", "synthetic", "privacy"],
+  "refresh": "5s",
+  "time": {"from": "now-15m", "to": "now"},
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Evaluations since worker start",
+      "gridPos": {"x": 0, "y": 0, "w": 8, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "agenttrust-prometheus"},
+      "targets": [{"refId": "A", "expr": "sum(agenttrust_evaluations_total{service_name=\"agenttrust-ai-worker\"})", "instant": true}],
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "Evaluation rate",
+      "gridPos": {"x": 8, "y": 0, "w": 16, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "agenttrust-prometheus"},
+      "targets": [{"refId": "A", "expr": "sum(rate(agenttrust_evaluations_total{service_name=\"agenttrust-ai-worker\"}[1m]))", "legendFormat": "evaluations / second"}],
+      "fieldConfig": {"defaults": {"unit": "ops"}}
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "HTTP duration p95: Core and Gateway",
+      "description": "Seconds, aggregated across routes. HTTP route and identity attributes are removed before storage.",
+      "gridPos": {"x": 0, "y": 6, "w": 24, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "agenttrust-prometheus"},
+      "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le, service_name) (rate(http_server_request_duration_bucket{service_name=~\"agenttrust-(core-api|gateway)\"}[1m])))", "legendFormat": "{{service_name}}"}],
+      "fieldConfig": {"defaults": {"unit": "s", "min": 0}}
+    },
+    {
+      "id": 4, "type": "logs", "title": "Evaluator events with fixed log body",
+      "gridPos": {"x": 0, "y": 14, "w": 24, "h": 8},
+      "datasource": {"type": "loki", "uid": "agenttrust-loki"},
+      "targets": [{"refId": "A", "expr": "{service_name=\"agenttrust-ai-worker\"}"}],
+      "options": {"showTime": true, "showLabels": false, "wrapLogMessage": true}
+    }
+  ]
+}

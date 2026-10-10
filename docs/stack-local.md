@@ -104,3 +104,7 @@ Promptfoo는 검증 전용 프로필이며 완료 후 자체 컨테이너를 제
 선택 SDK를 제외한 고정 lockfile로 설치하며 `basic-ftp` 6.2.3 override를 포함한다. `tools/promptfoo`에서 `npm audit --omit=optional --audit-level=high`로 사용 설치 범위를 다시 감사한다. 이는 현재 감사 결과이며 모든 보안 검사 완료를 뜻하지 않는다. 외부 LLM 품질 평가·적대적 입력 캠페인과 Promptfoo 웹 서비스는 별도 범위다.
 
 [Promptfoo 공식 JavaScript 공급자](https://www.promptfoo.dev/docs/providers/custom-api/)와 [Node API](https://www.promptfoo.dev/docs/usage/node-api-reference/)를 따른다.
+
+## 관측 프로필과 보안 검증
+
+[실제 관측 경로와 Grafana 실행](stack-observability.md), [소스·이미지·서명 검증](stack-security.md)을 따른다. 관측 프로필은 기존 데이터와 별도 전용 볼륨을 사용한다. 새 스택을 서비스 재시작 뒤 사용할 때 Gateway는 Core 건강 상태도 확인하며 제한된 GET 읽기만 전송 오류에 한 번 재시도한다. POST 평가/검토와 OAuth 콜백·CSRF 조회는 자동 재전송하지 않는다.

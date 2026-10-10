@@ -26,7 +26,10 @@ spring:
     url: ${STACK_DATABASE_URL}
     user: ${STACK_MIGRATION_USER}
     password: ${STACK_MIGRATION_PASSWORD}
-  jackson:
+  http:
+    converters:
+      preferred-json-mapper: jackson2
+  jackson2:
     mapper:
       allow-coercion-of-scalars: false
     deserialization:

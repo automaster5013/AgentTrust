@@ -18,11 +18,11 @@
 | Identity | Keycloak | 별도 DB의 실제 OIDC·S256 PKCE·조직/역할·양쪽 로그아웃·서명된 공급자 세션 철회를 로컬 검증. 운영 설정은 미완료 | OIDC 로그인·조직/역할·토큰·로그아웃 경계 |
 | AI Providers | OpenAI + Ollama + OpenAI-compatible | 미착수 | 통제된 공급자별 실제 어댑터·계약·비용/시간 예산 |
 | Evaluation | 자체 평가기 + Promptfoo | Python 합성 자체 평가기와 Java 판정 검증 통합. 실제 Promptfoo 0.124.1의 4개 합성 사례·8개 단언 및 내부 비루트 컨테이너를 로컬 검증 | 기존 판정 사례의 새 실행과 Promptfoo 결과 연계 |
-| Observability | OpenTelemetry + Prometheus + Tempo + Loki + Grafana | 미착수 | 요청→평가 추적·메트릭·로그·대시보드·민감 정보 제외 |
+| Observability | OpenTelemetry + Prometheus + Tempo + Loki + Grafana | 실제 HTTP 공유 trace·평가 counter·정제된 로그·자동 대시보드·합성 canary 제거 9개 로컬 검증. 원격 CI 재검증 중 | 요청→평가 추적·메트릭·로그·대시보드·민감 정보 제외 |
 | Local | Docker Compose | 전환 11개 서비스의 Compose 실행·헬스·워커/메시징/API 재시작·기한 초과 검증 | 별도 서비스/DB로 새 흐름 실행·재시작 보존 |
 | Production | Kubernetes + Helm + Terraform | 미착수 | 지정 환경의 렌더/검증·비밀·헬스·배포/복귀. 실제 배포는 별도 결과 |
 | CI/CD | GitHub Actions | Java/Python/TypeScript·NATS·브라우저·OPA 통합과 4개 불변 게시 이미지 CI 성공. Keycloak 5개 이미지 확장 CI 성공. Gateway 6개 이미지 확장 CI 성공. MinIO 7개 이미지 확장 CI 성공. pgvector 첫 CI는 DB 중단 검사에서 실패하여 트랜잭션 오류 처리를 보완하고 재검증 중 | Java/Python/TypeScript 검사·통합·이미지 검증 |
-| Security | Trivy + Syft + Cosign + Gitleaks + Semgrep | 미착수 | 각 도구의 실행 결과·검증 가능한 SBOM/서명·실패 게이트 |
+| Security | Trivy + Syft + Cosign + Gitleaks + Semgrep | Semgrep/Gitleaks 실제 소스·전체 이력 CI 성공. 여덟 이미지 SBOM/취약점 수정·재검사 및 keyless 서명 CI 구현, 최종 원격 증명 대기 | 각 도구의 실행 결과·검증 가능한 SBOM/서명·실패 게이트 |
 
 ## 구현 순서
 
@@ -91,3 +91,7 @@ pgvector 0.8.7은 실제 같은 프로젝트 규칙 특징 코사인 검색, 조
 검증 전용 `tools/promptfoo`는 Promptfoo 0.124.1이 고정된 내부 Python/FastAPI 주소를 직접 호출한다. 네 합성 시나리오의 실제 응답에 대해 JSON·필수 규칙·실패/누락/오류 판정 8개 단언을 통과했다. 비루트·읽기 전용 루트·내부 네트워크·정확한 실행 이미지와 종료 후 자체 컨테이너 제거를 확인했다. AI 품질·외부 공급자·실제 배포 승인 검증을 의미하지 않는다.
 
 초기 의존성 감사의 취약점을 확인한 후 선택 SDK를 설치에서 제외하고 `basic-ftp`를 6.2.3으로 고정했다. 이 설치 범위의 `npm audit --omit=optional`은 0건이며 실제 평가도 다시 통과했다. 예외나 감사 결과 무시는 추가하지 않았다. Promptfoo는 검증 도구이며 상시 서비스/게시된 여덟 애플리케이션 이미지에 포함하지 않는다. 통합 CI의 실제 실행과 별도 감사를 추가한다.
+
+## 관측과 공급망 보안 전환
+
+[관측 경로](stack-observability.md)와 [보안 검사](stack-security.md)에 실제 검증 범위와 남은 조건을 기록했다. Java 21을 유지하며 취약점 수정에 필요한 Spring Boot 4.1.1 전환 후 계약과 재시작 흐름을 재검증했다. 이미지 공급망 서명과 평가 릴리스 게이트의 서명은 별도이며 실제 서버 배포는 수행하지 않는다.

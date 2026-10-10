@@ -17,7 +17,7 @@ public class GatewayController {
  public Mono<ResponseEntity<byte[]>> forward(ServerWebExchange exchange){
   var request=exchange.getRequest();var method=request.getMethod();String path=request.getURI().getRawPath();
   if(!RoutePolicy.allowed(path,method))return Mono.just(error(404,"ROUTE_REFUSED"));
-  if(method==HttpMethod.POST&&RoutePolicy.protectedPath(path)&&!request.getHeaders().containsKey("X-CSRF-TOKEN"))return Mono.just(error(403,"REQUEST_REFUSED"));
+  if(method==HttpMethod.POST&&RoutePolicy.protectedPath(path)&&request.getHeaders().getFirst("X-CSRF-TOKEN")==null)return Mono.just(error(403,"REQUEST_REFUSED"));
   String query=request.getURI().getRawQuery();if(query!=null&&(!path.equals("/login/oauth2/code/keycloak")||query.length()>8192))return Mono.just(error(400,"QUERY_REFUSED"));
   String target=path+(query==null?"":"?"+query),cookie=RoutePolicy.session(request.getHeaders().getFirst(HttpHeaders.COOKIE));
   Mono<Long> admitted=Mono.just(1L);

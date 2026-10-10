@@ -4,6 +4,7 @@ RUN apk add --no-cache build-base clang21 llvm21-dev && mkdir /vector && tar -xz
 WORKDIR /vector
 RUN make OPTFLAGS='' && make install DESTDIR=/install
 FROM postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+RUN rm -f /usr/local/bin/gosu
 COPY --from=build /install/usr/local/lib/postgresql /usr/local/lib/postgresql
 COPY --from=build /install/usr/local/share/postgresql/extension /usr/local/share/postgresql/extension
 COPY --from=build /vector/LICENSE /usr/share/licenses/pgvector/LICENSE

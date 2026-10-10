@@ -1,0 +1,9 @@
+apiVersion: 1
+providers:
+  - name: AgentTrust
+    folder: AgentTrust
+    type: file
+    disableDeletion: true
+    editable: false
+    options:
+      path: /etc/grafana/agenttrust-dashboards

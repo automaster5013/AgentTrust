@@ -1,15 +1,17 @@
-FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170 AS test
+FROM python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72 AS test
 WORKDIR /app
 COPY requirements*.txt ./
 RUN pip install --no-cache-dir -r requirements-test.txt
-COPY app.py features.py test_worker.py test_features.py ./
+COPY app.py features.py telemetry.py test_worker.py test_features.py ./
 RUN pytest -q
-FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
+FROM python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72
 WORKDIR /app
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt && useradd --uid 10001 --no-create-home worker
+RUN pip install --no-cache-dir -r requirements.txt && adduser -D -H -u 10001 worker
+RUN python -m pip uninstall -y pip setuptools
 COPY --from=test /app/app.py ./
 COPY --from=test /app/features.py ./
+COPY --from=test /app/telemetry.py ./
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 USER 10001
 EXPOSE 8000

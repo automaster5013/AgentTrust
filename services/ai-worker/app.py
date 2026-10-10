@@ -17,6 +17,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from features import rule_features, VERSION, DIMENSIONS
+from telemetry import configure,evaluation_event
 
 worker_state = {'ready': False}
 
@@ -93,6 +94,7 @@ async def lifespan(application):
 
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+configure(app)
 
 
 class EvaluationRequest(BaseModel):
@@ -104,6 +106,7 @@ class EvaluationRequest(BaseModel):
 
 
 def evaluate(scenario: str) -> dict:
+    evaluation_event()
     outcomes = {
         'pass': ('succeeded', 'pass', 'pass', 'Synthetic output satisfies the requirement.'),
         'block': ('succeeded', 'block', 'fail', 'A required rule failed.'),

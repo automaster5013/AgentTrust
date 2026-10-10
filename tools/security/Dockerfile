@@ -7,6 +7,7 @@ RUN tar -xzf /trivy.tar.gz -C /bin trivy && tar -xzf /syft.tar.gz -C /bin syft &
 FROM semgrep/semgrep:1.180.0@sha256:529ee8a277ec8adc5b534d7c74eea0a47e9de21d62852b6ba7ac6ba9566845c3
 COPY --from=binaries /bin/trivy /bin/syft /bin/gitleaks /bin/cosign /usr/local/bin/
 ENV SEMGREP_SEND_METRICS=off SEMGREP_ENABLE_VERSION_CHECK=0 SEMGREP_SETTINGS_FILE=/tmp/semgrep-settings.yml SEMGREP_LOG_FILE=/tmp/semgrep.log SYFT_CHECK_FOR_APP_UPDATE=false
+ENV GOMAXPROCS=2 SYFT_PARALLELISM=2
 USER 10001:10001
 ENTRYPOINT []
 CMD ["trivy","--version"]

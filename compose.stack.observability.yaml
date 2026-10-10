@@ -1,0 +1,135 @@
+services:
+  stack-observability-init:
+    image: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+    command: [sh, -ec, 'chown 10001:10001 /data/tempo /data/loki /data/prometheus /data/grafana']
+    volumes: [stack-tempo-data:/data/tempo, stack-loki-data:/data/loki, stack-prometheus-data:/data/prometheus, stack-grafana-data:/data/grafana]
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 32m
+    pids_limit: 16
+    networks: [stack-backend]
+  stack-core-api:
+    environment:
+      JAVA_TOOL_OPTIONS: -javaagent:/app/opentelemetry-javaagent.jar
+      OTEL_SERVICE_NAME: agenttrust-core-api
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://stack-otel:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_EXPORTER_OTLP_TIMEOUT: '2000'
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_METRIC_EXPORT_INTERVAL: '5000'
+      OTEL_METRICS_EXEMPLAR_FILTER: always_off
+      OTEL_JAVAAGENT_LOGGING: none
+      OTEL_INSTRUMENTATION_JDBC_STATEMENT_SANITIZER_ENABLED: 'true'
+      OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SERVER_REQUEST: ''
+      OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SERVER_RESPONSE: ''
+  stack-gateway:
+    environment:
+      JAVA_TOOL_OPTIONS: -javaagent:/app/opentelemetry-javaagent.jar
+      OTEL_SERVICE_NAME: agenttrust-gateway
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://stack-otel:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_EXPORTER_OTLP_TIMEOUT: '2000'
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_METRIC_EXPORT_INTERVAL: '5000'
+      OTEL_METRICS_EXEMPLAR_FILTER: always_off
+      OTEL_JAVAAGENT_LOGGING: none
+  stack-ai-worker:
+    environment:
+      STACK_TELEMETRY_ENABLED: 'true'
+  stack-otel:
+    image: otel/opentelemetry-collector-contrib:0.162.0@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6
+    user: '10001:10001'
+    command: [--config=/etc/otel/config.yaml]
+    volumes: [./infra/stack-observability/collector.yaml:/etc/otel/config.yaml:ro]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 384m
+    pids_limit: 128
+    networks: [stack-backend]
+  stack-tempo:
+    depends_on:
+      stack-observability-init:
+        condition: service_completed_successfully
+    image: grafana/tempo:3.1.0@sha256:3076b8dcdfb32fd6bc5ccef85e7b7313e6199b9cb84366257fc17ecb696db5fd
+    user: '10001:10001'
+    command: [-config.file=/etc/tempo.yaml, -target=all]
+    volumes: [./infra/stack-observability/tempo.yaml:/etc/tempo.yaml:ro, stack-tempo-data:/var/tempo]
+    read_only: true
+    tmpfs: ['/tmp:size=32m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    pids_limit: 128
+    networks: [stack-backend]
+  stack-loki:
+    depends_on:
+      stack-observability-init:
+        condition: service_completed_successfully
+    image: grafana/loki:3.7.8@sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193
+    user: '10001:10001'
+    command: [-config.file=/etc/loki.yaml]
+    volumes: [./infra/stack-observability/loki.yaml:/etc/loki.yaml:ro, stack-loki-data:/var/loki]
+    read_only: true
+    tmpfs: ['/tmp:size=32m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    pids_limit: 128
+    networks: [stack-backend]
+  stack-prometheus:
+    depends_on:
+      stack-observability-init:
+        condition: service_completed_successfully
+    image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+    user: '10001:10001'
+    command: [--config.file=/etc/prometheus.yaml, --storage.tsdb.path=/prometheus, --storage.tsdb.retention.time=7d, --storage.tsdb.retention.size=256MB]
+    volumes: [./infra/stack-observability/prometheus.yaml:/etc/prometheus.yaml:ro, stack-prometheus-data:/prometheus]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    pids_limit: 128
+    networks: [stack-backend]
+  stack-grafana:
+    depends_on:
+      stack-observability-init:
+        condition: service_completed_successfully
+    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+    user: '10001:10001'
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/stack-grafana-password
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: 'false'
+      GF_LOG_LEVEL: error
+      GF_PATHS_LOGS: /tmp/logs
+      GF_PLUGINS_PREINSTALL_DISABLED: 'true'
+      GOMAXPROCS: '2'
+    secrets: [stack-grafana-password]
+    volumes: [./infra/stack-observability/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/agenttrust.yaml:ro, ./infra/stack-observability/grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/agenttrust.yaml:ro, ./infra/stack-observability/overview.json:/etc/grafana/agenttrust-dashboards/overview.json:ro, stack-grafana-data:/var/lib/grafana]
+    ports: [127.0.0.1:4324:3000]
+    read_only: true
+    tmpfs: ['/tmp:size=32m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 512
+    networks: [stack-backend, stack-host-access]
+secrets:
+  stack-grafana-password:
+    file: ./.local/stack/grafana-password
+volumes:
+  stack-tempo-data:
+  stack-loki-data:
+  stack-prometheus-data:
+  stack-grafana-data:

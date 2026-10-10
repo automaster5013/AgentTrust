@@ -11,6 +11,7 @@ def run(args,**kwargs):return subprocess.run(args,cwd=root,capture_output=True,t
 def scanner(args,network):
  return subprocess.run(['docker','run','--rm','--network',network,'--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--tmpfs','/tmp:size=1g,mode=1777','--memory','4g','--cpus','2','--pids-limit','128','-e','XDG_CACHE_HOME=/tmp/cache','-e','TMPDIR=/cache/tmp','--mount','type=bind,source='+str(inputs)+',target=/in,readonly','--mount','type=bind,source='+str(output)+',target=/out','--mount','type=bind,source='+str(cache)+',target=/cache','agenttrust-security:local']+args,cwd=root,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=600)
 try:
+ report['revision']=run(['git','rev-parse','HEAD']).stdout.strip()
  registry=any(name in os.environ for name in names.values());report['registryImageReferences']=registry
  if registry:assert all(re.fullmatch(r'ghcr\.io/[a-z0-9-]+/agenttrust-'+name+r'@sha256:[a-f0-9]{64}',os.environ.get(env,'')) for name,env in names.items())
  for name,env in names.items():

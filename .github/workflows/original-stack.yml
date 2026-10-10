@@ -37,7 +37,7 @@ jobs:
   integration:
     needs: security-source
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -49,16 +49,18 @@ jobs:
           python3 scripts/stack-identity-setup.py
           python3 scripts/stack-gateway-setup.py
           python3 scripts/stack-object-setup.py
+          python3 scripts/stack-observability-setup.py
       - name: Build Java 21, Python and TypeScript with their tests
-        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml build stack-core-api stack-ai-worker stack-console stack-opa stack-identity stack-gateway stack-object-store stack-db
+        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml build stack-core-api stack-ai-worker stack-console stack-opa stack-identity stack-gateway stack-object-store stack-db
       - name: Verify real authenticated evaluation and review flow
         run: |
-          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console
+          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console stack-otel stack-tempo stack-loki stack-prometheus stack-grafana
           python3 scripts/stack-identity-profile.py
           python3 scripts/stack-identity-smoke.py
           python3 scripts/stack-http-smoke.py
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
           python3 scripts/stack-database-smoke.py
+          python3 scripts/stack-database-init-smoke.py
       - name: Verify durable evaluation recovery and execution deadline
         run: |
           python3 scripts/stack-recovery-smoke.py --mode worker-restart
@@ -91,11 +93,13 @@ jobs:
           npx playwright test
       - name: Verify persisted results after service restart
         run: |
-          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml restart stack-core-api stack-ai-worker stack-console
-          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console
+          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml restart stack-core-api stack-ai-worker stack-console
+          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console stack-otel stack-tempo stack-loki stack-prometheus stack-grafana
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
       - name: Verify actual Redis quotas and recovery
-        run: python3 scripts/stack-gateway-smoke.py
+        run: |
+          python3 scripts/stack-gateway-smoke.py
+          python3 scripts/stack-observability-smoke.py
       - name: Preserve safe synthetic fault diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -107,16 +111,18 @@ jobs:
             .local/stack-object-smoke-*.json
             .local/stack-promptfoo-smoke-*.json
             .local/stack-http-smoke-*.json
+            .local/stack-observability-smoke-*.json
+            .local/stack-database-init-smoke-*.json
           if-no-files-found: ignore
           retention-days: 7
       - name: Stop isolated runner services
         if: always()
-        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml down
+        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml down
   images:
     needs: integration
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     permissions:
       contents: read
       packages: write
@@ -154,6 +160,7 @@ jobs:
           python3 scripts/stack-identity-setup.py
           python3 scripts/stack-gateway-setup.py
           python3 scripts/stack-object-setup.py
+          python3 scripts/stack-observability-setup.py
           echo "STACK_CORE_IMAGE=$(cat stack-delivery/core-api.txt)" >> "$GITHUB_ENV"
           echo "STACK_WORKER_IMAGE=$(cat stack-delivery/ai-worker.txt)" >> "$GITHUB_ENV"
           echo "STACK_CONSOLE_IMAGE=$(cat stack-delivery/console.txt)" >> "$GITHUB_ENV"
@@ -163,15 +170,17 @@ jobs:
           echo "STACK_OBJECT_IMAGE=$(cat stack-delivery/object-store.txt)" >> "$GITHUB_ENV"
       - name: Execute exact registry images without rebuilding
         run: |
-          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.image.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console
+          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.image.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console stack-otel stack-tempo stack-loki stack-prometheus stack-grafana
           python3 scripts/stack-identity-profile.py
           python3 scripts/stack-identity-smoke.py
           python3 scripts/stack-image-smoke.py
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
           python3 scripts/stack-database-smoke.py
+          python3 scripts/stack-database-init-smoke.py
           python3 scripts/stack-object-smoke.py
           python3 scripts/stack-vector-smoke.py
           python3 scripts/stack-gateway-smoke.py
+          python3 scripts/stack-observability-smoke.py
           python3 scripts/stack-image-smoke.py
           python3 scripts/stack-delivery-manifest.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -185,4 +194,68 @@ jobs:
         run: docker logout ghcr.io
       - name: Stop isolated registry-image services
         if: always()
-        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.image.yaml down
+        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.image.yaml down
+  security-images:
+    needs: images
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: original-stack-delivery-${{ github.sha }}
+          path: stack-delivery
+      - name: Build pinned security tools
+        run: docker build -t agenttrust-security:local tools/security
+      - name: Load exact immutable runtime references
+        shell: bash
+        run: |
+          test "$(cat stack-delivery/revision.txt)" = "$GITHUB_SHA"
+          echo "STACK_CORE_IMAGE=$(cat stack-delivery/core-api.txt)" >> "$GITHUB_ENV"
+          echo "STACK_WORKER_IMAGE=$(cat stack-delivery/ai-worker.txt)" >> "$GITHUB_ENV"
+          echo "STACK_CONSOLE_IMAGE=$(cat stack-delivery/console.txt)" >> "$GITHUB_ENV"
+          echo "STACK_OPA_IMAGE=$(cat stack-delivery/opa.txt)" >> "$GITHUB_ENV"
+          echo "STACK_IDENTITY_IMAGE=$(cat stack-delivery/identity.txt)" >> "$GITHUB_ENV"
+          echo "STACK_GATEWAY_IMAGE=$(cat stack-delivery/gateway.txt)" >> "$GITHUB_ENV"
+          echo "STACK_OBJECT_IMAGE=$(cat stack-delivery/object-store.txt)" >> "$GITHUB_ENV"
+          echo "STACK_DATABASE_IMAGE=$(cat stack-delivery/database.txt)" >> "$GITHUB_ENV"
+          for name in core-api ai-worker console opa identity gateway object-store database; do docker pull "$(cat "stack-delivery/$name.txt")"; done
+      - name: Generate CycloneDX SBOMs and refuse every HIGH or CRITICAL finding
+        run: python3 scripts/stack-security-images.py
+      - name: Prepare ephemeral signer registry credentials
+        env:
+          STACK_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/stack-signing-setup.py
+      - name: Keyless sign and verify exact digests and SBOM attestations
+        run: python3 scripts/stack-security-sign.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: original-stack-security-delivery-${{ github.sha }}
+          path: stack-security-delivery/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve image security failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: original-stack-image-security-${{ github.sha }}
+          include-hidden-files: true
+          path: |
+            .local/stack-security-images-*/summary.json
+            .local/stack-security-images-*/reports/*.cdx.json
+            .local/stack-security-images-*/reports/*.trivy.json
+            .local/stack-security-images-*/reports/*.trivy.log
+            .local/stack-security-images-*/reports/*.syft.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove only ephemeral signer credential
+        if: always()
+        run: python3 -c "from pathlib import Path; p=Path('.local/stack-signing-credentials/config.json'); p.unlink(missing_ok=True)"
