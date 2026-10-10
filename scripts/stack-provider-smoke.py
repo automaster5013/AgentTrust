@@ -7,7 +7,24 @@ assert (root/'.local/stack/providers-enabled').exists()
 credentials=json.loads((root/'.local/stack/demo-credentials.json').read_text(encoding='utf-8'));clients=[]
 report={'completed':False,'checks':[],'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'syntheticInputs':True,'realLocalInference':True,'paidApiCalls':False,'rawGeneratedTextPrinted':False,'legacyDatabaseWrites':False}
 command=stack_compose(root);worker_stopped=False;stage='login'
-def compose(*args):subprocess.run(command+list(args),cwd=root,capture_output=True,check=True,timeout=180)
+def compose(*args):
+ result=subprocess.run(command+list(args),cwd=root,capture_output=True,text=True,timeout=180)
+ if result.returncode:
+  report['composeOperation']=args[0];report['composeExitCode']=result.returncode
+  report['composeFailureCategory']='unsupported-option' if 'unknown flag' in result.stderr.lower() else 'unhealthy-service' if 'unhealthy' in result.stderr.lower() else 'command-failed'
+  result.check_returncode()
+ return result.stdout.strip()
+def start_worker():
+ # Start has no optional-version flags; observe only the exact existing worker.
+ compose('start','stack-ai-worker')
+ container=compose('ps','-q','stack-ai-worker');assert re.fullmatch('[a-f0-9]{12,64}',container)
+ deadline=time.monotonic()+60
+ while time.monotonic()<deadline:
+  value=subprocess.run(['docker','inspect','--format','{{json .State}}',container],cwd=root,capture_output=True,text=True,check=True,timeout=5)
+  state=json.loads(value.stdout)
+  if state.get('Running') is True and state.get('Health',{}).get('Status')=='healthy':return
+  time.sleep(.5)
+ raise TimeoutError('Worker health deadline')
 def wait(client,record):
  deadline=time.monotonic()+90
  while record['state']=='queued' and time.monotonic()<deadline:time.sleep(.25);record=client.request('runs/'+record['id'])
@@ -38,13 +55,13 @@ try:
  reserve(body,401,False);reserve({**body,'provider':'openai'},409);reserve({**body,'scenario':'block'},409)
  foreign=next(r for r in credentials if r['username']=='other-admin');reserve({**body,'organizationId':foreign['organizationId'],'projectId':foreign['projectId']},404)
  first=reserve(body);assert first['allowed'] is True and first['reservedInputTokens']==256 and first['reservedOutputTokens']==128;assert reserve(body)['allowed'] is False
- compose('start','--wait','--wait-timeout','60','stack-ai-worker');worker_stopped=False;record=wait(admin,record);assert record['state']=='failed' and record['decision']=='inconclusive' and record['result']['executionEngine']=='python-ollama';assert not admin.request('runs/'+record['id']+'/gate')['deploymentAllowed'];report['checks'].append('lost reservation burns budget and refuses replay; foreign and changed reservations rejected')
+ start_worker();worker_stopped=False;record=wait(admin,record);assert record['state']=='failed' and record['decision']=='inconclusive' and record['result']['executionEngine']=='python-ollama';assert not admin.request('runs/'+record['id']+'/gate')['deploymentAllowed'];report['checks'].append('lost reservation burns budget and refuses replay; foreign and changed reservations rejected')
  stage='recovered-worker';record=wait(admin,create(admin,'synthetic'));assert record['state']=='succeeded' and record['decision']=='pass' and record['result']['executionEngine']=='python-synthetic';assert not admin.request('runs/'+record['id']+'/gate')['deploymentAllowed'];report['checks'].append('healthy recovered worker executes fresh evidence and exports a new evaluation event')
  stage='logout';report['completed']=True
 except Exception as error:report.update({'errorType':type(error).__name__,'failedStage':stage})
 finally:
  if worker_stopped:
-  try:compose('start','--wait','--wait-timeout','60','stack-ai-worker')
+  try:start_worker()
   except Exception:report['completed']=False
  cleanup=True
  for client in clients:

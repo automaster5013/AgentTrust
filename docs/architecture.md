@@ -1,6 +1,34 @@
-# 구현된 시스템 아키텍처
+# 원래 기술 스택과 기존 구현의 아키텍처
 
-현재 v0.167의 코드와 로컬 Docker·지정한 GitHub CI에서 확인한 구조를 설명한다. v0.133 이후의 핵심 API·DB·워커 경계를 유지하며 오프라인 시연과 화면 조회 검증을 추가했다. 초기의 TypeScript·독립 객체 저장소·서명 웹훅 제안은 현재 구현에 포함되지 않는다. 제품 목표는 [제품 문서](product.md), 시연은 [포트폴리오 시연](portfolio-demo.md), 설계 판단과 검증 근거는 [기술 설명](portfolio-engineering.md)을 따른다.
+2026-10-10부터 개발 기준은 처음 제안한 Next.js/TypeScript·Java 21/Spring Boot·Python/FastAPI 및 전체 기술 스택이다. 현재 적용·검증 상태는 [전환 상태](stack-transition.md), 기존 기능의 이전 범위는 [기능 계약 비교](stack-feature-parity.md)를 따른다. 아래 JavaScript 구조는 보존한 기존 구현의 설명이며 새 개발의 기술 선택이 아니다.
+
+## 새 스택의 실제 요청 경로
+
+```mermaid
+flowchart LR
+  User[기업 개발팀] --> Console[Next.js / TypeScript BFF]
+  Console --> Gateway[Spring WebFlux / Redis 요청 한도]
+  Gateway --> API[Java 21 / Spring Boot]
+  API --> OIDC[Keycloak OIDC / PKCE]
+  API --> DB[(PostgreSQL / pgvector / 조직 RLS)]
+  API --> Queue[NATS JetStream]
+  Queue --> Worker[Python / FastAPI 자체 평가기]
+  Worker --> Local[고정 Ollama / 로컬 OpenAI 호환 추론]
+  Worker --> API
+  API --> Policy[OPA / Rego 정책]
+  API --> Evidence[MinIO 버전 고정 근거]
+  API --> Gate[관리자 검토 / 현재 게이트]
+  API --> OTel[OpenTelemetry]
+  Gateway --> OTel
+  Worker --> OTel
+  OTel --> Observe[Prometheus / Tempo / Loki / Grafana]
+```
+
+이 경로는 분리된 Compose의 `stack-*` 서비스와 합성 조직에서 실제 검증한다. Promptfoo는 내부 일회성 컨테이너에서 합성 사례를 검증한다. 실제 모델 호출은 고정 로컬 모델로 제한하며 OpenAI Responses는 계약 테스트만 수행했다. pgvector 검색은 규칙 특징 벡터이고 AI 의미 임베딩은 아니다. Kubernetes/Helm/Terraform은 검토용 구성 검증 단계이며 실제 서버 배포 결과가 아니다. 관측 도구의 알려진 취약점과 새 게이트 서명·버전별 다중 사례 등 남은 계약은 위 문서에 명시한다.
+
+## 보존한 JavaScript 구현
+
+아래 내용은 기존 v0.167 이후 구조를 설명한다. 기존 v0.187의 코드·데이터·서명 기록·검증 결과를 새 구현과 비교하기 위해 보존한다. 기존 테스트·부하 수치를 새 스택의 완료율로 사용하지 않는다. 이전의 TypeScript·객체 저장소 제외 설명은 당시 구현 범위이며 현재 개발 방침을 뜻하지 않는다.
 
 ## 처음 확인하는 오프라인 경로
 
