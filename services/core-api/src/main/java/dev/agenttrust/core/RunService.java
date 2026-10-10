@@ -85,7 +85,7 @@ public class RunService {
     }
     private void audit(DemoUser user,String action,UUID id) {jdbc.update("INSERT INTO stack_audit(id,organization_id,project_id,actor_id,action,resource_id) VALUES(?,?,?,?,?,?)",UUID.randomUUID(),user.organizationId(),user.projectId(),user.actorId(),action,id);}
     <T> T scoped(DemoUser user,java.util.function.Supplier<T> action) {
-        return tx.execute(status -> {jdbc.queryForObject("SELECT set_config('agenttrust.organization_id',?,true)",String.class,user.organizationId().toString());jdbc.queryForObject("SELECT set_config('agenttrust.project_id',?,true)",String.class,user.projectId().toString());return action.get();});
+        return tx.execute(status -> {jdbc.queryForObject("SELECT set_config('statement_timeout','3s',true)",String.class);jdbc.queryForObject("SELECT set_config('agenttrust.organization_id',?,true)",String.class,user.organizationId().toString());jdbc.queryForObject("SELECT set_config('agenttrust.project_id',?,true)",String.class,user.projectId().toString());return action.get();});
     }
     private static void requireWriter(DemoUser user) {if(!List.of("admin","editor").contains(user.role()))throw new ResponseStatusException(HttpStatus.FORBIDDEN);}
 }

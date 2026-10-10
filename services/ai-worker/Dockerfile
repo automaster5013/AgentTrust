@@ -2,13 +2,14 @@ FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6
 WORKDIR /app
 COPY requirements*.txt ./
 RUN pip install --no-cache-dir -r requirements-test.txt
-COPY app.py test_worker.py ./
+COPY app.py features.py test_worker.py test_features.py ./
 RUN pytest -q
 FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
 WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt && useradd --uid 10001 --no-create-home worker
 COPY --from=test /app/app.py ./
+COPY --from=test /app/features.py ./
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 USER 10001
 EXPOSE 8000

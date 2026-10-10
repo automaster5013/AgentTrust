@@ -1,0 +1,3 @@
+services:
+  stack-db:
+    image: ${STACK_DATABASE_IMAGE:?Provide verified database image digest}

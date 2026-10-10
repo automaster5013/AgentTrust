@@ -19,6 +19,8 @@ spring:
     password: ${STACK_DATABASE_PASSWORD}
     hikari:
       maximum-pool-size: 8
+      connection-timeout: 3000
+      validation-timeout: 1000
   flyway:
     enabled: true
     url: ${STACK_DATABASE_URL}

@@ -15,3 +15,5 @@ services:
     image: ${STACK_OBJECT_IMAGE:?Provide verified object storage image digest}
   stack-object-init:
     image: ${STACK_OBJECT_IMAGE:?Provide verified object storage image digest}
+  stack-db:
+    image: ${STACK_DATABASE_IMAGE:?Provide verified database image digest}

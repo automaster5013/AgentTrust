@@ -1,12 +1,19 @@
 name: agenttrust
 services:
   stack-db:
-    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    build: services/database
+    image: agenttrust-database:local
     environment:
       POSTGRES_DB: agenttrust_stack
       POSTGRES_USER: agenttrust_stack
       POSTGRES_PASSWORD: ${STACK_DATABASE_PASSWORD:?Prepare separate stack settings}
     volumes: [stack-postgres-data:/var/lib/postgresql/data]
+    read_only: true
+    tmpfs: ['/tmp:size=64m,mode=1777', '/var/run/postgresql:size=16m,uid=70,gid=70,mode=3775']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    pids_limit: 256
     networks: [stack-backend]
     healthcheck:
       test: [CMD-SHELL, pg_isready -U agenttrust_stack -d agenttrust_stack]
@@ -17,7 +24,7 @@ services:
     build: services/core-api
     image: agenttrust-core-api:local
     environment:
-      STACK_DATABASE_URL: jdbc:postgresql://stack-db:5432/agenttrust_stack
+      STACK_DATABASE_URL: jdbc:postgresql://stack-db:5432/agenttrust_stack?connectTimeout=2&socketTimeout=5&tcpKeepAlive=true
       STACK_DATABASE_USER: agenttrust_stack_api
       STACK_DATABASE_PASSWORD: ${STACK_API_PASSWORD:?Prepare restricted stack role}
       STACK_MIGRATION_USER: agenttrust_stack

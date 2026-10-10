@@ -7,7 +7,7 @@ python scripts/stack-setup.py
 python scripts/stack-identity-setup.py
 python scripts/stack-gateway-setup.py
 python scripts/stack-object-setup.py
-docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml build stack-core-api stack-ai-worker stack-console stack-opa stack-identity stack-gateway stack-object-store
+docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml build stack-core-api stack-ai-worker stack-console stack-opa stack-identity stack-gateway stack-object-store stack-db
 docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console
 python scripts/stack-identity-profile.py
 python scripts/stack-identity-smoke.py
@@ -26,7 +26,7 @@ Java가 요청자의 범위·역할·멱등성 키를 확인하고 DB에 불변 
 
 Java 21 컨테이너의 Maven 테스트, Python 컨테이너의 pytest, Next.js의 타입 검사·계약 테스트·생산 빌드는 Docker 빌드 중 수행된다. 실제 HTTP 검증은 역할/조직 경계, 필수 실패·근거 누락·오류, 승인 후 반려, 동시 멱등성·검토 순서, 로그아웃 후 재로그인과 프런트 프록시의 외부 Origin 차단을 확인한다. DB 검증은 롤백된 트랜잭션에서 RLS와 수정·삭제 거부를 직접 확인한다. Playwright의 실제 헤드리스 브라우저 검사로 생성·완료·승인·반려, 조회자 권한, 지연된 선택 응답을 검증한다. 화면의 시각 검수는 별개다.
 
-새 GitHub Actions는 합성 로컬 통합 이후 일곱 이미지의 커밋 태그와 불변 digest를 보관한다. 서버 배포는 수행하지 않는다. 게시한 불변 digest를 다시 실행하여 이미지·커밋·언어 런타임과 HTTP/DB 흐름을 대조한 뒤 manifest의 `registryImagesRuntimeVerified`를 기록한다. 워크플로 작성과 원격 실행 성공은 별개이므로 CI 결과를 확인해야 한다.
+새 GitHub Actions는 합성 로컬 통합 이후 여덟 이미지의 커밋 태그와 불변 digest를 보관한다. 서버 배포는 수행하지 않는다. 게시한 불변 digest를 다시 실행하여 이미지·커밋·언어 런타임과 HTTP/DB 흐름을 대조한 뒤 manifest의 `registryImagesRuntimeVerified`를 기록한다. 워크플로 작성과 원격 실행 성공은 별개이므로 CI 결과를 확인해야 한다.
 
 복구 검증은 아래 명령을 **하나씩** 실행한다. 각 검증은 새 stack-* 의존성만 일시 정지하고 복원하며 자체 세션을 로그아웃한다. 브라우저/HTTP 검증과 같은 서비스의 장애 검증을 동시에 실행하지 않는다.
 
@@ -75,3 +75,18 @@ python scripts/stack-object-smoke.py
 검사는 자체 합성 실행의 잠금·권한·원본 버전·재시작·장애 복구를 확인한다. 자체 객체에 새로운 합성 shadow 버전을 추가하지만 원본 버전과 DB 기록은 유지한다. 이 보관 기능은 현재 OPA 릴리스 게이트의 추가 필수 조건이 아니며, 게이트 조회는 계속 별도로 수행한다. 운영 보존 기간·용량 계획·독립 백업·HA는 미완료다.
 
 MinIO OSS의 고정 공식 보안 릴리스 `RELEASE.2025-10-15T17-29-55Z`를 commit와 다운로드 checksum으로 검증해 소스 빌드한다. 공식 저장소는 archived 상태이므로 운영 유지보수 방안은 별도 결정해야 한다. 이미지에 AGPLv3 라이선스를 포함한다. [공식 소스](https://github.com/minio/minio/tree/9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a)와 [객체 잠금 구현](https://github.com/minio/minio/blob/9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a/docs/bucket/retention/README.md)을 기준으로 사용한다.
+
+
+## 같은 프로젝트의 유사 규칙 근거
+
+Python의 `rule-features-v1`은 완료 결과의 규칙 ID·필수 여부·상태·사유 단어를 SHA-256 특징 해싱으로 고정된 64차원 단위 벡터로 만든다. Java는 고정 내부 HTTP 주소에 인증된 요청을 보내고, 기록 범위·원본 결과 해시·버전·차원·정규화·유한값을 확인해 불변 `stack_rule_vectors`에 저장한다. 조직·프로젝트 RLS와 제한 역할은 색인에도 적용한다. 새 PostgreSQL 이미지는 검증한 pgvector 0.8.7 소스를 포함하고 UID 70의 읽기 전용 루트에서 별도 기존 전환 볼륨을 계속 사용한다.
+
+`GET /api/runs/{id}/similar`는 기준 실행을 먼저 조회하고 같은 프로젝트·같은 특징 버전의 벡터를 pgvector 코사인 거리로 정확 정렬해 최대 5개 반환한다. 자기 자신은 제외한다. 준비되지 않은 기준은 409이며 다른 조직은 404다. Next.js는 결과 범위·중복·점수 순서·배포 권한 없음 상태를 확인하고 해당 실행의 상세 근거로 이동한다. 선택 변경에는 이전 검색과 보관 증거를 지운다.
+
+```powershell
+python scripts/stack-vector-smoke.py
+```
+
+규칙 특징 검색은 학습된 AI 임베딩이나 의미 검색이 아니다. 특징 해싱 충돌이 가능하며 점수는 규칙 검토를 돕는 탐색 값이다. 근거 유사도는 필수 실패·현재 승인·OPA 게이트를 대체하지 않는다. 현재는 작은 합성 데이터의 정확 검색이며 ANN 인덱스·대규모 성능·검색 품질 평가·기업 조직 동적 색인은 미완료다. 내부 HTTP는 본문 포함 2초, DB 쿼리는 각 3초, 연결 대기는 3초로 제한한다. DB 재시작 직후 공급자 세션 로그아웃은 제한된 재시도로 복구를 확인한다.
+
+[공식 pgvector 소스와 거리 연산](https://github.com/pgvector/pgvector/tree/f37c13f68b57d2c3472b2214fbcff699d6d34876)을 따른다.

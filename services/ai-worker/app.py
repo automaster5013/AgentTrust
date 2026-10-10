@@ -15,7 +15,8 @@ from nats.js.api import AckPolicy, ConsumerConfig, RetentionPolicy, StorageType,
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+from features import rule_features, VERSION, DIMENSIONS
 
 worker_state = {'ready': False}
 
@@ -156,3 +157,42 @@ def evaluation(body: EvaluationRequest, x_agenttrust_worker_token: str | None = 
         except ValueError:
             raise HTTPException(422, detail='Invalid scope') from None
     return {**body.model_dump(), 'result': evaluate(body.scenario)}
+
+
+class FeatureRule(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    id: str = Field(min_length=1, max_length=100)
+    required: bool
+    status: Literal['pass', 'fail', 'inconclusive']
+    reason: str = Field(max_length=500)
+
+
+class FeatureResult(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    state: Literal['succeeded', 'failed']
+    decision: Literal['pass', 'block', 'inconclusive']
+    executionEngine: Literal['python-synthetic', 'python-unavailable', 'java-synthetic']
+    rules: list[FeatureRule] = Field(min_length=1, max_length=100)
+
+
+class FeatureRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    runId: str
+    organizationId: str
+    projectId: str
+    contentSha256: str = Field(pattern=r'^[a-f0-9]{64}$')
+    result: FeatureResult
+
+
+@app.post('/features')
+def features(body: FeatureRequest, x_agenttrust_worker_token: str | None = Header(default=None)):
+    authorized(x_agenttrust_worker_token)
+    for value in (body.runId, body.organizationId, body.projectId):
+        try:
+            if str(UUID(value)) != value:
+                raise ValueError()
+        except ValueError:
+            raise HTTPException(422, detail='Invalid scope') from None
+    return {'runId': body.runId, 'organizationId': body.organizationId, 'projectId': body.projectId,
+            'contentSha256': body.contentSha256, 'featureVersion': VERSION, 'dimensions': DIMENSIONS,
+            'vector': rule_features(body.result.model_dump())}

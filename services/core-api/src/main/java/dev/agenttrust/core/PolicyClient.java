@@ -2,13 +2,8 @@ package dev.agenttrust.core;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,7 +13,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class PolicyClient {
     private final ObjectMapper mapper;private final String token,version,digest;
-    private final HttpClient client=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).followRedirects(HttpClient.Redirect.NEVER).build();
+    private final BoundedJsonHttp client=new BoundedJsonHttp();
     public PolicyClient(ObjectMapper mapper) throws Exception {
         this.mapper=mapper;token=Files.readString(Path.of("/run/secrets/stack-opa-token"));if(!token.matches("[a-f0-9]{64}"))throw new IllegalStateException("Policy configuration unavailable");
         try(var stream=PolicyClient.class.getResourceAsStream("/policy-metadata.json")){var metadata=mapper.readTree(stream).path("agenttrust").path("policy");version=metadata.path("version").asText();digest=metadata.path("digest").asText();}
@@ -29,9 +24,7 @@ public class PolicyClient {
         boolean approval=(Boolean)run.get("requires_approval");String evaluation=(String)run.get("decision");
         try {
             var input=new HashMap<String,Object>();input.put("runId",id.toString());input.put("organizationId",user.organizationId().toString());input.put("projectId",user.projectId().toString());input.put("state",run.get("state"));input.put("evaluationDecision",evaluation);input.put("approvalRequired",approval);input.put("latestReview",review==null?"":review.get("decision"));input.put("reviewPolicyVersion",review==null?"":review.get("policy_version"));input.put("reviewPolicyDigest",review==null?"":review.get("policy_digest"));input.put("rules",((JsonNode)run.get("result")).path("rules"));
-            var request=HttpRequest.newBuilder(URI.create("http://stack-opa:8181/v1/data/agenttrust/release/decision")).timeout(Duration.ofSeconds(2)).header("Content-Type","application/json").header("Authorization","Bearer "+token).POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(Map.of("input",input)))).build();
-            var response=client.send(request,HttpResponse.BodyHandlers.ofInputStream());byte[] bytes;try(var stream=response.body()){bytes=stream.readNBytes(4097);}
-            if(response.statusCode()!=200||bytes.length>4096)throw new IllegalStateException("Policy response unavailable");
+            byte[] bytes=client.post("http://stack-opa:8181/v1/data/agenttrust/release/decision","Authorization","Bearer "+token,mapper.writeValueAsBytes(Map.of("input",input)),4096);
             var result=mapper.readTree(bytes).path("result");return validated(result,input,version,digest);
         }catch(Exception error){if(error instanceof InterruptedException)Thread.currentThread().interrupt();return new Evaluation.Gate(evaluation.equals("block")?"block":"inconclusive",false,"OPA policy response or version binding was unavailable.",false,approval,"opa-rego","unavailable",version,digest);}
     }

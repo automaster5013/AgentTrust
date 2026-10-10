@@ -4,7 +4,7 @@
 
 기업 개발팀이 AI 에이전트의 평가 근거를 확인하고, 관리자 검토와 CI 릴리스 게이트를 거쳐 배포 여부를 결정하는 플랫폼입니다.
 
-**2026-10-10 원래 기술 스택으로 전환 중**: 새 `apps/console`은 Next.js/TypeScript, `services/core-api`는 Java 21/Spring Boot, `services/ai-worker`는 Python/FastAPI입니다. 별도 PostgreSQL에서 실제 로그인→평가 실행→결과 저장→관리자 승인·반려→현재 게이트의 합성 흐름을 검증했습니다. 기존 JavaScript v0.187은 비교 기준으로 보존하며 아래의 기존 테스트 수를 새 스택의 완료율로 사용하지 않습니다. 새 인증은 Keycloak OIDC(Authorization Code·PKCE)이며 Python 워커·NATS JetStream·OPA/Rego·WebFlux·Redis를 연결했고 MinIO 버전별 근거 보관을 로컬 검증했습니다. 게이트는 아직 서명되지 않았습니다. [기술별 전환 상태](docs/stack-transition.md)와 [새 스택 실행](docs/stack-local.md)을 확인하세요.
+**2026-10-10 원래 기술 스택으로 전환 중**: 새 `apps/console`은 Next.js/TypeScript, `services/core-api`는 Java 21/Spring Boot, `services/ai-worker`는 Python/FastAPI입니다. 별도 PostgreSQL에서 실제 로그인→평가 실행→결과 저장→관리자 승인·반려→현재 게이트의 합성 흐름을 검증했습니다. 기존 JavaScript v0.187은 비교 기준으로 보존하며 아래의 기존 테스트 수를 새 스택의 완료율로 사용하지 않습니다. 새 인증은 Keycloak OIDC(Authorization Code·PKCE)이며 Python 워커·NATS JetStream·OPA/Rego·WebFlux·Redis를 연결했고 MinIO 버전별 근거 보관의 게시 이미지 CI가 통과했습니다. pgvector의 같은 프로젝트 규칙 특징 검색도 로컬 검증했습니다. 게이트는 아직 서명되지 않았습니다. [기술별 전환 상태](docs/stack-transition.md)와 [새 스택 실행](docs/stack-local.md)을 확인하세요.
 
 **v0.187 로컬 프로토타입**: 기업 개발팀의 합성 평가 실행 → 근거 탐색·회귀 비교 → 관리자 승인/반려 → 최종 게이트 → 서명 기록 저장을 구현했습니다. 실패·누락·만료·반려는 릴리스를 허용하지 않습니다. 로그인·프로젝트·실행 범위별 지연 응답 보호와 크기 제한을 검증하고, 시연·복구·Docker 이미지 전달 절차를 제공합니다. 실제 고객 모델 연동과 상용 서버 배포는 아직 수행하지 않았습니다.
 
