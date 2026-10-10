@@ -20,7 +20,7 @@ try:
  deadline=time.monotonic()+30
  while True:
   metrics=grafana('/api/datasources/proxy/uid/agenttrust-prometheus/api/v1/query?'+urllib.parse.urlencode({'query':'agenttrust_evaluations_total{service_name="agenttrust-ai-worker"}'}))
-  if metrics.get('data',{}).get('result'):break
+  if metrics.get('data',{}).get('result') and sum(float(row['value'][1]) for row in metrics['data']['result'])>0:break
   assert time.monotonic()<deadline;time.sleep(1)
  assert sum(float(row['value'][1]) for row in metrics['data']['result'])>0;report['checks'].append('actual Python evaluations exported as metrics')
  logs=grafana('/api/datasources/proxy/uid/agenttrust-loki/loki/api/v1/query_range?'+urllib.parse.urlencode({'query':'{service_name="agenttrust-ai-worker"}','limit':'20'}));assert logs['data']['result'] and all(line[1]=='application event' for row in logs['data']['result'] for line in row['values']);report['checks'].append('actual evaluator logs contain only fixed body')

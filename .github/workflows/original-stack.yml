@@ -51,7 +51,7 @@ jobs:
           python3 scripts/stack-object-setup.py
           python3 scripts/stack-observability-setup.py
       - name: Build Java 21, Python and TypeScript with their tests
-        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml build stack-core-api stack-ai-worker stack-console stack-opa stack-identity stack-gateway stack-object-store stack-db
+        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml build stack-core-api stack-ai-worker stack-console stack-opa stack-identity stack-gateway stack-object-store stack-db stack-nats
       - name: Verify real authenticated evaluation and review flow
         run: |
           docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console stack-otel stack-tempo stack-loki stack-prometheus stack-grafana
@@ -124,6 +124,7 @@ jobs:
             .local/stack-database-init-smoke-*.json
             .local/stack-provider-smoke-*.json
             .local/stack-provider-integrity-*/summary.json
+            .local/stack-browser-*.json
           if-no-files-found: ignore
           retention-days: 7
       - name: Stop isolated runner services
@@ -152,7 +153,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p stack-delivery
-          for spec in 'core-api:services/core-api' 'ai-worker:services/ai-worker' 'console:apps/console' 'opa:services/opa' 'identity:services/identity' 'gateway:services/gateway' 'object-store:services/object-store' 'database:services/database' 'local-model:services/local-model'; do
+          for spec in 'core-api:services/core-api' 'ai-worker:services/ai-worker' 'console:apps/console' 'opa:services/opa' 'identity:services/identity' 'gateway:services/gateway' 'object-store:services/object-store' 'database:services/database' 'local-model:services/local-model' 'messaging:services/messaging'; do
             service=${spec%%:*}
             context=${spec#*:}
             image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/agenttrust-$service:$GITHUB_SHA"
@@ -180,6 +181,7 @@ jobs:
           echo "STACK_GATEWAY_IMAGE=$(cat stack-delivery/gateway.txt)" >> "$GITHUB_ENV"
           echo "STACK_OBJECT_IMAGE=$(cat stack-delivery/object-store.txt)" >> "$GITHUB_ENV"
           echo "STACK_MODEL_IMAGE=$(cat stack-delivery/local-model.txt)" >> "$GITHUB_ENV"
+          echo "STACK_MESSAGING_IMAGE=$(cat stack-delivery/messaging.txt)" >> "$GITHUB_ENV"
       - name: Execute exact registry images without rebuilding
         run: |
           docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.image.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console stack-otel stack-tempo stack-loki stack-prometheus stack-grafana
@@ -242,8 +244,9 @@ jobs:
           echo "STACK_GATEWAY_IMAGE=$(cat stack-delivery/gateway.txt)" >> "$GITHUB_ENV"
           echo "STACK_OBJECT_IMAGE=$(cat stack-delivery/object-store.txt)" >> "$GITHUB_ENV"
           echo "STACK_MODEL_IMAGE=$(cat stack-delivery/local-model.txt)" >> "$GITHUB_ENV"
+          echo "STACK_MESSAGING_IMAGE=$(cat stack-delivery/messaging.txt)" >> "$GITHUB_ENV"
           echo "STACK_DATABASE_IMAGE=$(cat stack-delivery/database.txt)" >> "$GITHUB_ENV"
-          for name in core-api ai-worker console opa identity gateway object-store database local-model; do docker pull "$(cat "stack-delivery/$name.txt")"; done
+          for name in core-api ai-worker console opa identity gateway object-store database local-model messaging; do docker pull "$(cat "stack-delivery/$name.txt")"; done
       - name: Generate CycloneDX SBOMs and refuse every HIGH or CRITICAL finding
         run: python3 scripts/stack-security-images.py
       - name: Prepare ephemeral signer registry credentials

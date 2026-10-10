@@ -4,7 +4,7 @@ root=pathlib.Path(__file__).resolve().parent.parent
 assert os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('GITHUB_REPOSITORY')=='automaster5013/AgentTrust' and os.environ.get('GITHUB_REF')=='refs/heads/main'
 sha=os.environ['GITHUB_SHA'];assert re.fullmatch('[a-f0-9]{40}',sha)
 reports=list((root/'.local').glob('stack-security-images-*/summary.json'));matches=[(path,json.loads(path.read_text(encoding='utf-8'))) for path in reports if json.loads(path.read_text(encoding='utf-8')).get('revision')==sha and json.loads(path.read_text(encoding='utf-8')).get('completed')]
-assert len(matches)==1;path,scans=matches[0];assert scans['registryImageReferences'] and len(scans['images'])==9 and all(row['highCriticalFindings']==0 for row in scans['images'].values())
+assert len(matches)==1;path,scans=matches[0];assert scans['registryImageReferences'] and len(scans['images'])==10 and all(row['highCriticalFindings']==0 for row in scans['images'].values())
 source=path.parent/'reports';delivery=root/'stack-delivery';destination=root/'stack-security-delivery';destination.mkdir()
 identity='https://github.com/automaster5013/AgentTrust/.github/workflows/original-stack.yml@refs/heads/main'
 issuer='https://token.actions.githubusercontent.com'

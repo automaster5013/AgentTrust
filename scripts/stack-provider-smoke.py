@@ -38,12 +38,13 @@ try:
  reserve(body,401,False);reserve({**body,'provider':'openai'},409);reserve({**body,'scenario':'block'},409)
  foreign=next(r for r in credentials if r['username']=='other-admin');reserve({**body,'organizationId':foreign['organizationId'],'projectId':foreign['projectId']},404)
  first=reserve(body);assert first['allowed'] is True and first['reservedInputTokens']==256 and first['reservedOutputTokens']==128;assert reserve(body)['allowed'] is False
- compose('start','stack-ai-worker');worker_stopped=False;record=wait(admin,record);assert record['state']=='failed' and record['decision']=='inconclusive' and record['result']['executionEngine']=='python-ollama';assert not admin.request('runs/'+record['id']+'/gate')['deploymentAllowed'];report['checks'].append('lost reservation burns budget and refuses replay; foreign and changed reservations rejected')
+ compose('start','--wait','--wait-timeout','60','stack-ai-worker');worker_stopped=False;record=wait(admin,record);assert record['state']=='failed' and record['decision']=='inconclusive' and record['result']['executionEngine']=='python-ollama';assert not admin.request('runs/'+record['id']+'/gate')['deploymentAllowed'];report['checks'].append('lost reservation burns budget and refuses replay; foreign and changed reservations rejected')
+ stage='recovered-worker';record=wait(admin,create(admin,'synthetic'));assert record['state']=='succeeded' and record['decision']=='pass' and record['result']['executionEngine']=='python-synthetic';assert not admin.request('runs/'+record['id']+'/gate')['deploymentAllowed'];report['checks'].append('healthy recovered worker executes fresh evidence and exports a new evaluation event')
  stage='logout';report['completed']=True
 except Exception as error:report.update({'errorType':type(error).__name__,'failedStage':stage})
 finally:
  if worker_stopped:
-  try:compose('start','stack-ai-worker')
+  try:compose('start','--wait','--wait-timeout','60','stack-ai-worker')
   except Exception:report['completed']=False
  cleanup=True
  for client in clients:

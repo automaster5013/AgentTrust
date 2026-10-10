@@ -6,6 +6,8 @@
 
 **2026-10-10 원래 기술 스택으로 전환 중**: 새 `apps/console`은 Next.js/TypeScript, `services/core-api`는 Java 21/Spring Boot, `services/ai-worker`는 Python/FastAPI입니다. 별도 PostgreSQL에서 실제 로그인→평가 실행→결과 저장→관리자 승인·반려→현재 게이트의 합성 흐름을 검증했습니다. 기존 JavaScript v0.187은 비교 기준으로 보존하며 아래의 기존 테스트 수를 새 스택의 완료율로 사용하지 않습니다. 새 인증은 Keycloak OIDC(Authorization Code·PKCE)이며 Python 워커·NATS JetStream·OPA/Rego·WebFlux·Redis를 연결했고 MinIO 버전별 근거 보관의 게시 이미지 CI가 통과했습니다. pgvector의 같은 프로젝트 규칙 특징 검색과 Promptfoo 교차 검증도 로컬 검증했습니다. OpenTelemetry·Prometheus·Tempo·Loki·Grafana의 실제 추적·메트릭·로그·민감 정보 제거를 연결했고 소스 보안 CI가 통과했습니다. 이미지 취약점 수정과 Cosign 공급망 서명의 원격 검증은 진행 중입니다. 고정 모델 digest의 Ollama와 로컬 OpenAI 호환 API 추론·공급자 고정·호출 예약을 로컬 검증했습니다. OpenAI 어댑터의 실제 유료 호출은 미수행입니다. 평가 게이트는 아직 서명되지 않았습니다. [기술별 전환 상태](docs/stack-transition.md)와 [새 스택 실행](docs/stack-local.md)을 확인하세요.
 
+**새 스택 검토 경로**: [로컬 실행](docs/stack-local.md) 후 `http://127.0.0.1:4320`에서 실제 Keycloak 로그인·평가·승인/반려를 확인합니다. [기능 이전 범위](docs/stack-feature-parity.md)는 완료된 흐름과 아직 이전하지 않은 버전 등록·회귀 비교·서명 게이트를 구분합니다. [인프라 검증](docs/stack-infrastructure.md)은 로컬과 GitHub CI에서 통과했으며 실제 클러스터 배포는 수행하지 않았습니다. [보안 범위](docs/stack-security.md)의 관측성 공식 이미지 수정이 남아 있어 운영 배포 승인을 뜻하지 않습니다.
+
 **v0.187 로컬 프로토타입**: 기업 개발팀의 합성 평가 실행 → 근거 탐색·회귀 비교 → 관리자 승인/반려 → 최종 게이트 → 서명 기록 저장을 구현했습니다. 실패·누락·만료·반려는 릴리스를 허용하지 않습니다. 로그인·프로젝트·실행 범위별 지연 응답 보호와 크기 제한을 검증하고, 시연·복구·Docker 이미지 전달 절차를 제공합니다. 실제 고객 모델 연동과 상용 서버 배포는 아직 수행하지 않았습니다.
 
 평가 상세 조회 중 이전 판정과 근거를 지우고, 실패 시 같은 실행의 **상세 다시 조회**를 제공합니다. [실제 화면 검증 범위](docs/portfolio-status.md#v0165-평가-상세-조회와-재시도)를 확인할 수 있습니다.

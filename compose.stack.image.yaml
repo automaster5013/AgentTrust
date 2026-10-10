@@ -17,3 +17,5 @@ services:
     image: ${STACK_OBJECT_IMAGE:?Provide verified object storage image digest}
   stack-db:
     image: ${STACK_DATABASE_IMAGE:?Provide verified database image digest}
+  stack-nats:
+    image: ${STACK_MESSAGING_IMAGE:?Provide verified messaging image digest}

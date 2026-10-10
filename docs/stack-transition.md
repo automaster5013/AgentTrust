@@ -2,27 +2,29 @@
 
 2026-10-10 사용자 요청으로 원래 제안한 기술 스택을 구현 목표로 복원했다. 기존 v0.187 JavaScript 구현은 기능 계약과 비교 기준이다. 기존 테스트 수·반복 부하 결과를 새 스택의 적용 완료율로 사용하지 않는다.
 
+[기능 이전 범위](stack-feature-parity.md)는 기존 기능 중 완료된 계약과 아직 이전하지 않은 계약을 구분한다. 기술 통합이 기존 기능 전체의 이전이나 운영 배포 완료를 뜻하지 않는다.
+
 ## 적용 상태와 완료 조건
 
 | 영역 | 목표 기술 | 현재 전환 상태 | 완료 조건 |
 |---|---|---|---|
 | Frontend | Next.js + TypeScript | 타입/계약/빌드 및 실제 브라우저 평가·승인·조회자·지연 응답 검증. 로컬 Keycloak 로그인 연결 | 실제 인증·평가 요청·결과·검토·현재 게이트 화면, 타입 검사와 기능 검증 |
 | Core API | Java 21 + Spring Boot | 실제 Java 21 컨테이너의 HTTP·영속 저장·RLS·동시 멱등성·승인/반려 검증 | 영속 저장·조직/역할·멱등성·평가/검토/게이트의 실제 HTTP 경로 |
-| AI Workers | Python + FastAPI | NATS 영속 소비자·인증 완료 콜백·중복 확정 방지·처리 기한 및 로컬 장애 복구 검증. 공급자/비용 예산 확장 필요 | 작업 실행·예산·오류·결과 확정, Java API와 통합 |
+| AI Workers | Python + FastAPI | NATS 영속 소비자·인증 완료 콜백·중복 확정 방지·처리 기한 및 로컬 장애 복구 검증. 실제 로컬 공급자와 1회 예약·UTC일 100회 한도 및 로컬 60초/유료 20초 제한 검증. 가격별 비용 정산은 미구현 | 작업 실행·예산·오류·결과 확정, Java API와 통합 |
 | Gateway | Spring WebFlux | Next.js BFF의 실제 요청 경로에 연결. 고정 경로·검증된 조직·크기·기한·CSRF·OAuth 인코딩을 로컬 검증 | 인증된 라우팅·한도·시간 초과·내부 경계 검증 |
-| Policy | OPA + Rego | 실제 인증된 OPA 판정·정책 byte hash·승인 버전 결합·장애 시 거부를 로컬 검증. 4개 이미지의 게시·실행 CI 성공 | 필수 실패/누락/승인의 정책 판단과 버전 추적 |
+| Policy | OPA + Rego | 실제 인증된 OPA 판정·정책 byte hash·승인 버전 결합·장애 시 거부를 로컬 검증. 초기 4개 및 이후 8개 registry 이미지 실행 CI 성공 | 필수 실패/누락/승인의 정책 판단과 버전 추적 |
 | Database | PostgreSQL + pgvector | 전환 PostgreSQL 별도 DB·제한 역할·RLS·불변 기록 검증. pgvector 0.8.7의 같은 프로젝트 규칙 특징·코사인 검색·워커/DB 재시작 보존을 로컬 검증. 의미 검색은 미구현 | 전환 영속 저장·조직 경계·복구, 벡터 검색의 실제 사용 경로 |
 | Cache | Redis | 조직·프로젝트별 원자적 요청 한도·ACL·AOF 재시작·장애 거부·만료 후 재개를 로컬 검증 | 캐시 용도·조직 키·무효화·장애 시 의미 검증 |
 | Messaging | NATS JetStream | 별도 디스크 스트림·명시적 ACK·안정 실행 ID·DB 대기 기록 재전달을 실제 로컬 경로에 통합 | 영속 작업 전달·재전달·중복 처리·장애 복구 |
 | Object Storage | MinIO | 실제 바이트 해시·기록된 버전 조회·조직 경계·7일 COMPLIANCE 잠금·재시작·장애 복구를 로컬 검증. 7개 게시 이미지 CI 성공 | 조직별 근거 저장·해시·접근 권한·수명 관리 |
 | Identity | Keycloak | 별도 DB의 실제 OIDC·S256 PKCE·조직/역할·양쪽 로그아웃·서명된 공급자 세션 철회를 로컬 검증. 운영 설정은 미완료 | OIDC 로그인·조직/역할·토큰·로그아웃 경계 |
-| AI Providers | OpenAI + Ollama + OpenAI-compatible | 고정 digest의 실제 Ollama 및 로컬 OpenAI 호환 추론·공급자 admission·1회 예약·실패 거부 6개 로컬 검증. OpenAI Responses 어댑터는 계약 테스트, 실제 유료 호출 미수행 | 통제된 공급자별 실제 어댑터·계약·비용/시간 예산 |
+| AI Providers | OpenAI + Ollama + OpenAI-compatible | 고정 digest의 실제 Ollama 및 로컬 OpenAI 호환 추론·공급자 admission·1회 예약·실패 거부 및 복구 후 새 실행 7개 로컬 검증. OpenAI Responses 어댑터는 계약 테스트, 실제 유료 호출 미수행 | 통제된 공급자별 실제 어댑터·계약·비용/시간 예산 |
 | Evaluation | 자체 평가기 + Promptfoo | Python 합성 자체 평가기와 Java 판정 검증 통합. 실제 Promptfoo 0.124.1의 4개 합성 사례·8개 단언 및 내부 비루트 컨테이너를 로컬 검증 | 기존 판정 사례의 새 실행과 Promptfoo 결과 연계 |
-| Observability | OpenTelemetry + Prometheus + Tempo + Loki + Grafana | 실제 HTTP 공유 trace·평가 counter·정제된 로그·자동 대시보드·합성 canary 제거 9개 로컬 검증. 원격 CI 재검증 중 | 요청→평가 추적·메트릭·로그·대시보드·민감 정보 제외 |
-| Local | Docker Compose | 전환 11개 서비스의 Compose 실행·헬스·워커/메시징/API 재시작·기한 초과 검증 | 별도 서비스/DB로 새 흐름 실행·재시작 보존 |
-| Production | Kubernetes + Helm + Terraform | 검토용 앱 차트 32개 리소스 strict schema·4개 거부 입력·Terraform validate와 4개 mock plan 로컬 통과. 실제 클러스터·공개 운영·stateful 배포는 미수행 | 지정 환경의 렌더/검증·비밀·헬스·배포/복귀. 실제 배포는 별도 결과 |
-| CI/CD | GitHub Actions | Java/Python/TypeScript·NATS·브라우저·OPA 통합과 4개 불변 게시 이미지 CI 성공. Keycloak 5개 이미지 확장 CI 성공. Gateway 6개 이미지 확장 CI 성공. MinIO 7개 이미지 확장 CI 성공. pgvector 첫 CI는 DB 중단 검사에서 실패하여 트랜잭션 오류 처리를 보완하고 재검증 중 | Java/Python/TypeScript 검사·통합·이미지 검증 |
-| Security | Trivy + Syft + Cosign + Gitleaks + Semgrep | Semgrep/Gitleaks 실제 소스·전체 이력 CI 성공. 여덟 이미지 SBOM/취약점 수정·재검사 및 keyless 서명 CI 구현, 최종 원격 증명 대기 | 각 도구의 실행 결과·검증 가능한 SBOM/서명·실패 게이트 |
+| Observability | OpenTelemetry + Prometheus + Tempo + Loki + Grafana | 실제 HTTP 공유 trace·평가 counter·정제된 로그·자동 대시보드·합성 canary 제거 9개 로컬 검증. 8개 registry 이미지의 관측성 통합 CI 성공. 공식 관측성 이미지의 취약점 수정은 남아 있음 | 요청→평가 추적·메트릭·로그·대시보드·민감 정보 제외 |
+| Local | Docker Compose | 전환 런타임 16개 서비스의 Compose 실행·헬스·워커/메시징/API 재시작·기한 초과 검증 | 별도 서비스/DB로 새 흐름 실행·재시작 보존 |
+| Production | Kubernetes + Helm + Terraform | 검토용 앱 차트 32개 리소스 strict schema·4개 거부 입력·Terraform validate와 4개 mock plan 로컬/원격 CI 통과. 실제 클러스터·공개 운영·stateful 배포는 미수행 | 지정 환경의 렌더/검증·비밀·헬스·배포/복귀. 실제 배포는 별도 결과 |
+| CI/CD | GitHub Actions | Java/Python/TypeScript·NATS·브라우저·OPA 통합과 4개 불변 게시 이미지 CI 성공. Keycloak 5개 이미지 확장 CI 성공. Gateway 6개 이미지 확장 CI 성공. MinIO 7개 이미지 확장 CI 성공. pgvector/관측성 포함 8개 registry 이미지 실행 CI 성공. 로컬 모델/수정 NATS를 포함한 열 이미지 CI 검증 진행 중 | Java/Python/TypeScript 검사·통합·이미지 검증 |
+| Security | Trivy + Syft + Cosign + Gitleaks + Semgrep | Semgrep/Gitleaks 실제 소스·전체 이력 CI 성공. 아홉 로컬 전달 이미지와 추가 수정 NATS의 HIGH/CRITICAL 0건 확인. 열 이미지 keyless 서명 CI의 원격 증명 대기. 관측성 공식 이미지 취약점 수정은 남음 | 각 도구의 실행 결과·검증 가능한 SBOM/서명·실패 게이트 |
 
 ## 구현 순서
 
