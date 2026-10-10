@@ -57,15 +57,17 @@ public class RunService {
         if(!"python-unavailable".equals(result.executionEngine()))WorkerClient.validated(result);
         return scoped(scope,()->{
             jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"completion/"+id);
-            var admission=jdbc.queryForList("SELECT scenario,state,actor_id,provider FROM stack_runs WHERE id=? AND organization_id=? AND project_id=?",id,scope.organizationId(),scope.projectId());
+            var admission=jdbc.queryForList("SELECT scenario,state,actor_id,provider,(created_at <= clock_timestamp()-interval '2 minutes') AS expired FROM stack_runs WHERE id=? AND organization_id=? AND project_id=?",id,scope.organizationId(),scope.projectId());
             if(admission.isEmpty())throw new ResponseStatusException(HttpStatus.NOT_FOUND);
             var original=admission.getFirst();if(!scenario.equals(original.get("scenario")) || !"queued".equals(original.get("state")))throw new ResponseStatusException(HttpStatus.CONFLICT);
             if(!"python-unavailable".equals(result.executionEngine())&&!WorkerClient.engine((String)original.get("provider")).equals(result.executionEngine()))throw new ResponseStatusException(HttpStatus.CONFLICT);
             if(!original.get("provider").equals("synthetic")&&result.state().equals("succeeded")&&jdbc.queryForObject("SELECT count(*) FROM stack_provider_attempts WHERE run_id=? AND provider=?",Long.class,id,original.get("provider"))!=1)throw new ResponseStatusException(HttpStatus.CONFLICT);
             var existing=jdbc.queryForList("SELECT run_id FROM stack_run_results WHERE run_id=?",id);
             if(!existing.isEmpty())return Map.of("accepted",true,"duplicate",true,"runId",id);
-            String json;try{json=mapper.writeValueAsString(result);}catch(Exception error){throw new IllegalStateException("Completion unavailable");}
-            jdbc.update("INSERT INTO stack_run_results(run_id,organization_id,project_id,state,decision,result) VALUES(?,?,?,?,?,?::jsonb)",id,scope.organizationId(),scope.projectId(),result.state(),result.decision(),json);
+            // A delayed dispatcher must not leave a gap where a late success opens the gate.
+            var effective=(Boolean)original.get("expired")?WorkerClient.unavailable():result;
+            String json;try{json=mapper.writeValueAsString(effective);}catch(Exception error){throw new IllegalStateException("Completion unavailable");}
+            jdbc.update("INSERT INTO stack_run_results(run_id,organization_id,project_id,state,decision,result) VALUES(?,?,?,?,?,?::jsonb)",id,scope.organizationId(),scope.projectId(),effective.state(),effective.decision(),json);
             var actor=new DemoUser("worker-result","unused",scope.organizationId(),scope.projectId(),(UUID)original.get("actor_id"),"viewer");audit(actor,"evaluation.completed",id);
             return Map.of("accepted",true,"duplicate",false,"runId",id);
         });

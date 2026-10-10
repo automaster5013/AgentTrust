@@ -14,7 +14,7 @@ public class ProviderBudget {
  Map<String,Object> reserve(DemoUser scope,UUID id,String scenario,String provider){
   return runs.scoped(scope,()->{
    jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"provider-budget/"+scope.organizationId()+"/"+scope.projectId());
-   var admission=jdbc.queryForList("SELECT r.scenario,r.provider,r.state,(r.created_at < now()-interval '2 minutes') AS expired FROM stack_runs r LEFT JOIN stack_run_results c ON c.run_id=r.id WHERE r.id=? AND r.organization_id=? AND r.project_id=? AND c.run_id IS NULL",id,scope.organizationId(),scope.projectId());
+   var admission=jdbc.queryForList("SELECT r.scenario,r.provider,r.state,(r.created_at <= clock_timestamp()-interval '2 minutes') AS expired FROM stack_runs r LEFT JOIN stack_run_results c ON c.run_id=r.id WHERE r.id=? AND r.organization_id=? AND r.project_id=? AND c.run_id IS NULL",id,scope.organizationId(),scope.projectId());
    if(admission.isEmpty())throw new ResponseStatusException(HttpStatus.NOT_FOUND);
    var row=admission.getFirst();if(!scenario.equals(row.get("scenario"))||!provider.equals(row.get("provider"))||provider.equals("synthetic")||!row.get("state").equals("queued"))throw new ResponseStatusException(HttpStatus.CONFLICT);
    if((Boolean)row.get("expired")||jdbc.queryForObject("SELECT count(*) FROM stack_provider_attempts WHERE run_id=?",Long.class,id)>0)return denied(id);
