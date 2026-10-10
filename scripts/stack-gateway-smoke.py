@@ -34,7 +34,7 @@ connection.close();print(json.dumps({'completed':True,'anonymousAndDefaultUserRe
  stage='write-quota';own.csrf();key=str(uuid.uuid4());run_id=None;writes=0
  for attempt in range(61):
   status,headers,value=request(own,'/api/runs','POST',{'scenario':'pass','requiresApproval':True},{'Idempotency-Key':key})
-  if status==429:assert value['code']=='RATE_LIMITED' and 1<=int(headers['Retry-After'])<=60;break
+  if status==429:assert value['code']=='RATE_LIMITED' and 1<=int(headers['Retry-After'])<=60;write_expiry=time.monotonic()+int(headers['Retry-After'])+2;break
   assert status==200;writes+=1
   if run_id is None:run_id=value['id']
   else:assert value['id']==run_id
@@ -43,7 +43,7 @@ connection.close();print(json.dumps({'completed':True,'anonymousAndDefaultUserRe
  stage='read-quota';reads=0
  for attempt in range(241):
   status,headers,value=request(own,'/api/me')
-  if status==429:assert value['code']=='RATE_LIMITED' and 1<=int(headers['Retry-After'])<=60;expiry=time.monotonic()+int(headers['Retry-After'])+1;break
+  if status==429:assert value['code']=='RATE_LIMITED' and 1<=int(headers['Retry-After'])<=60;expiry=max(write_expiry,time.monotonic()+int(headers['Retry-After'])+2);break
   assert status==200 and headers['X-AgentTrust-Gateway']=='spring-webflux';reads+=1
  else:raise AssertionError('READ_LIMIT_NOT_ENFORCED')
  assert 0<reads<=240;assert request(viewer,'/api/me')[0]==429 and request(other,'/api/me')[0]==200;report['admittedReads']=reads;report['checks'].append('same organization shares a read quota; foreign organization remains available')
