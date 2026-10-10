@@ -20,7 +20,7 @@
 | Evaluation | 자체 평가기 + Promptfoo | Python 합성 자체 평가기와 Java 판정 검증 통합. 실제 Promptfoo 0.124.1의 4개 합성 사례·8개 단언 및 내부 비루트 컨테이너를 로컬 검증 | 기존 판정 사례의 새 실행과 Promptfoo 결과 연계 |
 | Observability | OpenTelemetry + Prometheus + Tempo + Loki + Grafana | 실제 HTTP 공유 trace·평가 counter·정제된 로그·자동 대시보드·합성 canary 제거 9개 로컬 검증. 원격 CI 재검증 중 | 요청→평가 추적·메트릭·로그·대시보드·민감 정보 제외 |
 | Local | Docker Compose | 전환 11개 서비스의 Compose 실행·헬스·워커/메시징/API 재시작·기한 초과 검증 | 별도 서비스/DB로 새 흐름 실행·재시작 보존 |
-| Production | Kubernetes + Helm + Terraform | 미착수 | 지정 환경의 렌더/검증·비밀·헬스·배포/복귀. 실제 배포는 별도 결과 |
+| Production | Kubernetes + Helm + Terraform | 검토용 앱 차트 32개 리소스 strict schema·4개 거부 입력·Terraform validate와 4개 mock plan 로컬 통과. 실제 클러스터·공개 운영·stateful 배포는 미수행 | 지정 환경의 렌더/검증·비밀·헬스·배포/복귀. 실제 배포는 별도 결과 |
 | CI/CD | GitHub Actions | Java/Python/TypeScript·NATS·브라우저·OPA 통합과 4개 불변 게시 이미지 CI 성공. Keycloak 5개 이미지 확장 CI 성공. Gateway 6개 이미지 확장 CI 성공. MinIO 7개 이미지 확장 CI 성공. pgvector 첫 CI는 DB 중단 검사에서 실패하여 트랜잭션 오류 처리를 보완하고 재검증 중 | Java/Python/TypeScript 검사·통합·이미지 검증 |
 | Security | Trivy + Syft + Cosign + Gitleaks + Semgrep | Semgrep/Gitleaks 실제 소스·전체 이력 CI 성공. 여덟 이미지 SBOM/취약점 수정·재검사 및 keyless 서명 CI 구현, 최종 원격 증명 대기 | 각 도구의 실행 결과·검증 가능한 SBOM/서명·실패 게이트 |
 
@@ -99,3 +99,7 @@ pgvector 0.8.7은 실제 같은 프로젝트 규칙 특징 코사인 검색, 조
 ## 실제 로컬 공급자 전환
 
 [공급자 실행과 한계](stack-providers.md)에 실제 로컬 추론과 유료 API 계약 검증을 구분했다. V9는 새 전환 DB만 확장하며 이미 적용한 V1~V8과 기존 20개 SQL은 바꾸지 않는다. 공급자/합성 실행과 실패를 서로 대체하지 않는다.
+
+## 검토용 Kubernetes 구성
+
+[인프라 범위와 전제](stack-infrastructure.md)에 실행 가능한 앱 manifest의 렌더 검증과 미구현 stateful/운영 범위를 분리했다. 검토 차트는 원래 스택을 대체하거나 상용 배포 완료를 주장하지 않는다.

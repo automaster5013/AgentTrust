@@ -1,0 +1,17 @@
+# No placeholder image is deployable by default. Supply exact tested digest values.
+mode: local-review
+revision: ""
+existingSecret: agenttrust-stack-config
+dependencies:
+  namespace: agenttrust-dependencies
+  postgres: ""
+  nats: ""
+  redis: ""
+  identity: ""
+  objectStore: ""
+images:
+  core-api: ""
+  ai-worker: ""
+  gateway: ""
+  console: ""
+  opa: ""

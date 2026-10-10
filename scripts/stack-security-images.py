@@ -1,7 +1,7 @@
 """Create Syft SBOMs and Trivy reports for exact exported image IDs, without a Docker socket."""
 import datetime,hashlib,json,os,pathlib,re,subprocess,uuid,traceback
 root=pathlib.Path(__file__).resolve().parent.parent
-directory=root/'.local'/('stack-security-images-'+str(uuid.uuid4()));directory.mkdir()
+directory=root/'.local'/('stack-security-images-'+str(uuid.uuid4()));directory.mkdir(parents=True)
 inputs=directory/'inputs';inputs.mkdir();output=directory/'reports';output.mkdir();cache=root/'.local/stack-security-cache';cache.mkdir(exist_ok=True);temporary=cache/'tmp';temporary.mkdir(exist_ok=True)
 if os.name!='nt':
  for path in [output,cache,temporary]:path.chmod(0o777)

@@ -1,0 +1,13 @@
+{{- if eq .Values.dependencies.namespace .Release.Namespace }}{{ fail "Dependencies require a distinct provisioned namespace" }}{{ end }}
+{{- range $alias, $value := dict "db" .Values.dependencies.postgres "nats" .Values.dependencies.nats "redis" .Values.dependencies.redis "identity" .Values.dependencies.identity "object-store" .Values.dependencies.objectStore }}
+{{- if not (regexMatch (printf "^[a-z0-9-]+\\.%s\\.svc\\.cluster\\.local$" $.Values.dependencies.namespace) $value) }}{{ fail (printf "A provisioned internal service DNS in the dependency namespace is required for %s" $alias) }}{{ end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stack-{{ $alias }}
+  labels: {app.kubernetes.io/part-of: agenttrust-review}
+spec:
+  type: ExternalName
+  externalName: {{ $value | quote }}
+{{- end }}

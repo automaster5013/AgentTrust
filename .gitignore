@@ -17,3 +17,10 @@ __pycache__/
 /stack-delivery/
 /apps/console/test-results/
 /apps/console/playwright-report/
+
+/stack-security-delivery/
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json

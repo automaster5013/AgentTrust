@@ -1,0 +1,37 @@
+name: Original stack infrastructure validation
+on:
+  push:
+    branches: [main]
+    paths: ['charts/**', 'infra/terraform/**', 'tools/infrastructure/**', 'scripts/stack-infrastructure-*.py', '.github/workflows/stack-infrastructure.yml']
+  pull_request:
+    paths: ['charts/**', 'infra/terraform/**', 'tools/infrastructure/**', 'scripts/stack-infrastructure-*.py', '.github/workflows/stack-infrastructure.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: stack-infrastructure-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {persist-credentials: false}
+      - name: Build checksum pinned Helm Terraform and Kubernetes validators
+        run: docker build -t agenttrust-infrastructure:local tools/infrastructure
+      - name: Strict chart schemas and mocked Terraform plans without cluster credentials
+        run: python3 scripts/stack-infrastructure-check.py
+      - name: Preserve credential-free validation reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: original-stack-infrastructure-${{ github.sha }}
+          include-hidden-files: true
+          path: |
+            .local/stack-infrastructure-*/summary.json
+            .local/stack-infrastructure-*/rendered.yaml
+            .local/stack-infrastructure-*/kubernetes-schema.log
+            .local/stack-infrastructure-*/terraform-validate.log
+            .local/stack-infrastructure-*/terraform-mock-plans.log
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,118 @@
+{{- if ne .Values.mode "local-review" }}{{ fail "Public production origins, TLS and HA are not verified; only local-review is supported" }}{{ end }}
+{{- if not (regexMatch "^[a-f0-9]{40}$" .Values.revision) }}{{ fail "An exact tested source revision is required" }}{{ end }}
+{{- $definitions := dict
+ "core-api" (dict "uid" 10001 "port" 8080 "memory" "768Mi" "cpu" "2" "tmp" "128Mi" "health" "/actuator/health" "secrets" (list "stack-demo-credentials" "stack-worker-token" "stack-nats-token" "stack-opa-token" "stack-oidc-client-secret" "stack-minio-user" "stack-minio-password"))
+ "ai-worker" (dict "uid" 10001 "port" 8000 "memory" "256Mi" "cpu" "1" "tmp" "32Mi" "health" "/health" "secrets" (list "stack-worker-token" "stack-nats-token"))
+ "gateway" (dict "uid" 10001 "port" 8080 "memory" "384Mi" "cpu" "1" "tmp" "64Mi" "health" "/actuator/health" "secrets" (list "stack-redis-token"))
+ "console" (dict "uid" 1000 "port" 3000 "memory" "512Mi" "cpu" "1" "tmp" "64Mi" "health" "/" "secrets" (list))
+ "opa" (dict "uid" 10001 "port" 8181 "memory" "128Mi" "cpu" "500m" "tmp" "32Mi" "health" "/health" "secrets" (list "stack-opa-auth.json")) }}
+{{- range $name, $def := $definitions }}
+{{- $image := index $.Values.images $name }}
+{{- if not (regexMatch (printf "^ghcr\\.io/automaster5013/agenttrust-%s@sha256:[a-f0-9]{64}$" $name) $image) }}{{ fail (printf "Exact immutable image digest required for %s" $name) }}{{ end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stack-{{ $name }}
+  labels: {app.kubernetes.io/part-of: agenttrust-review, app.kubernetes.io/name: {{ $name }}}
+  annotations: {agenttrust.dev/revision: {{ $.Values.revision | quote }}}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/part-of: agenttrust-review, app.kubernetes.io/name: {{ $name }}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/part-of: agenttrust-review, app.kubernetes.io/name: {{ $name }}}
+      annotations: {agenttrust.dev/revision: {{ $.Values.revision | quote }}}
+    spec:
+      serviceAccountName: agenttrust-review
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ $def.uid }}
+        runAsGroup: {{ $def.uid }}
+        fsGroup: {{ $def.uid }}
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: {{ $name }}
+          image: {{ $image | quote }}
+          imagePullPolicy: IfNotPresent
+          ports: [{name: http, containerPort: {{ $def.port }}}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {cpu: {{ $def.cpu | quote }}, memory: {{ $def.memory }}}
+          env:
+{{- if eq $name "core-api" }}
+            - {name: STACK_DATABASE_URL, value: "jdbc:postgresql://stack-db:5432/agenttrust_stack?connectTimeout=2&socketTimeout=5&tcpKeepAlive=true"}
+            - {name: STACK_DATABASE_USER, value: agenttrust_stack_api}
+            - {name: STACK_DATABASE_PASSWORD, valueFrom: {secretKeyRef: {name: {{ $.Values.existingSecret }}, key: database-api-password}}}
+            - {name: STACK_MIGRATION_USER, value: agenttrust_stack}
+            - {name: STACK_MIGRATION_PASSWORD, valueFrom: {secretKeyRef: {name: {{ $.Values.existingSecret }}, key: database-migration-password}}}
+            - {name: STACK_DEMO_CREDENTIALS_FILE, value: /run/secrets/stack-demo-credentials}
+            - {name: STACK_IDENTITY_MODE, value: keycloak}
+            - {name: STACK_OBJECT_MODE, value: minio}
+{{- else if eq $name "console" }}
+            - {name: CORE_API_URL, value: "http://stack-gateway:8080"}
+            - {name: HOSTNAME, value: "0.0.0.0"}
+            - {name: PORT, value: "3000"}
+{{- else if eq $name "ai-worker" }}
+            - {name: STACK_ENABLE_PAID_PROVIDERS, value: "false"}
+            - {name: STACK_TELEMETRY_ENABLED, value: "false"}
+{{- else }}
+            []
+{{- end }}
+          volumeMounts:
+            - {name: temporary, mountPath: /tmp}
+{{- if $def.secrets }}
+            - {name: credentials, mountPath: /run/secrets, readOnly: true}
+{{- end }}
+          readinessProbe:
+{{- if eq $name "opa" }}
+            exec:
+              command: [/opa, eval, --fail, 'http.send({"method":"GET","url":"http://127.0.0.1:8181/health"}).status_code == 200']
+{{- else }}
+            httpGet: {path: {{ $def.health }}, port: http}
+{{- end }}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          startupProbe:
+{{- if eq $name "opa" }}
+            exec:
+              command: [/opa, eval, --fail, 'http.send({"method":"GET","url":"http://127.0.0.1:8181/health"}).status_code == 200']
+{{- else }}
+            httpGet: {path: {{ $def.health }}, port: http}
+{{- end }}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+      volumes:
+        - name: temporary
+          emptyDir: {medium: Memory, sizeLimit: {{ $def.tmp }}}
+{{- if $def.secrets }}
+        - name: credentials
+          secret:
+            secretName: {{ $.Values.existingSecret }}
+            defaultMode: 0440
+            items:
+{{- range $key := $def.secrets }}
+              - {key: {{ $key }}, path: {{ $key }}}
+{{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stack-{{ $name }}
+  labels: {app.kubernetes.io/part-of: agenttrust-review, app.kubernetes.io/name: {{ $name }}}
+spec:
+  type: ClusterIP
+  selector: {app.kubernetes.io/part-of: agenttrust-review, app.kubernetes.io/name: {{ $name }}}
+  ports: [{name: http, port: {{ $def.port }}, targetPort: http}]
+{{- end }}

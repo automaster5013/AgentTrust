@@ -105,6 +105,8 @@ jobs:
           python3 scripts/stack-provider-start.py
           python3 scripts/stack-provider-smoke.py
           python3 scripts/stack-observability-smoke.py
+          cd apps/console
+          STACK_E2E_LOCAL_MODEL=true npx playwright test --grep 'local model provider evidence'
       - name: Preserve safe synthetic fault diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

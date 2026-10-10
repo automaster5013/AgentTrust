@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mode",
+    "revision",
+    "existingSecret",
+    "dependencies",
+    "images"
+  ],
+  "properties": {
+    "mode": {
+      "const": "local-review"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "existingSecret": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+    },
+    "images": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "core-api",
+        "ai-worker",
+        "gateway",
+        "console",
+        "opa"
+      ],
+      "properties": {
+        "core-api": {
+          "type": "string",
+          "pattern": "^ghcr\\.io/automaster5013/agenttrust-core-api@sha256:[a-f0-9]{64}$"
+        },
+        "ai-worker": {
+          "type": "string",
+          "pattern": "^ghcr\\.io/automaster5013/agenttrust-ai-worker@sha256:[a-f0-9]{64}$"
+        },
+        "gateway": {
+          "type": "string",
+          "pattern": "^ghcr\\.io/automaster5013/agenttrust-gateway@sha256:[a-f0-9]{64}$"
+        },
+        "console": {
+          "type": "string",
+          "pattern": "^ghcr\\.io/automaster5013/agenttrust-console@sha256:[a-f0-9]{64}$"
+        },
+        "opa": {
+          "type": "string",
+          "pattern": "^ghcr\\.io/automaster5013/agenttrust-opa@sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespace",
+        "postgres",
+        "nats",
+        "redis",
+        "identity",
+        "objectStore"
+      ],
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+        },
+        "postgres": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+\\.[a-z0-9-]+\\.svc\\.cluster\\.local$"
+        },
+        "nats": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+\\.[a-z0-9-]+\\.svc\\.cluster\\.local$"
+        },
+        "redis": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+\\.[a-z0-9-]+\\.svc\\.cluster\\.local$"
+        },
+        "identity": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+\\.[a-z0-9-]+\\.svc\\.cluster\\.local$"
+        },
+        "objectStore": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+\\.[a-z0-9-]+\\.svc\\.cluster\\.local$"
+        }
+      }
+    }
+  }
+}

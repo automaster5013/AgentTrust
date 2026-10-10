@@ -1,0 +1,70 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: agenttrust-default-deny}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: agenttrust-dns}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/part-of: agenttrust-review}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+{{- $paths := list (dict "from" "console" "to" "gateway" "port" 8080) (dict "from" "gateway" "to" "core-api" "port" 8080) (dict "from" "core-api" "to" "ai-worker" "port" 8000) (dict "from" "core-api" "to" "opa" "port" 8181) (dict "from" "ai-worker" "to" "core-api" "port" 8080) }}
+{{- range $path := $paths }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: {{ printf "agenttrust-%s-to-%s" $path.from $path.to }}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/part-of: agenttrust-review, app.kubernetes.io/name: {{ $path.from }}}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/part-of: agenttrust-review, app.kubernetes.io/name: {{ $path.to }}}}
+      ports: [{protocol: TCP, port: {{ $path.port }}}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: {{ printf "agenttrust-%s-from-%s" $path.to $path.from }}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/part-of: agenttrust-review, app.kubernetes.io/name: {{ $path.to }}}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/part-of: agenttrust-review, app.kubernetes.io/name: {{ $path.from }}}}
+      ports: [{protocol: TCP, port: {{ $path.port }}}]
+{{- end }}
+{{- range $name, $ports := dict "core-api" (list 5432 4222 8080 9000) "ai-worker" (list 4222) "gateway" (list 6379) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: agenttrust-{{ $name }}-dependencies}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/part-of: agenttrust-review, app.kubernetes.io/name: {{ $name }}}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: {{ $.Values.dependencies.namespace }}}}
+      ports:
+{{- range $port := $ports }}
+        - {protocol: TCP, port: {{ $port }}}
+{{- end }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: agenttrust-signed-backchannel}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/part-of: agenttrust-review, app.kubernetes.io/name: core-api}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: {{ .Values.dependencies.namespace }}}}
+      ports: [{protocol: TCP, port: 8080}]
