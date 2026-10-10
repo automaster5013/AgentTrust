@@ -79,7 +79,8 @@ jobs:
           path: |
             .local/stack-vector-smoke-*.json
             .local/stack-object-smoke-*.json
-            .local/stack-promptfoo-smoke-*.json
+              .local/stack-promptfoo-smoke-*.json
+              .local/stack-http-smoke-*.json
           if-no-files-found: ignore
           retention-days: 7
       - name: Stop isolated runner services

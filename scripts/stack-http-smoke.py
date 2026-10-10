@@ -45,12 +45,13 @@ try:
  for client in clients:client.logout()
  again=Client();again.login('demo-admin');again.logout();check('credential erasure preserves later login and tenant scope')
  report['ownSessionsLoggedOut']=True;report['completed']=True;report['representativeRunIds']={k:v['id'] for k,v in records.items()}
-except Exception:
- report['failedStage']=stage
+except Exception as error:
+ report['failedStage']=stage;report['errorType']=type(error).__name__
+ if isinstance(error,urllib.error.HTTPError):report['unexpectedHttpStatus']=error.code
 finally:
  cleanup=True
  for client in clients:
   try:client.logout()
   except Exception:cleanup=False
- report['ownSessionsLoggedOut']=cleanup and all(not c.logged for c in clients);report['finishedAt']=datetime.datetime.now(datetime.timezone.utc).isoformat();path=pathlib.Path('.local')/('stack-http-smoke-'+str(uuid.uuid4())+'.json');path.open('x',encoding='utf-8').write(json.dumps(report,indent=2)+'\n');print(json.dumps({'completed':report['completed'],'checks':len(report['checks']),'ownSessionsLoggedOut':report['ownSessionsLoggedOut'],'failedStage':report.get('failedStage'),'reportPath':str(path)}))
+ report['ownSessionsLoggedOut']=cleanup and all(not c.logged for c in clients);report['finishedAt']=datetime.datetime.now(datetime.timezone.utc).isoformat();path=pathlib.Path('.local')/('stack-http-smoke-'+str(uuid.uuid4())+'.json');path.open('x',encoding='utf-8').write(json.dumps(report,indent=2)+'\n');print(json.dumps({'completed':report['completed'],'checks':len(report['checks']),'ownSessionsLoggedOut':report['ownSessionsLoggedOut'],'failedStage':report.get('failedStage'),'errorType':report.get('errorType'),'unexpectedHttpStatus':report.get('unexpectedHttpStatus'),'responseCode':report.get('responseCode'),'reportPath':str(path)}))
 if not report['completed'] or not report['ownSessionsLoggedOut']:raise SystemExit(1)

@@ -40,19 +40,22 @@ class StackClient:
   return json.loads(raw) if raw else None
  def csrf(self):self.token=self.request('csrf')['token'];assert len(self.token)<=2048
  def login(self,name):
+  self.report['loginPhase']='provider-information'
   self.provider=self.request('auth-info')['identityProvider'];u=next(x for x in self.credentials if x['username']==name)
   if self.provider=='keycloak':
+   self.report['loginPhase']='authorization-redirect'
    with self.opener.open('http://127.0.0.1:4320/backend/oauth2/authorization/keycloak',timeout=15) as response:
     url=urllib.parse.urlsplit(response.url);query=urllib.parse.parse_qs(url.query);raw=response.read(1048577);assert len(raw)<=1048576
    assert url.netloc=='127.0.0.1:4322' and url.path=='/realms/agenttrust/protocol/openid-connect/auth';assert query['client_id']==['agenttrust-console'] and query['redirect_uri']==['http://127.0.0.1:4320/backend/login/oauth2/code/keycloak'] and query['code_challenge_method']==['S256'] and len(query['state'][0])>=16 and len(query['nonce'][0])>=16
-   form=IdentityForm();form.feed(raw.decode('utf-8'));assert form.action
+   self.report['loginPhase']='identity-form';form=IdentityForm();form.feed(raw.decode('utf-8'));assert form.action
    target=urllib.parse.urlsplit(form.action);assert target.scheme=='http' and target.netloc=='127.0.0.1:4322' and target.path.startswith('/realms/agenttrust/login-actions/')
    body=urllib.parse.urlencode({**form.fields,'username':name,'password':u['password'],'credentialId':''}).encode()
+   self.report['loginPhase']='identity-submit-callback'
    with self.opener.open(urllib.request.Request(form.action,data=body,headers={'Content-Type':'application/x-www-form-urlencoded','Origin':'http://127.0.0.1:4322'}),timeout=15) as response:assert response.url=='http://127.0.0.1:4320/'
    self.report['oidcAuthorizationCodePkceVerified']=True
   else:
    assert self.provider=='local-demo';self.csrf();self.request('login','POST',urllib.parse.urlencode({'username':name,'password':u['password']}))
-  self.logged=True;self.csrf();me=self.request('me');assert me['organizationId']==u['organizationId'] and me['projectId']==u['projectId'] and me['actorId']==u['actorId'] and me['role']==u['role'] and me['identityProvider']==self.provider;return me
+  self.logged=True;self.report['loginPhase']='session-verification';self.csrf();me=self.request('me');assert me['organizationId']==u['organizationId'] and me['projectId']==u['projectId'] and me['actorId']==u['actorId'] and me['role']==u['role'] and me['identityProvider']==self.provider;self.report['loginPhase']='completed';return me
  def logout(self):
   if self.logged:
    self.csrf();value=self.request('logout','POST',{});self.request('me',expected=401)
