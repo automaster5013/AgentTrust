@@ -10,7 +10,7 @@ try:
   container=json.loads(run(['docker','inspect','agenttrust-stack-'+name+'-1']).stdout)[0];expected=json.loads(run(['docker','image','inspect',image]).stdout)[0]
   labels=container['Config']['Labels'];assert labels['com.docker.compose.project']=='agenttrust' and labels['com.docker.compose.service']=='stack-'+name and labels['org.opencontainers.image.revision']==revision
   assert container['Image']==expected['Id'] and container['State']['Health']['Status']=='healthy'
-  assert container['HostConfig']['ReadonlyRootfs'] and container['HostConfig']['CapDrop']==['ALL'] and 'no-new-privileges:true' in container['HostConfig']['SecurityOpt'];assert container['Config']['User'] in ['10001','node']
+  assert container['HostConfig']['ReadonlyRootfs'] and container['HostConfig']['CapDrop']==['ALL'] and 'no-new-privileges:true' in container['HostConfig']['SecurityOpt'];assert container['Config']['User']=={'core-api':'10001:10001','ai-worker':'10001','console':'node'}[name]
   verified[name]=image
  assert 'version "21.' in run(['docker','exec','agenttrust-stack-core-api-1','java','-version']).stderr
  assert run(['docker','exec','agenttrust-stack-ai-worker-1','python','--version']).stdout.startswith('Python 3.14.')
