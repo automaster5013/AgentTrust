@@ -1,0 +1,8 @@
+# Exact historical false positives reviewed against committed source.
+# A header expression references an in-memory token; it contains no credential literal.
+1079ed7345fc0dea19d66dae0628cb677b29c7e0:services/ai-worker/app.py:generic-api-key:56
+# The isolated JUnit temporary-file fixture never configures a runtime account.
+# Its fixed value matches neither current runtime identities nor environment values.
+d777ae16b46cec7fc274b8b722e62274e011086f:services/core-api/src/test/java/dev/agenttrust/core/SecurityConfigurationTest.java:generic-api-key:13
+# Authentication lifecycle variable names, with no literal or credential value.
+a63f934b4a0a790fedfdae413dc121173b060032:apps/web/app.js:generic-api-key:634

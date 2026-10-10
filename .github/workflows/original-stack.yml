@@ -10,7 +10,31 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  security-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Build pinned source security tools
+        run: docker build -t agenttrust-security:local tools/security
+      - name: Verify rules and scan tracked source and full Git history
+        run: python3 scripts/stack-security-source.py
+      - name: Preserve redacted security reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: original-stack-source-security-${{ github.sha }}
+          path: |
+            .local/stack-security-source-*/summary.json
+            .local/stack-security-source-*/reports/semgrep.json
+            .local/stack-security-source-*/reports/gitleaks.json
+          if-no-files-found: error
+          retention-days: 7
   integration:
+    needs: security-source
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -79,8 +103,8 @@ jobs:
           path: |
             .local/stack-vector-smoke-*.json
             .local/stack-object-smoke-*.json
-              .local/stack-promptfoo-smoke-*.json
-              .local/stack-http-smoke-*.json
+            .local/stack-promptfoo-smoke-*.json
+            .local/stack-http-smoke-*.json
           if-no-files-found: ignore
           retention-days: 7
       - name: Stop isolated runner services

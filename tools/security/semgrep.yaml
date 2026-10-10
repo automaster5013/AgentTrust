@@ -1,0 +1,41 @@
+rules:
+  - id: python-no-shell-subprocess
+    languages: [python]
+    severity: ERROR
+    message: Keep subprocess arguments separate and disable shell execution.
+    pattern-either:
+      - pattern: subprocess.run(..., shell=True, ...)
+      - pattern: subprocess.Popen(..., shell=True, ...)
+      - pattern: subprocess.call(..., shell=True, ...)
+      - pattern: subprocess.check_output(..., shell=True, ...)
+  - id: python-no-dynamic-evaluation
+    languages: [python]
+    severity: ERROR
+    message: Evaluations must not execute caller code.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: exec(...)
+  - id: javascript-no-dynamic-evaluation
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Evaluations must not execute caller code.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+  - id: python-no-disabled-tls-verification
+    languages: [python]
+    severity: ERROR
+    message: TLS verification must remain enabled.
+    pattern: $CALL(..., verify=False, ...)
+  - id: java-no-unrestricted-client-redirects
+    languages: [java]
+    severity: ERROR
+    message: Internal requests must not follow caller-selected redirects.
+    pattern: $CLIENT.followRedirects(HttpClient.Redirect.ALWAYS)
+  - id: java-no-global-csrf-disable
+    languages: [java]
+    severity: ERROR
+    message: Restrict CSRF exceptions to the authenticated internal callback.
+    pattern-either:
+      - pattern: $HTTP.csrf(AbstractHttpConfigurer::disable)
+      - pattern: $HTTP.csrf($CONFIG -> $CONFIG.disable())
