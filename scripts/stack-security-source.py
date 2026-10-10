@@ -1,7 +1,7 @@
 """Scan committed history and tracked source only; never mount local secrets."""
 import datetime,json,os,pathlib,subprocess,tarfile,uuid,traceback
 root=pathlib.Path(__file__).resolve().parent.parent
-directory=root/'.local'/('stack-security-source-'+str(uuid.uuid4()));directory.mkdir()
+directory=root/'.local'/('stack-security-source-'+str(uuid.uuid4()));directory.mkdir(parents=True)
 source=directory/'source';source.mkdir();output=directory/'reports';output.mkdir()
 if os.name!='nt':output.chmod(0o777)
 report={'completed':False,'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'privateRuntimeFilesScanned':False,'rawSecretsPrinted':False,'outputDirectory':str(output)}
