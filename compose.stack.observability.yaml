@@ -1,7 +1,8 @@
 services:
   stack-observability-init:
     image: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
-    command: [sh, -ec, 'chown 10001:10001 /data/tempo /data/loki /data/prometheus /data/grafana']
+    command: [sh, -ec, 'umask 077; chown 10001:10001 /data/tempo /data/loki /data/prometheus /data/grafana; cp /run/secrets/stack-grafana-password /data/grafana/.admin-password.next; chown 0:0 /data/grafana/.admin-password.next; chmod 600 /data/grafana/.admin-password.next; chown 10001:10001 /data/grafana/.admin-password.next; mv /data/grafana/.admin-password.next /data/grafana/.admin-password']
+    secrets: [stack-grafana-password]
     volumes: [stack-tempo-data:/data/tempo, stack-loki-data:/data/loki, stack-prometheus-data:/data/prometheus, stack-grafana-data:/data/grafana]
     read_only: true
     cap_drop: [ALL]
@@ -104,7 +105,7 @@ services:
     image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
     user: '10001:10001'
     environment:
-      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/stack-grafana-password
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /var/lib/grafana/.admin-password
       GF_USERS_ALLOW_SIGN_UP: 'false'
       GF_AUTH_ANONYMOUS_ENABLED: 'false'
       GF_ANALYTICS_REPORTING_ENABLED: 'false'
@@ -114,7 +115,6 @@ services:
       GF_PATHS_LOGS: /tmp/logs
       GF_PLUGINS_PREINSTALL_DISABLED: 'true'
       GOMAXPROCS: '2'
-    secrets: [stack-grafana-password]
     volumes: [./infra/stack-observability/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/agenttrust.yaml:ro, ./infra/stack-observability/grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/agenttrust.yaml:ro, ./infra/stack-observability/overview.json:/etc/grafana/agenttrust-dashboards/overview.json:ro, stack-grafana-data:/var/lib/grafana]
     ports: [127.0.0.1:4324:3000]
     read_only: true
@@ -124,6 +124,11 @@ services:
     mem_limit: 512m
     cpus: 1
     pids_limit: 512
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:3000/api/health]
+      interval: 5s
+      timeout: 3s
+      retries: 24
     networks: [stack-backend, stack-host-access]
 secrets:
   stack-grafana-password:

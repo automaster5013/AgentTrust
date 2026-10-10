@@ -1,12 +1,13 @@
 """Verify real application telemetry and privacy through internal services and authenticated Grafana."""
-import argparse,json,pathlib,subprocess,urllib.request,urllib.parse,base64,uuid,datetime,time
+import argparse,json,pathlib,subprocess,urllib.request,urllib.error,urllib.parse,base64,uuid,datetime,time
 from stack_compose import stack_compose
 root=pathlib.Path(__file__).resolve().parent.parent
 report={'completed':False,'checks':[],'rawSecretsPrinted':False,'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat()}
 def run(args):return subprocess.run(args,cwd=root,capture_output=True,text=True,encoding='utf-8',errors='replace',check=True,timeout=180)
 try:
  ids=json.loads(run(['docker','network','inspect','agenttrust_stack-backend']).stdout);assert len(ids)==1 and ids[0]['Internal'] is True
- probe=run(['docker','run','--rm','--network','agenttrust_stack-backend','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--memory','128m','--pids-limit','32','--mount','type=bind,source='+str(root/'scripts/stack-observability-probe.py')+',target=/probe.py,readonly','agenttrust-ai-worker:local','python','/probe.py']);value=json.loads(probe.stdout);assert value['completed'] and value['privacyCanaryAbsentInTracesLogsMetrics'];report['privacyProbe']=value;report['checks'].append('actual trace log and metric privacy readback')
+ worker=json.loads(run(['docker','inspect','agenttrust-stack-ai-worker-1']).stdout)[0];assert worker['Config']['Labels']['com.docker.compose.project']=='agenttrust' and worker['Config']['Labels']['com.docker.compose.service']=='stack-ai-worker' and worker['State']['Health']['Status']=='healthy'
+ probe=run(['docker','run','--rm','--network','agenttrust_stack-backend','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--memory','128m','--pids-limit','32','--mount','type=bind,source='+str(root/'scripts/stack-observability-probe.py')+',target=/probe.py,readonly',worker['Image'],'python','/probe.py']);value=json.loads(probe.stdout);assert value['completed'] and value['privacyCanaryAbsentInTracesLogsMetrics'];report['privacyProbe']=value;report['checks'].append('actual trace log and metric privacy readback')
  secret=(root/'.local/stack/grafana-password').read_text(encoding='utf-8');header='Basic '+base64.b64encode(('admin:'+secret).encode()).decode()
  def grafana(path):
   with urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:4324'+path,headers={'Authorization':header}),timeout=15) as response:raw=response.read(2097153)
@@ -31,7 +32,10 @@ try:
  assert joined;report['checks'].append('real Gateway and Core share an exported trace')
  dashboard=grafana('/api/dashboards/uid/agenttrust-overview');assert dashboard['meta']['provisioned'] and len(dashboard['dashboard']['panels'])==4;report['checks'].append('four operational panels provisioned')
  report['completed']=True
-except Exception as error:report['errorType']=type(error).__name__
+except Exception as error:
+ report['errorType']=type(error).__name__
+ if isinstance(error,urllib.error.HTTPError):report['unexpectedHttpStatus']=error.code
+ report['lastVerifiedCheck']=report['checks'][-1] if report['checks'] else None
 finally:
  report['finishedAt']=datetime.datetime.now(datetime.timezone.utc).isoformat();path=root/'.local'/('stack-observability-smoke-'+str(uuid.uuid4())+'.json');path.open('x',encoding='utf-8').write(json.dumps(report,indent=2)+'\n');print(json.dumps({'completed':report['completed'],'checks':len(report['checks']),'reportPath':str(path),'errorType':report.get('errorType'),'rawSecretsPrinted':False}))
 if not report['completed']:raise SystemExit(1)
