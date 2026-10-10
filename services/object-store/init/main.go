@@ -104,7 +104,7 @@ func verify() error {
 	if err := json.NewDecoder(io.LimitReader(os.Stdin, 8192)).Decode(&input); err != nil {
 		return err
 	}
-	if !regexp.MustCompile(`^organizations/[a-f0-9-]{36}/projects/[a-f0-9-]{36}/runs/[a-f0-9-]{36}/[a-f0-9]{64}\.json$`).MatchString(input.Key) || !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(input.Hash) || !regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`).MatchString(input.Version) || input.Bytes < 1 || input.Bytes > 16384 {
+	if !regexp.MustCompile(`^organizations/[a-f0-9-]{36}/projects/[a-f0-9-]{36}/(?:runs|campaigns)/[a-f0-9-]{36}/[a-f0-9]{64}\.json$`).MatchString(input.Key) || !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(input.Hash) || !regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`).MatchString(input.Version) || input.Bytes < 1 || input.Bytes > 16384 {
 		return fmt.Errorf("INVALID_FIXTURE")
 	}
 	app, err := minio.New("stack-object-store:9000", &minio.Options{Creds: credentials.NewStaticV4(secret("stack-minio-user"), secret("stack-minio-password"), ""), Secure: false, Region: "us-east-1"})

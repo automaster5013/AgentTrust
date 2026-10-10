@@ -46,6 +46,7 @@ agenttrust:
   demo-credentials-file: ${STACK_DEMO_CREDENTIALS_FILE}
   identity-mode: ${STACK_IDENTITY_MODE:local-demo}
   object-mode: ${STACK_OBJECT_MODE:disabled}
+  gate-signing-mode: ${STACK_GATE_SIGNING_MODE:disabled}
 logging:
   level:
     org.springframework.security: WARN

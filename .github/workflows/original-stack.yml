@@ -50,11 +50,13 @@ jobs:
           python3 scripts/stack-gateway-setup.py
           python3 scripts/stack-object-setup.py
           python3 scripts/stack-observability-setup.py
+          docker build --target gate-keys -t agenttrust-gate-key-tool:local services/core-api
+          python3 scripts/stack-gate-signing-setup.py
       - name: Build Java 21, Python and TypeScript with their tests
-        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml build stack-core-api stack-ai-worker stack-console stack-opa stack-identity stack-gateway stack-object-store stack-db stack-nats
+        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml build stack-core-api stack-ai-worker stack-console stack-opa stack-identity stack-gateway stack-object-store stack-db stack-nats
       - name: Verify real authenticated evaluation and review flow
         run: |
-          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console stack-otel stack-tempo stack-loki stack-prometheus stack-grafana
+          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console stack-otel stack-tempo stack-loki stack-prometheus stack-grafana
           python3 scripts/stack-identity-profile.py
           python3 scripts/stack-identity-smoke.py
           python3 scripts/stack-http-smoke.py
@@ -74,6 +76,11 @@ jobs:
           python3 scripts/stack-campaign-smoke.py
           python3 scripts/stack-campaign-recovery.py
           python3 scripts/stack-campaign-recovery.py --deadline
+      - name: Verify frozen campaign evidence and offline byte chains
+        run: |
+          python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-campaign-evidence-test.py
+          python3 scripts/stack-campaign-archive-smoke.py
       - name: Verify scoped pgvector neighbors and database recovery
         run: python3 scripts/stack-vector-smoke.py
       - name: Verify locked versioned evidence and storage recovery
@@ -87,6 +94,10 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: apps/console/package-lock.json
+      - name: Verify signed historical campaign observations
+        run: |
+          python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-campaign-receipt-smoke.py
       - name: Audit fixed verifier dependency installation
         working-directory: tools/promptfoo
         run: npm audit --omit=optional --audit-level=high
@@ -98,8 +109,8 @@ jobs:
           npx playwright test
       - name: Verify persisted results after service restart
         run: |
-          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml restart stack-core-api stack-ai-worker stack-console
-          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console stack-otel stack-tempo stack-loki stack-prometheus stack-grafana
+          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml restart stack-core-api stack-ai-worker stack-console
+          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console stack-otel stack-tempo stack-loki stack-prometheus stack-grafana
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
       - name: Verify actual Redis quotas and recovery
         run: |
@@ -131,6 +142,8 @@ jobs:
             .local/stack-campaign-smoke-*.json
             .local/stack-campaign-recovery-*.json
             .local/stack-campaign-model-*.json
+            .local/stack-campaign-archive-*/summary.json
+            .local/stack-campaign-receipt-*/summary.json
             .local/stack-observability-smoke-*.json
             .local/stack-database-init-smoke-*.json
             .local/stack-provider-smoke-*.json
@@ -140,7 +153,7 @@ jobs:
           retention-days: 7
       - name: Stop isolated runner services
         if: always()
-        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.providers.yaml down
+        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml -f compose.stack.providers.yaml down
   images:
     needs: integration
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -184,6 +197,7 @@ jobs:
           python3 scripts/stack-gateway-setup.py
           python3 scripts/stack-object-setup.py
           python3 scripts/stack-observability-setup.py
+          python3 scripts/stack-gate-signing-setup.py --image "$(cat stack-delivery/core-api.txt)"
           echo "STACK_CORE_IMAGE=$(cat stack-delivery/core-api.txt)" >> "$GITHUB_ENV"
           echo "STACK_WORKER_IMAGE=$(cat stack-delivery/ai-worker.txt)" >> "$GITHUB_ENV"
           echo "STACK_CONSOLE_IMAGE=$(cat stack-delivery/console.txt)" >> "$GITHUB_ENV"
@@ -193,15 +207,22 @@ jobs:
           echo "STACK_OBJECT_IMAGE=$(cat stack-delivery/object-store.txt)" >> "$GITHUB_ENV"
           echo "STACK_MODEL_IMAGE=$(cat stack-delivery/local-model.txt)" >> "$GITHUB_ENV"
           echo "STACK_MESSAGING_IMAGE=$(cat stack-delivery/messaging.txt)" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
       - name: Execute exact registry images without rebuilding
         run: |
-          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.image.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console stack-otel stack-tempo stack-loki stack-prometheus stack-grafana
+          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml -f compose.stack.image.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console stack-otel stack-tempo stack-loki stack-prometheus stack-grafana
           python3 scripts/stack-identity-profile.py
           python3 scripts/stack-identity-smoke.py
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
           python3 scripts/stack-database-smoke.py
           python3 scripts/stack-database-init-smoke.py
           python3 scripts/stack-campaign-smoke.py
+          python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-campaign-evidence-test.py
+          python3 scripts/stack-campaign-archive-smoke.py
+          python3 scripts/stack-campaign-receipt-smoke.py
           python3 scripts/stack-object-smoke.py
           python3 scripts/stack-vector-smoke.py
           python3 scripts/stack-gateway-smoke.py
@@ -225,6 +246,8 @@ jobs:
             .local/stack-campaign-smoke-*.json
             .local/stack-campaign-recovery-*.json
             .local/stack-campaign-model-*.json
+            .local/stack-campaign-archive-*/summary.json
+            .local/stack-campaign-receipt-*/summary.json
             .local/stack-object-smoke-*.json
             .local/stack-vector-smoke-*.json
             .local/stack-database-init-smoke-*.json
@@ -244,7 +267,7 @@ jobs:
         run: docker logout ghcr.io
       - name: Stop isolated registry-image services
         if: always()
-        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.image.yaml -f compose.stack.providers.yaml down
+        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml -f compose.stack.image.yaml -f compose.stack.providers.yaml down
   security-images:
     needs: images
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

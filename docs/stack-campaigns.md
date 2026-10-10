@@ -44,6 +44,8 @@ Next.js/TypeScript → WebFlux의 인증·CSRF·Redis 한도 → Java 21/Spring 
 python scripts/stack-campaign-smoke.py
 python scripts/stack-campaign-recovery.py
 python scripts/stack-campaign-recovery.py --deadline
+python scripts/stack-campaign-evidence-test.py
+python scripts/stack-campaign-archive-smoke.py
 # 공급자 프로필이 준비된 경우 실제 로컬 모델 4회 실행
 python scripts/stack-campaign-model-smoke.py
 npm --prefix apps/console test
@@ -52,4 +54,19 @@ npm --prefix apps/console run typecheck
 
 검증은 새 스택의 합성 업무 데이터를 만들며 자체 세션만 종료한다. 복구 검증은 새 `stack-ai-worker`만 일시 정지·복구한다. 기존 API·DB와 LogiTrack은 수정하지 않는다. 비밀·모델 원문·브라우저 화면·쿠키를 결과 JSON에 기록하지 않는다.
 
-MinIO에는 기존 계약으로 각 자식 실행의 정확한 평가 근거 바이트를 보관한다. 캠페인 부모와 버전은 PostgreSQL에 결합되어 있다. 캠페인 전체의 버전 결합을 포함하는 오프라인 보관본·사업 게이트 서명·운영 보존 정책은 아직 구현하지 않았다. 실제 고객 데이터, 유료 OpenAI 호출, 운영 클러스터 배포 검증을 했다고 주장하지 않는다.
+MinIO에는 각 자식 실행의 기존 schema 1 보관본과 부모의 schema 2 보관본을 함께 저장한다. 부모는 실제 에이전트·데이터셋 내용과 두 SHA-256, 각 자식의 정확한 보관 해시·바이트 수·저장 버전을 결합한다. 부모도 같은 7일 COMPLIANCE 잠금을 적용하며 다른 버전의 shadow가 생겨도 고정된 원본을 읽는다. 부모는 평가 완료 뒤 고정되고 현재 승인·반려를 포함하지 않는다. 승인 변경은 보관 해시를 바꾸지 않는다. 화면의 **캠페인 보관 근거 확인**은 부모와 모든 자식의 바이트 해시를 브라우저에서 계산한다.
+
+`GET /api/campaigns/{id}/evidence`가 제공하는 증거는 배포 권한을 만들지 않는다. 저장소 장애 중에는 검증된 보관본을 반환하지 않는다. `scripts/stack_campaign_evidence.py --bundle <inputs 폴더> --organization <조직 UUID> --project <프로젝트 UUID> --campaign <캠페인 UUID> --expected-parent-sha256 <별도로 확인한 부모 SHA-256>`은 네트워크 없이 부모·자식 보관본을 검사한다. 합성 통합 검증의 비공개 inputs 폴더에 번들이 생성된다. 이 단계의 SHA-256 확인은 디지털 서명이나 현재 릴리스 허용을 증명하지 않는다. CLI는 `signatureVerified: false`, `currentDeploymentAuthority: false`를 명시한다. 운영 게이트의 신뢰키 수명주기·보존 정책은 후속 작업이다. 실제 고객 데이터, 유료 OpenAI 호출, 운영 클러스터 배포 검증을 했다고 주장하지 않는다.
+
+
+## 서명된 과거 판정과 현재 권한의 분리
+
+선택 사항인 `compose.stack.signing.yaml`은 **개발용 Ed25519 서명 기록**을 활성화한다. 기본 설정은 비활성화다. MinIO 보관 구성이 먼저 필요하다. `docker build --target gate-keys -t agenttrust-gate-key-tool:local services/core-api`와 `python scripts/stack-gate-signing-setup.py`가 전용 비공개 폴더에 한 키를 준비한다. 기존 키를 덮어쓰지 않고, 비밀키를 환경 변수·로그·Git·CI artifact로 내보내지 않는다. 준비 표식이 있으면 스택 전용 스크립트가 서명 overlay를 사용한다. 직접 Compose를 실행할 때는 이 overlay를 명시해야 한다.
+
+인증된 `GET /api/gate-trust`는 공개키·키 ID·개발용 신뢰 영역만 반환한다. 관리자는 완료되고 보관된 캠페인에 `POST /api/campaigns/{id}/receipts`, 메모 200자 이하, `Idempotency-Key`로 기록을 만든다. 서버가 당시 OPA 판정·최신 검토의 정책 버전/해시·평가 버전/내용 해시·정확한 부모/자식 보관 버전을 결합한 UTF-8 바이트에 서명한다. 정책 또는 보관 서비스가 없으면 새 기록을 만들지 않는다. 같은 키·같은 메모는 **당시 기록**을 그대로 반환하며, 새로운 현재 판정을 기록하려면 새 키를 사용해야 한다. 프로젝트당 최대 200개이며 조회·삽입만 허용하는 RLS 테이블에 저장한다.
+
+조회자는 같은 프로젝트의 목록과 개별 기록을 읽을 수 있다. 화면은 Web Crypto로 실제 서명을 검증하고 **서명된 과거 판정**을 현재 게이트와 구분한다. 현재 반려 이후에도 과거 승인 기록의 서명은 유효할 수 있다. 이는 과거 바이트의 출처·무변조를 증명하는 개발용 증거이며 현재 허용을 뜻하지 않는다. 모든 기록과 검증 결과의 `currentDeploymentAuthority`는 `false`다. 실제 배포는 실행하지 않는다.
+
+`python scripts/stack-campaign-receipt-smoke.py`는 합성 번들을 비공개 `.local/stack-campaign-receipt-*/inputs`에 저장한다. `node --experimental-strip-types scripts/stack-verify-campaign-receipt.ts --bundle <inputs> --trusted-public-key <별도로 신뢰한 public-key.pem> --organization <UUID> --project <UUID> --campaign <UUID>`는 네트워크 없이 서명과 부모 보관 해시·버전 결합을 검증한다. 번들에 포함된 키를 자동 신뢰하지 않는다. 부모/자식 **실제 보관 바이트 전체**는 위 Python 검증기를 함께 실행해야 한다. Node 결과는 이 차이를 `childBytesVerified: false`로 명시한다. 브라우저의 키 출처는 인증된 서버이며 독립된 외부 신뢰 체계는 아니다.
+
+이는 개발용 단일 키와 과거 판정 관찰 기록이다. 운영 KMS/HSM, 키 교체·폐기/유효 기간, 서명된 **현재 배포 토큰**, 회귀 기준 강제와 실제 배포자의 권한 검사는 아직 구현하지 않았다. 키가 달라지면 기존 기록의 서버 검증은 실패하며 자동으로 새 키를 신뢰하지 않는다. 기존 JavaScript 서명 기록의 이전도 완료했다고 표시하지 않는다.

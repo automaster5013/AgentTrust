@@ -1,0 +1,10 @@
+services:
+  stack-core-api:
+    environment:
+      STACK_GATE_SIGNING_MODE: local-development
+    secrets:
+      - source: stack-gate-key-pair
+        target: stack-gate-key-pair
+secrets:
+  stack-gate-key-pair:
+    file: .local/stack/gate-keys/key-pair.json
