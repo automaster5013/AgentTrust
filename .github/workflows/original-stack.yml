@@ -46,11 +46,18 @@ jobs:
         run: python3 scripts/stack-vector-smoke.py
       - name: Verify locked versioned evidence and storage recovery
         run: python3 scripts/stack-object-smoke.py
+      - name: Verify evaluator with real Promptfoo
+        run: |
+          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.evaluation.yaml build stack-promptfoo
+          python3 scripts/stack-promptfoo-smoke.py
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: apps/console/package-lock.json
+      - name: Audit fixed verifier dependency installation
+        working-directory: tools/promptfoo
+        run: npm audit --omit=optional --audit-level=high
       - name: Verify real browser evaluation and approval controls
         working-directory: apps/console
         run: |
@@ -64,6 +71,17 @@ jobs:
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
       - name: Verify actual Redis quotas and recovery
         run: python3 scripts/stack-gateway-smoke.py
+      - name: Preserve safe synthetic fault diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: original-stack-diagnostics-${{ github.sha }}
+          path: |
+            .local/stack-vector-smoke-*.json
+            .local/stack-object-smoke-*.json
+            .local/stack-promptfoo-smoke-*.json
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Stop isolated runner services
         if: always()
         run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml down

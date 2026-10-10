@@ -1,0 +1,16 @@
+{
+  "name": "agenttrust-evaluator-promptfoo",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "dependencies": {
+    "promptfoo": "0.124.1"
+  },
+  "scripts": {
+    "test": "node --test provider.test.mjs",
+    "evaluate": "node evaluate.mjs"
+  },
+  "overrides": {
+    "basic-ftp": "6.2.3"
+  }
+}

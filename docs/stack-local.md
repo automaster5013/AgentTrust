@@ -90,3 +90,17 @@ python scripts/stack-vector-smoke.py
 규칙 특징 검색은 학습된 AI 임베딩이나 의미 검색이 아니다. 특징 해싱 충돌이 가능하며 점수는 규칙 검토를 돕는 탐색 값이다. 근거 유사도는 필수 실패·현재 승인·OPA 게이트를 대체하지 않는다. 현재는 작은 합성 데이터의 정확 검색이며 ANN 인덱스·대규모 성능·검색 품질 평가·기업 조직 동적 색인은 미완료다. 내부 HTTP는 본문 포함 2초, DB 쿼리는 각 3초, 연결 대기는 3초로 제한한다. DB 재시작 직후 공급자 세션 로그아웃은 제한된 재시도로 복구를 확인한다.
 
 [공식 pgvector 소스와 거리 연산](https://github.com/pgvector/pgvector/tree/f37c13f68b57d2c3472b2214fbcff699d6d34876)을 따른다.
+
+
+## Promptfoo로 Python 평가 계약 확인
+
+```powershell
+docker compose --env-file .local/stack/stack.env -f compose.stack.yaml -f compose.stack.evaluation.yaml build stack-promptfoo
+python scripts/stack-promptfoo-smoke.py
+```
+
+Promptfoo는 검증 전용 프로필이며 완료 후 자체 컨테이너를 제거한다. 네 고정 합성 시나리오를 인증된 내부 Python 주소에 한 번씩 요청하고, 8개 단언으로 JSON·엔진·필수 규칙·판정 상태를 독립 확인한다. 공급자 URL과 임의 시나리오는 입력으로 받지 않는다. 요청 기한은 5초, 응답은 8KiB이며 응답의 실행·조직·프로젝트 범위가 일치해야 한다. 로그에는 비밀과 원본 인증 파일을 남기지 않는다. Promptfoo의 텔레메트리·업데이트·공유·캐시·결과 영속화를 비활성화하고 egress 없는 내부 네트워크에서 실행한다.
+
+선택 SDK를 제외한 고정 lockfile로 설치하며 `basic-ftp` 6.2.3 override를 포함한다. `tools/promptfoo`에서 `npm audit --omit=optional --audit-level=high`로 사용 설치 범위를 다시 감사한다. 이는 현재 감사 결과이며 모든 보안 검사 완료를 뜻하지 않는다. 외부 LLM 품질 평가·적대적 입력 캠페인과 Promptfoo 웹 서비스는 별도 범위다.
+
+[Promptfoo 공식 JavaScript 공급자](https://www.promptfoo.dev/docs/providers/custom-api/)와 [Node API](https://www.promptfoo.dev/docs/usage/node-api-reference/)를 따른다.
