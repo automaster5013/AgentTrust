@@ -49,8 +49,8 @@ test('viewer follows a scoped pgvector neighbor without retaining old evidence',
 });
 
 if(process.env.STACK_E2E_LOCAL_MODEL==='true')test('local model provider evidence survives browser approval and archive verification',async({page})=>{
- await login(page,'demo-admin');await page.getByLabel('실행 공급자',{exact:true}).selectOption('ollama');await page.getByRole('button',{name:'평가 실행',exact:true}).click();
- await expect(page.getByRole('heading',{name:'관리자 검토',exact:true})).toBeVisible({timeout:40000});await expect(page.getByText('실행 공급자 ollama · 실행 엔진 python-ollama',{exact:true})).toBeVisible();
+ test.setTimeout(120000);await login(page,'demo-admin');await page.getByLabel('실행 공급자',{exact:true}).selectOption('ollama');await page.getByRole('button',{name:'평가 실행',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'관리자 검토',exact:true})).toBeVisible({timeout:90000});await expect(page.getByText('실행 공급자 ollama · 실행 엔진 python-ollama',{exact:true})).toBeVisible();
  await expect(page.getByText('릴리스 허용 안 됨',{exact:true})).toBeVisible();await page.getByLabel('검토 사유',{exact:true}).fill('Actual local model browser review');await page.getByRole('button',{name:'검토 저장·게이트 확인',exact:true}).click();await expect(page.getByText('합성 릴리스 허용',{exact:true})).toBeVisible();
  const selected=await page.locator('.evidence > .mono').textContent();const id=selected!.replace('실행 ','');let digest='';
  await expect.poll(async()=>{const response=await page.request.get('/backend/runs/'+id+'/evidence');if(response.status()===200){digest=(await response.json()).contentSha256;return true}expect(response.status()).toBe(409);return false},{timeout:30000}).toBe(true);

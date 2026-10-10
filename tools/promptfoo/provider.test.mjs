@@ -6,6 +6,7 @@ test('only the fixed scoped worker endpoint is called; secrets are excluded from
  const value=await callWorker('pass',scope,token,async(url,options)=>{assert.equal(url,'http://stack-ai-worker:8000/evaluate');assert.equal(options.redirect,'error');assert.equal(options.headers['X-AgentTrust-Worker-Token'],token);const body=JSON.parse(options.body);return new Response(JSON.stringify({...body,result:{decision:'pass'}}))});assert.deepEqual(JSON.parse(value.output),{decision:'pass'});assert.ok(!JSON.stringify(value).includes(token));
 });
 test('scope mismatch oversized output and unknown scenarios fail closed',async()=>{
+ for(const provider of ['ollama','openai','openai-compatible',null])assert.ok((await callWorker('pass',scope,token,async(url,options)=>new Response(JSON.stringify({...JSON.parse(options.body),provider,result:{decision:'pass'}})))).error);
  const foreign=await callWorker('pass',scope,token,async(url,options)=>new Response(JSON.stringify({...JSON.parse(options.body),organizationId:'33333333-3333-4333-8333-333333333333',result:{decision:'pass'}})));assert.ok(foreign.error);
  assert.ok((await callWorker('pass',scope,token,async()=>new Response('x'.repeat(8193)))).error);
  let called=false;assert.ok((await callWorker('http://outside.invalid',scope,token,async()=>{called=true})).error);assert.equal(called,false);

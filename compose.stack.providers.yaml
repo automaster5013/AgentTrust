@@ -13,7 +13,7 @@ services:
     mem_limit: 32m
     pids_limit: 16
   stack-provider-bootstrap:
-    image: ollama/ollama:0.40.2@sha256:b86366bb528bbf7f1424435d165028497a5b69bf6ddb4fa5a87102e2b79f44fb
+    image: ${STACK_MODEL_IMAGE:-agenttrust-local-model:local}
     user: '10001:10001'
     entrypoint: [bash, -ec]
     command:
@@ -43,7 +43,7 @@ services:
     cpus: 1
     pids_limit: 64
   stack-ollama:
-    image: ollama/ollama:0.40.2@sha256:b86366bb528bbf7f1424435d165028497a5b69bf6ddb4fa5a87102e2b79f44fb
+    image: ${STACK_MODEL_IMAGE:-agenttrust-local-model:local}
     user: '10001:10001'
     environment:
       OLLAMA_MODELS: /models

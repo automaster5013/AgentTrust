@@ -21,7 +21,7 @@ Gitleaks는 redaction을 적용한다. `gitleaks.ignore`는 사람이 소스와 
 python scripts/stack-security-images.py
 ```
 
-여덟 애플리케이션 이미지의 정확한 실행 ID를 archive로 내보내 Syft CycloneDX SBOM과 Trivy HIGH/CRITICAL 결과를 생성한다. 모든 registry 환경 변수가 제공되면 `ghcr.io/...@sha256:...` 형식만 허용한다. Docker socket을 scanner에 전달하지 않는다. 취약점 DB 다운로드에는 공개 네트워크를 사용하며 검사 전용 디스크 캐시를 이용한다. `ignore-unfixed`나 취약점 예외를 적용하지 않는다. 오류로 보고서를 만들지 못한 경우도 실패다.
+로컬 CPU 모델을 포함한 아홉 전달 이미지의 정확한 실행 ID를 archive로 내보내 Syft CycloneDX SBOM과 Trivy HIGH/CRITICAL 결과를 생성한다. 모든 registry 환경 변수가 제공되면 `ghcr.io/...@sha256:...` 형식만 허용한다. Docker socket을 scanner에 전달하지 않는다. 취약점 DB 다운로드에는 공개 네트워크를 사용하며 검사 전용 디스크 캐시를 이용한다. `ignore-unfixed`나 취약점 예외를 적용하지 않는다. 오류로 보고서를 만들지 못한 경우도 실패다.
 
 최초 실제 여덟 이미지 검사에서 HIGH/CRITICAL 183건을 확인하여 원래 스택 전환의 배포 준비를 차단했다. 취약점 예외 없이 Spring Boot 4.1.1/Jackson 3.1.7, Python Alpine 기반, 고정 Go 1.27.2와 OPA/MinIO 의존성 갱신, 사용하지 않는 런타임 도구 제거로 수정했다. 기존 마이그레이션·업무 데이터는 수정하지 않았다. Java 18개·Gateway 11개·Python 6개·TypeScript 11개 계약, 인증/DB/벡터/객체 장애 복구, 비루트 새 PostgreSQL 초기화, 서비스 재시작 후 BFF 흐름을 다시 검증했다. 스캔의 최종 여덟 이미지 통과는 최종 보고서에서 별도로 확인한다.
 

@@ -4,7 +4,7 @@ root=pathlib.Path(__file__).resolve().parent.parent
 assert os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('GITHUB_REPOSITORY')=='automaster5013/AgentTrust' and os.environ.get('GITHUB_REF')=='refs/heads/main'
 sha=os.environ['GITHUB_SHA'];assert re.fullmatch('[a-f0-9]{40}',sha)
 reports=list((root/'.local').glob('stack-security-images-*/summary.json'));matches=[(path,json.loads(path.read_text(encoding='utf-8'))) for path in reports if json.loads(path.read_text(encoding='utf-8')).get('revision')==sha and json.loads(path.read_text(encoding='utf-8')).get('completed')]
-assert len(matches)==1;path,scans=matches[0];assert scans['registryImageReferences'] and len(scans['images'])==8 and all(row['highCriticalFindings']==0 for row in scans['images'].values())
+assert len(matches)==1;path,scans=matches[0];assert scans['registryImageReferences'] and len(scans['images'])==9 and all(row['highCriticalFindings']==0 for row in scans['images'].values())
 source=path.parent/'reports';delivery=root/'stack-delivery';destination=root/'stack-security-delivery';destination.mkdir()
 identity='https://github.com/automaster5013/AgentTrust/.github/workflows/original-stack.yml@refs/heads/main'
 issuer='https://token.actions.githubusercontent.com'
@@ -13,7 +13,10 @@ proof={'completed':False,'revision':sha,'keylessIdentity':identity,'oidcIssuer':
 def cosign(args):
  assert os.name!='nt' and os.getuid()>0
  command=['docker','run','--rm','--user',str(os.getuid())+':'+str(os.getgid()),'--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--tmpfs','/tmp:size=128m,mode=1777','--memory','512m','--pids-limit','128','-e','HOME=/tmp','-e','DOCKER_CONFIG=/credentials','-e','ACTIONS_ID_TOKEN_REQUEST_URL','-e','ACTIONS_ID_TOKEN_REQUEST_TOKEN','-e','GITHUB_ACTIONS=true','--mount','type=bind,source='+str(root/'.local/stack-signing-credentials')+',target=/credentials,readonly','--mount','type=bind,source='+str(source)+',target=/reports,readonly','--mount','type=bind,source='+str(destination)+',target=/proof','agenttrust-security:local','cosign']+args
- return subprocess.run(command,cwd=root,capture_output=True,text=True,encoding='utf-8',errors='replace',check=True,timeout=120).stdout
+ result=subprocess.run(command,cwd=root,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=120)
+ if result.returncode:
+  print(json.dumps({'completed':False,'operation':args[0],'exitCode':result.returncode,'rawSecretsPrinted':False}),flush=True);raise RuntimeError('COSIGN_OPERATION_FAILED')
+ return result.stdout
 for name,row in scans['images'].items():
  reference=(delivery/(name+'.txt')).read_text().strip();assert reference==row['reference'] and re.fullmatch(r'ghcr\.io/automaster5013/agenttrust-'+name+r'@sha256:[a-f0-9]{64}',reference)
  digest=reference.split('@sha256:')[1];sbom=source/(name+'.cdx.json');assert hashlib.sha256(sbom.read_bytes()).hexdigest()==row['sbomSha256']

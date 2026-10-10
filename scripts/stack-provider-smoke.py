@@ -9,7 +9,7 @@ report={'completed':False,'checks':[],'startedAt':datetime.datetime.now(datetime
 command=stack_compose(root);worker_stopped=False;stage='login'
 def compose(*args):subprocess.run(command+list(args),cwd=root,capture_output=True,check=True,timeout=180)
 def wait(client,record):
- deadline=time.monotonic()+40
+ deadline=time.monotonic()+90
  while record['state']=='queued' and time.monotonic()<deadline:time.sleep(.25);record=client.request('runs/'+record['id'])
  assert record['state']!='queued';return record
 def create(client,provider,scenario='pass',key=None):return client.request('runs','POST',{'scenario':scenario,'provider':provider,'requiresApproval':True},{'Idempotency-Key':key or str(uuid.uuid4())})

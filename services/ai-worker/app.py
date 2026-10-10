@@ -1,4 +1,4 @@
-"""Bounded synthetic evaluator. No provider calls, code execution, or caller-selected URLs."""
+"""Bounded synthetic and reserved fixed-provider evaluator. No code execution or caller-selected URLs."""
 import hmac
 import asyncio
 import contextlib
@@ -33,6 +33,17 @@ def scoped_job(raw: bytes):
     return body
 
 
+async def maintain_delivery(message):
+    """Keep the existing delivery alive during bounded cold model loading; never acknowledge it early."""
+    while True:
+        await asyncio.sleep(5)
+        try:
+            async with asyncio.timeout(2):
+                await message.in_progress()
+        except Exception:
+            return
+
+
 async def consume(connection, subscription):
     async with httpx.AsyncClient(timeout=5, follow_redirects=False, trust_env=False) as client:
         token = pathlib.Path('/run/secrets/stack-worker-token').read_text(encoding='utf-8')
@@ -62,7 +73,15 @@ async def consume(connection, subscription):
                         accepted=reservation.status_code==200 and reservation.json().get('allowed') is True and reservation.json().get('runId')==body.runId and reservation.json().get('reservedInputTokens')==256 and reservation.json().get('reservedOutputTokens')==128
                         if accepted:
                             evaluation_event()
-                            result=await evaluate_provider(body.provider,body.scenario,client)
+                            async with asyncio.timeout(2):
+                                await message.in_progress()
+                            heartbeat=asyncio.create_task(maintain_delivery(message))
+                            try:
+                                result=await evaluate_provider(body.provider,body.scenario,client)
+                            finally:
+                                heartbeat.cancel()
+                                with contextlib.suppress(asyncio.CancelledError):
+                                    await heartbeat
                         else:result=unavailable(body.provider)
                     payload = {**body.model_dump(), 'result': result}
                     response = await client.post('http://stack-core-api:8080/internal/completions', json=payload, headers={'X-AgentTrust-Worker-Token': token})

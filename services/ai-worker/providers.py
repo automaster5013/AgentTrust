@@ -7,6 +7,8 @@ MODEL_DIGEST='sha256:6f76d4346c34ba89df6e137fb661b4bb4daf322c1151b6ef0dfda981070
 SOURCE_MANIFEST_DIGEST='sha256:7df6b6e09427a769808717c0a93cadc4ae99ed4eb8bf5ca557c90846becea435'
 PROMPTS={'pass':'Return only this JSON object: {"answer":"READY"}. /no_think','block':'Return only this JSON object: {"answer":"DENIED"}. /no_think','missing_evidence':'Return only an empty JSON object: {}. /no_think'}
 MAX_OUTPUT_TOKENS=128
+LOCAL_PROVIDER_TIMEOUT=60
+PAID_PROVIDER_TIMEOUT=20
 def strict_json(raw):
  def pairs(items):
   value={}
@@ -17,7 +19,7 @@ def strict_json(raw):
  return json.loads(raw,object_pairs_hook=pairs,parse_constant=lambda _:(_ for _ in ()).throw(ValueError('Non-finite JSON')))
 
 async def bounded_json(client,url,body=None,headers=None):
- async with client.stream('POST' if body is not None else 'GET',url,json=body,headers=headers,timeout=httpx.Timeout(20,connect=2,write=2,pool=2)) as response:
+ async with client.stream('POST' if body is not None else 'GET',url,json=body,headers=headers,timeout=httpx.Timeout(LOCAL_PROVIDER_TIMEOUT if url.startswith('http://stack-ollama:11434/') else PAID_PROVIDER_TIMEOUT,connect=2,write=2,pool=2)) as response:
   if response.status_code!=200 or response.headers.get('content-type','').split(';')[0]!='application/json':raise ValueError('Provider unavailable')
   raw=b''
   async for chunk in response.aiter_bytes():
@@ -77,5 +79,5 @@ def unavailable(provider):
 
 async def evaluate_provider(provider,scenario,client):
  try:
-  async with asyncio.timeout(20):return await generate(provider,scenario,client)
+  async with asyncio.timeout(LOCAL_PROVIDER_TIMEOUT if provider in ['ollama','openai-compatible'] else PAID_PROVIDER_TIMEOUT):return await generate(provider,scenario,client)
  except Exception:return unavailable(provider)

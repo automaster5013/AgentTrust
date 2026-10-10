@@ -1,6 +1,18 @@
 import asyncio,json
 import httpx,pytest
 from providers import evaluate_provider,strict_json,MODEL,MODEL_DIGEST,SOURCE_MANIFEST_DIGEST,MAX_OUTPUT_TOKENS
+from providers import LOCAL_PROVIDER_TIMEOUT,PAID_PROVIDER_TIMEOUT
+
+def test_paid_request_never_inherits_local_cold_start_budget(monkeypatch):
+ monkeypatch.setenv('STACK_ENABLE_PAID_PROVIDERS','true');monkeypatch.setenv('STACK_OPENAI_MODEL','fixture-model')
+ monkeypatch.setattr('pathlib.Path.read_text',lambda *args,**kwargs:'never-issued-contract-key-123456')
+ budgets=[]
+ def handler(request):
+  budgets.append(request.extensions['timeout']);return httpx.Response(503,json={'unavailable':True})
+ assert execute('ollama','pass',handler)['decision']=='inconclusive'
+ assert execute('openai','pass',handler)['decision']=='inconclusive'
+ assert budgets[0]['read']==LOCAL_PROVIDER_TIMEOUT==60 and budgets[1]['read']==PAID_PROVIDER_TIMEOUT==20
+ assert all(row['connect']==2 and row['write']==2 and row['pool']==2 for row in budgets)
 
 def execute(provider,scenario,handler):
  async def run():

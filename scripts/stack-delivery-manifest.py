@@ -2,7 +2,7 @@
 import hashlib,json,pathlib,re
 directory=pathlib.Path('stack-delivery')
 revision=(directory/'revision.txt').read_text().strip();assert re.fullmatch('[a-f0-9]{40}',revision)
-images={name:(directory/(name+'.txt')).read_text().strip() for name in ['core-api','ai-worker','console','opa','identity','gateway','object-store','database']}
+images={name:(directory/(name+'.txt')).read_text().strip() for name in ['core-api','ai-worker','console','opa','identity','gateway','object-store','database','local-model']}
 for name,image in images.items():assert re.fullmatch(r'ghcr\.io/[a-z0-9-]+/agenttrust-'+name+r'@sha256:[a-f0-9]{64}',image)
 identity=json.loads((directory/'runtime-identity.json').read_text());assert identity['revision']==revision and identity['images']==images and identity['runtimeImageIdentityVerified'] is True
 assert identity['identityProvider']=='keycloak'
