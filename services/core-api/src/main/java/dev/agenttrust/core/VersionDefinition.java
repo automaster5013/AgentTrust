@@ -17,7 +17,7 @@ public final class VersionDefinition {
     static String agent(ObjectMapper mapper,String provider,String description) {
         if(provider==null||!List.of("synthetic","ollama","openai-compatible").contains(provider)||description==null||description.length()>300)
             throw new IllegalArgumentException("Invalid agent definition");
-        return json(mapper,Map.of("contract",CONTRACT,"provider",provider,"description",description));
+        var profile=ExecutionProfiles.profile(mapper,provider);return json(mapper,Map.of("contract","fixed-scenarios-v2","provider",provider,"description",description,"executionProfile",profile.get("definition"),"executionProfileSha256",profile.get("contentSha256")));
     }
     static String dataset(ObjectMapper mapper,List<Case> cases) {
         if(cases==null||cases.isEmpty()||cases.size()>8)throw new IllegalArgumentException("Invalid case count");

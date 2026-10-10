@@ -10,7 +10,7 @@ Next.js/TypeScript → WebFlux의 인증·CSRF·Redis 한도 → Java 21/Spring 
 
 ## 버전 계약
 
-`POST /api/versions/agents`는 `key`, 정수 `version`, `provider`, `description`을 받는다. 공급자는 `synthetic`, `ollama`, `openai-compatible`이다. 설명은 300자 이하다. 이 버전은 고정 시나리오 실행 공급자와 설명을 고정한다. 임의 URL·코드·프롬프트 또는 외부 공급자 설정을 저장하는 범용 에이전트 정의는 아니다. 실제 로컬 모델과 호출 한도는 기존 운영자 공급자 프로필을 사용한다.
+`POST /api/versions/agents`는 `key`, 정수 `version`, `provider`, `description`을 받는다. 공급자는 `synthetic`, `ollama`, `openai-compatible`이다. 설명은 300자 이하다. 새 에이전트 v2 계약은 공급자·설명과 서버가 준비한 실행 프로필도 고정한다. 임의 URL·코드·프롬프트 또는 외부 공급자 설정을 저장하는 범용 에이전트 정의는 아니다. 프로필에는 모델 이름·원본/포장 manifest digest·고정 prompt 집합 해시·256/128 token 예약·60초 로컬 호출/120초 처리 기한·1회 시도·평가기/검증기 소스 해시가 포함된다. 소스 해시는 운영체제 줄바꿈을 LF로 정규화한다. 합성 프로필은 모델 관련 항목 없이 평가기와 실행 제약을 결합한다. 프로필 내용의 SHA-256을 별도로 계산하며 에이전트 전체 내용 해시에도 포함한다. 이전 v1 계약은 그대로 읽고 실행하며 프로필을 자동 추가하지 않는다.
 
 `POST /api/versions/datasets`는 `key`, 정수 `version`, `cases`를 받는다. 사례는 `id`, `scenario`, 실제 Boolean `required`를 갖는다. 시나리오는 `pass`, `block`, `missing_evidence`, `error`만 허용한다. 사례 ID가 중복되면 거부하고, 적어도 하나가 필수여야 한다. 사례 순서는 내용 해시에 포함된다.
 
@@ -22,7 +22,7 @@ Next.js/TypeScript → WebFlux의 인증·CSRF·Redis 한도 → Java 21/Spring 
 
 `POST /api/campaigns`는 `agentVersionId`, `datasetVersionId`, Boolean `requiresApproval` 및 8~100자의 `Idempotency-Key`를 받는다. 부모와 모든 사례 실행은 한 트랜잭션에서 저장된다. 같은 키·같은 요청은 같은 캠페인을 반환하고, 키를 다른 요청에 재사용하면 `409`다.
 
-부모는 두 버전 UUID와 내용 해시를 보관한다. 워커 메시지·예약·완료에는 캠페인 UUID, 사례 ID, 에이전트 버전 UUID, 데이터셋 버전 UUID를 모두 결합한다. 누락·부분 결합·치환된 완료는 결과를 저장하지 않는다. 기존 단일 평가 메시지는 별도 계약으로 계속 처리한다.
+부모는 두 버전 UUID와 내용 해시를 보관한다. 워커 메시지·예약·완료에는 캠페인 UUID, 사례 ID, 에이전트 버전 UUID, 데이터셋 버전 UUID와 새 v2 에이전트의 실행 프로필 SHA-256을 결합한다. 누락·부분 결합·치환된 완료는 결과를 저장하지 않는다. Python은 설치된 소스·모델·prompt·한도로 실제 프로필을 독립 계산한다. 버전의 프로필과 다르면 모델 예약이나 호출 전에 실패·판정 보류로 끝낸다. Java는 완료와 예약의 프로필 치환·누락도 거부한다. 기존 단일 평가 메시지와 v1 캠페인은 원래의 비결합 계약으로 계속 처리한다.
 
 캠페인 사례는 기존 2분의 DB 시각 기준 처리 기한과 영속 재전달을 사용한다. 로컬 호출은 사례마다 1회 예약·시간 제한을 적용한다. 콜드 스타트나 직렬 실행 때문에 기한을 넘길 수 있으며, 이때 늦은 성공으로 실패를 덮어쓰지 않는다. 최대 2개 사례 제한은 모든 로컬 캠페인의 성공을 보장하지 않는다.
 
@@ -41,6 +41,8 @@ Next.js/TypeScript → WebFlux의 인증·CSRF·Redis 한도 → Java 21/Spring 
 ## 검증과 남은 범위
 
 ```powershell
+python scripts/stack-execution-profiles.py --check
+python scripts/stack-execution-profile-smoke.py
 python scripts/stack-campaign-smoke.py
 python scripts/stack-campaign-recovery.py
 python scripts/stack-campaign-recovery.py --deadline
@@ -70,3 +72,17 @@ MinIO에는 각 자식 실행의 기존 schema 1 보관본과 부모의 schema 2
 `python scripts/stack-campaign-receipt-smoke.py`는 합성 번들을 비공개 `.local/stack-campaign-receipt-*/inputs`에 저장한다. `node --experimental-strip-types scripts/stack-verify-campaign-receipt.ts --bundle <inputs> --trusted-public-key <별도로 신뢰한 public-key.pem> --organization <UUID> --project <UUID> --campaign <UUID>`는 네트워크 없이 서명과 부모 보관 해시·버전 결합을 검증한다. 번들에 포함된 키를 자동 신뢰하지 않는다. 부모/자식 **실제 보관 바이트 전체**는 위 Python 검증기를 함께 실행해야 한다. Node 결과는 이 차이를 `childBytesVerified: false`로 명시한다. 브라우저의 키 출처는 인증된 서버이며 독립된 외부 신뢰 체계는 아니다.
 
 이는 개발용 단일 키와 과거 판정 관찰 기록이다. 운영 KMS/HSM, 키 교체·폐기/유효 기간, 서명된 **현재 배포 토큰**, 회귀 기준 강제와 실제 배포자의 권한 검사는 아직 구현하지 않았다. 키가 달라지면 기존 기록의 서버 검증은 실패하며 자동으로 새 키를 신뢰하지 않는다. 기존 JavaScript 서명 기록의 이전도 완료했다고 표시하지 않는다.
+
+
+`stack-execution-profiles.py --check`는 추적된 Java 프로필 snapshot이 현재 Python 소스와 일치하는지 빌드 전에 확인한다. 평가기 코드를 변경했다면 명시적으로 프로필을 재생성하고 새 에이전트 버전을 등록해야 한다. 같은 이름·버전·공급자·설명의 재등록은 **원래 버전**을 반환하며 최신 실행 프로필로 바꾸지 않는다. 설치된 평가기와 달라진 과거 v2 버전은 실행 보류될 수 있다. 과거 평가기 이미지의 선택 실행과 운영자의 동적 공급자 설정은 지원하지 않는다. 고정된 profile은 재현 조건을 기록하지만 모델 응답의 결정성이나 범용 품질을 보장하지 않는다.
+
+
+## 한 캠페인의 검증된 증거 번들
+
+`GET /api/campaigns/{campaign}/receipts/{receipt}/bundle`은 인증된 같은 프로젝트의 한 과거 기록, 그 캠페인, 고정 부모 보관본과 최대 여덟 자식의 실제 결과·보관 바이트를 반환한다. 비밀키·쿠키·공급자 자격 증명은 포함하지 않는다. 다른 범위는 저장소 접근 전에 404로 거부하며, 보관본을 읽지 못하거나 서명 기록의 저장 버전과 다르면 전체 번들을 반환하지 않는다. JSON 응답은 최대 512KiB다. 현재 정책 판정은 이 과거 증거에 합치지 않는다.
+
+화면에서 과거 서명을 검증한 뒤 **검증된 서명·근거 번들 다운로드**를 선택하면, 브라우저가 실제 서명·부모와 모든 자식 바이트 해시·버전/범위 결합을 확인하고 JSON 파일을 만든다. 자식 한 개가 변조되어도 다운로드하지 않는다. 이후 반려된 캠페인의 과거 승인 증거는 내려받을 수 있지만 현재 게이트의 반려를 바꾸지 않는다.
+
+같은 Node 오프라인 CLI의 `--bundle`에 내려받은 **JSON 파일**을 지정하면 전체 서명·부모/자식 바이트를 한 번에 검사하며 `childBytesVerified: true`, `currentDeploymentAuthority: false`를 반환한다. `--trusted-public-key`는 별도로 신뢰한 공개 PEM을 계속 요구한다. 분리된 inputs **폴더** 방식은 부모/서명 결합만 검사하므로 여전히 별도 Python 자식 바이트 검증이 필요하다. 번들 자체의 공개키를 자동으로 신뢰하거나 현재 승인으로 취급하지 않는다.
+
+프로필의 `maxAttempts: 1`은 공급자 예약/호출의 상한을 뜻한다. JetStream 작업의 재전달 횟수를 1로 줄이지 않으며, 현재 consumer는 최대 20회 전달한다. 합성 평가 함수는 재전달 때 다시 실행될 수 있지만 결과 확정은 불변·멱등이다. 실제 모델은 같은 실행의 예약을 재사용해 자동으로 다시 호출하지 않는다. 프로필 hash는 전체 의존성·운영 인프라의 재현 보증을 대신하지 않으며 이미지 digest/SBOM은 별도 전달 근거다.

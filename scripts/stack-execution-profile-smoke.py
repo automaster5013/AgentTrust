@@ -1,0 +1,35 @@
+"""Verify installed profiles, legacy replay and actual drift refusal before reserving a model."""
+import datetime,hashlib,json,pathlib,subprocess,time,traceback,uuid
+from stack_test_client import StackClient
+root=pathlib.Path(__file__).resolve().parent.parent;clients=[];stage='login';report={'completed':False,'checks':[],'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'privateConfigurationRead':False,'paidApiCalls':False,'legacyServicesChanged':False,'fixtureRowsImmutableAndRetained':True}
+def canonical(value):return json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=False)
+def digest(value):return hashlib.sha256(canonical(value).encode('utf-8')).hexdigest()
+def sql(statement):
+ result=subprocess.run(['docker','exec','-i','agenttrust-stack-db-1','psql','-U','agenttrust_stack','-d','agenttrust_stack','-v','ON_ERROR_STOP=1','-At'],cwd=root,input=statement,capture_output=True,text=True,timeout=20);assert result.returncode==0;return result.stdout.strip()
+def wait(client,record):
+ until=time.monotonic()+30
+ while record['state']=='queued' and time.monotonic()<until:time.sleep(.4);record=client.request('campaigns/'+record['id'])
+ assert record['state']!='queued';return record
+def create(client,agent,dataset):return wait(client,client.request('campaigns','POST',{'agentVersionId':agent['id'],'datasetVersionId':dataset['id'],'requiresApproval':False},{'Idempotency-Key':str(uuid.uuid4())}))
+def fixture(owner,key,definition):
+ id=str(uuid.uuid4());content=canonical(definition);hash=digest(definition)
+ for value in [id,owner['organizationId'],owner['projectId'],owner['actorId']]:assert str(uuid.UUID(value))==value
+ statement="BEGIN;SET LOCAL ROLE agenttrust_stack_api;SELECT set_config('agenttrust.organization_id','"+owner['organizationId']+"',true);SELECT set_config('agenttrust.project_id','"+owner['projectId']+"',true);INSERT INTO stack_agent_versions(id,organization_id,project_id,actor_id,resource_key,version,content_json,content_sha256) VALUES('"+id+"','"+owner['organizationId']+"','"+owner['projectId']+"','"+owner['actorId']+"','"+key+"',1,'"+content.replace("'","''")+"','"+hash+"');COMMIT;"
+ sql(statement);return {'id':id,'key':key,'definition':definition,'hash':hash}
+try:
+ credentials=json.loads((root/'.local/stack/demo-credentials.json').read_text(encoding='utf-8'));admin=StackClient('http://127.0.0.1:4320',credentials,report,clients);owner=admin.login('demo-admin');suffix=uuid.uuid4().hex[:12]
+ stage='installed-profiles';result=subprocess.run(['docker','exec','agenttrust-stack-ai-worker-1','python','-c',"import json;from execution_profiles import execution_profile;print(json.dumps({p:execution_profile(p) for p in ['synthetic','ollama','openai-compatible']}))"],cwd=root,capture_output=True,text=True,timeout=10);assert result.returncode==0 and len(result.stdout)<8192;installed=json.loads(result.stdout);versions={}
+ for provider in ['synthetic','ollama','openai-compatible']:
+  body={'key':'profile-'+provider+'-'+suffix,'version':1,'provider':provider,'description':'Installed profile verification'};value=admin.request('versions/agents','POST',body);definition=value['definition'];assert definition['contract']=='fixed-scenarios-v2' and definition['executionProfile']==installed[provider]['definition'] and definition['executionProfileSha256']==installed[provider]['contentSha256'] and digest(definition)==value['content_sha256'];assert admin.request('versions/agents','POST',body)['id']==value['id'];versions[provider]=value
+ report['checks'].append('new Java versions bind actual installed Python source/verifier and fixed model/prompt/limit profiles; identical registration replays unchanged')
+ dataset=admin.request('versions/datasets','POST',{'key':'profile-data-'+suffix,'version':1,'cases':[{'id':'required-pass','scenario':'pass','required':True}]});stage='bound-synthetic';passing=create(admin,versions['synthetic'],dataset);assert passing['state']=='succeeded' and passing['decision']=='pass' and admin.request('campaigns/'+passing['id']+'/gate')['deploymentAllowed'];report['checks'].append('new profile-bound synthetic campaign completes real queue and permits only its passing gate')
+ stage='legacy-replay';legacy=fixture(owner,'legacy-profile-'+suffix,{'contract':'fixed-scenarios-v1','provider':'synthetic','description':'Legacy immutable fixture'});replayed=admin.request('versions/agents','POST',{'key':legacy['key'],'version':1,'provider':'synthetic','description':'Legacy immutable fixture'});assert replayed['id']==legacy['id'] and replayed['definition']['contract']=='fixed-scenarios-v1' and replayed['content_sha256']==legacy['hash'];legacy_run=create(admin,replayed,dataset);assert legacy_run['state']=='succeeded' and legacy_run['decision']=='pass';report['checks'].append('same old registration preserves original v1 contents and old unbound campaign contract without backfilling a new profile')
+ stage='actual-profile-drift';definition=json.loads(canonical(versions['ollama']['definition']));definition['description']='Drifted historical fixture';definition['executionProfile']['implementationSha256']='0'*64;definition['executionProfileSha256']=digest(definition['executionProfile']);drift=fixture(owner,'drifted-profile-'+suffix,definition);old=admin.request('versions/agents','POST',{'key':drift['key'],'version':1,'provider':'ollama','description':definition['description']});assert old['id']==drift['id'] and old['content_sha256']==drift['hash'];failed=create(admin,old,dataset);assert failed['state']=='failed' and failed['decision']=='inconclusive' and not admin.request('campaigns/'+failed['id']+'/gate')['deploymentAllowed'];child=admin.request('runs/'+failed['cases'][0]['runId']);assert child['result']['executionEngine']=='python-ollama';assert sql("SELECT count(*) FROM stack_provider_attempts WHERE run_id='"+child['id']+"';")=='0';report['checks'].append('genuine queued historical profile mismatch becomes failed/inconclusive before any provider reservation or model call; original version remains immutable');report.update(completed=True,boundCampaignId=passing['id'],legacyCampaignId=legacy_run['id'],driftedCampaignId=failed['id'],driftedModelCalls=0)
+except Exception as error:report.update(code='STACK_EXECUTION_PROFILE_UNVERIFIED',failedStage=stage,errorType=type(error).__name__,failureLocations=[{'file':pathlib.Path(t.filename).name,'line':t.lineno} for t in traceback.extract_tb(error.__traceback__)])
+finally:
+ closed=True
+ for client in reversed(clients):
+  try:client.logout()
+  except Exception:closed=False
+ report.update(ownSessionsLoggedOut=closed,finishedAt=datetime.datetime.now(datetime.timezone.utc).isoformat());path=root/'.local'/('stack-execution-profile-'+str(uuid.uuid4())+'.json');path.open('x',encoding='utf-8').write(json.dumps(report,indent=2)+'\n');print(json.dumps({'completed':report['completed'],'checks':len(report['checks']),'ownSessionsLoggedOut':closed,'failedStage':report.get('failedStage'),'reportPath':str(path)}))
+ if not report['completed'] or not closed:raise SystemExit(1)

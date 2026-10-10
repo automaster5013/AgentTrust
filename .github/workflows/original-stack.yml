@@ -19,7 +19,9 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - name: Build pinned source security tools
-        run: docker build -t agenttrust-security:local tools/security
+        run: |
+          python3 scripts/stack-execution-profiles.py --check
+          docker build -t agenttrust-security:local tools/security
       - name: Verify rules and scan tracked source and full Git history
         run: python3 scripts/stack-security-source.py
       - name: Preserve redacted security reports
@@ -74,6 +76,7 @@ jobs:
       - name: Verify immutable versions and authenticated campaign aggregation
         run: |
           python3 scripts/stack-campaign-smoke.py
+          python3 scripts/stack-execution-profile-smoke.py
           python3 scripts/stack-campaign-recovery.py
           python3 scripts/stack-campaign-recovery.py --deadline
       - name: Verify frozen campaign evidence and offline byte chains
@@ -98,6 +101,8 @@ jobs:
         run: |
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-receipt-smoke.py
+          python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-campaign-observation-matrix.py
       - name: Audit fixed verifier dependency installation
         working-directory: tools/promptfoo
         run: npm audit --omit=optional --audit-level=high
@@ -124,6 +129,8 @@ jobs:
           python3 scripts/stack-provider-smoke.py
           python3 scripts/stack-campaign-model-smoke.py
           python3 scripts/stack-observability-smoke.py
+          python3 scripts/stack-queue-trace-smoke.py
+          python3 scripts/stack-observability-outage-smoke.py
           cd apps/console
           STACK_E2E_LOCAL_MODEL=true npx playwright test --grep 'local model provider evidence'
       - name: Preserve safe synthetic fault diagnostics
@@ -140,11 +147,15 @@ jobs:
             .local/stack-promptfoo-smoke-*.json
             .local/stack-http-smoke-*.json
             .local/stack-campaign-smoke-*.json
+            .local/stack-execution-profile-*.json
             .local/stack-campaign-recovery-*.json
             .local/stack-campaign-model-*.json
             .local/stack-campaign-archive-*/summary.json
             .local/stack-campaign-receipt-*/summary.json
+            .local/stack-campaign-observation-matrix-*/summary.json
             .local/stack-observability-smoke-*.json
+            .local/stack-queue-trace-*.json
+            .local/stack-observability-outage-*.json
             .local/stack-database-init-smoke-*.json
             .local/stack-provider-smoke-*.json
             .local/stack-provider-integrity-*/summary.json
@@ -219,10 +230,13 @@ jobs:
           python3 scripts/stack-database-smoke.py
           python3 scripts/stack-database-init-smoke.py
           python3 scripts/stack-campaign-smoke.py
+          python3 scripts/stack-execution-profile-smoke.py
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-evidence-test.py
           python3 scripts/stack-campaign-archive-smoke.py
           python3 scripts/stack-campaign-receipt-smoke.py
+          python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-campaign-observation-matrix.py
           python3 scripts/stack-object-smoke.py
           python3 scripts/stack-vector-smoke.py
           python3 scripts/stack-gateway-smoke.py
@@ -232,6 +246,8 @@ jobs:
           python3 scripts/stack-provider-smoke.py
           python3 scripts/stack-campaign-model-smoke.py
           python3 scripts/stack-observability-smoke.py
+          python3 scripts/stack-queue-trace-smoke.py
+          python3 scripts/stack-observability-outage-smoke.py
           python3 scripts/stack-image-smoke.py
           python3 scripts/stack-delivery-manifest.py
       - name: Preserve safe registry runtime diagnostics
@@ -244,16 +260,20 @@ jobs:
             .local/stack-gateway-smoke-*.json
             .local/stack-http-smoke-*.json
             .local/stack-campaign-smoke-*.json
+            .local/stack-execution-profile-*.json
             .local/stack-campaign-recovery-*.json
             .local/stack-campaign-model-*.json
             .local/stack-campaign-archive-*/summary.json
             .local/stack-campaign-receipt-*/summary.json
+            .local/stack-campaign-observation-matrix-*/summary.json
             .local/stack-object-smoke-*.json
             .local/stack-vector-smoke-*.json
             .local/stack-database-init-smoke-*.json
             .local/stack-provider-smoke-*.json
             .local/stack-provider-integrity-*/summary.json
             .local/stack-observability-smoke-*.json
+            .local/stack-queue-trace-*.json
+            .local/stack-observability-outage-*.json
           if-no-files-found: ignore
           retention-days: 7
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -287,7 +307,9 @@ jobs:
           name: original-stack-delivery-${{ github.sha }}
           path: stack-delivery
       - name: Build pinned security tools
-        run: docker build -t agenttrust-security:local tools/security
+        run: |
+          python3 scripts/stack-execution-profiles.py --check
+          docker build -t agenttrust-security:local tools/security
       - name: Load exact immutable runtime references
         shell: bash
         run: |

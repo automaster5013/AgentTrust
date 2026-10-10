@@ -25,3 +25,5 @@ OpenAI 어댑터는 공식 `https://api.openai.com/v1/responses`, `store=false`,
 - [공식 OpenAI Responses 전환과 저장 설정](https://developers.openai.com/api/docs/guides/migrate-to-responses)
 - [Ollama generate](https://docs.ollama.com/api/generate)
 - [Ollama OpenAI 호환 규약](https://docs.ollama.com/api/openai-compatibility)
+
+새 에이전트 v2 버전은 [캠페인 계약](stack-campaigns.md)의 고정 실행 프로필을 저장한다. Python이 실제 설치 상태와 일치하는지 모델 예약 전에 검사한다. 기존 단일 평가와 v1 캠페인은 이 추가 고정 계약을 소급 적용하지 않는다. `python scripts/stack-execution-profile-smoke.py`는 새 프로필의 실제 일치, 기존 버전 재등록 보존, 과거 프로필 불일치 시 호출/예약 0회를 검증한다.

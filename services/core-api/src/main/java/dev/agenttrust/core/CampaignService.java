@@ -28,7 +28,7 @@ public class CampaignService {
             if(jdbc.queryForObject("SELECT count(*) FROM stack_campaigns WHERE organization_id=? AND project_id=?",Integer.class,user.organizationId(),user.projectId())>=200)throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS);
             var agent=versions.get(user,"agents",agentId);var dataset=versions.get(user,"datasets",datasetId);
             JsonNode definition=(JsonNode)agent.get("definition"),data=(JsonNode)dataset.get("definition");
-            if(!definition.path("contract").asText().equals(VersionDefinition.CONTRACT)||!data.path("contract").asText().equals(VersionDefinition.CONTRACT))throw new ResponseStatusException(HttpStatus.CONFLICT);
+            if(!List.of(VersionDefinition.CONTRACT,"fixed-scenarios-v2").contains(definition.path("contract").asText())||!data.path("contract").asText().equals(VersionDefinition.CONTRACT))throw new ResponseStatusException(HttpStatus.CONFLICT);
             String provider=definition.path("provider").asText();JsonNode cases=data.path("cases");
             // Keep real-provider batches bounded under the existing per-case reservation and deadline.
             if(!provider.equals("synthetic")&&cases.size()>2)throw new ResponseStatusException(HttpStatus.BAD_REQUEST);

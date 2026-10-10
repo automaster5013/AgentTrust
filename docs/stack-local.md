@@ -112,3 +112,5 @@ Promptfoo는 검증 전용 프로필이며 완료 후 자체 컨테이너를 제
 ## 실제 로컬 모델
 
 [공급자 프로필](stack-providers.md)의 setup/start/smoke 순서를 따른다. 활성화 표식은 비공개 `.local/stack/providers-enabled`이며 이후 장애 복구 도구도 같은 프로필을 사용한다. 기본 합성 실행과 실제 모델 실행을 구분하며 유료 OpenAI 연결은 기본 비활성이다.
+
+불변 버전·실행 프로필·다중 사례·회귀 상태 비교와 개발용 과거 판정 서명·검증된 부모/자식 JSON 번들의 준비 및 범위는 [캠페인 문서](stack-campaigns.md)를 따른다. 서명 overlay는 선택 사항이며 운영 KMS나 현재 배포 토큰을 구성하지 않는다.

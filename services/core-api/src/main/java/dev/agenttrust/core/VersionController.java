@@ -16,6 +16,6 @@ public class VersionController {
     public record Dataset(String key,Integer version,List<VersionDefinition.Case> cases) {}
     @GetMapping("/{kind:agents|datasets}") List<Map<String,Object>> list(@AuthenticationPrincipal DemoUser user,@PathVariable String kind){return registry.list(user,kind);}
     @GetMapping("/{kind:agents|datasets}/{id}") Map<String,Object> get(@AuthenticationPrincipal DemoUser user,@PathVariable String kind,@PathVariable UUID id){return registry.get(user,kind,id);}
-    @PostMapping("/agents") Map<String,Object> agent(@AuthenticationPrincipal DemoUser user,@RequestBody Agent body){return registry.register(user,"agents",body.key(),body.version(),VersionDefinition.agent(mapper,body.provider(),body.description()));}
+    @PostMapping("/agents") Map<String,Object> agent(@AuthenticationPrincipal DemoUser user,@RequestBody Agent body){return registry.registerAgent(user,body.key(),body.version(),body.provider(),body.description());}
     @PostMapping("/datasets") Map<String,Object> dataset(@AuthenticationPrincipal DemoUser user,@RequestBody Dataset body){return registry.register(user,"datasets",body.key(),body.version(),VersionDefinition.dataset(mapper,body.cases()));}
 }

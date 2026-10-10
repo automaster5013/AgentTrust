@@ -1,6 +1,39 @@
 """Optional internal OTLP instrumentation; never attach prompts, identity or credentials."""
 import os
+import re
+from contextlib import contextmanager
 from opentelemetry import trace,metrics
+from opentelemetry.context import Context
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+def queue_context(headers):
+    # Ignore malformed transport metadata; telemetry cannot reject an otherwise valid job.
+    value = headers.get('traceparent') if isinstance(headers,dict) else None
+    if not isinstance(value,str) or not re.fullmatch(r'00-[a-f0-9]{32}-[a-f0-9]{16}-[a-f0-9]{2}',value):
+        return Context()
+    if value[3:35]=='0'*32 or value[36:52]=='0'*16:
+        return Context()
+    return TraceContextTextMapPropagator().extract({'traceparent':value},context=Context())
+
+@contextmanager
+def evaluation_span(headers):
+    if os.environ.get('STACK_TELEMETRY_ENABLED')!='true':
+        yield
+        return
+    with trace.get_tracer('agenttrust.queue').start_as_current_span(
+            'evaluation consume',context=queue_context(headers),kind=trace.SpanKind.CONSUMER,
+            record_exception=False,set_status_on_exception=False):
+        yield
+
+def worker_headers(token):
+    headers={'X-AgentTrust-Worker-Token':token}
+    if os.environ.get('STACK_TELEMETRY_ENABLED')=='true':
+        carrier={}
+        TraceContextTextMapPropagator().inject(carrier)
+        value=carrier.get('traceparent')
+        if isinstance(value,str) and re.fullmatch(r'00-[a-f0-9]{32}-[a-f0-9]{16}-[a-f0-9]{2}',value):
+            headers['traceparent']=value
+    return headers
 
 def configure(app):
     if os.environ.get('STACK_TELEMETRY_ENABLED')!='true':

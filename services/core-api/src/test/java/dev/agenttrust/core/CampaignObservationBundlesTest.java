@@ -1,0 +1,10 @@
+package dev.agenttrust.core;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+class CampaignObservationBundlesTest {
+ @Test void exportedProofMustMatchTheExactArchiveBytesAndPinnedVersion(){var mapper=new ObjectMapper();var parent=Map.<String,Object>of("contentSha256","a".repeat(64),"contentBytes",100,"storageVersion","original");var payload=mapper.valueToTree(Map.of("campaignArchive",parent));assertDoesNotThrow(()->CampaignObservationBundles.bound(payload,parent));for(var changed:java.util.List.of(Map.<String,Object>of("contentSha256","b".repeat(64),"contentBytes",100,"storageVersion","original"),Map.<String,Object>of("contentSha256","a".repeat(64),"contentBytes",101,"storageVersion","original"),Map.<String,Object>of("contentSha256","a".repeat(64),"contentBytes",100,"storageVersion","shadow")))assertThrows(IllegalArgumentException.class,()->CampaignObservationBundles.bound(payload,changed));}
+
+ @Test void foreignReceiptIsRejectedBeforeAnyObjectStorageRead(){var receipts=org.mockito.Mockito.mock(CampaignReceipts.class);var parents=org.mockito.Mockito.mock(CampaignArchives.class);var children=org.mockito.Mockito.mock(EvidenceArchives.class);var campaigns=org.mockito.Mockito.mock(CampaignService.class);var runs=org.mockito.Mockito.mock(RunService.class);var user=new DemoUser("viewer","unused",java.util.UUID.randomUUID(),java.util.UUID.randomUUID(),java.util.UUID.randomUUID(),"viewer");var campaign=java.util.UUID.randomUUID();var id=java.util.UUID.randomUUID();org.mockito.Mockito.when(receipts.get(user,campaign,id)).thenThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND));var service=new CampaignObservationBundles(receipts,parents,children,campaigns,runs,new ObjectMapper());assertThrows(org.springframework.web.server.ResponseStatusException.class,()->service.get(user,campaign,id));org.mockito.Mockito.verifyNoInteractions(parents,children,campaigns,runs);}
+}

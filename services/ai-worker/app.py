@@ -17,10 +17,12 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from features import rule_features, VERSION, DIMENSIONS
-from telemetry import configure,evaluation_event
+from telemetry import configure,evaluation_event,evaluation_span,worker_headers
 from providers import evaluate_provider,unavailable
+from execution_profiles import matches_profile
 
 worker_state = {'ready': False}
+CORE_BASE_URL = 'http://stack-core-api:8080'
 
 
 def scoped_job(raw: bytes):
@@ -45,7 +47,7 @@ async def maintain_delivery(message):
 
 
 async def consume(connection, subscription):
-    async with httpx.AsyncClient(timeout=5, follow_redirects=False, trust_env=False) as client:
+    async with httpx.AsyncClient(base_url=CORE_BASE_URL,timeout=5, follow_redirects=False, trust_env=False) as client:
         token = pathlib.Path('/run/secrets/stack-worker-token').read_text(encoding='utf-8')
         while True:
             worker_state['ready'] = connection.is_connected
@@ -66,31 +68,33 @@ async def consume(connection, subscription):
                         await message.term()
                     continue
                 try:
-                    if body.provider=='synthetic':result=evaluate(body.scenario)
-                    else:
-                        # A lost reservation response burns the reservation. Never repeat an ambiguous provider call.
-                        reservation=await client.post('http://stack-core-api:8080/internal/provider-reservations',json=body.model_dump(exclude_none=True),headers={'X-AgentTrust-Worker-Token':token})
-                        accepted=reservation.status_code==200 and reservation.json().get('allowed') is True and reservation.json().get('runId')==body.runId and reservation.json().get('reservedInputTokens')==256 and reservation.json().get('reservedOutputTokens')==128
-                        if accepted:
-                            evaluation_event()
-                            async with asyncio.timeout(2):
-                                await message.in_progress()
-                            heartbeat=asyncio.create_task(maintain_delivery(message))
-                            try:
-                                result=await evaluate_provider(body.provider,body.scenario,client)
-                            finally:
-                                heartbeat.cancel()
-                                with contextlib.suppress(asyncio.CancelledError):
-                                    await heartbeat
-                        else:result=unavailable(body.provider)
-                    payload = {**body.model_dump(exclude_none=True), 'result': result}
-                    response = await client.post('http://stack-core-api:8080/internal/completions', json=payload, headers={'X-AgentTrust-Worker-Token': token})
-                    if response.status_code == 200 and response.json().get('accepted') is True and response.json().get('runId') == body.runId:
-                        await message.ack_sync(timeout=2)
-                    elif response.status_code in (400, 404, 409, 422):
-                        await message.term()
-                    else:
-                        await message.nak(delay=3)
+                    with evaluation_span(getattr(message,'headers',None)):
+                        if not matches_profile(body.provider,body.executionProfileSha256):result=unavailable(body.provider)
+                        elif body.provider=='synthetic':result=evaluate(body.scenario)
+                        else:
+                            # A lost reservation response burns the reservation. Never repeat an ambiguous provider call.
+                            reservation=await client.post('http://stack-core-api:8080/internal/provider-reservations',json=body.model_dump(exclude_none=True),headers=worker_headers(token))
+                            accepted=reservation.status_code==200 and reservation.json().get('allowed') is True and reservation.json().get('runId')==body.runId and reservation.json().get('reservedInputTokens')==256 and reservation.json().get('reservedOutputTokens')==128
+                            if accepted:
+                                evaluation_event()
+                                async with asyncio.timeout(2):
+                                    await message.in_progress()
+                                heartbeat=asyncio.create_task(maintain_delivery(message))
+                                try:
+                                    result=await evaluate_provider(body.provider,body.scenario,client)
+                                finally:
+                                    heartbeat.cancel()
+                                    with contextlib.suppress(asyncio.CancelledError):
+                                        await heartbeat
+                            else:result=unavailable(body.provider)
+                        payload = {**body.model_dump(exclude_none=True), 'result': result}
+                        response = await client.post('/internal/completions', json=payload, headers=worker_headers(token))
+                        if response.status_code == 200 and response.json().get('accepted') is True and response.json().get('runId') == body.runId:
+                            await message.ack_sync(timeout=2)
+                        elif response.status_code in (400, 404, 409, 422):
+                            await message.term()
+                        else:
+                            await message.nak(delay=3)
                 except Exception:
                     with contextlib.suppress(Exception):
                         await message.nak(delay=3)
@@ -137,11 +141,14 @@ class EvaluationRequest(BaseModel):
     caseId: str | None = Field(default=None,pattern=r'^[a-z][a-z0-9-]{0,63}$')
     agentVersionId: str | None = None
     datasetVersionId: str | None = None
+    executionProfileSha256: str | None = Field(default=None,pattern=r'^[a-f0-9]{64}$')
 
     @model_validator(mode='after')
     def immutable_case_binding(self):
         values=(self.campaignId,self.caseId,self.agentVersionId,self.datasetVersionId)
-        if all(v is None for v in values):return self
+        if all(v is None for v in values):
+            if self.executionProfileSha256 is not None:raise ValueError('Profile must bind a campaign')
+            return self
         if any(v is None for v in values):raise ValueError('Incomplete campaign binding')
         for value in (self.campaignId,self.agentVersionId,self.datasetVersionId):
             if str(UUID(value))!=value:raise ValueError('Invalid version scope')
@@ -203,7 +210,7 @@ def evaluation(body: EvaluationRequest, x_agenttrust_worker_token: str | None = 
                 raise ValueError()
         except ValueError:
             raise HTTPException(422, detail='Invalid scope') from None
-    return {**body.model_dump(exclude_none=True), 'result': evaluate(body.scenario)}
+    return {**body.model_dump(exclude_none=True), 'result': evaluate(body.scenario) if matches_profile(body.provider,body.executionProfileSha256) else unavailable(body.provider)}
 
 
 class FeatureRule(BaseModel):

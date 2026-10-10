@@ -29,7 +29,7 @@ CI는 소스 보안→소스 통합→정확한 registry digest 실행→이미�
 
 별도 공식 인프라 검사에서 NATS 12건·Collector 4건·Tempo 4건·Loki 4건·Prometheus 8건·Grafana 64건의 HIGH/CRITICAL을 확인했다. NATS 2.12.15를 고정 소스와 Go 1.27.2/새 Alpine으로 재빌드하여 0건과 실제 JetStream 영속 복구를 검증했다. 관측성 공식 이미지의 합계 84건 수정은 남아 있다. 이는 이미지별 발견 건수이며 고유 CVE 84개라는 뜻이 아니다. Redis는 0건이었다. 전달 manifest의 `productionSecurityVerified=false`, `officialObservabilitySecurityVerified=false`는 이 한계를 명시한다. 이미지 열 개의 서명이 전체 운영 스택의 안전성이나 배포 승인을 뜻하지 않는다.
 
-서명 스크립트와 CI 설정은 구현했으나 실제 원격 성공 결과 전에는 서명 전달 완료를 주장하지 않는다. 컨테이너 공급망 서명은 현재 평가 승인 게이트의 서명이 아니며 서버 배포를 수행하지 않는다. 소스 보안 CI와 기존 JavaScript CI는 각각의 검사 범위를 가진다.
+[4069f08 기준선 CI](https://github.com/automaster5013/AgentTrust/actions/runs/38073013830)에서 네 작업이 통과하고 정확한 열 이미지의 HIGH/CRITICAL 0건·이미지 서명·SBOM attestation 검증을 확인했다. 다운로드 artifact checksum과 열 SBOM Sigstore bundle의 독립 로컬 암호 검증도 통과했다. 이후 변경은 해당 SHA의 CI·전달 근거를 따로 확인한다. 컨테이너 공급망 서명은 현재 평가 승인 게이트의 서명이 아니며 서버 배포를 수행하지 않는다. 소스 보안 CI와 기존 JavaScript CI는 각각의 검사 범위를 가진다.
 
 - [Semgrep](https://semgrep.dev/docs/)
 - [Gitleaks](https://github.com/gitleaks/gitleaks)

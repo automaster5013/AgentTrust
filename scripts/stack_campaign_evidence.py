@@ -46,7 +46,10 @@ def verify_parent(proof,owner,record):
  if set(value)!=set(['schemaVersion','kind','deploymentAuthority','campaign','childArchives']) or type(value['schemaVersion']) is not int or value['schemaVersion']!=2 or value['kind']!='campaign-evidence' or value['deploymentAuthority'] is not False or normalized(value['campaign'])!=normalized(record):raise ValueError('Campaign snapshot mismatch')
  for kind,binding in [('agentVersion','agent'),('datasetVersion','dataset')]:
   item=record[kind];definition=item['definition'];actual=hashlib.sha256(json.dumps(definition,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode('utf-8')).hexdigest()
-  if identifier(item['id'])!=record[binding+'_version_id'] or actual!=digest(item['content_sha256']) or actual!=record[binding+'_content_sha256'] or item['organization_id']!=expected[1] or item['project_id']!=expected[2] or definition.get('contract')!='fixed-scenarios-v1':raise ValueError('Immutable version contents mismatch')
+  if identifier(item['id'])!=record[binding+'_version_id'] or actual!=digest(item['content_sha256']) or actual!=record[binding+'_content_sha256'] or item['organization_id']!=expected[1] or item['project_id']!=expected[2] or definition.get('contract') not in (['fixed-scenarios-v1','fixed-scenarios-v2'] if binding=='agent' else ['fixed-scenarios-v1']):raise ValueError('Immutable version contents mismatch')
+ if record['agentVersion']['definition']['contract']=='fixed-scenarios-v2':
+  agent=record['agentVersion']['definition'];profile=agent['executionProfile'];profile_hash=hashlib.sha256(json.dumps(profile,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode('utf-8')).hexdigest()
+  if profile_hash!=digest(agent['executionProfileSha256']) or profile['provider']!=agent['provider']:raise ValueError('Execution profile contents mismatch')
  references=value['childArchives'];cases=record['cases']
  if not isinstance(references,list) or not isinstance(cases,list) or not 1<=len(cases)<=8 or len(references)!=len(cases):raise ValueError('Invalid child evidence count')
  seen=set()

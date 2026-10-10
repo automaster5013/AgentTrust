@@ -42,7 +42,7 @@ public class QueuePublisher {
                     if((Boolean)run.get("expired")) {runs.complete(scope,id,(String)run.get("scenario"),WorkerClient.unavailable());continue;}
                     if(connection==null || connection.getStatus()==Connection.Status.CLOSED) connection=Nats.connect(new Options.Builder().server("nats://stack-nats:4222").token(token.toCharArray()).connectionTimeout(Duration.ofSeconds(2)).maxReconnects(-1).build());
                     var body=runs.job(scope,run);
-                    connection.jetStream().publish("stack.evaluations",mapper.writeValueAsBytes(body),PublishOptions.builder().messageId(id.toString()).streamTimeout(Duration.ofSeconds(2)).build());
+                    QueueTracing.publish(headers -> connection.jetStream().publish("stack.evaluations",headers,mapper.writeValueAsBytes(body),PublishOptions.builder().messageId(id.toString()).streamTimeout(Duration.ofSeconds(2)).build()));
                 }
             } catch(Exception error) {
                 if(error instanceof InterruptedException)Thread.currentThread().interrupt();
