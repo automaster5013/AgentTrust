@@ -116,6 +116,8 @@ jobs:
           name: original-stack-diagnostics-${{ github.sha }}
           include-hidden-files: true
           path: |
+            .local/stack-gateway-smoke-*.json
+            .local/stack-recovery-*.json
             .local/stack-vector-smoke-*.json
             .local/stack-object-smoke-*.json
             .local/stack-promptfoo-smoke-*.json
@@ -200,6 +202,23 @@ jobs:
           python3 scripts/stack-observability-smoke.py
           python3 scripts/stack-image-smoke.py
           python3 scripts/stack-delivery-manifest.py
+      - name: Preserve safe registry runtime diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: original-stack-registry-diagnostics-${{ github.sha }}
+          include-hidden-files: true
+          path: |
+            .local/stack-gateway-smoke-*.json
+            .local/stack-http-smoke-*.json
+            .local/stack-object-smoke-*.json
+            .local/stack-vector-smoke-*.json
+            .local/stack-database-init-smoke-*.json
+            .local/stack-provider-smoke-*.json
+            .local/stack-provider-integrity-*/summary.json
+            .local/stack-observability-smoke-*.json
+          if-no-files-found: ignore
+          retention-days: 7
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: original-stack-delivery-${{ github.sha }}

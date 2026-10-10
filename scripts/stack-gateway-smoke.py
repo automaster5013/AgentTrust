@@ -30,6 +30,11 @@ connection.close();print(json.dumps({'completed':True,'anonymousAndDefaultUserRe
  token=(root/'.local/stack/redis-token').read_text(encoding='utf-8');proof=subprocess.run(['docker','exec','-i','agenttrust-stack-ai-worker-1','python','-c',code],cwd=root,input=token,capture_output=True,text=True,check=True);assert json.loads(proof.stdout)['completed'];report['checks'].append('real Redis refuses anonymous/default authentication, foreign keys, SET, FLUSHALL and INFO')
  stage='routing';anonymous=StackClient('http://127.0.0.1:4323',credentials,report,clients);assert request(anonymous,'/api/me')[0]==401;assert request(anonymous,'/internal/completions','POST',{})[0]==404;assert request(anonymous,'/api/runs','DELETE')[0]==404;report['checks'].append('anonymous protected requests and internal or unsupported routes refused')
  own=StackClient('http://127.0.0.1:4323',credentials,report,clients);own.login('demo-admin');viewer=StackClient('http://127.0.0.1:4323',credentials,report,clients);viewer.login('demo-viewer');other=StackClient('http://127.0.0.1:4323',credentials,report,clients);other.login('other-admin')
+ # Earlier tests share these project quotas. Let their existing windows expire;
+ # never delete Redis counters or weaken the application limit for a smoke test.
+ stage='prior-window-expiry';until=time.monotonic()+62
+ while time.monotonic()<until:time.sleep(min(1,until-time.monotonic()))
+ report['priorQuotaWindowsExpiredNaturally']=True
  assert request(own,'/api/me',headers={'X-Organization-Id':credentials[-1]['organizationId'],'Authorization':'Bearer caller-controlled'})[2]['organizationId']==credentials[0]['organizationId'];report['checks'].append('authenticated identity wins over caller-controlled scope headers')
  stage='write-quota';own.csrf();key=str(uuid.uuid4());run_id=None;writes=0
  for attempt in range(61):
@@ -46,7 +51,7 @@ connection.close();print(json.dumps({'completed':True,'anonymousAndDefaultUserRe
   if status==429:assert value['code']=='RATE_LIMITED' and 1<=int(headers['Retry-After'])<=60;expiry=max(write_expiry,time.monotonic()+int(headers['Retry-After'])+2);break
   assert status==200 and headers['X-AgentTrust-Gateway']=='spring-webflux';reads+=1
  else:raise AssertionError('READ_LIMIT_NOT_ENFORCED')
- assert 0<reads<=240;assert request(viewer,'/api/me')[0]==429 and request(other,'/api/me')[0]==200;report['admittedReads']=reads;report['checks'].append('same organization shares a read quota; foreign organization remains available')
+ report['admittedReads']=reads;assert 0<reads<=240,'NO_FRESH_READ_WINDOW';assert request(viewer,'/api/me')[0]==429,'VIEWER_QUOTA_NOT_SHARED';assert request(other,'/api/me')[0]==200,'FOREIGN_ORGANIZATION_UNAVAILABLE';report['checks'].append('same organization shares a read quota; foreign organization remains available')
  stage='redis-restart';command(stack_compose(root)+['restart','stack-redis']);command(stack_compose(root)+['up','-d','--no-build','--wait','stack-redis','stack-gateway']);assert request(own,'/api/me')[0]==429;report['checks'].append('Redis AOF preserves active quota across graceful restart')
  stage='redis-outage';command(stack_compose(root)+['stop','stack-redis']);stopped=True;status,headers,value=request(other,'/api/me');assert status==503 and value['code']=='GATEWAY_UNAVAILABLE';report['checks'].append('unavailable Redis refuses authenticated requests instead of bypassing quota')
  command(stack_compose(root)+['up','-d','--no-build','--wait','stack-redis','stack-gateway']);stopped=False;assert request(other,'/api/me')[0]==200;report['checks'].append('restored Redis resumes scoped authenticated traffic')
@@ -66,5 +71,5 @@ finally:
  for client in clients:
   try:client.logout()
   except Exception:closed=False
- report['dependenciesRestored']=restored;report['ownSessionsLoggedOut']=closed and all(not c.logged for c in clients);report['finishedAt']=datetime.datetime.now(datetime.timezone.utc).isoformat();path=root/'.local'/('stack-gateway-smoke-'+str(uuid.uuid4())+'.json');path.open('x',encoding='utf-8').write(json.dumps(report,indent=2)+'\n');print(json.dumps({'completed':report['completed'],'checks':len(report['checks']),'dependenciesRestored':restored,'ownSessionsLoggedOut':report['ownSessionsLoggedOut'],'failedStage':report.get('failedStage'),'reportPath':str(path)}))
+ report['dependenciesRestored']=restored;report['ownSessionsLoggedOut']=closed and all(not c.logged for c in clients);report['finishedAt']=datetime.datetime.now(datetime.timezone.utc).isoformat();path=root/'.local'/('stack-gateway-smoke-'+str(uuid.uuid4())+'.json');path.open('x',encoding='utf-8').write(json.dumps(report,indent=2)+'\n');print(json.dumps({'completed':report['completed'],'checks':len(report['checks']),'dependenciesRestored':restored,'ownSessionsLoggedOut':report['ownSessionsLoggedOut'],'failedStage':report.get('failedStage'),'errorType':report.get('errorType'),'admittedReads':report.get('admittedReads'),'priorQuotaWindowsExpiredNaturally':report.get('priorQuotaWindowsExpiredNaturally',False),'failureLocations':report.get('failureLocations',[]),'reportPath':str(path)}))
 if not report['completed'] or not report['dependenciesRestored'] or not report['ownSessionsLoggedOut']:raise SystemExit(1)
