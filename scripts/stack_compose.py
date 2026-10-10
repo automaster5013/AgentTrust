@@ -7,6 +7,7 @@ def stack_compose(root):
  if (root/'.local/stack/redis-token').exists():command+=['-f','compose.stack.gateway.yaml']
  if (root/'.local/stack/minio-password').exists():command+=['-f','compose.stack.object.yaml']
  if (root/'.local/stack/grafana-password').exists():command+=['-f','compose.stack.observability.yaml']
+ if (root/'.local/stack/providers-enabled').exists():command+=['-f','compose.stack.providers.yaml']
  names=['STACK_CORE_IMAGE','STACK_WORKER_IMAGE','STACK_CONSOLE_IMAGE','STACK_OPA_IMAGE','STACK_IDENTITY_IMAGE','STACK_GATEWAY_IMAGE','STACK_OBJECT_IMAGE','STACK_DATABASE_IMAGE']
  if any(name in os.environ for name in names):
   assert all(re.fullmatch(r'ghcr\.io/[a-z0-9-]+/agenttrust-[a-z-]+@sha256:[a-f0-9]{64}',os.environ.get(name,'')) for name in names)

@@ -11,9 +11,15 @@ import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 public class CompletionController {
-    private final RunService runs;private final byte[] token;
-    public CompletionController(RunService runs) throws Exception {this.runs=runs;var value=Files.readString(Path.of("/run/secrets/stack-worker-token"));if(!value.matches("[a-f0-9]{64}"))throw new IllegalStateException("Worker configuration unavailable");token=value.getBytes(StandardCharsets.US_ASCII);}
-    public record Completion(UUID runId,UUID organizationId,UUID projectId,String scenario,Evaluation.Result result) {}
+    private final RunService runs;private final ProviderBudget budget;private final byte[] token;
+    public CompletionController(RunService runs,ProviderBudget budget) throws Exception {this.runs=runs;this.budget=budget;var value=Files.readString(Path.of("/run/secrets/stack-worker-token"));if(!value.matches("[a-f0-9]{64}"))throw new IllegalStateException("Worker configuration unavailable");token=value.getBytes(StandardCharsets.US_ASCII);}
+    public record Reservation(UUID runId,UUID organizationId,UUID projectId,String scenario,String provider) {}
+    @PostMapping("/internal/provider-reservations") Map<String,Object> reserve(@RequestHeader(value="X-AgentTrust-Worker-Token",required=false) String supplied,@RequestBody Reservation body){
+        if(supplied==null||supplied.length()!=64||!MessageDigest.isEqual(token,supplied.getBytes(StandardCharsets.US_ASCII)))throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+        if(body.runId()==null||body.organizationId()==null||body.projectId()==null||body.scenario()==null||body.provider()==null)throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+        return budget.reserve(new DemoUser("worker-budget","unused",body.organizationId(),body.projectId(),new UUID(0,0),"viewer"),body.runId(),body.scenario(),body.provider());
+    }
+    public record Completion(UUID runId,UUID organizationId,UUID projectId,String scenario,Evaluation.Result result,String provider) {}
     @PostMapping("/internal/completions") Map<String,Object> complete(@RequestHeader(value="X-AgentTrust-Worker-Token",required=false) String supplied,@RequestBody Completion body) {
         if(supplied==null || supplied.length()!=64 || !MessageDigest.isEqual(token,supplied.getBytes(StandardCharsets.US_ASCII)))throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         if(body.runId()==null||body.organizationId()==null||body.projectId()==null||body.scenario()==null||body.result()==null||"python-unavailable".equals(body.result().executionEngine()))throw new ResponseStatusException(HttpStatus.BAD_REQUEST);

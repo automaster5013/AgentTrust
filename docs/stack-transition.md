@@ -16,7 +16,7 @@
 | Messaging | NATS JetStream | 별도 디스크 스트림·명시적 ACK·안정 실행 ID·DB 대기 기록 재전달을 실제 로컬 경로에 통합 | 영속 작업 전달·재전달·중복 처리·장애 복구 |
 | Object Storage | MinIO | 실제 바이트 해시·기록된 버전 조회·조직 경계·7일 COMPLIANCE 잠금·재시작·장애 복구를 로컬 검증. 7개 게시 이미지 CI 성공 | 조직별 근거 저장·해시·접근 권한·수명 관리 |
 | Identity | Keycloak | 별도 DB의 실제 OIDC·S256 PKCE·조직/역할·양쪽 로그아웃·서명된 공급자 세션 철회를 로컬 검증. 운영 설정은 미완료 | OIDC 로그인·조직/역할·토큰·로그아웃 경계 |
-| AI Providers | OpenAI + Ollama + OpenAI-compatible | 미착수 | 통제된 공급자별 실제 어댑터·계약·비용/시간 예산 |
+| AI Providers | OpenAI + Ollama + OpenAI-compatible | 고정 digest의 실제 Ollama 및 로컬 OpenAI 호환 추론·공급자 admission·1회 예약·실패 거부 6개 로컬 검증. OpenAI Responses 어댑터는 계약 테스트, 실제 유료 호출 미수행 | 통제된 공급자별 실제 어댑터·계약·비용/시간 예산 |
 | Evaluation | 자체 평가기 + Promptfoo | Python 합성 자체 평가기와 Java 판정 검증 통합. 실제 Promptfoo 0.124.1의 4개 합성 사례·8개 단언 및 내부 비루트 컨테이너를 로컬 검증 | 기존 판정 사례의 새 실행과 Promptfoo 결과 연계 |
 | Observability | OpenTelemetry + Prometheus + Tempo + Loki + Grafana | 실제 HTTP 공유 trace·평가 counter·정제된 로그·자동 대시보드·합성 canary 제거 9개 로컬 검증. 원격 CI 재검증 중 | 요청→평가 추적·메트릭·로그·대시보드·민감 정보 제외 |
 | Local | Docker Compose | 전환 11개 서비스의 Compose 실행·헬스·워커/메시징/API 재시작·기한 초과 검증 | 별도 서비스/DB로 새 흐름 실행·재시작 보존 |
@@ -95,3 +95,7 @@ pgvector 0.8.7은 실제 같은 프로젝트 규칙 특징 코사인 검색, 조
 ## 관측과 공급망 보안 전환
 
 [관측 경로](stack-observability.md)와 [보안 검사](stack-security.md)에 실제 검증 범위와 남은 조건을 기록했다. Java 21을 유지하며 취약점 수정에 필요한 Spring Boot 4.1.1 전환 후 계약과 재시작 흐름을 재검증했다. 이미지 공급망 서명과 평가 릴리스 게이트의 서명은 별도이며 실제 서버 배포는 수행하지 않는다.
+
+## 실제 로컬 공급자 전환
+
+[공급자 실행과 한계](stack-providers.md)에 실제 로컬 추론과 유료 API 계약 검증을 구분했다. V9는 새 전환 DB만 확장하며 이미 적용한 V1~V8과 기존 20개 SQL은 바꾸지 않는다. 공급자/합성 실행과 실패를 서로 대체하지 않는다.

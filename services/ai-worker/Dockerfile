@@ -2,7 +2,7 @@ FROM python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d75060
 WORKDIR /app
 COPY requirements*.txt ./
 RUN pip install --no-cache-dir -r requirements-test.txt
-COPY app.py features.py telemetry.py test_worker.py test_features.py ./
+COPY app.py features.py telemetry.py providers.py test_worker.py test_features.py test_providers.py ./
 RUN pytest -q
 FROM python:3.14-alpine@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72
 WORKDIR /app
@@ -12,6 +12,7 @@ RUN python -m pip uninstall -y pip setuptools
 COPY --from=test /app/app.py ./
 COPY --from=test /app/features.py ./
 COPY --from=test /app/telemetry.py ./
+COPY --from=test /app/providers.py ./
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 USER 10001
 EXPOSE 8000

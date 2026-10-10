@@ -20,7 +20,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class JsonBodyLimitFilter extends OncePerRequestFilter {
     @Override protected void doFilterInternal(HttpServletRequest request,HttpServletResponse response,FilterChain chain) throws ServletException,IOException {
         String path=request.getRequestURI();
-        if(!request.getMethod().equals("POST") || !(path.equals("/internal/completions") || path.equals("/api/runs") || path.startsWith("/api/runs/"))) {chain.doFilter(request,response);return;}
+        if(!request.getMethod().equals("POST") || !(path.equals("/internal/completions") || path.equals("/internal/provider-reservations") || path.equals("/api/runs") || path.startsWith("/api/runs/"))) {chain.doFilter(request,response);return;}
         if(request.getContentLengthLong()>16384) {reject(response);return;}
         byte[] bytes=request.getInputStream().readNBytes(16385);
         if(bytes.length>16384) {reject(response);return;}

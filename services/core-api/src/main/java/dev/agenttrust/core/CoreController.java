@@ -22,8 +22,8 @@ public class CoreController {
     @GetMapping("/me") Map<String,Object> me(@AuthenticationPrincipal DemoUser user) {return Map.of("username",user.getUsername(),"organizationId",user.organizationId(),"projectId",user.projectId(),"actorId",user.actorId(),"role",user.role(),"identityProvider",user instanceof OidcWorkspaceUser?"keycloak":"local-demo","runtime","java21-spring-boot");}
     @GetMapping("/runs") List<Map<String,Object>> list(@AuthenticationPrincipal DemoUser user) {return service.list(user);}
     @GetMapping("/runs/{id}") Map<String,Object> get(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id) {return service.get(user,id);}
-    public record Create(@NotBlank @Pattern(regexp="pass|block|missing_evidence|error") String scenario, @NotNull Boolean requiresApproval) {}
-    @PostMapping("/runs") Map<String,Object> create(@AuthenticationPrincipal DemoUser user,@RequestHeader("Idempotency-Key") String key,@Valid @RequestBody Create body) {return service.create(user,key,body.scenario(),body.requiresApproval());}
+    public record Create(@NotBlank @Pattern(regexp="pass|block|missing_evidence|error") String scenario, @NotNull Boolean requiresApproval,@Pattern(regexp="synthetic|ollama|openai|openai-compatible") String provider) {}
+    @PostMapping("/runs") Map<String,Object> create(@AuthenticationPrincipal DemoUser user,@RequestHeader("Idempotency-Key") String key,@Valid @RequestBody Create body) {return service.create(user,key,body.scenario(),body.requiresApproval(),body.provider()==null?"synthetic":body.provider());}
     public record Review(@NotBlank @Pattern(regexp="approved|rejected") String decision,@NotBlank @Size(max=500) String reason) {}
     @GetMapping("/runs/{id}/reviews") List<Map<String,Object>> reviews(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id) {return service.reviews(user,id);}
     @PostMapping("/runs/{id}/reviews") Map<String,Object> review(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id,@Valid @RequestBody Review body) {return service.review(user,id,body.decision(),body.reason());}

@@ -108,3 +108,7 @@ Promptfoo는 검증 전용 프로필이며 완료 후 자체 컨테이너를 제
 ## 관측 프로필과 보안 검증
 
 [실제 관측 경로와 Grafana 실행](stack-observability.md), [소스·이미지·서명 검증](stack-security.md)을 따른다. 관측 프로필은 기존 데이터와 별도 전용 볼륨을 사용한다. 새 스택을 서비스 재시작 뒤 사용할 때 Gateway는 Core 건강 상태도 확인하며 제한된 GET 읽기만 전송 오류에 한 번 재시도한다. POST 평가/검토와 OAuth 콜백·CSRF 조회는 자동 재전송하지 않는다.
+
+## 실제 로컬 모델
+
+[공급자 프로필](stack-providers.md)의 setup/start/smoke 순서를 따른다. 활성화 표식은 비공개 `.local/stack/providers-enabled`이며 이후 장애 복구 도구도 같은 프로필을 사용한다. 기본 합성 실행과 실제 모델 실행을 구분하며 유료 OpenAI 연결은 기본 비활성이다.

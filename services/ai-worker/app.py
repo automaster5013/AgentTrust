@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from features import rule_features, VERSION, DIMENSIONS
 from telemetry import configure,evaluation_event
+from providers import evaluate_provider,unavailable
 
 worker_state = {'ready': False}
 
@@ -54,7 +55,16 @@ async def consume(connection, subscription):
                         await message.term()
                     continue
                 try:
-                    payload = {**body.model_dump(), 'result': evaluate(body.scenario)}
+                    if body.provider=='synthetic':result=evaluate(body.scenario)
+                    else:
+                        # A lost reservation response burns the reservation. Never repeat an ambiguous provider call.
+                        reservation=await client.post('http://stack-core-api:8080/internal/provider-reservations',json=body.model_dump(),headers={'X-AgentTrust-Worker-Token':token})
+                        accepted=reservation.status_code==200 and reservation.json().get('allowed') is True and reservation.json().get('runId')==body.runId and reservation.json().get('reservedInputTokens')==256 and reservation.json().get('reservedOutputTokens')==128
+                        if accepted:
+                            evaluation_event()
+                            result=await evaluate_provider(body.provider,body.scenario,client)
+                        else:result=unavailable(body.provider)
+                    payload = {**body.model_dump(), 'result': result}
                     response = await client.post('http://stack-core-api:8080/internal/completions', json=payload, headers={'X-AgentTrust-Worker-Token': token})
                     if response.status_code == 200 and response.json().get('accepted') is True and response.json().get('runId') == body.runId:
                         await message.ack_sync(timeout=2)
@@ -103,6 +113,7 @@ class EvaluationRequest(BaseModel):
     runId: str
     organizationId: str
     projectId: str
+    provider: Literal['synthetic','ollama','openai','openai-compatible']='synthetic'
 
 
 def evaluate(scenario: str) -> dict:
@@ -153,6 +164,7 @@ def health():
 @app.post('/evaluate')
 def evaluation(body: EvaluationRequest, x_agenttrust_worker_token: str | None = Header(default=None)):
     authorized(x_agenttrust_worker_token)
+    if body.provider!='synthetic':raise HTTPException(422,detail='Provider execution requires durable reservation')
     for value in (body.runId, body.organizationId, body.projectId):
         try:
             if str(UUID(value)) != value:
@@ -174,7 +186,7 @@ class FeatureResult(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     state: Literal['succeeded', 'failed']
     decision: Literal['pass', 'block', 'inconclusive']
-    executionEngine: Literal['python-synthetic', 'python-unavailable', 'java-synthetic']
+    executionEngine: Literal['python-synthetic', 'python-unavailable', 'java-synthetic','python-ollama','python-openai','python-openai-compatible']
     rules: list[FeatureRule] = Field(min_length=1, max_length=100)
 
 

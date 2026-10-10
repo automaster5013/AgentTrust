@@ -99,6 +99,11 @@ jobs:
       - name: Verify actual Redis quotas and recovery
         run: |
           python3 scripts/stack-gateway-smoke.py
+      - name: Verify actual pinned local model and immutable provider reservations
+        run: |
+          python3 scripts/stack-provider-setup.py
+          python3 scripts/stack-provider-start.py
+          python3 scripts/stack-provider-smoke.py
           python3 scripts/stack-observability-smoke.py
       - name: Preserve safe synthetic fault diagnostics
         if: always()
@@ -113,11 +118,12 @@ jobs:
             .local/stack-http-smoke-*.json
             .local/stack-observability-smoke-*.json
             .local/stack-database-init-smoke-*.json
+            .local/stack-provider-smoke-*.json
           if-no-files-found: ignore
           retention-days: 7
       - name: Stop isolated runner services
         if: always()
-        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml down
+        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.providers.yaml down
   images:
     needs: integration
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -180,6 +186,9 @@ jobs:
           python3 scripts/stack-object-smoke.py
           python3 scripts/stack-vector-smoke.py
           python3 scripts/stack-gateway-smoke.py
+          python3 scripts/stack-provider-setup.py
+          python3 scripts/stack-provider-start.py
+          python3 scripts/stack-provider-smoke.py
           python3 scripts/stack-observability-smoke.py
           python3 scripts/stack-image-smoke.py
           python3 scripts/stack-delivery-manifest.py
@@ -194,7 +203,7 @@ jobs:
         run: docker logout ghcr.io
       - name: Stop isolated registry-image services
         if: always()
-        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.image.yaml down
+        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.image.yaml -f compose.stack.providers.yaml down
   security-images:
     needs: images
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

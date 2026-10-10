@@ -40,8 +40,8 @@ public class SecurityConfiguration {
         };
     }
     @Bean SecurityFilterChain security(HttpSecurity http) throws Exception {
-        http.authorizeHttpRequests(auth -> auth.requestMatchers("/actuator/health","/api/csrf","/api/login","/api/auth-info","/internal/completions").permitAll().anyRequest().authenticated());
-        http.csrf(csrf -> csrf.ignoringRequestMatchers("/internal/completions"));
+        http.authorizeHttpRequests(auth -> auth.requestMatchers("/actuator/health","/api/csrf","/api/login","/api/auth-info","/internal/completions","/internal/provider-reservations").permitAll().anyRequest().authenticated());
+        http.csrf(csrf -> csrf.ignoringRequestMatchers("/internal/completions","/internal/provider-reservations"));
         http.formLogin(login -> login.loginProcessingUrl("/api/login")
             .successHandler((req,res,auth) -> {res.setContentType("application/json");res.getWriter().write("{\"authenticated\":true}");})
             .failureHandler((req,res,error) -> {res.setStatus(401);res.setContentType("application/json");res.getWriter().write("{\"code\":\"AUTHENTICATION_FAILED\"}");}));

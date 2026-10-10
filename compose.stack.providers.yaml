@@ -1,0 +1,84 @@
+name: agenttrust
+services:
+  stack-provider-init:
+    image: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+    user: '0'
+    command: [sh, -ec, 'chown 10001:10001 /models']
+    volumes: [stack-ollama-models:/models]
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 32m
+    pids_limit: 16
+  stack-provider-bootstrap:
+    image: ollama/ollama:0.40.2@sha256:b86366bb528bbf7f1424435d165028497a5b69bf6ddb4fa5a87102e2b79f44fb
+    user: '10001:10001'
+    entrypoint: [bash, -ec]
+    command:
+      - |
+        export OLLAMA_HOST=127.0.0.1:11434
+        ollama serve >/tmp/bootstrap.log 2>&1 &
+        daemon=$$!
+        trap 'kill $$daemon 2>/dev/null || true; wait $$daemon 2>/dev/null || true' EXIT
+        for attempt in $$(seq 1 40); do ollama list >/dev/null 2>&1 && break; sleep 1; done
+        timeout 600 ollama pull qwen3:0.6b >/tmp/pull.log 2>&1
+        echo '6f76d4346c34ba89df6e137fb661b4bb4daf322c1151b6ef0dfda981070a851f  /models/manifests/registry.ollama.ai/library/qwen3/0.6b' | sha256sum -c -
+    environment:
+      OLLAMA_MODELS: /models
+      OLLAMA_NO_CLOUD: 'true'
+      OLLAMA_NOPRUNE: 'true'
+      OLLAMA_DEBUG_LOG_REQUESTS: 'false'
+      HOME: /tmp
+    volumes: [stack-ollama-models:/models]
+    networks: [stack-provider-download]
+    depends_on:
+      stack-provider-init: {condition: service_completed_successfully}
+    read_only: true
+    tmpfs: ['/tmp:size=32m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 1
+    pids_limit: 64
+  stack-ollama:
+    image: ollama/ollama:0.40.2@sha256:b86366bb528bbf7f1424435d165028497a5b69bf6ddb4fa5a87102e2b79f44fb
+    user: '10001:10001'
+    environment:
+      OLLAMA_MODELS: /models
+      OLLAMA_NO_CLOUD: 'true'
+      OLLAMA_NOPRUNE: 'true'
+      OLLAMA_DEBUG_LOG_REQUESTS: 'false'
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_NUM_PARALLEL: '1'
+      OLLAMA_MAX_LOADED_MODELS: '1'
+      OLLAMA_MAX_QUEUE: '4'
+      OLLAMA_CONTEXT_LENGTH: '1024'
+      OLLAMA_KEEP_ALIVE: '0'
+      OLLAMA_DEBUG: 'false'
+      HOME: /tmp
+    volumes: [stack-ollama-models:/models:ro]
+    networks: [stack-backend]
+    depends_on:
+      stack-provider-bootstrap: {condition: service_completed_successfully}
+    read_only: true
+    tmpfs: ['/tmp:size=128m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1536m
+    cpus: 2
+    pids_limit: 128
+    healthcheck:
+      test: [CMD, ollama, list]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  stack-ai-worker:
+    environment:
+      STACK_ENABLE_PAID_PROVIDERS: 'false'
+volumes:
+  stack-ollama-models:
+networks:
+  stack-provider-download:
+    internal: false
