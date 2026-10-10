@@ -27,6 +27,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: original-stack-source-security-${{ github.sha }}
+          include-hidden-files: true
           path: |
             .local/stack-security-source-*/summary.json
             .local/stack-security-source-*/reports/semgrep.json
@@ -100,6 +101,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: original-stack-diagnostics-${{ github.sha }}
+          include-hidden-files: true
           path: |
             .local/stack-vector-smoke-*.json
             .local/stack-object-smoke-*.json
