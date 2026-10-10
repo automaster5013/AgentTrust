@@ -11,3 +11,7 @@ services:
     image: ${STACK_IDENTITY_IMAGE:?Provide verified identity image digest}
   stack-gateway:
     image: ${STACK_GATEWAY_IMAGE:?Provide verified gateway image digest}
+  stack-object-store:
+    image: ${STACK_OBJECT_IMAGE:?Provide verified object storage image digest}
+  stack-object-init:
+    image: ${STACK_OBJECT_IMAGE:?Provide verified object storage image digest}

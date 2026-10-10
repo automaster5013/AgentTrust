@@ -6,8 +6,9 @@
 python scripts/stack-setup.py
 python scripts/stack-identity-setup.py
 python scripts/stack-gateway-setup.py
-docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml build stack-core-api stack-ai-worker stack-console stack-opa stack-identity stack-gateway
-docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console
+python scripts/stack-object-setup.py
+docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml build stack-core-api stack-ai-worker stack-console stack-opa stack-identity stack-gateway stack-object-store
+docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console
 python scripts/stack-identity-profile.py
 python scripts/stack-identity-smoke.py
 python scripts/stack-http-smoke.py
@@ -25,7 +26,7 @@ Java가 요청자의 범위·역할·멱등성 키를 확인하고 DB에 불변 
 
 Java 21 컨테이너의 Maven 테스트, Python 컨테이너의 pytest, Next.js의 타입 검사·계약 테스트·생산 빌드는 Docker 빌드 중 수행된다. 실제 HTTP 검증은 역할/조직 경계, 필수 실패·근거 누락·오류, 승인 후 반려, 동시 멱등성·검토 순서, 로그아웃 후 재로그인과 프런트 프록시의 외부 Origin 차단을 확인한다. DB 검증은 롤백된 트랜잭션에서 RLS와 수정·삭제 거부를 직접 확인한다. Playwright의 실제 헤드리스 브라우저 검사로 생성·완료·승인·반려, 조회자 권한, 지연된 선택 응답을 검증한다. 화면의 시각 검수는 별개다.
 
-새 GitHub Actions는 합성 로컬 통합 이후 여섯 이미지의 커밋 태그와 불변 digest를 보관한다. 서버 배포는 수행하지 않는다. 게시한 불변 digest를 다시 실행하여 이미지·커밋·언어 런타임과 HTTP/DB 흐름을 대조한 뒤 manifest의 `registryImagesRuntimeVerified`를 기록한다. 워크플로 작성과 원격 실행 성공은 별개이므로 CI 결과를 확인해야 한다.
+새 GitHub Actions는 합성 로컬 통합 이후 일곱 이미지의 커밋 태그와 불변 digest를 보관한다. 서버 배포는 수행하지 않는다. 게시한 불변 digest를 다시 실행하여 이미지·커밋·언어 런타임과 HTTP/DB 흐름을 대조한 뒤 manifest의 `registryImagesRuntimeVerified`를 기록한다. 워크플로 작성과 원격 실행 성공은 별개이므로 CI 결과를 확인해야 한다.
 
 복구 검증은 아래 명령을 **하나씩** 실행한다. 각 검증은 새 stack-* 의존성만 일시 정지하고 복원하며 자체 세션을 로그아웃한다. 브라우저/HTTP 검증과 같은 서비스의 장애 검증을 동시에 실행하지 않는다.
 
@@ -59,3 +60,18 @@ python scripts/stack-gateway-smoke.py
 ```
 
 Gateway 검증은 한 조직의 quota를 실제 요청으로 소진하고, 같은 조직 공유·다른 조직 독립·AOF 재시작·Redis 장애 거부·만료 후 재개를 확인한다. 멱등성 키를 재사용하므로 쓰기 60회가 60개의 새 실행을 만들지 않는다. 종료 전 창 만료와 자체 로그아웃을 확인한다. 다른 브라우저/HTTP·장애 검사와 동시에 실행하지 않는다.
+
+
+## MinIO의 버전별 평가 근거
+
+`stack-object-store`는 호스트 포트를 열지 않고 전용 `stack-object-data` 볼륨을 사용한다. `stack-object-init`은 제한 계정, versioning이 활성화된 `stack-evidence` 버킷, 7일 COMPLIANCE 기본 보존과 256MiB 버킷 한도를 구성한다. Core에는 관리자 비밀을 전달하지 않는다. application 계정은 지정 버킷의 근거 쓰기·읽기만 허용하며 객체 나열·삭제·설정 변경은 거부한다. 버킷 목록에서는 권한이 있는 지정 버킷이 발견될 수 있다.
+
+완료된 평가를 조직/프로젝트/실행/SHA-256 경로의 JSON으로 보관하고 실제 바이트를 다시 읽어 확인한 후 버전 ID와 해시를 불변 DB 기록으로 저장한다. `GET /api/runs/{id}/evidence`는 인증된 범위를 먼저 확인한 뒤 기록된 특정 버전을 조회한다. Next.js는 응답의 base64 바이트를 직접 SHA-256으로 대조하고 선택한 평가 결과와 범위가 일치할 때만 검증 결과를 표시한다. 저장소 장애에는 검증된 근거를 반환하지 않는다. 재시작 중 일시적 503은 복구 후 재조회한다.
+
+```powershell
+python scripts/stack-object-smoke.py
+```
+
+검사는 자체 합성 실행의 잠금·권한·원본 버전·재시작·장애 복구를 확인한다. 자체 객체에 새로운 합성 shadow 버전을 추가하지만 원본 버전과 DB 기록은 유지한다. 이 보관 기능은 현재 OPA 릴리스 게이트의 추가 필수 조건이 아니며, 게이트 조회는 계속 별도로 수행한다. 운영 보존 기간·용량 계획·독립 백업·HA는 미완료다.
+
+MinIO OSS의 고정 공식 보안 릴리스 `RELEASE.2025-10-15T17-29-55Z`를 commit와 다운로드 checksum으로 검증해 소스 빌드한다. 공식 저장소는 archived 상태이므로 운영 유지보수 방안은 별도 결정해야 한다. 이미지에 AGPLv3 라이선스를 포함한다. [공식 소스](https://github.com/minio/minio/tree/9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a)와 [객체 잠금 구현](https://github.com/minio/minio/blob/9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a/docs/bucket/retention/README.md)을 기준으로 사용한다.

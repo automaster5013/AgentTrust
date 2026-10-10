@@ -6,7 +6,7 @@ public final class RoutePolicy {
  private RoutePolicy(){}
  public static boolean allowed(String path,HttpMethod method){
   if(path.contains("%")||path.contains(".."))return false;
-  if(method==HttpMethod.GET)return path.matches("/api/(auth-info|csrf|me|runs|runs/[a-f0-9-]{36}(/(reviews|gate))?)")||path.equals("/oauth2/authorization/keycloak")||path.equals("/login/oauth2/code/keycloak");
+  if(method==HttpMethod.GET)return path.matches("/api/(auth-info|csrf|me|runs|runs/[a-f0-9-]{36}(/(reviews|gate|evidence))?)")||path.equals("/oauth2/authorization/keycloak")||path.equals("/login/oauth2/code/keycloak");
   return method==HttpMethod.POST&&(path.matches("/api/(login|logout|runs|runs/[a-f0-9-]{36}/reviews)"));
  }
  public static boolean protectedPath(String path){return path.equals("/api/me")||path.equals("/api/runs")||path.startsWith("/api/runs/");}

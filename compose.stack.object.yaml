@@ -1,0 +1,48 @@
+services:
+  stack-core-api:
+    environment:
+      STACK_OBJECT_MODE: minio
+    secrets: [stack-minio-user, stack-minio-password]
+    depends_on:
+      stack-object-init:
+        condition: service_completed_successfully
+  stack-object-store:
+    build: services/object-store
+    image: agenttrust-object-store:local
+    secrets: [stack-minio-root-user, stack-minio-root-password]
+    volumes: [stack-object-data:/tmp]
+    networks: [stack-backend]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 128
+  stack-object-init:
+    image: agenttrust-object-store:local
+    entrypoint: [/usr/local/bin/minio-init]
+    secrets: [stack-minio-root-user, stack-minio-root-password, stack-minio-user, stack-minio-password]
+    networks: [stack-backend]
+    depends_on:
+      stack-object-store:
+        condition: service_healthy
+    read_only: true
+    tmpfs: ['/tmp:size=16m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 1
+    pids_limit: 64
+    healthcheck:
+      disable: true
+volumes:
+  stack-object-data:
+secrets:
+  stack-minio-root-user:
+    file: .local/stack/minio-root-user
+  stack-minio-root-password:
+    file: .local/stack/minio-root-password
+  stack-minio-user:
+    file: .local/stack/minio-user
+  stack-minio-password:
+    file: .local/stack/minio-password

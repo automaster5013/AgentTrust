@@ -14,14 +14,14 @@
 | Database | PostgreSQL + pgvector | 전환 PostgreSQL 별도 DB·제한 역할·RLS·불변 기록 검증 / pgvector 미착수 | 전환 영속 저장·조직 경계·복구, 벡터 검색의 실제 사용 경로 |
 | Cache | Redis | 조직·프로젝트별 원자적 요청 한도·ACL·AOF 재시작·장애 거부·만료 후 재개를 로컬 검증 | 캐시 용도·조직 키·무효화·장애 시 의미 검증 |
 | Messaging | NATS JetStream | 별도 디스크 스트림·명시적 ACK·안정 실행 ID·DB 대기 기록 재전달을 실제 로컬 경로에 통합 | 영속 작업 전달·재전달·중복 처리·장애 복구 |
-| Object Storage | MinIO | 미착수 | 조직별 근거 저장·해시·접근 권한·수명 관리 |
+| Object Storage | MinIO | 실제 바이트 해시·기록된 버전 조회·조직 경계·7일 COMPLIANCE 잠금·재시작·장애 복구를 로컬 검증. 게시 이미지 CI 확인 예정 | 조직별 근거 저장·해시·접근 권한·수명 관리 |
 | Identity | Keycloak | 별도 DB의 실제 OIDC·S256 PKCE·조직/역할·양쪽 로그아웃·서명된 공급자 세션 철회를 로컬 검증. 운영 설정은 미완료 | OIDC 로그인·조직/역할·토큰·로그아웃 경계 |
 | AI Providers | OpenAI + Ollama + OpenAI-compatible | 미착수 | 통제된 공급자별 실제 어댑터·계약·비용/시간 예산 |
 | Evaluation | 자체 평가기 + Promptfoo | Python 합성 자체 평가기와 Java 판정 검증 통합 / Promptfoo 미착수 | 기존 판정 사례의 새 실행과 Promptfoo 결과 연계 |
 | Observability | OpenTelemetry + Prometheus + Tempo + Loki + Grafana | 미착수 | 요청→평가 추적·메트릭·로그·대시보드·민감 정보 제외 |
-| Local | Docker Compose | 전환 9개 서비스의 Compose 실행·헬스·워커/메시징/API 재시작·기한 초과 검증 | 별도 서비스/DB로 새 흐름 실행·재시작 보존 |
+| Local | Docker Compose | 전환 11개 서비스의 Compose 실행·헬스·워커/메시징/API 재시작·기한 초과 검증 | 별도 서비스/DB로 새 흐름 실행·재시작 보존 |
 | Production | Kubernetes + Helm + Terraform | 미착수 | 지정 환경의 렌더/검증·비밀·헬스·배포/복귀. 실제 배포는 별도 결과 |
-| CI/CD | GitHub Actions | Java/Python/TypeScript·NATS·브라우저·OPA 통합과 4개 불변 게시 이미지 CI 성공. Keycloak 5개 이미지 확장 CI 성공. Gateway 6개 이미지 확장 CI 확인 예정 | Java/Python/TypeScript 검사·통합·이미지 검증 |
+| CI/CD | GitHub Actions | Java/Python/TypeScript·NATS·브라우저·OPA 통합과 4개 불변 게시 이미지 CI 성공. Keycloak 5개 이미지 확장 CI 성공. Gateway 6개 이미지 확장 CI 성공. MinIO 7개 이미지 확장 CI 확인 예정 | Java/Python/TypeScript 검사·통합·이미지 검증 |
 | Security | Trivy + Syft + Cosign + Gitleaks + Semgrep | 미착수 | 각 도구의 실행 결과·검증 가능한 SBOM/서명·실패 게이트 |
 
 ## 구현 순서
@@ -70,3 +70,10 @@
 - [Spring WebFlux WebClient](https://docs.spring.io/spring-framework/reference/web/webflux-webclient.html)
 - [Spring Data Redis 원자적 스크립트](https://docs.spring.io/spring-data/redis/reference/redis/scripting.html)
 - [Redis AOF 로딩과 ACL 확인 문제](https://github.com/redis/redis/issues/14541)
+
+
+## Gateway CI와 MinIO 근거 보관 검증
+
+[00c7d49 여섯 게시 이미지의 WebFlux·Redis 실행 CI](https://github.com/automaster5013/AgentTrust/actions/runs/38039155090)가 성공했다. 소스 통합, 정확한 registry 이미지, 실제 Redis 한도와 만료 후 재개를 확인했으며 전달 archive digest와 manifest checksum을 대조했다.
+
+MinIO는 별도 볼륨에 완료된 합성 평가 근거의 바이트와 버전을 저장한다. 제한 계정·DB RLS·브라우저 SHA-256·7일 COMPLIANCE 잠금·관리자 삭제 거부·새 버전 이후 원본 조회·재시작·장애 복구 5개 HTTP 검사와 4개 브라우저 기능 검사를 통과했다. 이는 근거 보관 기능이며 현재 릴리스 게이트의 필수 입력이나 서명된 배포 권한은 아니다. 보관 장애는 근거 조회를 503으로 거부하고 재시도한다. MinIO 확장의 원격 CI 결과는 별도 확인한다.

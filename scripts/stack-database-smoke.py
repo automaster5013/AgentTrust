@@ -22,6 +22,16 @@ try:
    IF foreign_visible <> 0 THEN RAISE EXCEPTION 'Foreign rows visible'; END IF;
    SELECT count(*) INTO foreign_visible FROM stack_run_results WHERE organization_id='{foreign['organizationId']}';
    IF foreign_visible <> 0 THEN RAISE EXCEPTION 'Foreign completions visible'; END IF;
+   SELECT count(*) INTO foreign_visible FROM stack_evidence_archives WHERE organization_id='{foreign['organizationId']}';
+   IF foreign_visible <> 0 THEN RAISE EXCEPTION 'Foreign archives visible'; END IF;
+   BEGIN
+     UPDATE stack_evidence_archives SET content_sha256=repeat('a',64) WHERE run_id=own_run;
+     RAISE EXCEPTION 'Archive update permitted';
+   EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+   BEGIN
+     DELETE FROM stack_evidence_archives WHERE run_id=own_run;
+     RAISE EXCEPTION 'Archive deletion permitted';
+   EXCEPTION WHEN insufficient_privilege THEN NULL; END;
    BEGIN
      UPDATE stack_run_results SET decision='pass' WHERE run_id=own_run;
      RAISE EXCEPTION 'Completion update permitted';
@@ -48,6 +58,6 @@ try:
  ROLLBACK;
  """
  run(['docker','exec','-i','agenttrust-stack-db-1','psql','-U','agenttrust_stack','-d','agenttrust_stack','-v','ON_ERROR_STOP=1'],input=sql)
- print(json.dumps({'completed':True,'database':'agenttrust_stack','checks':['RLS foreign rows invisible','result update refused','run deletion refused','cross-scope insert refused','scoped review foreign key enforced'],'testWritesRolledBack':True,'legacyDatabaseChanged':False}))
+ print(json.dumps({'completed':True,'database':'agenttrust_stack','checks':['RLS foreign rows invisible','result update refused','run deletion refused','cross-scope insert refused','scoped review foreign key enforced','archive scope and immutable metadata enforced'],'testWritesRolledBack':True,'legacyDatabaseChanged':False}))
 except Exception:
  print(json.dumps({'completed':False,'code':'DATABASE_BOUNDARY_UNVERIFIED'}));raise SystemExit(1)
