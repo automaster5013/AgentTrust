@@ -4,7 +4,7 @@
 
 기업 개발팀이 AI 에이전트의 평가 근거를 확인하고, 관리자 검토와 CI 릴리스 게이트를 거쳐 배포 여부를 결정하는 플랫폼입니다.
 
-**2026-10-10 원래 기술 스택으로 전환 중**: 새 `apps/console`은 Next.js/TypeScript, `services/core-api`는 Java 21/Spring Boot, `services/ai-worker`는 Python/FastAPI입니다. 별도 PostgreSQL에서 실제 로그인→평가 실행→결과 저장→관리자 승인·반려→현재 게이트의 합성 흐름을 검증했습니다. 기존 JavaScript v0.187은 비교 기준으로 보존하며 아래의 기존 테스트 수를 새 스택의 완료율로 사용하지 않습니다. 새 인증은 임시 로컬 계정이고 게이트는 서명되지 않았습니다. [기술별 전환 상태](docs/stack-transition.md)와 [새 스택 실행](docs/stack-local.md)을 확인하세요.
+**2026-10-10 원래 기술 스택으로 전환 중**: 새 `apps/console`은 Next.js/TypeScript, `services/core-api`는 Java 21/Spring Boot, `services/ai-worker`는 Python/FastAPI입니다. 별도 PostgreSQL에서 실제 로그인→평가 실행→결과 저장→관리자 승인·반려→현재 게이트의 합성 흐름을 검증했습니다. 기존 JavaScript v0.187은 비교 기준으로 보존하며 아래의 기존 테스트 수를 새 스택의 완료율로 사용하지 않습니다. 새 인증은 Keycloak OIDC(Authorization Code·PKCE)이며 Python 워커·NATS JetStream·OPA/Rego를 연결했습니다. 게이트는 아직 서명되지 않았습니다. [기술별 전환 상태](docs/stack-transition.md)와 [새 스택 실행](docs/stack-local.md)을 확인하세요.
 
 **v0.187 로컬 프로토타입**: 기업 개발팀의 합성 평가 실행 → 근거 탐색·회귀 비교 → 관리자 승인/반려 → 최종 게이트 → 서명 기록 저장을 구현했습니다. 실패·누락·만료·반려는 릴리스를 허용하지 않습니다. 로그인·프로젝트·실행 범위별 지연 응답 보호와 크기 제한을 검증하고, 시연·복구·Docker 이미지 전달 절차를 제공합니다. 실제 고객 모델 연동과 상용 서버 배포는 아직 수행하지 않았습니다.
 
@@ -128,7 +128,7 @@ npm.cmd test
 | [위협 모델](docs/threat-model.md) · [제품 범위](docs/product.md) | 보안 경계와 제품 가정 |
 | [로드맵](docs/roadmap.md) · [다음 구현 작업](docs/next-implementation.md) | 출시 조건과 완료 이력 |
 
-실제 고객 모델 연결, SSO/OIDC, 상용 배포·운영 검증은 남아 있습니다. 배포 지역·데이터 보존 기간·결제 방식도 확정 전입니다. 현재 점수와 판정은 합성 데이터 및 정책에 명시한 범위의 증거이며 위험 제거를 보장하지 않습니다.
+실제 고객 모델 연결, 운영용 SSO 설정과 상용 배포·운영 검증은 남아 있습니다. 새 스택의 로컬 Keycloak OIDC 검증은 기존 JavaScript 설치의 SSO 구현을 뜻하지 않습니다. 배포 지역·데이터 보존 기간·결제 방식도 확정 전입니다. 현재 점수와 판정은 합성 데이터 및 정책에 명시한 범위의 증거이며 위험 제거를 보장하지 않습니다.
 
 화면의 **합성 데이터셋 등록 → 합성 수용 기준 초안 준비**는 데이터셋 두 사례와 관리자 승인 정책을 양식에 함께 채운다. 아직 저장되지 않은 초안이며 각 버전을 등록·선택한 뒤 평가해야 한다. 자세한 절차는 [합성 수용 기준 화면 준비](docs/connector-contract.md#화면에서-합성-수용-기준-초안-준비)를 따른다.
 

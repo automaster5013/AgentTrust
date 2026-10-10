@@ -1,0 +1,47 @@
+services:
+  stack-core-api:
+    environment:
+      STACK_IDENTITY_MODE: keycloak
+    secrets: [stack-oidc-client-secret]
+    depends_on:
+      stack-identity:
+        condition: service_healthy
+  stack-identity:
+    build: services/identity
+    image: agenttrust-identity:local
+    environment:
+      KC_DB_URL: jdbc:postgresql://stack-db:5432/agenttrust_stack_identity
+      KC_DB_USERNAME: agenttrust_stack_identity
+      KC_DB_PASSWORD: ${STACK_IDENTITY_DATABASE_PASSWORD:?Prepare private identity settings}
+      KC_BOOTSTRAP_ADMIN_USERNAME: stack-admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${STACK_IDENTITY_ADMIN_PASSWORD:?Prepare private identity settings}
+      KC_LOG_LEVEL: warn
+    secrets:
+      - source: stack-identity-realm
+        target: /opt/keycloak/data/import/agenttrust-realm.json
+    ports: [127.0.0.1:4322:8080]
+    networks: [stack-backend, stack-host-access]
+    depends_on:
+      stack-db:
+        condition: service_healthy
+    volumes: [stack-identity-data:/opt/keycloak/data]
+    read_only: true
+    tmpfs: ['/tmp:size=64m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 768m
+    cpus: 2
+    pids_limit: 128
+    healthcheck:
+      test: [CMD-SHELL, 'exec 3<>/dev/tcp/127.0.0.1/9000; printf "GET /health/ready HTTP/1.0\r\n\r\n" >&3; read -r status <&3; case "$$status" in *200*) exit 0;; *) exit 1;; esac']
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 30
+volumes:
+  stack-identity-data:
+secrets:
+  stack-oidc-client-secret:
+    file: .local/stack/oidc-client-secret
+  stack-identity-realm:
+    file: .local/stack/agenttrust-realm.json

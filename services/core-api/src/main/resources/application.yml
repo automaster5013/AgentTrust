@@ -39,6 +39,7 @@ management:
       show-details: never
 agenttrust:
   demo-credentials-file: ${STACK_DEMO_CREDENTIALS_FILE}
+  identity-mode: ${STACK_IDENTITY_MODE:local-demo}
 logging:
   level:
     org.springframework.security: WARN

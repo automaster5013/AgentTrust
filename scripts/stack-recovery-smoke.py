@@ -1,8 +1,9 @@
 """Fault tests against new stack only. Restores stopped services and closes its own session."""
 import argparse,datetime,json,pathlib,subprocess,time,uuid
 from stack_test_client import StackClient
+from stack_compose import stack_compose
 p=argparse.ArgumentParser();p.add_argument('--mode',choices=['worker-restart','nats-restart','jetstream-persistence','core-restart','deadline'],required=True);args=p.parse_args()
-root=pathlib.Path(__file__).resolve().parent.parent;compose=['docker','compose','--env-file','.local/stack/stack.env','-f','compose.stack.yaml'];report={'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'mode':args.mode,'synthetic':True,'completed':False,'legacyServicesChanged':False,'checks':[]};restore=[];client=None
+root=pathlib.Path(__file__).resolve().parent.parent;compose=stack_compose(root);report={'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'mode':args.mode,'synthetic':True,'completed':False,'legacyServicesChanged':False,'checks':[]};restore=[];client=None
 def command(arguments):return subprocess.run(arguments,cwd=root,capture_output=True,text=True,check=True).stdout
 def check(name):report['checks'].append(name)
 def stream_state():
@@ -20,7 +21,7 @@ try:
  elif args.mode=='core-restart':
   command(compose+['restart','stack-core-api']);command(compose+['up','-d','--wait','stack-core-api','stack-ai-worker']);restore=[]
   # The restarted API invalidates its in-memory session; authenticate a fresh session.
-  client.logged=False;client.login('demo-admin')
+  client.logout();client.login('demo-admin')
  elif args.mode!='deadline':
   time.sleep(3);command(compose+['up','-d','--wait',*dict.fromkeys(restore)]);restore=[]
  limit=time.monotonic()+(145 if args.mode=='deadline' else 30)

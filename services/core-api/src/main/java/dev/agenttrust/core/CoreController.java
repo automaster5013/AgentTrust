@@ -19,7 +19,7 @@ public class CoreController {
     private final RunService service;
     public CoreController(RunService service) {this.service=service;}
     @GetMapping("/csrf") Map<String,String> csrf(HttpServletRequest request) {var csrf=(CsrfToken)request.getAttribute(CsrfToken.class.getName());return Map.of("token",csrf.getToken(),"headerName",csrf.getHeaderName());}
-    @GetMapping("/me") Map<String,Object> me(@AuthenticationPrincipal DemoUser user) {return Map.of("username",user.getUsername(),"organizationId",user.organizationId(),"projectId",user.projectId(),"actorId",user.actorId(),"role",user.role(),"identityProvider","local-demo","runtime","java21-spring-boot");}
+    @GetMapping("/me") Map<String,Object> me(@AuthenticationPrincipal DemoUser user) {return Map.of("username",user.getUsername(),"organizationId",user.organizationId(),"projectId",user.projectId(),"actorId",user.actorId(),"role",user.role(),"identityProvider",user instanceof OidcWorkspaceUser?"keycloak":"local-demo","runtime","java21-spring-boot");}
     @GetMapping("/runs") List<Map<String,Object>> list(@AuthenticationPrincipal DemoUser user) {return service.list(user);}
     @GetMapping("/runs/{id}") Map<String,Object> get(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id) {return service.get(user,id);}
     public record Create(@NotBlank @Pattern(regexp="pass|block|missing_evidence|error") String scenario, @NotNull Boolean requiresApproval) {}

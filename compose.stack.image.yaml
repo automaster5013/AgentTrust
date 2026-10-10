@@ -7,3 +7,5 @@ services:
     image: ${STACK_CONSOLE_IMAGE:?Provide verified console image digest}
   stack-opa:
     image: ${STACK_OPA_IMAGE:?Provide verified policy image digest}
+  stack-identity:
+    image: ${STACK_IDENTITY_IMAGE:?Provide verified identity image digest}

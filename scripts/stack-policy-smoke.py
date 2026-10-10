@@ -1,7 +1,8 @@
 """Real OPA authorization and fail-closed gate checks; no token in args, logs or reports."""
 import datetime,json,pathlib,re,subprocess,time,uuid
 from stack_test_client import StackClient
-root=pathlib.Path(__file__).resolve().parent.parent;compose=['docker','compose','--env-file','.local/stack/stack.env','-f','compose.stack.yaml'];client=None;stopped=False;report={'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'completed':False,'checks':[],'synthetic':True,'credentialsRecorded':False}
+from stack_compose import stack_compose
+root=pathlib.Path(__file__).resolve().parent.parent;compose=stack_compose(root);client=None;stopped=False;report={'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'completed':False,'checks':[],'synthetic':True,'credentialsRecorded':False}
 def command(args,**kwargs):return subprocess.run(args,cwd=root,capture_output=True,text=True,check=True,**kwargs).stdout
 try:
  for service in ['stack-ai-worker','stack-opa']:

@@ -19,6 +19,7 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name="agenttrust.identity-mode",havingValue="local-demo",matchIfMissing=true)
 public class SecurityConfiguration {
     @Bean PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }
     @Bean UserDetailsService users(@Value("${agenttrust.demo-credentials-file}") String file, ObjectMapper mapper, PasswordEncoder encoder) throws Exception {
@@ -39,7 +40,7 @@ public class SecurityConfiguration {
         };
     }
     @Bean SecurityFilterChain security(HttpSecurity http) throws Exception {
-        http.authorizeHttpRequests(auth -> auth.requestMatchers("/actuator/health","/api/csrf","/api/login","/internal/completions").permitAll().anyRequest().authenticated());
+        http.authorizeHttpRequests(auth -> auth.requestMatchers("/actuator/health","/api/csrf","/api/login","/api/auth-info","/internal/completions").permitAll().anyRequest().authenticated());
         http.csrf(csrf -> csrf.ignoringRequestMatchers("/internal/completions"));
         http.formLogin(login -> login.loginProcessingUrl("/api/login")
             .successHandler((req,res,auth) -> {res.setContentType("application/json");res.getWriter().write("{\"authenticated\":true}");})

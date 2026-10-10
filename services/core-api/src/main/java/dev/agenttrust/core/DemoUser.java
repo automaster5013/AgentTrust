@@ -3,7 +3,7 @@ package dev.agenttrust.core;
 import java.util.UUID;
 import org.springframework.security.core.userdetails.User;
 
-public final class DemoUser extends User {
+public class DemoUser extends User {
     private final UUID organizationId;
     private final UUID projectId;
     private final UUID actorId;

@@ -21,11 +21,14 @@ jobs:
         run: |
           python3 scripts/stack-policy-metadata.py --check
           python3 scripts/stack-setup.py
+          python3 scripts/stack-identity-setup.py
       - name: Build Java 21, Python and TypeScript with their tests
-        run: docker compose --env-file .local/stack/stack.env -f compose.stack.yaml build stack-core-api stack-ai-worker stack-console stack-opa
+        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml build stack-core-api stack-ai-worker stack-console stack-opa stack-identity
       - name: Verify real authenticated evaluation and review flow
         run: |
-          docker compose --env-file .local/stack/stack.env -f compose.stack.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console
+          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console
+          python3 scripts/stack-identity-profile.py
+          python3 scripts/stack-identity-smoke.py
           python3 scripts/stack-http-smoke.py
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
           python3 scripts/stack-database-smoke.py
@@ -50,12 +53,12 @@ jobs:
           npx playwright test
       - name: Verify persisted results after service restart
         run: |
-          docker compose --env-file .local/stack/stack.env -f compose.stack.yaml restart stack-core-api stack-ai-worker stack-console
-          docker compose --env-file .local/stack/stack.env -f compose.stack.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console
+          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml restart stack-core-api stack-ai-worker stack-console
+          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
       - name: Stop isolated runner services
         if: always()
-        run: docker compose --env-file .local/stack/stack.env -f compose.stack.yaml down
+        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml down
   images:
     needs: integration
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -79,7 +82,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p stack-delivery
-          for spec in 'core-api:services/core-api' 'ai-worker:services/ai-worker' 'console:apps/console' 'opa:services/opa'; do
+          for spec in 'core-api:services/core-api' 'ai-worker:services/ai-worker' 'console:apps/console' 'opa:services/opa' 'identity:services/identity'; do
             service=${spec%%:*}
             context=${spec#*:}
             image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/agenttrust-$service:$GITHUB_SHA"
@@ -93,13 +96,17 @@ jobs:
         shell: bash
         run: |
           python3 scripts/stack-setup.py
+          python3 scripts/stack-identity-setup.py
           echo "STACK_CORE_IMAGE=$(cat stack-delivery/core-api.txt)" >> "$GITHUB_ENV"
           echo "STACK_WORKER_IMAGE=$(cat stack-delivery/ai-worker.txt)" >> "$GITHUB_ENV"
           echo "STACK_CONSOLE_IMAGE=$(cat stack-delivery/console.txt)" >> "$GITHUB_ENV"
           echo "STACK_OPA_IMAGE=$(cat stack-delivery/opa.txt)" >> "$GITHUB_ENV"
+          echo "STACK_IDENTITY_IMAGE=$(cat stack-delivery/identity.txt)" >> "$GITHUB_ENV"
       - name: Execute exact registry images without rebuilding
         run: |
-          docker compose --env-file .local/stack/stack.env -f compose.stack.yaml -f compose.stack.image.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console
+          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.image.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console
+          python3 scripts/stack-identity-profile.py
+          python3 scripts/stack-identity-smoke.py
           python3 scripts/stack-image-smoke.py
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
           python3 scripts/stack-database-smoke.py
@@ -115,4 +122,4 @@ jobs:
         run: docker logout ghcr.io
       - name: Stop isolated registry-image services
         if: always()
-        run: docker compose --env-file .local/stack/stack.env -f compose.stack.yaml -f compose.stack.image.yaml down
+        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.image.yaml down
