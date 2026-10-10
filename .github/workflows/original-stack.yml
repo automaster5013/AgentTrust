@@ -69,6 +69,11 @@ jobs:
           python3 scripts/stack-recovery-smoke.py --mode core-restart
           python3 scripts/stack-recovery-smoke.py --mode deadline
           python3 scripts/stack-policy-smoke.py
+      - name: Verify immutable versions and authenticated campaign aggregation
+        run: |
+          python3 scripts/stack-campaign-smoke.py
+          python3 scripts/stack-campaign-recovery.py
+          python3 scripts/stack-campaign-recovery.py --deadline
       - name: Verify scoped pgvector neighbors and database recovery
         run: python3 scripts/stack-vector-smoke.py
       - name: Verify locked versioned evidence and storage recovery
@@ -106,6 +111,7 @@ jobs:
           python3 scripts/stack-provider-start.py
           python3 scripts/stack-provider-integrity-smoke.py
           python3 scripts/stack-provider-smoke.py
+          python3 scripts/stack-campaign-model-smoke.py
           python3 scripts/stack-observability-smoke.py
           cd apps/console
           STACK_E2E_LOCAL_MODEL=true npx playwright test --grep 'local model provider evidence'
@@ -122,6 +128,9 @@ jobs:
             .local/stack-object-smoke-*.json
             .local/stack-promptfoo-smoke-*.json
             .local/stack-http-smoke-*.json
+            .local/stack-campaign-smoke-*.json
+            .local/stack-campaign-recovery-*.json
+            .local/stack-campaign-model-*.json
             .local/stack-observability-smoke-*.json
             .local/stack-database-init-smoke-*.json
             .local/stack-provider-smoke-*.json
@@ -192,6 +201,7 @@ jobs:
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
           python3 scripts/stack-database-smoke.py
           python3 scripts/stack-database-init-smoke.py
+          python3 scripts/stack-campaign-smoke.py
           python3 scripts/stack-object-smoke.py
           python3 scripts/stack-vector-smoke.py
           python3 scripts/stack-gateway-smoke.py
@@ -199,6 +209,7 @@ jobs:
           python3 scripts/stack-provider-start.py
           python3 scripts/stack-provider-integrity-smoke.py
           python3 scripts/stack-provider-smoke.py
+          python3 scripts/stack-campaign-model-smoke.py
           python3 scripts/stack-observability-smoke.py
           python3 scripts/stack-image-smoke.py
           python3 scripts/stack-delivery-manifest.py
@@ -211,6 +222,9 @@ jobs:
           path: |
             .local/stack-gateway-smoke-*.json
             .local/stack-http-smoke-*.json
+            .local/stack-campaign-smoke-*.json
+            .local/stack-campaign-recovery-*.json
+            .local/stack-campaign-model-*.json
             .local/stack-object-smoke-*.json
             .local/stack-vector-smoke-*.json
             .local/stack-database-init-smoke-*.json

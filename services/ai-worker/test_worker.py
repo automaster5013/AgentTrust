@@ -48,3 +48,14 @@ def test_jobs_refuse_extra_fields_bad_scope_and_oversized_data():
             scoped_job(json.dumps(invalid).encode())
     with pytest.raises(ValueError):
         scoped_job(b'x' * 4097)
+
+
+def test_immutable_campaign_binding_is_complete_and_canonical(client):
+    body={**request(),'campaignId':'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','caseId':'answer','agentVersionId':str(uuid4()),'datasetVersionId':str(uuid4())}
+    parsed=scoped_job(json.dumps(body).encode())
+    assert parsed.campaignId==body['campaignId']
+    response=client.post('/evaluate',json=body,headers={'X-AgentTrust-Worker-Token':'a'*64})
+    assert response.status_code==200
+    assert all(response.json()[key]==body[key] for key in ('campaignId','caseId','agentVersionId','datasetVersionId'))
+    for invalid in [{k:v for k,v in body.items() if k!='datasetVersionId'},{**body,'caseId':'../arbitrary'},{**body,'agentVersionId':'not-a-version'},{**body,'campaignId':body['campaignId'].upper()}]:
+        with pytest.raises(ValueError):scoped_job(json.dumps(invalid).encode())

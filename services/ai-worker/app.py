@@ -15,7 +15,7 @@ from nats.js.api import AckPolicy, ConsumerConfig, RetentionPolicy, StorageType,
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from features import rule_features, VERSION, DIMENSIONS
 from telemetry import configure,evaluation_event
 from providers import evaluate_provider,unavailable
@@ -69,7 +69,7 @@ async def consume(connection, subscription):
                     if body.provider=='synthetic':result=evaluate(body.scenario)
                     else:
                         # A lost reservation response burns the reservation. Never repeat an ambiguous provider call.
-                        reservation=await client.post('http://stack-core-api:8080/internal/provider-reservations',json=body.model_dump(),headers={'X-AgentTrust-Worker-Token':token})
+                        reservation=await client.post('http://stack-core-api:8080/internal/provider-reservations',json=body.model_dump(exclude_none=True),headers={'X-AgentTrust-Worker-Token':token})
                         accepted=reservation.status_code==200 and reservation.json().get('allowed') is True and reservation.json().get('runId')==body.runId and reservation.json().get('reservedInputTokens')==256 and reservation.json().get('reservedOutputTokens')==128
                         if accepted:
                             evaluation_event()
@@ -83,7 +83,7 @@ async def consume(connection, subscription):
                                 with contextlib.suppress(asyncio.CancelledError):
                                     await heartbeat
                         else:result=unavailable(body.provider)
-                    payload = {**body.model_dump(), 'result': result}
+                    payload = {**body.model_dump(exclude_none=True), 'result': result}
                     response = await client.post('http://stack-core-api:8080/internal/completions', json=payload, headers={'X-AgentTrust-Worker-Token': token})
                     if response.status_code == 200 and response.json().get('accepted') is True and response.json().get('runId') == body.runId:
                         await message.ack_sync(timeout=2)
@@ -133,6 +133,19 @@ class EvaluationRequest(BaseModel):
     organizationId: str
     projectId: str
     provider: Literal['synthetic','ollama','openai','openai-compatible']='synthetic'
+    campaignId: str | None = None
+    caseId: str | None = Field(default=None,pattern=r'^[a-z][a-z0-9-]{0,63}$')
+    agentVersionId: str | None = None
+    datasetVersionId: str | None = None
+
+    @model_validator(mode='after')
+    def immutable_case_binding(self):
+        values=(self.campaignId,self.caseId,self.agentVersionId,self.datasetVersionId)
+        if all(v is None for v in values):return self
+        if any(v is None for v in values):raise ValueError('Incomplete campaign binding')
+        for value in (self.campaignId,self.agentVersionId,self.datasetVersionId):
+            if str(UUID(value))!=value:raise ValueError('Invalid version scope')
+        return self
 
 
 def evaluate(scenario: str) -> dict:
@@ -190,7 +203,7 @@ def evaluation(body: EvaluationRequest, x_agenttrust_worker_token: str | None = 
                 raise ValueError()
         except ValueError:
             raise HTTPException(422, detail='Invalid scope') from None
-    return {**body.model_dump(), 'result': evaluate(body.scenario)}
+    return {**body.model_dump(exclude_none=True), 'result': evaluate(body.scenario)}
 
 
 class FeatureRule(BaseModel):

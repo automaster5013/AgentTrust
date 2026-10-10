@@ -53,13 +53,32 @@ public class RunService {
     List<Map<String,Object>> pending(DemoUser scope) {
         return scoped(scope,()->jdbc.queryForList("SELECT r.id,r.scenario,r.provider,(r.created_at < now()-interval '2 minutes') AS expired FROM stack_runs r LEFT JOIN stack_run_results c ON c.run_id=r.id WHERE r.organization_id=? AND r.project_id=? AND r.state='queued' AND c.run_id IS NULL ORDER BY r.created_at,r.id LIMIT 20",scope.organizationId(),scope.projectId()));
     }
+    public record CampaignBinding(UUID campaignId,String caseId,UUID agentVersionId,UUID datasetVersionId) {}
+    private List<Map<String,Object>> bindings(UUID id) {
+        return jdbc.queryForList("SELECT c.campaign_id,c.case_id,p.agent_version_id,p.dataset_version_id FROM stack_campaign_cases c JOIN stack_campaigns p ON p.id=c.campaign_id WHERE c.run_id=?",id);
+    }
+    private void bindingScoped(UUID id,CampaignBinding supplied) {
+        var rows=bindings(id);
+        if(rows.isEmpty()){if(supplied!=null)throw new ResponseStatusException(HttpStatus.CONFLICT);return;}
+        var row=rows.getFirst();
+        if(supplied==null||!row.get("campaign_id").equals(supplied.campaignId())||!row.get("case_id").equals(supplied.caseId())||!row.get("agent_version_id").equals(supplied.agentVersionId())||!row.get("dataset_version_id").equals(supplied.datasetVersionId()))throw new ResponseStatusException(HttpStatus.CONFLICT);
+    }
+    void validateBinding(DemoUser scope,UUID id,CampaignBinding supplied){scoped(scope,()->{bindingScoped(id,supplied);return null;});}
+    Map<String,Object> job(DemoUser scope,Map<String,Object> run){return scoped(scope,()->{
+        UUID id=(UUID)run.get("id");var body=new java.util.HashMap<String,Object>();body.put("runId",id.toString());body.put("organizationId",scope.organizationId().toString());body.put("projectId",scope.projectId().toString());body.put("scenario",run.get("scenario"));body.put("provider",run.get("provider"));var rows=bindings(id);
+        if(!rows.isEmpty()){var row=rows.getFirst();body.put("campaignId",row.get("campaign_id").toString());body.put("caseId",row.get("case_id"));body.put("agentVersionId",row.get("agent_version_id").toString());body.put("datasetVersionId",row.get("dataset_version_id").toString());}return Map.copyOf(body);
+    });}
     public Map<String,Object> complete(DemoUser scope,UUID id,String scenario,Evaluation.Result result) {
+        return complete(scope,id,scenario,result,null);
+    }
+    public Map<String,Object> complete(DemoUser scope,UUID id,String scenario,Evaluation.Result result,CampaignBinding supplied) {
         if(!"python-unavailable".equals(result.executionEngine()))WorkerClient.validated(result);
         return scoped(scope,()->{
             jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"completion/"+id);
             var admission=jdbc.queryForList("SELECT scenario,state,actor_id,provider,(created_at <= clock_timestamp()-interval '2 minutes') AS expired FROM stack_runs WHERE id=? AND organization_id=? AND project_id=?",id,scope.organizationId(),scope.projectId());
             if(admission.isEmpty())throw new ResponseStatusException(HttpStatus.NOT_FOUND);
             var original=admission.getFirst();if(!scenario.equals(original.get("scenario")) || !"queued".equals(original.get("state")))throw new ResponseStatusException(HttpStatus.CONFLICT);
+            if(!"python-unavailable".equals(result.executionEngine()))bindingScoped(id,supplied);
             if(!"python-unavailable".equals(result.executionEngine())&&!WorkerClient.engine((String)original.get("provider")).equals(result.executionEngine()))throw new ResponseStatusException(HttpStatus.CONFLICT);
             if(!original.get("provider").equals("synthetic")&&result.state().equals("succeeded")&&jdbc.queryForObject("SELECT count(*) FROM stack_provider_attempts WHERE run_id=? AND provider=?",Long.class,id,original.get("provider"))!=1)throw new ResponseStatusException(HttpStatus.CONFLICT);
             var existing=jdbc.queryForList("SELECT run_id FROM stack_run_results WHERE run_id=?",id);
@@ -91,7 +110,7 @@ public class RunService {
             return policy.decide(user,id,run,rows.isEmpty()?null:rows.getFirst());
         });
     }
-    private void audit(DemoUser user,String action,UUID id) {jdbc.update("INSERT INTO stack_audit(id,organization_id,project_id,actor_id,action,resource_id) VALUES(?,?,?,?,?,?)",UUID.randomUUID(),user.organizationId(),user.projectId(),user.actorId(),action,id);}
+    void audit(DemoUser user,String action,UUID id) {jdbc.update("INSERT INTO stack_audit(id,organization_id,project_id,actor_id,action,resource_id) VALUES(?,?,?,?,?,?)",UUID.randomUUID(),user.organizationId(),user.projectId(),user.actorId(),action,id);}
     <T> T scoped(DemoUser user,java.util.function.Supplier<T> action) {
         return tx.execute(status -> {jdbc.queryForObject("SELECT set_config('statement_timeout','3s',true)",String.class);jdbc.queryForObject("SELECT set_config('agenttrust.organization_id',?,true)",String.class,user.organizationId().toString());jdbc.queryForObject("SELECT set_config('agenttrust.project_id',?,true)",String.class,user.projectId().toString());return action.get();});
     }
