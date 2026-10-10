@@ -39,6 +39,13 @@ try:
  if not nats_config.exists():nats_config.open('x',encoding='utf-8').write(configuration)
  assert nats_config.read_text(encoding='utf-8')==configuration;protect(nats_config)
  if os.name!='nt':nats_token.chmod(0o444);nats_config.chmod(0o444)
+ opa_token=directory/'opa-token'
+ if not opa_token.exists():opa_token.open('x',encoding='utf-8').write(secrets.token_hex(32))
+ opa_value=opa_token.read_text(encoding='utf-8');assert re.fullmatch('[a-f0-9]{64}',opa_value);protect(opa_token)
+ opa_auth=directory/'opa-auth.json';auth={'stack_auth':{'token':opa_value}}
+ if not opa_auth.exists():opa_auth.open('x',encoding='utf-8').write(json.dumps(auth)+'\n')
+ assert json.loads(opa_auth.read_text(encoding='utf-8'))==auth;protect(opa_auth)
+ if os.name!='nt':opa_token.chmod(0o444);opa_auth.chmod(0o444)
  compose=['docker','compose','--env-file',str(env),'-f','compose.stack.yaml'];command(compose+['up','-d','--wait','stack-db'])
  state=json.loads(command(['docker','inspect','agenttrust-stack-db-1']))[0];assert state['Config']['Labels']['com.docker.compose.project']=='agenttrust' and state['Config']['Labels']['com.docker.compose.service']=='stack-db'
  sql="SELECT 1 FROM pg_roles WHERE rolname='agenttrust_stack_api';"

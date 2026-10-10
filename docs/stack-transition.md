@@ -10,7 +10,7 @@
 | Core API | Java 21 + Spring Boot | 실제 Java 21 컨테이너의 HTTP·영속 저장·RLS·동시 멱등성·승인/반려 검증 | 영속 저장·조직/역할·멱등성·평가/검토/게이트의 실제 HTTP 경로 |
 | AI Workers | Python + FastAPI | NATS 영속 소비자·인증 완료 콜백·중복 확정 방지·처리 기한 및 로컬 장애 복구 검증. 공급자/비용 예산 확장 필요 | 작업 실행·예산·오류·결과 확정, Java API와 통합 |
 | Gateway | Spring WebFlux | 미착수 | 인증된 라우팅·한도·시간 초과·내부 경계 검증 |
-| Policy | OPA + Rego | 미착수 | 필수 실패/누락/승인의 정책 판단과 버전 추적 |
+| Policy | OPA + Rego | 실제 인증된 OPA 판정·정책 byte hash·승인 버전 결합·장애 시 거부를 로컬 검증. 확장 CI 확인 예정 | 필수 실패/누락/승인의 정책 판단과 버전 추적 |
 | Database | PostgreSQL + pgvector | 전환 PostgreSQL 별도 DB·제한 역할·RLS·불변 기록 검증 / pgvector 미착수 | 전환 영속 저장·조직 경계·복구, 벡터 검색의 실제 사용 경로 |
 | Cache | Redis | 미착수 | 캐시 용도·조직 키·무효화·장애 시 의미 검증 |
 | Messaging | NATS JetStream | 별도 디스크 스트림·명시적 ACK·안정 실행 ID·DB 대기 기록 재전달을 실제 로컬 경로에 통합 | 영속 작업 전달·재전달·중복 처리·장애 복구 |
@@ -19,7 +19,7 @@
 | AI Providers | OpenAI + Ollama + OpenAI-compatible | 미착수 | 통제된 공급자별 실제 어댑터·계약·비용/시간 예산 |
 | Evaluation | 자체 평가기 + Promptfoo | Python 합성 자체 평가기와 Java 판정 검증 통합 / Promptfoo 미착수 | 기존 판정 사례의 새 실행과 Promptfoo 결과 연계 |
 | Observability | OpenTelemetry + Prometheus + Tempo + Loki + Grafana | 미착수 | 요청→평가 추적·메트릭·로그·대시보드·민감 정보 제외 |
-| Local | Docker Compose | 전환 5개 서비스의 Compose 실행·헬스·워커/메시징/API 재시작·기한 초과 검증 | 별도 서비스/DB로 새 흐름 실행·재시작 보존 |
+| Local | Docker Compose | 전환 6개 서비스의 Compose 실행·헬스·워커/메시징/API 재시작·기한 초과 검증 | 별도 서비스/DB로 새 흐름 실행·재시작 보존 |
 | Production | Kubernetes + Helm + Terraform | 미착수 | 지정 환경의 렌더/검증·비밀·헬스·배포/복귀. 실제 배포는 별도 결과 |
 | CI/CD | GitHub Actions | 첫 Java/Python/TypeScript 통합과 세 불변 게시 이미지 실행 CI 성공. NATS/브라우저 확장 CI 재검증 예정 | Java/Python/TypeScript 검사·통합·이미지 검증 |
 | Security | Trivy + Syft + Cosign + Gitleaks + Semgrep | 미착수 | 각 도구의 실행 결과·검증 가능한 SBOM/서명·실패 게이트 |
@@ -51,3 +51,7 @@
 ## 확인된 첫 전환 CI
 
 [7ddb877 소스 통합·불변 게시 이미지 실행 검증](https://github.com/automaster5013/AgentTrust/actions/runs/38033039011)이 성공했다. Java 21/Python/Next.js의 **동기 합성 흐름** 기준이며, 이후 NATS 비동기·브라우저 확장은 해당 커밋의 범위가 아니다. 내려받은 전달 artifact의 archive digest와 manifest checksum도 로컬에서 대조했다. 기존 JavaScript CI 역시 유지한다.
+
+## 비동기 전환 CI
+
+[1079ed7 NATS 비동기·복구·Playwright 브라우저·게시 이미지 CI](https://github.com/automaster5013/AgentTrust/actions/runs/38034052675)가 성공했다. 이 커밋은 OPA 이전 단계이며 이후 정책 버전 결합은 추가 검증 대상이다.

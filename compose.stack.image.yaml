@@ -5,3 +5,5 @@ services:
     image: ${STACK_WORKER_IMAGE:?Provide verified worker image digest}
   stack-console:
     image: ${STACK_CONSOLE_IMAGE:?Provide verified console image digest}
+  stack-opa:
+    image: ${STACK_OPA_IMAGE:?Provide verified policy image digest}

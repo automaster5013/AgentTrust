@@ -15,8 +15,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class RunService {
-    private final JdbcTemplate jdbc; private final TransactionTemplate tx; private final ObjectMapper mapper;
-    public RunService(JdbcTemplate jdbc, TransactionTemplate tx, ObjectMapper mapper) {this.jdbc=jdbc;this.tx=tx;this.mapper=mapper;}
+    private final JdbcTemplate jdbc; private final TransactionTemplate tx; private final ObjectMapper mapper;private final PolicyClient policy;
+    public RunService(JdbcTemplate jdbc, TransactionTemplate tx, ObjectMapper mapper,PolicyClient policy) {this.jdbc=jdbc;this.tx=tx;this.mapper=mapper;this.policy=policy;}
     public List<Map<String,Object>> list(DemoUser user) {
         return scoped(user,()->jdbc.queryForList("SELECT r.id, r.scenario, r.requires_approval, COALESCE(c.state,r.state) AS state, COALESCE(c.decision,r.decision) AS decision, r.created_at FROM stack_runs r LEFT JOIN stack_run_results c ON c.run_id=r.id WHERE r.organization_id=? AND r.project_id=? ORDER BY r.created_at DESC,r.id DESC LIMIT 50",user.organizationId(),user.projectId()));
     }
@@ -65,22 +65,22 @@ public class RunService {
         });
     }
     public List<Map<String,Object>> reviews(DemoUser user,UUID id) {
-        return scoped(user,()->{get(user,id);return jdbc.queryForList("SELECT id,actor_id,decision,reason,created_at,review_sequence FROM stack_reviews WHERE run_id=? AND organization_id=? AND project_id=? ORDER BY review_sequence DESC LIMIT 50",id,user.organizationId(),user.projectId());});
+        return scoped(user,()->{get(user,id);return jdbc.queryForList("SELECT id,actor_id,decision,reason,created_at,review_sequence,policy_version,policy_digest FROM stack_reviews WHERE run_id=? AND organization_id=? AND project_id=? ORDER BY review_sequence DESC LIMIT 50",id,user.organizationId(),user.projectId());});
     }
     public Map<String,Object> review(DemoUser user,UUID id,String decision,String reason) {
         if(!user.role().equals("admin"))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         return scoped(user,() -> {
             jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"review/"+id);var run=get(user,id);
             if(!run.get("decision").equals("pass"))throw new ResponseStatusException(HttpStatus.CONFLICT);
-            UUID review=UUID.randomUUID();jdbc.update("INSERT INTO stack_reviews(id,run_id,organization_id,project_id,actor_id,decision,reason) VALUES(?,?,?,?,?,?,?)",review,id,user.organizationId(),user.projectId(),user.actorId(),decision,reason.strip());
+            UUID review=UUID.randomUUID();jdbc.update("INSERT INTO stack_reviews(id,run_id,organization_id,project_id,actor_id,decision,reason,policy_version,policy_digest) VALUES(?,?,?,?,?,?,?,?,?)",review,id,user.organizationId(),user.projectId(),user.actorId(),decision,reason.strip(),policy.version(),policy.digest());
             audit(user,"review."+decision,id);return Map.of("id",review,"decision",decision);
         });
     }
     public Evaluation.Gate gate(DemoUser user,UUID id) {
         return scoped(user,() -> {
             jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"review/"+id);var run=get(user,id);
-            var rows=reviews(user,id);String latest=rows.isEmpty()?null:(String)rows.getFirst().get("decision");
-            return Evaluation.gate((String)run.get("decision"),(Boolean)run.get("requires_approval"),latest);
+            var rows=reviews(user,id);
+            return policy.decide(user,id,run,rows.isEmpty()?null:rows.getFirst());
         });
     }
     private void audit(DemoUser user,String action,UUID id) {jdbc.update("INSERT INTO stack_audit(id,organization_id,project_id,actor_id,action,resource_id) VALUES(?,?,?,?,?,?)",UUID.randomUUID(),user.organizationId(),user.projectId(),user.actorId(),action,id);}

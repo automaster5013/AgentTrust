@@ -23,7 +23,7 @@ services:
       STACK_MIGRATION_USER: agenttrust_stack
       STACK_MIGRATION_PASSWORD: ${STACK_DATABASE_PASSWORD:?Prepare separate stack settings}
       STACK_DEMO_CREDENTIALS_FILE: /run/secrets/stack-demo-credentials
-    secrets: [stack-demo-credentials, stack-worker-token, stack-nats-token]
+    secrets: [stack-demo-credentials, stack-worker-token, stack-nats-token, stack-opa-token]
     ports: [127.0.0.1:4321:8080]
     networks: [stack-backend, stack-host-access]
     depends_on:
@@ -32,6 +32,8 @@ services:
       stack-ai-worker:
         condition: service_healthy
       stack-nats:
+        condition: service_healthy
+      stack-opa:
         condition: service_healthy
     read_only: true
     tmpfs: ['/tmp:size=128m,mode=1777']
@@ -73,6 +75,25 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+  stack-opa:
+    build: services/opa
+    image: agenttrust-opa:local
+    secrets:
+      - source: stack-opa-auth
+        target: stack-opa-auth.json
+    networks: [stack-backend]
+    read_only: true
+    tmpfs: ['/tmp:size=32m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 1
+    pids_limit: 64
+    healthcheck:
+      test: [CMD, /opa, eval, --fail, 'http.send({"method":"GET","url":"http://127.0.0.1:8181/health"}).status_code == 200']
+      interval: 5s
+      timeout: 3s
+      retries: 12
   stack-console:
     build: apps/console
     image: agenttrust-console:local
@@ -109,3 +130,7 @@ secrets:
     file: .local/stack/nats-token
   stack-nats-config:
     file: .local/stack/nats.conf
+  stack-opa-token:
+    file: .local/stack/opa-token
+  stack-opa-auth:
+    file: .local/stack/opa-auth.json

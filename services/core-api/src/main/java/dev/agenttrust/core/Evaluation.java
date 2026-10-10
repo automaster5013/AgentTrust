@@ -15,11 +15,12 @@ public final class Evaluation {
             default -> throw new IllegalArgumentException("Unsupported synthetic scenario");
         };
     }
-    public record Gate(String decision, boolean deploymentAllowed, String reason, boolean signed, boolean currentReviewRequired) {}
+    public record Gate(String decision, boolean deploymentAllowed, String reason, boolean signed, boolean currentReviewRequired,String policyEngine,String policyStatus,String policyVersion,String policyDigest) {}
     public static Gate gate(String evaluationDecision, boolean approvalRequired, String latestReview) {
-        if (!evaluationDecision.equals("pass")) return new Gate(evaluationDecision,false,"Evaluation does not permit release.",false,approvalRequired);
-        if ("rejected".equals(latestReview)) return new Gate("block",false,"The latest review rejects release.",false,approvalRequired);
-        if (approvalRequired && !"approved".equals(latestReview)) return new Gate("inconclusive",false,"Current administrator approval is required.",false,true);
-        return new Gate("pass",true,"Evaluation and current review requirements permit the synthetic release.",false,approvalRequired);
+        if (!evaluationDecision.equals("pass")) return reference(evaluationDecision,false,"Evaluation does not permit release.",approvalRequired);
+        if ("rejected".equals(latestReview)) return reference("block",false,"The latest review rejects release.",approvalRequired);
+        if (approvalRequired && !"approved".equals(latestReview)) return reference("inconclusive",false,"Current administrator approval is required.",true);
+        return reference("pass",true,"Evaluation and current review requirements permit the synthetic release.",approvalRequired);
     }
+    private static Gate reference(String decision,boolean allowed,String reason,boolean approval){return new Gate(decision,allowed,reason,false,approval,"java-reference","reference","unversioned","unversioned");}
 }

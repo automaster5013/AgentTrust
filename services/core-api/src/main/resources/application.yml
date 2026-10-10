@@ -25,6 +25,8 @@ spring:
     user: ${STACK_MIGRATION_USER}
     password: ${STACK_MIGRATION_PASSWORD}
   jackson:
+    mapper:
+      allow-coercion-of-scalars: false
     deserialization:
       fail-on-unknown-properties: true
 management:

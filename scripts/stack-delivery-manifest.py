@@ -2,9 +2,9 @@
 import hashlib,json,pathlib,re
 directory=pathlib.Path('stack-delivery')
 revision=(directory/'revision.txt').read_text().strip();assert re.fullmatch('[a-f0-9]{40}',revision)
-images={name:(directory/(name+'.txt')).read_text().strip() for name in ['core-api','ai-worker','console']}
+images={name:(directory/(name+'.txt')).read_text().strip() for name in ['core-api','ai-worker','console','opa']}
 for name,image in images.items():assert re.fullmatch(r'ghcr\.io/[a-z0-9-]+/agenttrust-'+name+r'@sha256:[a-f0-9]{64}',image)
 identity=json.loads((directory/'runtime-identity.json').read_text());assert identity['revision']==revision and identity['images']==images and identity['runtimeImageIdentityVerified'] is True
-manifest={'schemaVersion':1,'revision':revision,'images':images,'sourceIntegrationPassed':True,'registryImagesRuntimeVerified':True,'serverDeployed':False,'identityProvider':'local-demo','evaluationEngine':'python-synthetic'}
+manifest={'schemaVersion':1,'revision':revision,'images':images,'sourceIntegrationPassed':True,'registryImagesRuntimeVerified':True,'serverDeployed':False,'identityProvider':'local-demo','evaluationEngine':'python-synthetic','messaging':'nats-jetstream','policyEngine':'opa-rego'}
 data=(json.dumps(manifest,indent=2)+'\n').encode();(directory/'manifest.json').write_bytes(data);(directory/'manifest.sha256').write_text(hashlib.sha256(data).hexdigest()+'  manifest.json\n')
-print(json.dumps({'manifestCreated':True,'images':3,'serverDeployed':False}))
+print(json.dumps({'manifestCreated':True,'images':len(images),'serverDeployed':False}))

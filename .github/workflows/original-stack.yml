@@ -18,9 +18,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Prepare separate PostgreSQL and synthetic identities
-        run: python3 scripts/stack-setup.py
+        run: |
+          python3 scripts/stack-policy-metadata.py --check
+          python3 scripts/stack-setup.py
       - name: Build Java 21, Python and TypeScript with their tests
-        run: docker compose --env-file .local/stack/stack.env -f compose.stack.yaml build stack-core-api stack-ai-worker stack-console
+        run: docker compose --env-file .local/stack/stack.env -f compose.stack.yaml build stack-core-api stack-ai-worker stack-console stack-opa
       - name: Verify real authenticated evaluation and review flow
         run: |
           docker compose --env-file .local/stack/stack.env -f compose.stack.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console
@@ -34,6 +36,7 @@ jobs:
           python3 scripts/stack-recovery-smoke.py --mode jetstream-persistence
           python3 scripts/stack-recovery-smoke.py --mode core-restart
           python3 scripts/stack-recovery-smoke.py --mode deadline
+          python3 scripts/stack-policy-smoke.py
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '24'
@@ -76,7 +79,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p stack-delivery
-          for spec in 'core-api:services/core-api' 'ai-worker:services/ai-worker' 'console:apps/console'; do
+          for spec in 'core-api:services/core-api' 'ai-worker:services/ai-worker' 'console:apps/console' 'opa:services/opa'; do
             service=${spec%%:*}
             context=${spec#*:}
             image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/agenttrust-$service:$GITHUB_SHA"
@@ -93,6 +96,7 @@ jobs:
           echo "STACK_CORE_IMAGE=$(cat stack-delivery/core-api.txt)" >> "$GITHUB_ENV"
           echo "STACK_WORKER_IMAGE=$(cat stack-delivery/ai-worker.txt)" >> "$GITHUB_ENV"
           echo "STACK_CONSOLE_IMAGE=$(cat stack-delivery/console.txt)" >> "$GITHUB_ENV"
+          echo "STACK_OPA_IMAGE=$(cat stack-delivery/opa.txt)" >> "$GITHUB_ENV"
       - name: Execute exact registry images without rebuilding
         run: |
           docker compose --env-file .local/stack/stack.env -f compose.stack.yaml -f compose.stack.image.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console

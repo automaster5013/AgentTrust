@@ -1,0 +1,8 @@
+{
+  "agenttrust": {
+    "policy": {
+      "version": "1.1.0",
+      "digest": "sha256:b3ed714d18d7cf42e02b9908253beffd379bb282566fe5e09ef66df21630ee65"
+    }
+  }
+}
