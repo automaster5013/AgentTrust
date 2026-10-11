@@ -63,3 +63,5 @@ node --experimental-strip-types scripts/stack-verify-campaign-receipt.ts --bundl
 검증된 원본 번들과 별도로 신뢰한 공개키를 준비했다면 [과거 HTML 보고서](stack-observation-report.md)를 생성해 검토할 수 있다. 이 요약은 자체 서명이나 현재 릴리스 권한을 제공하지 않는다.
 
 평가 실행 전 화면의 **평가 경로 상태 확인**으로 현재 데이터베이스·Python/NATS·OPA 연결을 확인할 수 있습니다. 세 연결이 확인돼도 실제 모델 실행 성공이나 릴리스 승인으로 간주하지 않습니다. [계약과 장애 검증](stack-evaluation-readiness.md)을 참고하세요.
+
+캠페인 준비 화면의 에이전트·데이터셋 **버전 이력 조회**로 최근 50개 밖의 보관 버전을 탐색할 수 있습니다. 선택 전에 실제 불변 내용과 SHA-256을 확인합니다. [이력과 선택 계약](stack-version-history.md)을 참고하세요.

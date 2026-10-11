@@ -278,3 +278,23 @@ test('viewer checks real evaluation dependencies and clears untrusted or unavail
  await expect(region.locator('time')).toHaveCount(0);await expect(region.locator('li')).toHaveCount(0);
  phase('actual ready dependency response, simulated unavailable rendering and foreign-scope clearing verified');
 });
+
+
+test('viewer verifies an older registered version before selecting it for campaign preparation',async({page})=>{
+ await login(page,'demo-viewer');
+ for(const [kind,label,selectLabel] of [['agents','에이전트','캠페인 에이전트 버전'],['datasets','데이터셋','캠페인 데이터셋 버전']] as const){
+  const region=page.getByRole('region',{name:'프로젝트 '+label+' 버전 이력',exact:true});
+  await region.getByRole('button',{name:label+' 버전 이력 조회',exact:true}).click();await expect(region.locator('[data-version-history-id]').first()).toBeVisible();
+  const first=await region.locator('[data-version-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-history-id')));
+  if(await region.getByRole('button',{name:'다음 '+label+' 버전 페이지',exact:true}).isEnabled()){
+   await region.getByRole('button',{name:'다음 '+label+' 버전 페이지',exact:true}).click();await expect(region.getByText(new RegExp(label+' 버전 페이지 2 '))).toBeVisible();
+   const older=await region.locator('[data-version-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-history-id')));expect(older.some(id=>first.includes(id))).toBe(false);
+  }
+  const row=region.locator('[data-version-history-id]').last(),id=await row.getAttribute('data-version-history-id');
+  const response=page.waitForResponse(r=>r.url().endsWith('/versions/'+kind+'/'+id)&&r.request().method()==='GET');await row.getByRole('button').click();expect((await response).status()).toBe(200);
+  await expect(region.getByText(/내용·해시 확인 후 선택:/)).toBeVisible();await expect(page.getByLabel(selectLabel,{exact:true})).toHaveValue(id!);
+  const snapshot=await (await page.request.get('/backend/version-history/'+kind)).json();await page.route('**/backend/version-history/'+kind,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...snapshot,kind:kind==='agents'?'datasets':'agents'})}));
+  await region.getByRole('button',{name:label+' 버전 이력 조회',exact:true}).click();await expect(region.getByText('버전 이력을 확인하지 못했습니다. 다시 조회해 주세요.',{exact:true})).toBeVisible();await expect(region.locator('[data-version-history-id]')).toHaveCount(0);await expect(page.getByLabel(selectLabel,{exact:true})).toHaveValue(id!);await page.unroute('**/backend/version-history/'+kind);
+ }
+ phase('actual immutable version content/hash checked before controlled selection; foreign-kind page refused');
+});

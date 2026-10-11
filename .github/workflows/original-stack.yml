@@ -151,6 +151,7 @@ jobs:
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-run-history-smoke.py
           python3 scripts/stack-campaign-history-smoke.py
+          python3 scripts/stack-version-history-smoke.py
           python3 scripts/stack-provider-usage-query-test.py
           python3 scripts/stack-provider-usage-smoke.py
           python3 scripts/stack-evaluation-readiness-smoke.py
@@ -191,6 +192,7 @@ jobs:
             .local/stack-cancellation-*.json
             .local/stack-run-history-*.json
             .local/stack-campaign-history-*.json
+            .local/stack-version-history-*.json
             .local/stack-provider-usage-*.json
             .local/stack-campaign-archive-*/summary.json
             .local/stack-campaign-receipt-*/summary.json
@@ -314,6 +316,7 @@ jobs:
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-run-history-smoke.py
           python3 scripts/stack-campaign-history-smoke.py
+          python3 scripts/stack-version-history-smoke.py
           python3 scripts/stack-provider-usage-query-test.py
           python3 scripts/stack-provider-usage-smoke.py
           python3 scripts/stack-evaluation-readiness-smoke.py
@@ -347,6 +350,7 @@ jobs:
             .local/stack-cancellation-*.json
             .local/stack-run-history-*.json
             .local/stack-campaign-history-*.json
+            .local/stack-version-history-*.json
             .local/stack-provider-usage-*.json
             .local/stack-campaign-archive-*/summary.json
             .local/stack-campaign-receipt-*/summary.json
