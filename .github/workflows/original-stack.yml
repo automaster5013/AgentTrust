@@ -81,8 +81,10 @@ jobs:
           python3 scripts/stack-policy-smoke.py
       - name: Verify immutable versions and authenticated campaign aggregation
         run: |
+          python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-smoke.py
           python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-audit-smoke.py
           python3 scripts/stack-execution-profile-smoke.py
           python3 scripts/stack-campaign-recovery.py
           python3 scripts/stack-campaign-recovery.py --deadline
@@ -163,6 +165,7 @@ jobs:
             .local/stack-promptfoo-smoke-*.json
             .local/stack-http-smoke-*.json
             .local/stack-campaign-smoke-*.json
+            .local/stack-audit-smoke-*.json
             .local/stack-execution-profile-*.json
             .local/stack-campaign-recovery-*.json
             .local/stack-campaign-model-*.json
@@ -257,8 +260,10 @@ jobs:
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
           python3 scripts/stack-database-smoke.py
           python3 scripts/stack-database-init-smoke.py
+          python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-smoke.py
           python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-audit-smoke.py
           python3 scripts/stack-execution-profile-smoke.py
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-evidence-test.py
@@ -295,6 +300,7 @@ jobs:
             .local/stack-gateway-smoke-*.json
             .local/stack-http-smoke-*.json
             .local/stack-campaign-smoke-*.json
+            .local/stack-audit-smoke-*.json
             .local/stack-execution-profile-*.json
             .local/stack-campaign-recovery-*.json
             .local/stack-campaign-model-*.json

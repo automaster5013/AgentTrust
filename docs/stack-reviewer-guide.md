@@ -52,3 +52,5 @@ node --experimental-strip-types scripts/stack-verify-campaign-receipt.ts --bundl
 | Kubernetes·Helm·Terraform | 앱 구성의 렌더·schema·mock plan 검증; 운영 클러스터 미배포 |
 
 [참조 정답 평가](stack-reference-evaluation.md)의 실제 로컬 검사, [보안](stack-security.md)의 커밋별 CI와 [기능 이전 범위](stack-feature-parity.md)를 근거로 확인한다. 원래 JavaScript 구현의 테스트 수나 GitHub 언어 비율을 새 스택의 완료율로 설명하지 않는다. 유료 OpenAI 호출, 운영 KMS·키 교체, 동적 기업 등록, stateful 운영 배포·HA·운영 복구는 별도 완료 조건이다. Grafana 취약점의 전체 이미지 재검증도 운영 배포 전에 필요하다.
+
+프로젝트의 평가·버전 등록·승인/반려 이력은 화면 아래 **프로젝트 감사 기록**에서 조회한다. 조회자 계정도 같은 범위의 기록을 읽을 수 있다. [감사 조회의 범위와 페이지 경계](stack-audit.md)를 함께 확인한다.
