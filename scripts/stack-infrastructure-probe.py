@@ -1,6 +1,7 @@
 """Render/validate with synthetic values and mocked providers. Never reads a kubeconfig or calls a cluster."""
-import copy,hashlib,json,pathlib,shutil,subprocess,yaml
+import copy,hashlib,json,pathlib,shutil,subprocess,tempfile,yaml
 source=pathlib.Path('/src');output=pathlib.Path('/out');report={'completed':False,'checks':[],'clusterContacted':False,'resourcesApplied':False,'credentialsMounted':False}
+work=None
 schema='https://raw.githubusercontent.com/yannh/kubernetes-json-schema/5f1fa4f7908afc9b6641c62d282a4a22437626e1/{{.NormalizedKubernetesVersion}}-standalone{{.StrictSuffix}}/{{.ResourceKind}}{{.KindSuffix}}.json'
 names=['core-api','ai-worker','gateway','console','opa','quality-verifier'];values={'mode':'local-review','revision':'1'*40,'existingSecret':'agenttrust-stack-config','images':{name:'ghcr.io/automaster5013/agenttrust-'+name+'@sha256:'+'1'*64 for name in names},'dependencies':{'namespace':'agenttrust-dependencies',**{name:name.lower()+'.agenttrust-dependencies.svc.cluster.local' for name in ['postgres','nats','redis','identity','objectStore']}}}
 def run(command,name,expected=0,cwd=None):
@@ -28,7 +29,13 @@ try:
   else:invalid['hostNetwork']=True
   path=output/(name+'.json');path.write_text(json.dumps(invalid),encoding='utf-8');run(['helm','template','agenttrust-review','/src/charts/agenttrust-review','-f',str(path)],name,expected=1)
  report['checks'].append('mutable image, production mode, external dependency and unknown field rejected')
- tf=output/'terraform';shutil.copytree(source/'terraform/review',tf)
+ # The public module and downloaded providers are ephemeral container memory, not host reports.
+ work=tempfile.TemporaryDirectory(prefix='agenttrust-terraform-',dir='/tmp');tf=pathlib.Path(work.name)/'review';tf.mkdir()
+ for name in ['main.tf','variables.tf','review.tftest.hcl','.terraform.lock.hcl']:
+  public=source/'terraform/review'/name
+  if public.is_symlink() or not public.is_file() or public.stat().st_size>1048576:raise ValueError('Public module input unavailable')
+  shutil.copyfile(public,tf/name)
+ report['terraformInputs']='four-public-module-files-only'
  run(['terraform','fmt','-check','-recursive','-no-color'], 'terraform-format',cwd=tf)
  run(['terraform','init','-backend=false','-input=false','-lockfile=readonly','-no-color'],'terraform-init',cwd=tf)
  run(['terraform','validate','-no-color'],'terraform-validate',cwd=tf);report['checks'].append('Terraform pinned providers and module validation')
@@ -36,5 +43,9 @@ try:
  report['completed']=True
 except Exception as error:report['errorType']=type(error).__name__
 finally:
+ try:
+  if work is not None:work.cleanup()
+  report['temporaryTerraformWorkRemoved']=True
+ except Exception as error:report.update(completed=False,temporaryTerraformWorkRemoved=False,errorType=type(error).__name__)
  (output/'summary.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8');print(json.dumps(report))
 if not report['completed']:raise SystemExit(1)
