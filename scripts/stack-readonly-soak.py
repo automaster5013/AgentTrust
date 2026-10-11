@@ -3,11 +3,13 @@ import argparse,concurrent.futures,datetime,hashlib,json,math,pathlib,shutil,sta
 from stack_test_client import StackClient
 from stack_business_fingerprint import fingerprint
 ROOT=pathlib.Path(__file__).resolve().parent.parent
-parser=argparse.ArgumentParser();parser.add_argument('--minutes',type=int,default=15);parser.add_argument('--readers',type=int,default=20);args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('--minutes',type=int,default=15);parser.add_argument('--readers',type=int,default=20);parser.add_argument('--audit-export',action='store_true');args=parser.parse_args()
 if not 1<=args.minutes<=180 or not 2<=args.readers<=20 or args.readers%2:raise SystemExit('Unsupported bounded load')
 directory=ROOT/'.local'/('stack-readonly-soak-'+str(uuid.uuid4()));directory.mkdir()
 report={'completed':False,'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'requestedMinutes':args.minutes,'readers':args.readers,'businessDataWrites':False,'paidApiCalls':False,'credentialsRecorded':False,'customerSlaVerified':False,'rounds':0,'requests':0,'requestFailures':0}
 clients=[];observations={path:[] for path in ['me','runs','run-history','provider-usage','campaigns','audit','campaign-history','version-history/agents','version-history/datasets','evaluation-readiness']}
+if args.audit_export:observations['audit-export']=[]
+report['pathsPerReader']=len(observations)
 def save():
     temporary=directory/'summary.next.json';temporary.write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8');temporary.replace(directory/'summary.json')
 def sample(client):
@@ -24,6 +26,10 @@ def sample(client):
         if path=='evaluation-readiness':
             assert value['contract']=='agenttrust-evaluation-readiness-v1' and value['ready'] is True and value['productionReady'] is False
             assert value['dependencies']==[{'name':name,'available':True} for name in ['database','worker-queue','policy']]
+        if path=='audit-export':
+            assert value['organizationId']==client.expectedScope['organizationId'] and value['projectId']==client.expectedScope['projectId'] and value['signed'] is False and value['currentDeploymentAuthority'] is False
+            raw=value['contentJson'].encode('utf-8');assert 1<=len(raw)<=262144 and len(raw)==value['contentBytes'] and hashlib.sha256(raw).hexdigest()==value['contentSha256']
+            document=json.loads(raw);assert document['kind']=='project-audit-export' and document['organizationId']==value['organizationId'] and document['projectId']==value['projectId'] and document['recordCount']==len(document['entries'])<=500 and document['entireProjectHistory']==(not document['hasOlderRecords'])
         readings.append((path,elapsed))
     return readings
 try:
@@ -44,7 +50,7 @@ try:
             report['rounds']+=1;report['elapsedSeconds']=round(time.monotonic()-started,3);report['minimumCDriveFreeBytes']=min(report.get('minimumCDriveFreeBytes',shutil.disk_usage(ROOT).free),shutil.disk_usage(ROOT).free)
             report['latencyMs']={path:{'samples':len(values),'p50':round(statistics.median(values),3),'p95':round(sorted(values)[max(0,math.ceil(len(values)*.95)-1)],3),'max':round(max(values),3)} for path,values in observations.items()}
             save()
-            # At most 100 requests per project per round remain under the 240/minute quota.
+            # At most 110 requests per project per round remain under the 240/minute quota.
             while time.monotonic()<min(began+60,deadline):time.sleep(max(0,min(1,min(began+60,deadline)-time.monotonic())))
     report['phase']='preservation';after=fingerprint();assert before==after
     report['allBusinessRowsUnchanged']=True;report['businessFingerprintSha256']=hashlib.sha256(json.dumps(after,sort_keys=True).encode()).hexdigest();report['observedSeconds']=round(time.monotonic()-started,3);report['completed']=True

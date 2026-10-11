@@ -1,6 +1,7 @@
 import type {Identity} from './contracts';
 export type AuditEntry={id:string;actorId:string;action:string;resourceId:string;createdAt:string};
 export type AuditPage={entries:AuditEntry[];nextCursor:string|null};
+export type AuditExport={contentJson:string;contentSha256:string;contentBytes:number;recordCount:number;hasOlderRecords:boolean;entireProjectHistory:boolean};
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 function object(value:unknown):Record<string,unknown>{if(!value||typeof value!=='object'||Array.isArray(value))throw Error('INVALID_AUDIT');return value as Record<string,unknown>}
 function id(value:unknown):string{if(typeof value!=='string'||!uuid.test(value))throw Error('INVALID_AUDIT');return value}
@@ -24,4 +25,19 @@ export function auditPage(value:unknown,user:Identity,requestedCursor:string|nul
  });
  if(page.nextCursor!==null){if(typeof page.nextCursor!=='string'||entries.length!==25)throw Error('INVALID_AUDIT_CURSOR');const next=cursor(page.nextCursor,user),last=entries.at(-1)!,at=time(last.createdAt);if(next.id!==last.id||next.seconds!==at.seconds||next.nanos!==at.nanos)throw Error('INVALID_AUDIT_CURSOR');}
  return {entries,nextCursor:page.nextCursor as string|null};
+}
+
+/** Hash checks downloaded bytes; this unsigned export does not authenticate an independent issuer. */
+export async function auditExport(value:unknown,user:Identity):Promise<AuditExport>{
+ const frame=object(value);if(Object.keys(frame).sort().join(',')!=='contentBytes,contentJson,contentSha256,currentDeploymentAuthority,organizationId,projectId,signed'||frame.organizationId!==user.organizationId||frame.projectId!==user.projectId||frame.signed!==false||frame.currentDeploymentAuthority!==false||typeof frame.contentJson!=='string'||frame.contentJson.length>262144||typeof frame.contentSha256!=='string'||!/^[a-f0-9]{64}$/.test(frame.contentSha256))throw Error('INVALID_AUDIT_EXPORT');
+ const bytes=new TextEncoder().encode(frame.contentJson);if(bytes.length<1||bytes.length>262144||bytes.length!==frame.contentBytes)throw Error('INVALID_AUDIT_EXPORT');
+ const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');if(hash!==frame.contentSha256)throw Error('INVALID_AUDIT_EXPORT_HASH');
+ const doc=object(JSON.parse(frame.contentJson));if(Object.keys(doc).sort().join(',')!=='currentDeploymentAuthority,entireProjectHistory,entries,hasOlderRecords,kind,limit,newestCursor,oldestCursor,ordering,organizationId,projectId,recordCount,schemaVersion,signed'||doc.schemaVersion!==1||doc.kind!=='project-audit-export'||doc.organizationId!==user.organizationId||doc.projectId!==user.projectId||doc.limit!==500||doc.ordering!=='created-at-id-desc'||doc.signed!==false||doc.currentDeploymentAuthority!==false||!Array.isArray(doc.entries)||doc.entries.length>500||doc.recordCount!==doc.entries.length||typeof doc.hasOlderRecords!=='boolean'||doc.entireProjectHistory!==!doc.hasOlderRecords||doc.hasOlderRecords&&doc.entries.length!==500)throw Error('INVALID_AUDIT_EXPORT');
+ const seen=new Set<string>();let previous:AuditEntry|null=null;
+ for(let offset=0;offset<doc.entries.length;offset+=25){const parsed=auditPage({organizationId:user.organizationId,projectId:user.projectId,entries:doc.entries.slice(offset,offset+25),nextCursor:null,limit:25,ordering:'created-at-id-desc',deploymentAuthority:false},user);
+  for(const entry of parsed.entries){if(seen.has(entry.id)||previous&&(time(entry.createdAt).text>time(previous.createdAt).text||time(entry.createdAt).text===time(previous.createdAt).text&&entry.id>=previous.id))throw Error('INVALID_AUDIT_EXPORT_ORDER');seen.add(entry.id);previous=entry;}
+ }
+ const bind=(token:unknown,raw:unknown)=>{if(typeof token!=='string')throw Error('INVALID_AUDIT_EXPORT_BOUNDARY');const boundary=cursor(token,user),entry=object(raw),at=time(entry.createdAt);if(boundary.id!==entry.id||boundary.seconds!==at.seconds||boundary.nanos!==at.nanos)throw Error('INVALID_AUDIT_EXPORT_BOUNDARY')};
+ if(doc.entries.length){bind(doc.newestCursor,doc.entries[0]);bind(doc.oldestCursor,doc.entries.at(-1))}else if(doc.newestCursor!==null||doc.oldestCursor!==null||doc.hasOlderRecords)throw Error('INVALID_AUDIT_EXPORT_BOUNDARY');
+ return {contentJson:frame.contentJson,contentSha256:hash,contentBytes:bytes.length,recordCount:doc.entries.length,hasOlderRecords:doc.hasOlderRecords,entireProjectHistory:doc.entireProjectHistory as boolean};
 }

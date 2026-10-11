@@ -1,5 +1,6 @@
 /** Receives bounded in-memory live evidence from the authenticated Python reviewer. */
 import {openSync,readSync,closeSync,fstatSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {verifiedCampaign,verifiedCampaignArchive} from '../apps/console/src/lib/campaign-contracts.ts';
 import {verifyAnchoredGateCheck} from './stack-current-gate-anchor.ts';
 import type {Identity} from '../apps/console/src/lib/contracts.ts';
@@ -10,5 +11,5 @@ try{
  const input=JSON.parse(bounded(0,262144));if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).sort().join(',')!=='campaignId,challenge,evidence,frame,record,requestStartedAt,user')throw Error('INVALID_INPUT');
  const user=input.user as Identity,record=await verifiedCampaign(input.record,user,input.campaignId),archive=await verifiedCampaignArchive(input.evidence,user,record);
  const check=await verifyAnchoredGateCheck(input.frame,pem,user,record,archive,input.challenge,input.requestStartedAt);
- process.stdout.write(JSON.stringify({completed:true,signatureVerified:true,trustedKeyId:check.keyId,decision:check.observedGate.decision,deploymentAllowedAtRead:check.observedGate.deploymentAllowed,checkedAtEpochMillis:check.checkedAtEpochMillis,expiresAtEpochMillis:check.expiresAtEpochMillis,currentDeploymentAuthority:false,trustDomain:'agenttrust-local-development',networkUsed:false})+'\n');
+ process.stdout.write(JSON.stringify({completed:true,signatureVerified:true,trustedKeyId:check.keyId,decision:check.observedGate.decision,deploymentAllowedAtRead:check.observedGate.deploymentAllowed,checkedAtEpochMillis:check.checkedAtEpochMillis,expiresAtEpochMillis:check.expiresAtEpochMillis,releaseRequirementsBound:check.releaseRequirements?.enabled===true,releaseRequirementsSha256:check.releaseRequirements?createHash('sha256').update(JSON.stringify(check.releaseRequirements)).digest('hex'):null,currentDeploymentAuthority:false,trustDomain:'agenttrust-local-development',networkUsed:false})+'\n');
 }catch{process.stdout.write(JSON.stringify({completed:false,code:'CURRENT_GATE_ANCHOR_UNVERIFIED',currentDeploymentAuthority:false})+'\n');process.exitCode=1}

@@ -157,6 +157,8 @@ def main():
                         or int(time.time()*1000) >= verified['expiresAtEpochMillis']:
                     raise ValueError('Current signed observation unavailable')
                 report.update(signatureVerified=True, trustedGateKeyId=verified['trustedKeyId'],
+                    releaseRequirementsBound=verified['releaseRequirementsBound'],
+                    releaseRequirementsSha256=verified['releaseRequirementsSha256'],
                     currentGateAllowedAtRead=verified['deploymentAllowedAtRead'],
                     currentGateCheckedAtEpochMillis=verified['checkedAtEpochMillis'],
                     currentGateExpiresAtEpochMillis=verified['expiresAtEpochMillis'])
@@ -190,6 +192,7 @@ def main():
             'oidcAuthorizationCodePkceVerified', 'ownIdentityProviderSessionClosed',
             'unexpectedHttpStatus', 'expectedHttpStatus', 'responseCode',
             'trustedGateKeyId', 'currentGateCheckedAtEpochMillis', 'currentGateExpiresAtEpochMillis',
+            'releaseRequirementsBound', 'releaseRequirementsSha256',
         }
         report = {key: value for key, value in report.items() if key in permitted}
         report['finishedAt'] = datetime.datetime.now(datetime.timezone.utc).isoformat()

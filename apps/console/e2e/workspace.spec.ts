@@ -1,7 +1,16 @@
 import {test,expect,type Page} from '@playwright/test';
+import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {readFileSync,readdirSync,statSync} from 'node:fs';import {resolve} from 'node:path';
 const users=JSON.parse(readFileSync(resolve(process.cwd(),'../../.local/stack/demo-credentials.json'),'utf-8')) as {username:string;password:string;organizationId:string}[];
+
+test('viewer downloads bounded scoped audit JSON and refuses changed bytes before download',async({page})=>{
+ await login(page,'demo-viewer');const region=page.getByRole('region',{name:'프로젝트 감사 기록',exact:true});const identity=await (await page.request.get('/backend/me')).json();const frame=await (await page.request.get('/backend/audit-export')).json();
+ const event=page.waitForEvent('download');await region.getByRole('button',{name:'감사 기록 JSON 다운로드',exact:true}).click();const download=await event;expect(await download.failure()).toBeNull();const stream=await download.createReadStream();expect(stream).not.toBeNull();let bytes=Buffer.alloc(0);for await(const chunk of stream!){bytes=Buffer.concat([bytes,chunk]);expect(bytes.length).toBeLessThanOrEqual(262144)}
+ expect(bytes.toString('utf8')).toBe(frame.contentJson);expect(createHash('sha256').update(bytes).digest('hex')).toBe(frame.contentSha256);const doc=JSON.parse(bytes.toString('utf8'));expect(doc.organizationId).toBe(identity.organizationId);expect(doc.projectId).toBe(identity.projectId);expect(doc.signed).toBe(false);expect(doc.currentDeploymentAuthority).toBe(false);expect(doc.entries.length).toBeLessThanOrEqual(500);expect(doc.entireProjectHistory).toBe(!doc.hasOlderRecords);await expect(region.getByRole('status')).toContainText('개 감사 기록을 검증해 내려받았습니다.');phase('actual scoped Java audit JSON bytes hash boundaries and history marker verified before browser download');
+ let unexpected=false;const note=()=>{unexpected=true};page.on('download',note);try{await page.route('**/backend/audit-export',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...frame,contentJson:frame.contentJson+' '})}));await region.getByRole('button',{name:'감사 기록 JSON 다운로드',exact:true}).click();await expect(region.getByRole('status')).toContainText('감사 내보내기를 검증하지 못했습니다.');expect(unexpected).toBe(false);phase('changed export bytes refused before emitting a second download')}finally{page.off('download',note);await page.unroute('**/backend/audit-export')}
+ await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
 function phase(description:string){test.info().annotations.push({type:'phase',description})}
 async function login(page:Page,name:string){
  await page.route('**/*',route=>{const url=new URL(route.request().url());if(['http://127.0.0.1:4320','http://127.0.0.1:4322'].includes(url.origin))return route.continue();return route.abort()});
