@@ -38,11 +38,11 @@ jobs:
       - name: Build pinned upstream source with patched dependencies
         run: |
           docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" -t "agenttrust-$COMPONENT:local" "services/$COMPONENT"
-      - name: Generate SBOM and refuse all HIGH or CRITICAL findings
-        run: python3 scripts/stack-observability-security.py --name "$COMPONENT" --reference "agenttrust-$COMPONENT:local"
       - name: Verify all official Grafana plugin signatures in isolated runtime
         if: inputs.component == 'grafana'
         run: python3 scripts/stack-grafana-signature-probe.py
+      - name: Generate SBOM and refuse all HIGH or CRITICAL findings
+        run: python3 scripts/stack-observability-security.py --name "$COMPONENT" --reference "agenttrust-$COMPONENT:local"
       - name: Publish immutable candidate for integration review
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}

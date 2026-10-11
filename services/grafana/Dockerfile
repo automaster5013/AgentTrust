@@ -25,9 +25,21 @@ ADD --checksum=sha256:a89fa4ee83a61e58dac30eae3ce42ae6f677545d05e419b88f0a6f5f6c
 ADD --checksum=sha256:94e67f5f4236925282a88a4cf7407582310fd4efa77cde1a67252e57fbd63b15 https://grafana.com/api/plugins/zipkin/versions/12.4.9/download?os=linux&arch=amd64 /packages/zipkin.zip
 COPY plugins.lock.json unpack-plugins.py /packages/
 RUN python unpack-plugins.py
-FROM grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+FROM grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572 AS runtime
 USER root
 RUN rm -rf /usr/share/grafana/data/plugins-bundled/elasticsearch /usr/share/grafana/data/plugins-bundled/grafana-postgresql-datasource /usr/share/grafana/data/plugins-bundled/grafana-pyroscope-datasource /usr/share/grafana/data/plugins-bundled/influxdb /usr/share/grafana/data/plugins-bundled/jaeger /usr/share/grafana/data/plugins-bundled/loki /usr/share/grafana/data/plugins-bundled/mssql /usr/share/grafana/data/plugins-bundled/mysql /usr/share/grafana/data/plugins-bundled/opentsdb /usr/share/grafana/data/plugins-bundled/prometheus /usr/share/grafana/data/plugins-bundled/stackdriver /usr/share/grafana/data/plugins-bundled/tempo /usr/share/grafana/data/plugins-bundled/zipkin
 COPY --from=plugins --chown=472:0 /plugins/ /usr/share/grafana/data/plugins-bundled/
 COPY --from=build /source/bin/linux/amd64/grafana /usr/share/grafana/bin/grafana
+FROM scratch
+COPY --from=runtime / /
+ENV PATH=/usr/share/grafana/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    GF_PATHS_CONFIG=/etc/grafana/grafana.ini \
+    GF_PATHS_DATA=/var/lib/grafana \
+    GF_PATHS_HOME=/usr/share/grafana \
+    GF_PATHS_LOGS=/var/log/grafana \
+    GF_PATHS_PLUGINS=/var/lib/grafana/plugins \
+    GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+WORKDIR /usr/share/grafana
+EXPOSE 3000
 USER 472:0
+ENTRYPOINT ["/run.sh"]

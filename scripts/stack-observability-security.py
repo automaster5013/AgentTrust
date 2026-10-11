@@ -35,9 +35,16 @@ try:
     image=json.loads(identity.stdout)[0];image_id=image['Id']
     if not re.fullmatch('sha256:[a-f0-9]{64}',image_id):raise ValueError('Invalid image identity')
     report['imageId']=image_id
+    image_bytes=image.get('Size')
+    archive_limit=3*1073741824 if args.name=='grafana' else 1073741824
+    if type(image_bytes) is not int or not 0<image_bytes<=archive_limit:raise ValueError('Image size outside bounded scan contract')
+    report.update(imageBytes=image_bytes,archiveLimitBytes=archive_limit)
+    required_free=max(4*1073741824,2*image_bytes+268435456) if os.name!='nt' else 20*1073741824+image_bytes
+    if shutil.disk_usage(root).free<required_free:raise ValueError('Insufficient export headroom')
     stage='archive';archive=inputs/(args.name+'.tar')
     saved=run(['docker','image','save','-o',str(archive),image_id])
-    if saved.returncode or not 0<archive.stat().st_size<=1073741824:raise ValueError('Image export unavailable or too large')
+    report['archiveBytes']=archive.stat().st_size if archive.exists() else 0
+    if saved.returncode or not 0<report['archiveBytes']<=archive_limit:raise ValueError('Image export unavailable or too large')
     archive.chmod(0o644)
     with archive.open('rb') as stream:report['archiveSha256']=hashlib.file_digest(stream,'sha256').hexdigest()
     stage='sbom';sbom=scanner(['syft','docker-archive:/in/'+args.name+'.tar','-o','cyclonedx-json=/out/'+args.name+'.cdx.json','--quiet'],'none')
