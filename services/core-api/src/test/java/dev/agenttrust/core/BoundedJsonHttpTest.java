@@ -13,6 +13,7 @@ class BoundedJsonHttpTest {
  }
  @Test void aStalledBodyAfterHeadersHasABoundedDeadline() throws Exception {
   var server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);server.createContext("/slow",exchange->{exchange.sendResponseHeaders(200,10);try{Thread.sleep(2500);}catch(InterruptedException ignored){Thread.currentThread().interrupt();}finally{exchange.close();}});server.start();
-  try{assertTimeout(Duration.ofSeconds(4),()->assertThrows(Exception.class,()->new BoundedJsonHttp().post("http://127.0.0.1:"+server.getAddress().getPort()+"/slow","X-Test","synthetic",new byte[0],16)));}finally{server.stop(0);}
+  var client=new BoundedJsonHttp();
+  try{assertTimeout(Duration.ofSeconds(4),()->assertThrows(Exception.class,()->client.post("http://127.0.0.1:"+server.getAddress().getPort()+"/slow","X-Test","synthetic",new byte[0],16)));}finally{server.stop(0);}
  }
 }

@@ -40,6 +40,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   integration:
+    env:
+      COMPOSE_PARALLEL_LIMIT: '2'
     needs: security-source
     runs-on: ubuntu-latest
     timeout-minutes: 65
