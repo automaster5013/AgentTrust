@@ -3,8 +3,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts --omit=optional
 ENV PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 PROMPTFOO_CACHE_ENABLED=false PROMPTFOO_CONFIG_DIR=/tmp/promptfoo LOG_LEVEL=error CI=1
-COPY quality-policy.mjs quality-policy.test.mjs quality-server.mjs quality-server.test.mjs ./
-RUN --network=none node --test quality-policy.test.mjs quality-server.test.mjs
+COPY quality-policy.mjs quality-policy.spec.mjs quality-server.mjs quality-server.spec.mjs ./
+RUN --network=none node --test quality-policy.spec.mjs quality-server.spec.mjs
 RUN npm audit --omit=optional --audit-level=high
 FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
