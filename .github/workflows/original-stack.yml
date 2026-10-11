@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 concurrency:
   group: original-stack-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 permissions:
   contents: read
 jobs:
@@ -24,6 +24,7 @@ jobs:
           python3 scripts/stack-delivery-verifier-test.py
           docker build -t agenttrust-security:local tools/security
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-backup-crypt-test.py
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --memory 128m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-backup-tar-test.py
       - name: Verify rules and scan tracked source and full Git history
         run: python3 scripts/stack-security-source.py
       - name: Preserve redacted security reports
@@ -138,6 +139,8 @@ jobs:
           STACK_E2E_LOCAL_MODEL=true npx playwright test --grep 'local model provider evidence'
       - name: Restore authenticated database snapshot into an isolated disposable fixture
         run: python3 scripts/stack-database-backup-smoke.py
+      - name: Restore encrypted object-store snapshot and verify pinned versions and retention
+        run: python3 scripts/stack-object-backup-smoke.py
       - name: Preserve safe synthetic fault diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -163,6 +166,7 @@ jobs:
             .local/stack-observability-outage-*.json
             .local/stack-database-init-smoke-*.json
             .local/stack-database-backup-*/summary.json
+            .local/stack-object-backup-*/summary.json
             .local/stack-provider-smoke-*.json
             .local/stack-provider-integrity-*/summary.json
             .local/stack-browser-*.json
@@ -259,6 +263,7 @@ jobs:
           python3 scripts/stack-queue-trace-smoke.py
           python3 scripts/stack-observability-outage-smoke.py
           python3 scripts/stack-database-backup-smoke.py
+          python3 scripts/stack-object-backup-smoke.py
           python3 scripts/stack-image-smoke.py
           python3 scripts/stack-delivery-manifest.py
       - name: Preserve safe registry runtime diagnostics
@@ -281,6 +286,7 @@ jobs:
             .local/stack-vector-smoke-*.json
             .local/stack-database-init-smoke-*.json
             .local/stack-database-backup-*/summary.json
+            .local/stack-object-backup-*/summary.json
             .local/stack-provider-smoke-*.json
             .local/stack-provider-integrity-*/summary.json
             .local/stack-observability-smoke-*.json

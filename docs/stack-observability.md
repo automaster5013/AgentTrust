@@ -41,3 +41,5 @@ Tempo·Loki·Prometheus의 고정 소스 재빌드는 `Pinned observability imag
 [Tempo 후보 CI](https://github.com/automaster5013/AgentTrust/actions/runs/38101740338)와 [Loki 후보 CI](https://github.com/automaster5013/AgentTrust/actions/runs/38101741680)는 고정 upstream 소스를 Go 1.27.2와 x/net 0.60.0으로 재빌드했다. Syft 구성 요소는 각각 1,343개·1,321개이며 Trivy HIGH/CRITICAL 0건이다. 공식 라이선스와 원래 제품 버전을 유지한다. 후보 artifact archive digest와 보고서 checksum을 확인한 뒤 실제 registry digest를 로컬에 적용했고, 관측 9개·큐 연결 3개·Collector 장애 복구 4개 검사가 통과했다. 새 Compose 소스 빌드와 열세 이미지 전달에 두 서비스를 포함했다. 열세 이미지의 새 CI·서명 전달 결과는 완료 후 별도로 확인한다.
 
 Grafana 공식 플러그인 바이너리의 직접 수정은 기존 plugin 서명을 무효화하므로 서명 검증을 비활성화하지 않는다. 서버와 번들 플러그인의 수정 배포본을 따로 확인해야 한다. Prometheus의 신규 Dockerfile은 원래 React/Mantine UI와 내장 자산, prometheus·promtool 두 바이너리를 재빌드하도록 준비했으나 실제 원격 빌드·검사·통합 전에는 수정 완료가 아니다.
+
+Tempo·Loki의 distroless 이미지에는 셸이 없으므로 고정 루프백 `/ready`만 확인하는 Go 준비 상태 도구와 exec 형식 healthcheck를 추가했다. redirect를 거부하고 응답 읽기·시간을 제한한다. 실제 서비스의 준비 상태 성공, network none의 연결 실패와 잘못된 component 거부의 6개 실행 검사가 통과했으며 Compose 두 서비스의 Docker 건강 상태와 기존 큐/관측 경로를 다시 확인했다. 추가 도구를 포함한 최종 이미지의 보안·원격 전달 결과는 별도 보고서를 따른다.

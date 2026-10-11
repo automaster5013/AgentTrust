@@ -5,7 +5,11 @@ WORKDIR /source
 ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOMAXPROCS=2 GOMEMLIMIT=768MiB GOFLAGS='-p=2 -mod=mod'
 RUN go get golang.org/x/net@v0.60.0
 RUN go build -trimpath -ldflags='-s -w -X main.Version=3.1.0 -X main.Revision=77fc4563d1135d0ca2656709c7384c278a9c67b0 -X main.Branch=agenttrust-security-rebuild' -o /tempo ./cmd/tempo
+COPY health.go /health.go
+RUN go build -trimpath -ldflags='-s -w' -o /health /health.go
 FROM grafana/tempo:3.1.0@sha256:3076b8dcdfb32fd6bc5ccef85e7b7313e6199b9cb84366257fc17ecb696db5fd
 COPY --from=build /tempo /tempo
+COPY --from=build /health /health
 COPY --from=build /source/LICENSE /licenses/tempo-AGPL-3.0.txt
 USER 10001:10001
+HEALTHCHECK --interval=5s --timeout=3s --start-period=20s --retries=12 CMD ["/health", "tempo"]
