@@ -18,7 +18,8 @@ def restore():
     while time.monotonic()<until:
         probe=command(['docker','exec','agenttrust-stack-ai-worker-1','python','-c',
             "import urllib.request; urllib.request.urlopen('http://stack-otel:13133/',timeout=2).read(4096)"])
-        if probe.returncode==0:return
+        health=command(['docker','inspect','agenttrust-stack-otel-1','--format','{{.State.Health.Status}}'])
+        if probe.returncode==0 and health.returncode==0 and health.stdout.strip()=='healthy':return
         time.sleep(.5)
     raise AssertionError('Collector recovery unavailable')
 

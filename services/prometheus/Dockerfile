@@ -26,3 +26,4 @@ COPY --from=build /promtool /bin/promtool
 COPY --from=build /source/LICENSE /licenses/prometheus-Apache-2.0.txt
 COPY --from=build /source/NOTICE /licenses/prometheus-NOTICE.txt
 USER 10001:10001
+HEALTHCHECK --interval=5s --timeout=3s --start-period=20s --retries=12 CMD ["wget","-q","-O","/dev/null","--timeout=2","http://127.0.0.1:9090/-/ready"]

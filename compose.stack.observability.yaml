@@ -94,7 +94,9 @@ services:
     depends_on:
       stack-observability-init:
         condition: service_completed_successfully
-    image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+    build:
+      context: ./services/prometheus
+    image: agenttrust-prometheus:local
     user: '10001:10001'
     command: [--config.file=/etc/prometheus.yaml, --storage.tsdb.path=/prometheus, --storage.tsdb.retention.time=7d, --storage.tsdb.retention.size=256MB]
     volumes: [./infra/stack-observability/prometheus.yaml:/etc/prometheus.yaml:ro, stack-prometheus-data:/prometheus]

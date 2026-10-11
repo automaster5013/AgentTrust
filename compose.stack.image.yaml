@@ -25,3 +25,5 @@ services:
     image: ${STACK_TEMPO_IMAGE:?Provide verified trace storage image digest}
   stack-loki:
     image: ${STACK_LOKI_IMAGE:?Provide verified log storage image digest}
+  stack-prometheus:
+    image: ${STACK_PROMETHEUS_IMAGE:?validated registry image required}

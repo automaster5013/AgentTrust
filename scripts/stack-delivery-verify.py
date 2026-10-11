@@ -39,9 +39,11 @@ def validate(directory,revision,checksums_hash,repository):
     manifest_path=directory/'manifest.json'
     require(manifest_path.is_file() and not manifest_path.is_symlink() and 0<manifest_path.stat().st_size<=MAX_FILE)
     manifest_preview=json_bytes(manifest_path.read_bytes())
+    require(type(manifest_preview.get('schemaVersion')) is int)
     if manifest_preview.get('schemaVersion')==2:names=IMAGES
     elif manifest_preview.get('schemaVersion')==3:names=IMAGES+('telemetry',)
     elif manifest_preview.get('schemaVersion')==4:names=IMAGES+('telemetry','tempo','loki')
+    elif manifest_preview.get('schemaVersion')==5:names=IMAGES+('telemetry','tempo','loki','prometheus')
     else:raise ValueError('Unsupported delivery schema')
     files={name+'.'+suffix for name in names for suffix in ['cdx.json','trivy.json','signature.bundle.json','sbom.bundle.json']}|{'revision.txt','manifest.json','runtime-identity.json','security-proof.json','checksums.json'}
     require({path.name for path in directory.iterdir()}==files)
