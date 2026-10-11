@@ -280,6 +280,8 @@ test('administrator cancels a real pending evaluation and campaign through brows
   await page.getByRole('button',{name:'평가 취소',exact:true}).click();
   await expect(page.getByText('평가 취소 결과를 확인했습니다.',{exact:true})).toBeVisible();
   await expect(page.locator('.evidence').getByText(/실행 엔진 java-cancelled/)).toBeVisible();
+  await expect(page.locator('.evidence .similar').getByRole('button',{name:'유사 근거 찾기',exact:true})).toBeDisabled();
+  await expect(page.getByText('취소된 평가는 유사 근거 검색 대상이 아닙니다.',{exact:true})).toBeVisible();
   await expect(page.locator('.evidence .gate').getByText('릴리스 허용 안 됨',{exact:true})).toBeVisible();
   await expect(page.getByRole('button',{name:'평가 취소',exact:true})).toHaveCount(0);
   const csrf=(await (await page.request.get('/backend/csrf')).json()).token,headers={'X-CSRF-TOKEN':csrf,Origin:'http://127.0.0.1:4320'};
