@@ -9,7 +9,7 @@ WORKDIR /build
 COPY pom.xml ./
 COPY src ./src
 COPY HealthProbe.java ./
-RUN mvn --batch-mode --no-transfer-progress verify
+RUN --mount=type=cache,id=agenttrust-core-maven,target=/root/.m2,sharing=locked mvn --batch-mode --no-transfer-progress verify
 RUN javac -d /probe HealthProbe.java
 FROM eclipse-temurin:21-jre@sha256:cff19e6215689161eb6162c11b86b0c60ddf802164f2eaf48d570f8fb79a36c5
 RUN rm -f /usr/bin/pebble

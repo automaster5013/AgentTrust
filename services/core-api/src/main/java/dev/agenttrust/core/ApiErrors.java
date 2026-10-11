@@ -12,6 +12,7 @@ import org.springframework.web.bind.MissingRequestHeaderException;
 
 @RestControllerAdvice
 public class ApiErrors {
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class) ResponseEntity<Map<String,String>> method(org.springframework.web.HttpRequestMethodNotSupportedException error) {return ResponseEntity.status(405).headers(error.getHeaders()).body(Map.of("code","METHOD_REFUSED"));}
     @ExceptionHandler({org.springframework.dao.DataAccessException.class,org.springframework.transaction.TransactionException.class}) ResponseEntity<Map<String,String>> database(Exception error) {return ResponseEntity.status(503).body(Map.of("code","STORAGE_UNAVAILABLE"));}
     @ExceptionHandler(ResponseStatusException.class) ResponseEntity<Map<String,String>> status(ResponseStatusException error) {return ResponseEntity.status(error.getStatusCode()).body(Map.of("code","REQUEST_REFUSED"));}
     @ExceptionHandler({MethodArgumentNotValidException.class,HttpMessageNotReadableException.class,MethodArgumentTypeMismatchException.class,MissingRequestHeaderException.class,IllegalArgumentException.class}) ResponseEntity<Map<String,String>> invalid(Exception error) {return ResponseEntity.badRequest().body(Map.of("code","INVALID_REQUEST"));}
