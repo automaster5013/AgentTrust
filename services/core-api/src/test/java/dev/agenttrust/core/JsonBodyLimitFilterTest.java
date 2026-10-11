@@ -51,6 +51,11 @@ class JsonBodyLimitFilterTest {
             var chain=new MockFilterChain();new JsonBodyLimitFilter().doFilter(request,new MockHttpServletResponse(),chain);assertArrayEquals(body,chain.getRequest().getInputStream().readAllBytes());
         }
     }
+    @Test void duplicateFieldsAndMultipleRootDocumentsAreRejected() throws Exception {
+        for(String body:java.util.List.of("{\"decision\":\"approved\",\"decision\":\"rejected\"}","{\"nested\":{\"x\":1,\"x\":2}}","{} {}","[] {}","1 2",""," ")) assertInvalid(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        byte[] valid="{\"left\":{\"x\":1},\"right\":{\"x\":2},\"rows\":[{\"x\":3},{\"x\":4}]}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        var request=new MockHttpServletRequest("POST","/api/campaigns");request.setContent(valid);var chain=new MockFilterChain();new JsonBodyLimitFilter().doFilter(request,new MockHttpServletResponse(),chain);assertArrayEquals(valid,chain.getRequest().getInputStream().readAllBytes());
+    }
     private static void assertInvalid(byte[] body) throws Exception {
         var request=new MockHttpServletRequest("POST","/api/campaigns");request.setContent(body);
         var response=new MockHttpServletResponse();var chain=new MockFilterChain();new JsonBodyLimitFilter().doFilter(request,response,chain);

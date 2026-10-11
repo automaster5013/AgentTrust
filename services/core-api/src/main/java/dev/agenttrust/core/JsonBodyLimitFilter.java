@@ -1,6 +1,7 @@
 package dev.agenttrust.core;
 
 import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
@@ -54,9 +55,12 @@ public class JsonBodyLimitFilter extends OncePerRequestFilter {
             if(declared!=null && !declared.equals(StandardCharsets.UTF_8)) return false;
             if(encoding!=null && !Charset.forName(encoding).equals(StandardCharsets.UTF_8)) return false;
             String text=StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString();
-            try(var parser=new JsonFactory().createParser(text)) {
-                JsonToken token;
+            try(var parser=new JsonFactory().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION).createParser(text)) {
+                JsonToken token; boolean rootSeen=false; int depth=0;
                 while((token=parser.nextToken())!=null) {
+                    if(depth==0) {if(rootSeen) return false; rootSeen=true;}
+                    if(token.isStructStart()) depth++;
+                    if(token.isStructEnd()) depth--;
                     if(token==JsonToken.FIELD_NAME || token==JsonToken.VALUE_STRING) {
                         String value=parser.getText();
                         for(int i=0;i<value.length();i++) {
@@ -68,8 +72,8 @@ public class JsonBodyLimitFilter extends OncePerRequestFilter {
                         }
                     }
                 }
+                return rootSeen && depth==0;
             }
-            return true;
         } catch(IOException|IllegalArgumentException failure) {return false;}
     }
     private static void reject(HttpServletResponse response) throws IOException {response.setStatus(413);response.setContentType("application/json");response.getWriter().write("{\"code\":\"REQUEST_TOO_LARGE\"}");}

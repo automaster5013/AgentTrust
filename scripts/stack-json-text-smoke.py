@@ -1,7 +1,7 @@
 """Reject unstoreable JSON text through actual OIDC/BFF without business writes."""
 import argparse,datetime,http.client,json,pathlib,time,urllib.error,urllib.request,uuid
 from stack_test_client import StackClient
-from stack_business_fingerprint import fingerprint
+from stack_business_fingerprint import fingerprint,sql
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 parser=argparse.ArgumentParser();parser.add_argument('--stalled-body',action='store_true');args=parser.parse_args()
 report={'completed':False,'checks':0,'businessDataWrites':False,'paidApiCalls':False,'credentialsRecorded':False};clients=[]
@@ -21,6 +21,13 @@ try:
  try:response=client.opener.open(request,timeout=15)
  except urllib.error.HTTPError as error:response=error
  status=response.status;raw=response.read(1025);response.close();assert status==400 and len(raw)<=1024 and json.loads(raw)=={'code':'INVALID_JSON_TEXT'};report['checks']+=1
+ missing='00000000-0000-0000-0000-000000000000'
+ assert sql("SELECT count(*) FROM stack_run WHERE id='"+missing+"'").strip()=='0'
+ for body in [b'{"decision":"approved","decision":"rejected","reason":"Missing synthetic target control"}',b'{"decision":"approved","reason":"Missing synthetic target control"}{"decision":"rejected","reason":"Missing synthetic target control"}']:
+  request=urllib.request.Request(client.base+'/backend/runs/'+missing+'/reviews',data=body,method='POST',headers={'Accept':'application/json','Content-Type':'application/json','Origin':client.base,'X-CSRF-TOKEN':client.token})
+  try:response=client.opener.open(request,timeout=15)
+  except urllib.error.HTTPError as error:response=error
+  status=response.status;raw=response.read(1025);response.close();assert status==400 and len(raw)<=1024 and json.loads(raw)=={'code':'INVALID_JSON_TEXT'};report['checks']+=1
  if args.stalled_body:
   request=urllib.request.Request(client.base+'/backend/runs',method='POST');client.jar.add_cookie_header(request);cookie=request.get_header('Cookie')
   assert cookie and len(cookie)<=4096 and '\r' not in cookie and '\n' not in cookie
