@@ -1,5 +1,5 @@
 """Authenticated bounded campaign integration; reports never contain credentials or model text."""
-import argparse,concurrent.futures,datetime,hashlib,json,pathlib,subprocess,time,uuid
+import argparse,concurrent.futures,datetime,hashlib,json,pathlib,re,subprocess,time,uuid
 from stack_test_client import StackClient
 root=pathlib.Path(__file__).resolve().parent.parent
 parser=argparse.ArgumentParser();parser.add_argument('--base',default='http://127.0.0.1:4320');args=parser.parse_args()
@@ -23,7 +23,25 @@ try:
  first=admissions[0];assert admissions[1]['id']==first['id'] and [c['runId'] for c in admissions[1]['cases']]==[c['runId'] for c in first['cases']];assert create(admin,agent,dataset,key=key)['id']==first['id'];create_body={'agentVersionId':agent['id'],'datasetVersionId':dataset['id'],'requiresApproval':False};admin.request('campaigns','POST',create_body,{'Idempotency-Key':key},expected=409);first=wait(admin,first);assert first['state']=='succeeded' and first['decision']=='pass' and len(first['cases'])==2 and first['agent_content_sha256']==agent['content_sha256'] and first['dataset_content_sha256']==dataset['content_sha256'];assert first['cases'][1]['decision']=='block' and not first['cases'][1]['required'];assert first['result']['executionEngine']=='java-campaign-aggregate';checked('atomic idempotent campaign completes real Python cases; optional block does not override required pass')
  for item in first['cases']:
   child=admin.request('runs/'+item['runId']);assert child['provider']=='synthetic' and child['result']['executionEngine']=='python-synthetic' and child['decision']==item['decision']
- gate=admin.request('campaigns/'+first['id']+'/gate');assert not gate['deploymentAllowed'] and gate['decision']=='inconclusive' and gate['policyStatus']=='evaluated';admin.request('campaigns/'+first['id']+'/reviews','POST',{'decision':'approved','reason':'Bound version synthetic approval'});approved=admin.request('campaigns/'+first['id']+'/gate');assert approved['deploymentAllowed'] and approved['signed'] is False;admin.request('campaigns/'+first['id']+'/reviews','POST',{'decision':'rejected','reason':'Latest decision wins'});assert not admin.request('campaigns/'+first['id']+'/gate')['deploymentAllowed'];checked('parent OPA gate requires bound administrator review and honors latest rejection')
+ gate=admin.request('campaigns/'+first['id']+'/gate');assert not gate['deploymentAllowed'] and gate['decision']=='inconclusive' and gate['policyStatus']=='evaluated';admin.request('campaigns/'+first['id']+'/reviews','POST',{'decision':'approved','reason':'Attempt client clock override','createdAt':'2099-01-01T00:00:00Z','approvalTtlSeconds':999999},expected=400);admin.request('campaigns/'+first['id']+'/reviews','POST',{'decision':'approved','reason':'Bound version synthetic approval'});approved=admin.request('campaigns/'+first['id']+'/gate');assert approved['deploymentAllowed'] and approved['signed'] is False;
+ campaign_id=first['id']
+ for value in [campaign_id,owner['organizationId'],owner['projectId'],owner['actorId']]:assert str(uuid.UUID(value))==value
+ assert approved['policyVersion']=='1.2.0' and re.fullmatch(r'sha256:[a-f0-9]{64}',approved['policyDigest'])
+ state=json.loads(subprocess.check_output(['docker','inspect','agenttrust-stack-db-1'],cwd=root,text=True))[0]
+ assert state['Config']['Labels']['com.docker.compose.project']=='agenttrust' and state['Config']['Labels']['com.docker.compose.service']=='stack-db'
+ for interval,label in [("-interval '3601 seconds'",'expired'),("+interval '60 seconds'",'future')]:
+  sql=f"""BEGIN;SET LOCAL ROLE agenttrust_stack_api;
+ SELECT set_config('agenttrust.organization_id','{owner['organizationId']}',true);SELECT set_config('agenttrust.project_id','{owner['projectId']}',true);
+ INSERT INTO stack_campaign_reviews(id,campaign_id,organization_id,project_id,actor_id,decision,reason,policy_version,policy_digest,created_at)
+ VALUES(gen_random_uuid(),'{campaign_id}','{owner['organizationId']}','{owner['projectId']}','{owner['actorId']}','approved','Synthetic {label} campaign approval','{approved['policyVersion']}','{approved['policyDigest']}',clock_timestamp(){interval});
+ INSERT INTO stack_audit(id,organization_id,project_id,actor_id,action,resource_id)
+ VALUES(gen_random_uuid(),'{owner['organizationId']}','{owner['projectId']}','{owner['actorId']}','test.fixture.{label}-campaign-review','{campaign_id}');COMMIT;"""
+  result=subprocess.run(['docker','exec','-i','agenttrust-stack-db-1','psql','-U','agenttrust_stack','-d','agenttrust_stack','-v','ON_ERROR_STOP=1'],cwd=root,input=sql,capture_output=True,text=True,timeout=15);assert result.returncode==0
+  denied=admin.request('campaigns/'+campaign_id+'/gate');assert denied['policyStatus']=='evaluated' and denied['decision']=='inconclusive' and not denied['deploymentAllowed'] and 'fresh approval' in denied['reason']
+  admin.request('campaigns/'+campaign_id+'/reviews','POST',{'decision':'approved','reason':'Fresh synthetic campaign approval after '+label+' fixture'})
+  assert admin.request('campaigns/'+campaign_id+'/gate')['deploymentAllowed']
+ checked('parent campaign refuses expired and future approvals; fresh administrator reviews restore permission')
+ admin.request('campaigns/'+first['id']+'/reviews','POST',{'decision':'rejected','reason':'Latest decision wins'});assert not admin.request('campaigns/'+first['id']+'/gate')['deploymentAllowed'];checked('parent OPA gate requires bound administrator review and honors latest rejection')
  second=wait(admin,create(admin,agent,dataset,False));assert admin.request('campaigns/'+second['id']+'/gate')['deploymentAllowed'];diff=admin.request('campaigns/'+second['id']+'/comparison/'+first['id']);assert diff['comparison']['status']=='no-regression' and diff['comparison']['deploymentAuthority'] is False and diff['datasetContentSha256']==dataset['content_sha256'];checked('same immutable dataset comparison remains advisory and carries exact version digest')
  report['phase']='failure-aggregation'
  for index,scenario in enumerate(['block','missing_evidence','error']):

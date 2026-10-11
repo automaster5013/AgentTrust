@@ -8,6 +8,7 @@ valid_scope if {
         is_string(value)
         regex.match(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`, value)
     }
+    valid_epoch_millis(input.nowEpochMillis)
     is_boolean(input.approvalRequired)
     input.state in {"queued", "succeeded", "failed"}
     input.evaluationDecision in {"pass", "block", "inconclusive"}
@@ -32,8 +33,22 @@ required_all_pass if {
     count([rule | some rule in input.rules; rule.required; rule.status != "pass"]) == 0
 }
 
+valid_epoch_millis(value) if {
+    is_number(value)
+    value >= 1
+    value <= 9007199254740991
+    value == floor(value)
+}
+
+approval_time_current if {
+    valid_epoch_millis(input.reviewCreatedAtEpochMillis)
+    input.nowEpochMillis >= input.reviewCreatedAtEpochMillis
+    input.nowEpochMillis - input.reviewCreatedAtEpochMillis < 3600000
+}
+
 current_approval if {
     input.latestReview == "approved"
+    approval_time_current
     input.reviewPolicyVersion == data.agenttrust.policy.version
     input.reviewPolicyDigest == data.agenttrust.policy.digest
 }
@@ -67,10 +82,22 @@ outcome := "block" if {
 }
 
 reasons := {"pass": "Evaluation and current review permit the synthetic release.", "block": "A required rule or current review blocks release.", "inconclusive": "Complete successful evidence and current approval are required."}
+reason := "Administrator approval has expired or has an invalid creation time; a fresh approval is required." if {
+    outcome == "inconclusive"
+    valid_scope
+    input.state == "succeeded"
+    input.evaluationDecision == "pass"
+    required_all_pass
+    input.approvalRequired
+    input.latestReview == "approved"
+    input.reviewPolicyVersion == data.agenttrust.policy.version
+    input.reviewPolicyDigest == data.agenttrust.policy.digest
+    not approval_time_current
+} else := reasons[outcome]
 decision := {
     "decision": outcome,
     "deploymentAllowed": outcome == "pass",
-    "reason": reasons[outcome],
+    "reason": reason,
     "currentReviewRequired": input.approvalRequired,
     "policyVersion": data.agenttrust.policy.version,
     "policyDigest": data.agenttrust.policy.digest,
