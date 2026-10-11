@@ -1,8 +1,10 @@
 """Scan committed history and tracked source only; never mount local secrets."""
 import datetime,json,os,pathlib,subprocess,tarfile,uuid,traceback
+from stack_scan_work import OwnedScanWork
 root=pathlib.Path(__file__).resolve().parent.parent
 directory=root/'.local'/('stack-security-source-'+str(uuid.uuid4()));directory.mkdir(parents=True)
-source=directory/'source';source.mkdir();output=directory/'reports';output.mkdir()
+work_owner=OwnedScanWork(directory);work=work_owner.path
+source=work/'source';source.mkdir();output=directory/'reports';output.mkdir()
 if os.name!='nt':output.chmod(0o777)
 report={'completed':False,'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'privateRuntimeFilesScanned':False,'rawSecretsPrinted':False,'outputDirectory':str(output)}
 def run(args,**kwargs):return subprocess.run(args,cwd=root,capture_output=True,text=True,encoding='utf-8',errors='replace',check=True,**kwargs)
@@ -12,10 +14,10 @@ def scanner(mounts,args,network='none',extra=()):
  return subprocess.run(command+list(extra)+['agenttrust-security:local']+args,cwd=root,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=240)
 try:
  revision=run(['git','rev-parse','HEAD']).stdout.strip();report['revision']=revision
- archive=directory/'tracked.tar';run(['git','archive','--format=tar','-o',str(archive),revision])
+ archive=work/'tracked.tar';run(['git','archive','--format=tar','-o',str(archive),revision])
  with tarfile.open(archive) as content:
   assert all(not row.issym() and not row.islnk() and not row.name.startswith('/') and '..' not in pathlib.PurePosixPath(row.name).parts for row in content.getmembers());content.extractall(source,filter='data')
- history=directory/'history';run(['git','clone','--bare','--no-hardlinks',str(root),str(history)])
+ history=work/'history';run(['git','clone','--bare','--no-hardlinks',str(root),str(history)])
  mounts=[(root/'tools/security','/rules',False),(output,'/out',True)]
  fixtures=scanner(mounts,['semgrep','scan','--config','/rules/semgrep.yaml','--metrics','off','--disable-version-check','--json','--quiet','--jobs','2','/rules/fixtures']);assert fixtures.returncode==0
  findings=json.loads(fixtures.stdout);expected={'python-no-shell-subprocess','python-no-dynamic-evaluation','javascript-no-dynamic-evaluation','python-no-disabled-tls-verification','java-no-unrestricted-client-redirects','java-no-global-csrf-disable'}
@@ -31,5 +33,7 @@ try:
  report['completed']=True
 except Exception as error:report['errorType']=type(error).__name__;report['failureLocations']=[{'file':pathlib.Path(t.filename).name,'line':t.lineno} for t in traceback.extract_tb(error.__traceback__)]
 finally:
+ try:work_owner.close();report['ownedTemporarySourceWorkRemoved']=True
+ except Exception as cleanup_error:report.update(completed=False,ownedTemporarySourceWorkRemoved=False,cleanupErrorType=type(cleanup_error).__name__)
  report['finishedAt']=datetime.datetime.now(datetime.timezone.utc).isoformat();path=directory/'summary.json';path.open('x',encoding='utf-8').write(json.dumps(report,indent=2)+'\n');print(json.dumps({'completed':report['completed'],'semgrepRulesFixtureVerified':report.get('semgrepRulesFixtureVerified'),'semgrepFindings':report.get('semgrepFindings'),'gitleaksFindings':report.get('gitleaksFindings'),'reportPath':str(path),'rawSecretsPrinted':False}))
 if not report['completed']:raise SystemExit(1)

@@ -75,3 +75,5 @@ Prometheus를 포함한 schema 5의 경계 테스트 13개가 로컬에서 통�
 Schema 6의 실제 65개 파일·15개 이미지와 HIGH/CRITICAL 0건을 확인하고, 별도로 인증한 공개 TrustedRoot와 네트워크가 차단된 Cosign 3.1.3으로 30개 이미지/SBOM 서명을 독립 암호 검증했다. 같은 revision·repository·main ref·OIDC issuer를 고정했다. 복사본의 실제 인증서 서명 한 바이트를 변조하고 checksum map까지 다시 계산해도 `cryptographic-verification` 단계에서 거부됐다. 변조 복사본은 메모리 파일시스템에만 만들었고 원본 65개 파일의 바이트는 그대로였다.
 
 이 결과는 해당 커밋과 보관된 취약점 보고서에 한정된다. 새로운 취약점 검사나 서버 배포를 수행한 결과가 아니다. 별도 공식 Grafana 후보는 유효한 플러그인 서명에도 HIGH/CRITICAL 56건으로 실패하여 적용하지 않았다. 현재 Grafana 보안 수정, 운영 IdP/TLS·신뢰키·백업과 전체 시스템 복구 검증이 남아 있으며 `productionSecurityVerified`, `officialObservabilitySecurityVerified`, `productionDeploymentApproved`는 계속 `false`다. 이후 커밋의 전달물은 다시 검증한다.
+
+소스 검사도 앞으로 해당 실행이 만든 임시 작업 디렉터리에 Git archive·tracked source·bare history 사본을 생성하고 성공/실패 종료 때 소유권을 확인하여 회수한다. 기존 보관 사본과 검사 보고서에는 적용하지 않는다. 작업 디렉터리가 교체됐거나 부모 소유권이 달라지면 정리를 거부하고 검사를 미완료로 표시한다.

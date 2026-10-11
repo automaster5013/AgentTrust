@@ -25,6 +25,7 @@ jobs:
           python3 scripts/stack-delivery-verifier-test.py
           python3 scripts/stack-scan-scratch-test.py
           python3 scripts/stack-scan-lifecycle-test.py
+          python3 scripts/stack-scan-work-test.py
           docker build -t agenttrust-security:local tools/security
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-backup-crypt-test.py
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --memory 128m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-backup-tar-test.py
