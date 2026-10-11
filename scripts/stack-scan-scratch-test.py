@@ -34,4 +34,12 @@ class Boundaries(unittest.TestCase):
             with self.assertRaises(ValueError):scratch.close()
             self.assertTrue(archive.is_dir())
 
+    def test_replaced_scratch_directory_cannot_delete_a_new_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=pathlib.Path(folder);original=root/'inputs';original.mkdir()
+            scratch=module.ScanScratch(original);archive=scratch.reserve('current.tar');archive.write_bytes(b'owned')
+            original.rename(root/'retained');original.mkdir();archive.write_bytes(b'unowned')
+            with self.assertRaises(ValueError):scratch.close()
+            self.assertEqual(b'unowned',archive.read_bytes());self.assertEqual(b'owned',(root/'retained/current.tar').read_bytes())
+
 if __name__=='__main__':unittest.main()

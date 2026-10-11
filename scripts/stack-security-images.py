@@ -23,18 +23,17 @@ try:
   if not re.fullmatch('sha256:[a-f0-9]{64}',image['Id']) or type(image.get('Size')) is not int or not 0<image['Size']<=2*1073741824:raise ValueError('Image outside bounded export contract')
   identities[name]=(reference,image['Id'],image['Size']+67108864);archive_estimate+=image['Size']+67108864
  reserve=(22 if os.name=='nt' else 4)*1073741824
- required=reserve+archive_estimate;available=shutil.disk_usage(root).free
- report.update(archiveEstimateBytes=archive_estimate,requiredFreeBytes=required,availableFreeBytes=available,imagesInspected=len(identities),exportPreflightPassed=available>=required)
+ peak_estimate=max(value[2] for value in identities.values())
+ required=reserve+peak_estimate;available=shutil.disk_usage(root).free
+ report.update(archiveEstimateBytes=archive_estimate,peakArchiveEstimateBytes=peak_estimate,requiredFreeBytes=required,availableFreeBytes=available,imagesInspected=len(identities),exportPreflightPassed=available>=required)
  if available<required:raise ValueError('Insufficient disk headroom before image export')
- remaining=archive_estimate
  for name in names:
   reference,image_id,estimate=identities[name]
   report['currentImage']=name;report['currentStage']='bounded-image-export'
-  if shutil.disk_usage(root).free<reserve+remaining:raise ValueError('Disk headroom changed during image export')
+  if shutil.disk_usage(root).free<reserve+estimate:raise ValueError('Disk headroom changed during image export')
   archive=scratch.reserve(name+'.tar');run(['docker','image','save','-o',str(archive),image_id]);archive.chmod(0o644);report['exportedArchiveMode']=oct(archive.stat().st_mode & 0o777)
   with archive.open('rb') as stream:checksum=hashlib.file_digest(stream,'sha256').hexdigest()
   if not 0<archive.stat().st_size<=estimate:raise ValueError('Image archive exceeds bounded estimate')
-  remaining-=estimate
   report['currentImage']=name;report['currentStage']='sbom'
   sbom=scanner(['syft','docker-archive:/in/'+name+'.tar','-o','cyclonedx-json=/out/'+name+'.cdx.json','--quiet'],'none');(output/(name+'.syft.log')).write_text(sbom.stderr,encoding='utf-8');report['currentTool']='syft';report['currentToolExitCode']=sbom.returncode;assert sbom.returncode==0
   inventory=json.loads((output/(name+'.cdx.json')).read_text(encoding='utf-8'));assert inventory['bomFormat']=='CycloneDX' and len(inventory.get('components',[]))>0

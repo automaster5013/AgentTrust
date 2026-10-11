@@ -6,7 +6,14 @@ class ScanScratch:
         self.directory = pathlib.Path(directory).resolve(strict=True)
         if not self.directory.is_dir():
             raise ValueError('Scratch directory unavailable')
+        info = self.directory.stat()
+        self.identity = (info.st_dev, info.st_ino)
         self.owned = set()
+
+    def validate_directory(self):
+        info = self.directory.stat()
+        if self.directory.resolve(strict=True) != self.directory or (info.st_dev, info.st_ino) != self.identity:
+            raise ValueError('Scratch directory changed')
 
     def reserve(self, name):
         if not name or pathlib.Path(name).name != name or not name.endswith('.tar'):
@@ -14,8 +21,7 @@ class ScanScratch:
         path = self.directory / name
         if path.exists() or path.is_symlink():
             raise ValueError('Archive already exists')
-        if self.directory.resolve(strict=True) != self.directory:
-            raise ValueError('Scratch directory changed')
+        self.validate_directory()
         self.owned.add(path)
         return path
 
@@ -23,7 +29,8 @@ class ScanScratch:
         path = pathlib.Path(path)
         if path not in self.owned or path.parent != self.directory:
             raise ValueError('Archive is not owned by this invocation')
-        if self.directory.resolve(strict=True) != self.directory or path.is_symlink():
+        self.validate_directory()
+        if path.is_symlink():
             raise ValueError('Archive path changed')
         if path.exists():
             if not path.is_file():

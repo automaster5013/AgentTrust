@@ -15,6 +15,7 @@ class Lifecycle(unittest.TestCase):
             if args[:2]==['git','rev-parse']:return subprocess.CompletedProcess(args,0,'1'*40+'\n','')
             if args[:3]==['docker','image','inspect']:return subprocess.CompletedProcess(args,0,json.dumps([{'Id':'sha256:'+'a'*64,'Size':4096}]),'')
             if args[:3]==['docker','image','save']:
+                self.assertEqual([],list((root/'.local').rglob('*.tar')))
                 archive=pathlib.Path(args[args.index('-o')+1]);archive.write_bytes(b'fixture archive')
                 if failure=='export' and kwargs.get('check'):raise subprocess.CalledProcessError(1,args,stderr='fixture export failure')
                 return subprocess.CompletedProcess(args,1 if failure=='export' else 0,'','fixture failure' if failure=='export' else '')
