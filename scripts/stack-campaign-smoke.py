@@ -26,7 +26,7 @@ try:
  gate=admin.request('campaigns/'+first['id']+'/gate');assert not gate['deploymentAllowed'] and gate['decision']=='inconclusive' and gate['policyStatus']=='evaluated';admin.request('campaigns/'+first['id']+'/reviews','POST',{'decision':'approved','reason':'Attempt client clock override','createdAt':'2099-01-01T00:00:00Z','approvalTtlSeconds':999999},expected=400);admin.request('campaigns/'+first['id']+'/reviews','POST',{'decision':'approved','reason':'Bound version synthetic approval'});approved=admin.request('campaigns/'+first['id']+'/gate');assert approved['deploymentAllowed'] and approved['signed'] is False;
  campaign_id=first['id']
  for value in [campaign_id,owner['organizationId'],owner['projectId'],owner['actorId']]:assert str(uuid.UUID(value))==value
- assert approved['policyVersion']=='1.2.0' and re.fullmatch(r'sha256:[a-f0-9]{64}',approved['policyDigest'])
+ assert approved['policyVersion']==(root/'services/opa/policy-version.txt').read_text(encoding='utf-8').strip() and re.fullmatch(r'sha256:[a-f0-9]{64}',approved['policyDigest'])
  state=json.loads(subprocess.check_output(['docker','inspect','agenttrust-stack-db-1'],cwd=root,text=True))[0]
  assert state['Config']['Labels']['com.docker.compose.project']=='agenttrust' and state['Config']['Labels']['com.docker.compose.service']=='stack-db'
  for interval,label in [("-interval '3601 seconds'",'expired'),("+interval '60 seconds'",'future')]:

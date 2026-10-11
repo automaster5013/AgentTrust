@@ -26,6 +26,7 @@ public class PolicyClient {
         try {
             var input=new HashMap<String,Object>();input.put("runId",id.toString());input.put("organizationId",user.organizationId().toString());input.put("projectId",user.projectId().toString());input.put("state",run.get("state"));input.put("evaluationDecision",evaluation);input.put("approvalRequired",approval);input.put("latestReview",review==null?"":review.get("decision"));input.put("reviewPolicyVersion",review==null?"":review.get("policy_version"));input.put("reviewPolicyDigest",review==null?"":review.get("policy_digest"));input.put("rules",((JsonNode)run.get("result")).path("rules"));
             input.put("nowEpochMillis",System.currentTimeMillis());
+            input.put("releaseRequirements",mapper.valueToTree(run.getOrDefault("releaseRequirements",Map.of("enabled",false))));
             input.put("reviewCreatedAtEpochMillis",review!=null && review.get("created_at") instanceof java.sql.Timestamp timestamp?timestamp.getTime():0L);
             byte[] bytes=client.post("http://stack-opa:8181/v1/data/agenttrust/release/decision","Authorization","Bearer "+token,mapper.writeValueAsBytes(Map.of("input",input)),4096);
             var result=mapper.readTree(bytes).path("result");return validated(result,input,version,digest);
@@ -39,11 +40,25 @@ public class PolicyClient {
         if(allowed && (!"succeeded".equals(input.get("state"))||!"pass".equals(input.get("evaluationDecision"))||"rejected".equals(input.get("latestReview"))||approval&&!"approved".equals(input.get("latestReview"))))throw new IllegalArgumentException("Contradictory policy permission");
         if(allowed&&approval&&(!version.equals(input.get("reviewPolicyVersion"))||!digest.equals(input.get("reviewPolicyDigest"))))throw new IllegalArgumentException("Outdated policy approval");
         if(allowed&&approval&&!currentApprovalTime(input))throw new IllegalArgumentException("Expired or invalid approval time");
+        if(allowed&&!currentReleaseRequirements(input))throw new IllegalArgumentException("Unresolved or expired release baseline");
         return new Evaluation.Gate(decision,allowed,reason,false,approval,"opa-rego","evaluated",version,digest);
     }
     static boolean currentApprovalTime(Map<String,Object> input) {
         Long now=epochMillis(input.get("nowEpochMillis")),created=epochMillis(input.get("reviewCreatedAtEpochMillis"));
         return now!=null&&created!=null&&now>=created&&now-created<APPROVAL_TTL_MILLIS;
+    }
+    static boolean currentReleaseRequirements(Map<String,Object> input) {
+        Object raw=input.get("releaseRequirements");
+        if(raw==null)return true; // Existing callers retain their original single-evaluation contract.
+        if(!(raw instanceof JsonNode value)||!value.isObject()||!value.path("enabled").isBoolean())return false;
+        if(!value.path("enabled").booleanValue())return true;
+        var age=value.path("evidenceMaxAgeSeconds");var candidate=value.path("candidateCreatedAtEpochMillis");var baseline=value.path("baselineCreatedAtEpochMillis");
+        Long now=epochMillis(input.get("nowEpochMillis"));
+        if(now==null||!age.isIntegralNumber()||!age.canConvertToInt()||age.intValue()<60||age.intValue()>86400
+            ||!candidate.isIntegralNumber()||!baseline.isIntegralNumber()||!candidate.canConvertToLong()||!baseline.canConvertToLong()
+            ||baseline.longValue()>candidate.longValue()||!value.path("comparison").path("status").asText().equals("no-regression"))return false;
+        try{return CampaignReleaseRequirements.current(now,candidate.longValue(),baseline.longValue(),age.intValue());}
+        catch(IllegalArgumentException invalid){return false;}
     }
     private static Long epochMillis(Object value) {
         if(!(value instanceof Number number))return null;

@@ -36,4 +36,19 @@ class PolicyClientTest {
             assertThrows(IllegalArgumentException.class,()->PolicyClient.validated(decision(),value,"1.0.0",digest));
         }
     }
+    @Test void approvalCannotOverrideExpiredOrUnresolvedBaseline() {
+        var value=input();var requirement=mapper.createObjectNode().put("enabled",true).put("evidenceMaxAgeSeconds",60)
+            .put("candidateCreatedAtEpochMillis",1_999_999_999_999L).put("baselineCreatedAtEpochMillis",1_999_999_940_001L);
+        requirement.putObject("comparison").put("status","no-regression");value.put("releaseRequirements",requirement);
+        assertTrue(PolicyClient.validated(decision(),value,"1.0.0",digest).deploymentAllowed());
+        requirement.put("baselineCreatedAtEpochMillis",1_999_999_940_000L);
+        assertThrows(IllegalArgumentException.class,()->PolicyClient.validated(decision(),value,"1.0.0",digest));
+        requirement.put("baselineCreatedAtEpochMillis",1_999_999_999_999L);
+        for(String status:java.util.List.of("inconclusive","regression","unknown")){
+            ((com.fasterxml.jackson.databind.node.ObjectNode)requirement.path("comparison")).put("status",status);
+            assertThrows(IllegalArgumentException.class,()->PolicyClient.validated(decision(),value,"1.0.0",digest));
+        }
+        value.put("releaseRequirements",mapper.createObjectNode().put("enabled","false"));
+        assertThrows(IllegalArgumentException.class,()->PolicyClient.validated(decision(),value,"1.0.0",digest));
+    }
 }

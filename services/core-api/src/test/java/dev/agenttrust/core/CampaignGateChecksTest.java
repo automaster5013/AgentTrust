@@ -23,4 +23,9 @@ class CampaignGateChecksTest {
         assertThrows(IllegalArgumentException.class,()->CampaignGateChecks.expiry(now,gate(true,true),Map.of("decision","rejected","created_at",new Timestamp(now))));
     }
     @Test void invalidClockCannotCreateFreshnessClaim(){for(long time:new long[]{0,-1,Long.MAX_VALUE})assertThrows(IllegalArgumentException.class,()->CampaignGateChecks.expiry(time,gate(false,false),null));}
+    @Test void permittedCheckCannotOutliveBaselineEvidence(){
+        assertEquals(now+1,CampaignGateChecks.expiry(now,gate(true,false),null,Map.of("enabled",true,"evidenceExpiresAtEpochMillis",now+1)));
+        assertThrows(IllegalArgumentException.class,()->CampaignGateChecks.expiry(now,gate(true,false),null,Map.of("enabled",true,"evidenceExpiresAtEpochMillis",now)));
+        assertEquals(now+30000,CampaignGateChecks.expiry(now,gate(false,false),null,Map.of("enabled",true,"evidenceExpiresAtEpochMillis",now-1)));
+    }
 }

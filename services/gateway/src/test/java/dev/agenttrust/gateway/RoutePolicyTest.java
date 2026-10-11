@@ -4,6 +4,7 @@ import org.springframework.http.HttpMethod;
 import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 class RoutePolicyTest {
+ @Test void immutableReleaseRequirementsAreProtectedAndReadOnly(){String path="/api/campaigns/11111111-1111-4111-8111-111111111111/release-requirements";assertTrue(RoutePolicy.allowed(path,HttpMethod.GET));assertTrue(RoutePolicy.protectedPath(path));assertFalse(RoutePolicy.allowed(path,HttpMethod.POST));assertFalse(RoutePolicy.allowed(path+"/extra",HttpMethod.GET));}
     @org.junit.jupiter.api.Test void providerUsageIsAnAuthenticatedReadOnlyPath(){
         assertTrue(RoutePolicy.allowed("/api/provider-usage",HttpMethod.GET));
         assertTrue(RoutePolicy.protectedPath("/api/provider-usage"));

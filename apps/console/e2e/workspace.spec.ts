@@ -48,6 +48,61 @@ test('viewer navigates real older evaluation pages and opens scoped evidence',as
  phase('actual read-only browser history returns distinct pages and opens the selected existing evaluation');
 });
 
+test('viewer reads immutable baseline conditions and verifies actual v2 current signature',async({page})=>{
+ await login(page,'demo-viewer');
+ const root=resolve(process.cwd(),'../../.local');
+ const sources=readdirSync(root).filter(name=>/^stack-baseline-gate-[a-f0-9-]{36}\.json$/.test(name)).map(name=>({path:resolve(root,name),time:statSync(resolve(root,name)).mtimeMs})).sort((a,b)=>b.time-a.time);
+ const reference=sources.map(item=>JSON.parse(readFileSync(item.path,'utf8'))).find(value=>value.completed&&value.candidateCampaignId&&value.baselineCampaignId);expect(reference).toBeTruthy();
+ const id=reference.candidateCampaignId as string,baseline=reference.baselineCampaignId as string;
+ const region=page.getByRole('region',{name:'버전과 평가 캠페인',exact:true});
+ await region.getByRole('button',{name:'캠페인 '+id.slice(0,8),exact:true}).click();
+ const conditions=page.getByRole('region',{name:'고정된 릴리스 조건',exact:true});
+ await conditions.getByRole('button',{name:'비교 기준·근거 유효 기간 확인',exact:true}).click();
+ await expect(conditions.getByText('고정 기준 캠페인 '+baseline,{exact:true})).toBeVisible();
+ await expect(conditions.getByText(/양쪽 근거 유효 기간 60초/)).toBeVisible();
+ const checks=page.getByRole('region',{name:'서명된 현재 판정 확인',exact:true});
+ await checks.getByRole('button',{name:'현재 판정 서명 확인',exact:true}).click();
+ await expect(checks.getByText('서명 확인 완료 · 릴리스 허용 안 됨',{exact:true})).toBeVisible();
+ await expect(checks.getByText('서명에 묶인 비교 기준 '+baseline+' · 유효 기간 60초',{exact:true})).toBeVisible();
+ const snapshot=await (await page.request.get('/backend/campaigns/'+id+'/release-requirements')).json();
+ await page.route('**/backend/campaigns/'+id+'/release-requirements',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...snapshot,projectId:'ffffffff-ffff-4fff-8fff-ffffffffffff'})}));
+ await conditions.getByRole('button',{name:'비교 기준·근거 유효 기간 확인',exact:true}).click();
+ await expect(conditions.getByRole('status')).toHaveText('고정된 릴리스 조건을 확인하지 못했습니다. 다시 확인해 주세요.');
+ await expect(conditions.getByText('고정 기준 캠페인 '+baseline,{exact:true})).toHaveCount(0);
+ await page.setViewportSize({width:390,height:844});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+ phase('actual immutable baseline and natural expiry are visible; Java v2 signature verified and foreign condition response cleared');
+});
+
+test('administrator creates an immutable baseline campaign and approves the actual signed gate',async({page})=>{
+ await login(page,'demo-admin');
+ const root=resolve(process.cwd(),'../../.local'),files=readdirSync(root).filter(name=>/^stack-baseline-gate-[a-f0-9-]{36}\.json$/.test(name)).sort((a,b)=>statSync(resolve(root,b)).mtimeMs-statSync(resolve(root,a)).mtimeMs);
+ const reference=files.map(name=>JSON.parse(readFileSync(resolve(root,name),'utf8'))).find(value=>value.completed&&value.baselineCampaignId);expect(reference).toBeTruthy();
+ const baseline=await (await page.request.get('/backend/campaigns/'+reference.baselineCampaignId)).json();expect(baseline.agentVersion.definition.provider).toBe('synthetic');
+ const region=page.getByRole('region',{name:'버전과 평가 캠페인',exact:true});
+ await region.getByLabel('캠페인 에이전트 버전',{exact:true}).selectOption(baseline.agent_version_id);
+ await region.getByLabel('캠페인 데이터셋 버전',{exact:true}).selectOption(baseline.dataset_version_id);
+ await region.getByLabel('릴리스에 고정할 비교 기준',{exact:true}).selectOption(reference.baselineCampaignId);
+ await region.getByLabel('양쪽 근거 유효 기간',{exact:true}).fill('3600');
+ const admitted=page.waitForResponse(response=>response.url().endsWith('/backend/campaigns')&&response.request().method()==='POST'&&response.status()===200);
+ await region.getByRole('button',{name:'캠페인 실행',exact:true}).click();const candidate=await (await admitted).json();
+ await expect(region.getByText('캠페인 '+candidate.id,{exact:true})).toBeVisible();
+ await expect(region.getByRole('button',{name:'캠페인 검토 저장',exact:true})).toBeVisible();
+ await region.getByLabel('캠페인 검토 사유',{exact:true}).fill('Own browser synthetic baseline approval');
+ await region.getByRole('button',{name:'캠페인 검토 저장',exact:true}).click();
+ await expect(region.getByText('캠페인 릴리스 허용',{exact:true})).toBeVisible();
+ const conditions=page.getByRole('region',{name:'고정된 릴리스 조건',exact:true});
+ await conditions.getByRole('button',{name:'비교 기준·근거 유효 기간 확인',exact:true}).click();
+ await expect(conditions.getByText('고정 기준 캠페인 '+reference.baselineCampaignId,{exact:true})).toBeVisible();
+ await expect(conditions.getByText(/양쪽 근거 유효 기간 3600초/)).toBeVisible();
+ await expect.poll(async()=>{const value=await page.request.get('/backend/campaigns/'+candidate.id+'/evidence');return value.status()},{timeout:15000}).toBe(200);
+ const checks=page.getByRole('region',{name:'서명된 현재 판정 확인',exact:true});
+ await checks.getByRole('button',{name:'현재 판정 서명 확인',exact:true}).click();
+ await expect(checks.getByText('서명 확인 완료 · 합성 릴리스 허용',{exact:true})).toBeVisible();
+ await expect(checks.getByText('서명에 묶인 비교 기준 '+reference.baselineCampaignId+' · 유효 기간 3600초',{exact:true})).toBeVisible();
+ phase('actual UI admission freezes baseline and age; Python completion and administrator review lead to verified Java v2 current signature');
+});
+
 test('viewer reads real provider reservations and clears an invented billed usage response',async({page})=>{
  await login(page,'demo-viewer');
  const region=page.getByRole('region',{name:'프로젝트 모델 실행 한도',exact:true});

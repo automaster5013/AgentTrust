@@ -44,6 +44,15 @@ public class CampaignGateChecks {
         }
         return expires;
     }
+    static long expiry(long checkedAt,Evaluation.Gate gate,Map<String,Object> review,Map<String,Object> requirements) {
+        long expires=expiry(checkedAt,gate,review);
+        if(Boolean.TRUE.equals(requirements.get("enabled"))&&gate.deploymentAllowed()) {
+            long deadline=((Number)requirements.get("evidenceExpiresAtEpochMillis")).longValue();
+            if(deadline<=checkedAt)throw new IllegalArgumentException("Campaign evidence expired");
+            expires=Math.min(expires,deadline);
+        }
+        return expires;
+    }
 
     public Map<String,Object> check(DemoUser user,UUID campaign,String nonce) {
         challenge(nonce);
@@ -56,10 +65,12 @@ public class CampaignGateChecks {
             var gate=campaigns.gate(user,campaign);
             if(!"evaluated".equals(gate.policyStatus()))throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE);
             var review=campaigns.latestReview(user,campaign);
+            var requirements=campaigns.releaseRequirements(user,campaign);
             try {
-                long expiresAt=expiry(checkedAt,gate,review);
+                long expiresAt=expiry(checkedAt,gate,review,requirements);
                 var payload=new TreeMap<String,Object>();
                 payload.put("schemaVersion",1);payload.put("kind","campaign-current-gate-check");payload.put("trustDomain",GateSigner.TRUST_DOMAIN);
+                if(Boolean.TRUE.equals(requirements.get("enabled"))){payload.put("schemaVersion",2);payload.put("releaseRequirements",requirements);}
                 payload.put("currentDeploymentAuthority",false);payload.put("challenge",nonce);payload.put("campaignId",campaign);
                 payload.put("organizationId",user.organizationId());payload.put("projectId",user.projectId());payload.put("actorId",user.actorId());
                 payload.put("checkedAtEpochMillis",checkedAt);payload.put("expiresAtEpochMillis",expiresAt);

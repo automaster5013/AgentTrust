@@ -88,6 +88,8 @@ jobs:
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-smoke.py
           python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-baseline-gate-smoke.py
+          python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-audit-smoke.py
           python3 scripts/stack-execution-profile-smoke.py
           python3 scripts/stack-campaign-recovery.py
@@ -187,6 +189,7 @@ jobs:
             .local/stack-promptfoo-smoke-*.json
             .local/stack-http-smoke-*.json
             .local/stack-campaign-smoke-*.json
+            .local/stack-baseline-gate-*.json
             .local/stack-audit-smoke-*.json
             .local/stack-execution-profile-*.json
             .local/stack-campaign-recovery-*.json
@@ -297,6 +300,8 @@ jobs:
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-smoke.py
           python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-baseline-gate-smoke.py
+          python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-audit-smoke.py
           python3 scripts/stack-execution-profile-smoke.py
           python3 scripts/stack-test-quota-window.py
@@ -351,6 +356,7 @@ jobs:
             .local/stack-gateway-smoke-*.json
             .local/stack-http-smoke-*.json
             .local/stack-campaign-smoke-*.json
+            .local/stack-baseline-gate-*.json
             .local/stack-audit-smoke-*.json
             .local/stack-execution-profile-*.json
             .local/stack-campaign-recovery-*.json

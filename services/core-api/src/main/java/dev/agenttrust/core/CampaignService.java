@@ -18,15 +18,24 @@ public class CampaignService {
     public CampaignService(RunService runs,VersionRegistry versions,JdbcTemplate jdbc,ObjectMapper mapper,PolicyClient policy){this.runs=runs;this.versions=versions;this.jdbc=jdbc;this.mapper=mapper;this.policy=policy;}
     public List<Map<String,Object>> list(DemoUser user){return runs.scoped(user,()->jdbc.queryForList("SELECT id,agent_version_id,dataset_version_id,requires_approval,created_at FROM stack_campaigns WHERE organization_id=? AND project_id=? ORDER BY created_at DESC,id DESC LIMIT 50",user.organizationId(),user.projectId()));}
     public Map<String,Object> create(DemoUser user,String key,UUID agentId,UUID datasetId,Boolean approval){
+        return create(user,key,agentId,datasetId,approval,null,null);
+    }
+    public Map<String,Object> create(DemoUser user,String key,UUID agentId,UUID datasetId,Boolean approval,UUID baselineId,Integer maxAge){
         if(!List.of("admin","editor").contains(user.role()))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         if(key==null||!key.matches("[A-Za-z0-9_-]{8,100}")||agentId==null||datasetId==null||approval==null)throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
-        String hash=ArchiveIntegrity.sha256(("campaign/v1\n"+agentId+"\n"+datasetId+"\n"+approval).getBytes(StandardCharsets.UTF_8));
+        CampaignReleaseRequirements.parameters(baselineId,maxAge);
+        String hash=CampaignReleaseRequirements.requestHash(agentId,datasetId,approval,baselineId,maxAge);
         return runs.scoped(user,()->{
             jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"campaign/"+user.organizationId()+"/"+user.projectId());
             var existing=jdbc.queryForList("SELECT id,request_hash FROM stack_campaigns WHERE organization_id=? AND project_id=? AND idempotency_key=?",user.organizationId(),user.projectId(),key);
             if(!existing.isEmpty()){if(!hash.equals(existing.getFirst().get("request_hash")))throw new ResponseStatusException(HttpStatus.CONFLICT);return get(user,(UUID)existing.getFirst().get("id"));}
             if(jdbc.queryForObject("SELECT count(*) FROM stack_campaigns WHERE organization_id=? AND project_id=?",Integer.class,user.organizationId(),user.projectId())>=200)throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS);
             var agent=versions.get(user,"agents",agentId);var dataset=versions.get(user,"datasets",datasetId);
+            if(baselineId!=null){
+                var baseline=get(user,baselineId);
+                CampaignReleaseRequirements.compatible(Map.of("agentVersion",agent,"dataset_version_id",datasetId,"dataset_content_sha256",dataset.get("content_sha256")),baseline);
+                if(baseline.get("state").equals("queued"))throw new ResponseStatusException(HttpStatus.CONFLICT);
+            }
             JsonNode definition=(JsonNode)agent.get("definition"),data=(JsonNode)dataset.get("definition");
             String agentContract=definition.path("contract").asText(),datasetContract=data.path("contract").asText();
             boolean reference=agentContract.equals(QualityDefinition.CONTRACT)&&datasetContract.equals(QualityDefinition.CONTRACT);
@@ -35,6 +44,7 @@ public class CampaignService {
             // Keep real-provider batches bounded under the existing per-case reservation and deadline.
             if(!provider.equals("synthetic")&&cases.size()>2)throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
             UUID id=UUID.randomUUID();jdbc.update("INSERT INTO stack_campaigns(id,organization_id,project_id,actor_id,idempotency_key,request_hash,agent_version_id,dataset_version_id,agent_content_sha256,dataset_content_sha256,requires_approval) VALUES(?,?,?,?,?,?,?,?,?,?,?)",id,user.organizationId(),user.projectId(),user.actorId(),key,hash,agentId,datasetId,agent.get("content_sha256"),dataset.get("content_sha256"),approval);
+            if(baselineId!=null)jdbc.update("INSERT INTO stack_campaign_release_requirements(campaign_id,organization_id,project_id,baseline_campaign_id,evidence_max_age_seconds) VALUES(?,?,?,?,?)",id,user.organizationId(),user.projectId(),baselineId,maxAge);
             for(int i=0;i<cases.size();i++){
                 var c=cases.get(i);var run=runs.create(user,"campaign_"+id.toString().replace("-","")+"_"+i,c.path("scenario").asText(),approval,provider);
                 jdbc.update("INSERT INTO stack_campaign_cases(campaign_id,organization_id,project_id,case_index,case_id,required,run_id) VALUES(?,?,?,?,?,?,?)",id,user.organizationId(),user.projectId(),i,c.path("id").asText(),c.path("required").asBoolean(),run.get("id"));
@@ -69,7 +79,26 @@ public class CampaignService {
         });
     }
     public Evaluation.Gate gate(DemoUser user,UUID id){return runs.scoped(user,()->{
-        jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"campaign-review/"+id);var value=get(user,id);value.put("result",mapper.valueToTree(value.get("result")));var reviews=reviews(user,id);return policy.decide(user,id,value,reviews.isEmpty()?null:reviews.getFirst());
+        jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"campaign-review/"+id);var value=get(user,id);value.put("result",mapper.valueToTree(value.get("result")));value.put("releaseRequirements",releaseRequirements(user,id));var reviews=reviews(user,id);return policy.decide(user,id,value,reviews.isEmpty()?null:reviews.getFirst());
+    });}
+    public Map<String,Object> releaseRequirements(DemoUser user,UUID id){return runs.scoped(user,()->{
+        var record=get(user,id);
+        var rows=jdbc.queryForList("SELECT baseline_campaign_id,evidence_max_age_seconds FROM stack_campaign_release_requirements WHERE campaign_id=? AND organization_id=? AND project_id=?",id,user.organizationId(),user.projectId());
+        String admittedHash=jdbc.queryForObject("SELECT request_hash FROM stack_campaigns WHERE id=? AND organization_id=? AND project_id=?",String.class,id,user.organizationId(),user.projectId());
+        UUID admittedBaseline=rows.isEmpty()?null:(UUID)rows.getFirst().get("baseline_campaign_id");Integer admittedMaxAge=rows.isEmpty()?null:(Integer)rows.getFirst().get("evidence_max_age_seconds");
+        if(!CampaignReleaseRequirements.requestHash((UUID)record.get("agent_version_id"),(UUID)record.get("dataset_version_id"),(Boolean)record.get("requires_approval"),admittedBaseline,admittedMaxAge).equals(admittedHash))throw new IllegalStateException("Campaign release requirements binding unavailable");
+        var result=new java.util.TreeMap<String,Object>();result.put("contract","campaign-release-requirements-v1");result.put("campaignId",id);result.put("organizationId",user.organizationId());result.put("projectId",user.projectId());result.put("enabled",!rows.isEmpty());result.put("deploymentAuthority",false);
+        if(rows.isEmpty())return result;
+        var row=rows.getFirst();UUID baselineId=(UUID)row.get("baseline_campaign_id");int maxAge=(Integer)row.get("evidence_max_age_seconds");
+        var baseline=get(user,baselineId);CampaignReleaseRequirements.compatible(record,baseline);
+        long candidateCreated=CampaignReleaseRequirements.createdAt(record),baselineCreated=CampaignReleaseRequirements.createdAt(baseline);
+        result.put("baselineCampaignId",baselineId);result.put("evidenceMaxAgeSeconds",maxAge);
+        result.put("candidateCreatedAtEpochMillis",candidateCreated);result.put("baselineCreatedAtEpochMillis",baselineCreated);
+        result.put("evidenceExpiresAtEpochMillis",Math.min(CampaignReleaseRequirements.expiresAt(candidateCreated,maxAge),CampaignReleaseRequirements.expiresAt(baselineCreated,maxAge)));
+        result.put("baselineAgentVersionId",baseline.get("agent_version_id"));result.put("baselineAgentContentSha256",baseline.get("agent_content_sha256"));
+        result.put("datasetVersionId",record.get("dataset_version_id"));result.put("datasetContentSha256",record.get("dataset_content_sha256"));
+        result.put("comparison",CampaignAggregate.compare(cases(user,baselineId),cases(user,id)));
+        return result;
     });}
     public Map<String,Object> cancel(DemoUser user,UUID id,String reason){
         if(!List.of("admin","editor").contains(user.role()))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
@@ -93,8 +122,7 @@ public class CampaignService {
     public Map<String,Object> compare(DemoUser user,UUID id,UUID baseline){return runs.scoped(user,()->{
         if(id.equals(baseline))throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         var current=get(user,id);var previous=get(user,baseline);
-        var currentAgent=(Map<?,?>)current.get("agentVersion");var previousAgent=(Map<?,?>)previous.get("agentVersion");
-        if(!current.get("dataset_version_id").equals(previous.get("dataset_version_id"))||!current.get("dataset_content_sha256").equals(previous.get("dataset_content_sha256"))||!currentAgent.get("resource_key").equals(previousAgent.get("resource_key")))throw new ResponseStatusException(HttpStatus.CONFLICT);
+        CampaignReleaseRequirements.compatible(current,previous);
         if(current.get("state").equals("queued")||previous.get("state").equals("queued"))throw new ResponseStatusException(HttpStatus.CONFLICT);
         var comparison=CampaignAggregate.compare(cases(user,baseline),cases(user,id));
         return Map.of("campaignId",id,"baselineCampaignId",baseline,"organizationId",user.organizationId(),"projectId",user.projectId(),"datasetVersionId",current.get("dataset_version_id"),"datasetContentSha256",current.get("dataset_content_sha256"),"comparison",comparison);

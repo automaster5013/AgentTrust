@@ -10,6 +10,7 @@ valid_scope if {
     }
     valid_epoch_millis(input.nowEpochMillis)
     is_boolean(input.approvalRequired)
+    valid_release_requirements
     input.state in {"queued", "succeeded", "failed"}
     input.evaluationDecision in {"pass", "block", "inconclusive"}
     input.latestReview in {"", "approved", "rejected"}
@@ -20,6 +21,40 @@ valid_scope if {
         is_boolean(rule.required)
         rule.status in {"pass", "fail", "inconclusive"}
     }
+}
+
+release_requirements := object.get(input, "releaseRequirements", {"enabled": false})
+
+valid_release_requirements if {
+    is_object(release_requirements)
+    release_requirements.enabled == false
+} else if {
+    is_object(release_requirements)
+    release_requirements.enabled == true
+    is_number(release_requirements.evidenceMaxAgeSeconds)
+    release_requirements.evidenceMaxAgeSeconds == floor(release_requirements.evidenceMaxAgeSeconds)
+    release_requirements.evidenceMaxAgeSeconds >= 60
+    release_requirements.evidenceMaxAgeSeconds <= 86400
+    valid_epoch_millis(release_requirements.candidateCreatedAtEpochMillis)
+    valid_epoch_millis(release_requirements.baselineCreatedAtEpochMillis)
+    release_requirements.baselineCreatedAtEpochMillis <= release_requirements.candidateCreatedAtEpochMillis
+    release_requirements.comparison.status in {"no-regression", "regression", "inconclusive"}
+    release_requirements.comparison.deploymentAuthority == false
+}
+
+release_evidence_current if {
+    input.nowEpochMillis >= release_requirements.candidateCreatedAtEpochMillis
+    input.nowEpochMillis >= release_requirements.baselineCreatedAtEpochMillis
+    input.nowEpochMillis - release_requirements.candidateCreatedAtEpochMillis < release_requirements.evidenceMaxAgeSeconds * 1000
+    input.nowEpochMillis - release_requirements.baselineCreatedAtEpochMillis < release_requirements.evidenceMaxAgeSeconds * 1000
+}
+
+release_requirements_pass if {
+    release_requirements.enabled == false
+} else if {
+    release_requirements.enabled == true
+    release_requirements.comparison.status == "no-regression"
+    release_evidence_current
 }
 
 required_failure if {
@@ -59,6 +94,10 @@ outcome := "block" if {
     input.evaluationDecision == "block"
 } else := "block" if {
     valid_scope
+    release_requirements.enabled == true
+    release_requirements.comparison.status == "regression"
+} else := "block" if {
+    valid_scope
     input.state == "succeeded"
     required_failure
 } else := "block" if {
@@ -72,6 +111,7 @@ outcome := "block" if {
     required_all_pass
     input.latestReview != "rejected"
     input.approvalRequired == false
+    release_requirements_pass
 } else := "pass" if {
     valid_scope
     input.state == "succeeded"
@@ -79,10 +119,16 @@ outcome := "block" if {
     required_all_pass
     input.approvalRequired
     current_approval
+    release_requirements_pass
 }
 
 reasons := {"pass": "Evaluation and current review permit the synthetic release.", "block": "A required rule or current review blocks release.", "inconclusive": "Complete successful evidence and current approval are required."}
-reason := "Administrator approval has expired or has an invalid creation time; a fresh approval is required." if {
+reason := "The immutable release baseline or evaluation evidence is unresolved, expired, or future-dated." if {
+    outcome == "inconclusive"
+    valid_scope
+    release_requirements.enabled == true
+    not release_requirements_pass
+} else := "Administrator approval has expired or has an invalid creation time; a fresh approval is required." if {
     outcome == "inconclusive"
     valid_scope
     input.state == "succeeded"

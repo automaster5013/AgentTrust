@@ -61,3 +61,37 @@ test_old_rejection_still_blocks if {
     result := data.agenttrust.release.decision with input as object.union(base,{"reviewCreatedAtEpochMillis":1,"latestReview":"rejected","approvalRequired":false})
     result.decision == "block"
 }
+
+baseline := {"enabled":true,"evidenceMaxAgeSeconds":60,"candidateCreatedAtEpochMillis":1999999999999,"baselineCreatedAtEpochMillis":1999999940001,"comparison":{"status":"no-regression","deploymentAuthority":false}}
+
+test_current_baseline_and_approval_allow_synthetic_release if {
+    data.agenttrust.release.decision.deploymentAllowed with input as object.union(base,{"releaseRequirements":baseline})
+}
+
+test_baseline_expiry_is_exclusive_and_cannot_be_overridden_by_approval if {
+    every timestamp in [1999999940000,1999999939999,2000000000001] {
+        requirements := object.union(baseline,{"baselineCreatedAtEpochMillis":timestamp})
+        result := data.agenttrust.release.decision with input as object.union(base,{"releaseRequirements":requirements})
+        result.decision == "inconclusive"
+        not result.deploymentAllowed
+    }
+}
+
+test_baseline_regression_blocks_and_unknown_evidence_is_inconclusive if {
+    requirements := object.union(baseline,{"comparison":{"status":"regression","deploymentAuthority":false}})
+    result := data.agenttrust.release.decision with input as object.union(base,{"releaseRequirements":requirements})
+    result.decision == "block"
+    not result.deploymentAllowed
+    unresolved := object.union(baseline,{"comparison":{"status":"inconclusive","deploymentAuthority":false}})
+    other := data.agenttrust.release.decision with input as object.union(base,{"releaseRequirements":unresolved})
+    other.decision == "inconclusive"
+    not other.deploymentAllowed
+}
+
+test_malformed_baseline_bound_never_allows_release if {
+    every age in [59,86401,60.5,"60",null] {
+        not data.agenttrust.release.decision.deploymentAllowed with input as object.union(base,{"releaseRequirements":object.union(baseline,{"evidenceMaxAgeSeconds":age})})
+    }
+    not data.agenttrust.release.decision.deploymentAllowed with input as object.union(base,{"releaseRequirements":{"enabled":"false"}})
+    not data.agenttrust.release.decision.deploymentAllowed with input as object.union(base,{"releaseRequirements":{"enabled":true}})
+}
