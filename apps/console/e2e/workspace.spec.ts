@@ -1,6 +1,6 @@
 import {test,expect,type Page} from '@playwright/test';
 import {execFileSync} from 'node:child_process';
-import {readFileSync} from 'node:fs';import {resolve} from 'node:path';
+import {readFileSync,readdirSync,statSync} from 'node:fs';import {resolve} from 'node:path';
 const users=JSON.parse(readFileSync(resolve(process.cwd(),'../../.local/stack/demo-credentials.json'),'utf-8')) as {username:string;password:string;organizationId:string}[];
 function phase(description:string){test.info().annotations.push({type:'phase',description})}
 async function login(page:Page,name:string){
@@ -218,4 +218,45 @@ test('administrator cancels a real pending evaluation and campaign through brows
   expect((await (await page.request.get('/backend/campaigns/'+campaign.id+'/gate')).json()).deploymentAllowed).toBe(false);
   phase('actual browser verifies terminal cancellation and denied release for run and campaign');
  }finally{execFileSync('docker',['start',worker],{timeout:25000});phase('dedicated worker restored');}
+});
+
+
+test('viewer opens existing campaign history and clears a foreign filtered page',async({page})=>{
+ await login(page,'demo-viewer');const region=page.getByRole('region',{name:'프로젝트 캠페인 이력',exact:true});
+ await region.getByRole('button',{name:'최신 캠페인 이력 조회',exact:true}).click();
+ await expect(region.locator('[data-campaign-history-id]').first()).toBeVisible();
+ const first=await region.locator('[data-campaign-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-campaign-history-id')));
+ let selected=first[0]!;
+ if(await region.getByRole('button',{name:'다음 캠페인 페이지',exact:true}).isEnabled()){
+  await region.getByRole('button',{name:'다음 캠페인 페이지',exact:true}).click();await expect(region.getByText(/캠페인 이력 페이지 2/)).toBeVisible();
+  const second=await region.locator('[data-campaign-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-campaign-history-id')));expect(second.length).toBeGreaterThan(0);expect(second.some(id=>first.includes(id))).toBe(false);selected=second[0]!;
+ }
+ await region.getByRole('button',{name:'캠페인 근거 '+selected.slice(0,8),exact:true}).click();
+ await expect(page.getByText('캠페인 '+selected,{exact:true})).toBeVisible();
+ await region.getByRole('button',{name:'최신 캠페인 이력 조회',exact:true}).click();await expect(region.locator('[data-campaign-history-id]').first()).toBeVisible();
+ const request=await page.request.get('/backend/campaigns/'+selected),record=await request.json();
+ const snapshot=await (await page.request.get('/backend/campaign-history/dataset/'+record.dataset_version_id)).json();
+ await page.route('**/backend/campaign-history/dataset/'+record.dataset_version_id,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...snapshot,organizationId:'ffffffff-ffff-4fff-8fff-ffffffffffff'})}));
+ await region.getByRole('button',{name:'최신 캠페인 이력 조회',exact:true}).click();
+ await expect(region.getByText('캠페인 이력을 확인하지 못했습니다. 다시 조회해 주세요.',{exact:true})).toBeVisible();await expect(region.locator('[data-campaign-history-id]')).toHaveCount(0);
+ phase('actual campaign history opens existing frozen evidence and refuses foreign dataset response');
+});
+
+test('viewer selects an existing historical baseline and verifies a real campaign comparison',async({page})=>{
+ const folder=resolve(process.cwd(),'../../.local');
+ const proof=readdirSync(folder).filter(name=>name.startsWith('stack-campaign-smoke-')&&name.endsWith('.json')).map(name=>({path:resolve(folder,name),at:statSync(resolve(folder,name)).mtimeMs})).sort((a,b)=>b.at-a.at).map(file=>JSON.parse(readFileSync(file.path,'utf-8'))).find(value=>value.completed&&value.campaignId&&value.comparisonCampaignId);
+ expect(proof).toBeTruthy();await login(page,'demo-viewer');const region=page.getByRole('region',{name:'프로젝트 캠페인 이력',exact:true});
+ await region.getByRole('button',{name:'최신 캠페인 이력 조회',exact:true}).click();await expect(region.locator('[data-campaign-history-id]').first()).toBeVisible();
+ const candidate=region.getByRole('button',{name:'캠페인 근거 '+proof.campaignId.slice(0,8),exact:true});
+ for(let attempt=0;attempt<8&&!await candidate.count();attempt++){
+  await expect(region.getByRole('button',{name:'다음 캠페인 페이지',exact:true})).toBeEnabled();await region.getByRole('button',{name:'다음 캠페인 페이지',exact:true}).click();await expect(region.getByText(new RegExp('캠페인 이력 페이지 '+(attempt+2)+' '))).toBeVisible();
+ }
+ await candidate.click();await expect(page.getByText('캠페인 '+proof.campaignId,{exact:true})).toBeVisible();
+ await region.getByRole('button',{name:'최신 캠페인 이력 조회',exact:true}).click();await expect(region.locator('[data-campaign-history-id]').first()).toBeVisible();
+ await region.getByRole('button',{name:'비교 기준 '+proof.comparisonCampaignId.slice(0,8)+' 선택',exact:true}).click();
+ await expect(page.getByLabel('비교 기준 캠페인',{exact:true})).toHaveValue(proof.comparisonCampaignId);
+ const response=page.waitForResponse(value=>value.url().endsWith('/comparison/'+proof.comparisonCampaignId)&&value.request().method()==='GET');
+ await page.getByRole('button',{name:'캠페인 회귀 비교',exact:true}).click();expect((await response).status()).toBe(200);
+ await expect(page.getByText(/새 필수 실패: 없음/)).toBeVisible();
+ phase('read-only historical dataset navigation supplies the real baseline to Java comparison verification');
 });

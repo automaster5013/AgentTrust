@@ -26,7 +26,7 @@ try:
     editor=StackClient(admin.base,credentials,report,clients);editor.login('demo-editor')
     viewer=StackClient(admin.base,credentials,report,clients);viewer.login('demo-viewer')
     foreign=StackClient(admin.base,credentials,report,clients);foreign.login('other-admin')
-    assert db("SELECT count(*) FROM stack_runs r LEFT JOIN stack_run_results c ON c.run_id=r.id WHERE c.run_id IS NULL AND r.created_at>now()-interval '2 minutes'")=="0"
+    assert db("SELECT count(*) FROM stack_runs r LEFT JOIN stack_run_results c ON c.run_id=r.id WHERE r.state='queued' AND c.run_id IS NULL")=="0"
     assert json.loads(docker('inspect','agenttrust-stack-ai-worker-1'))[0]['State']['Running'] is True
     docker('stop','--time','10','agenttrust-stack-ai-worker-1');stopped=True
     report['phase']='single-run'

@@ -15,7 +15,23 @@ public class ProviderUsageReader {
     public Usage read(DemoUser user){return runs.scoped(user,()->{
         jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"provider-budget/"+user.organizationId()+"/"+user.projectId());
         String day=jdbc.queryForObject("SELECT ((now() AT TIME ZONE 'UTC')::date)::text",String.class);
-        var providers=List.of("ollama","openai","openai-compatible").stream().map(provider->jdbc.queryForObject("SELECT count(*) AS reserved,count(*) FILTER(WHERE c.state='succeeded') AS succeeded,count(*) FILTER(WHERE c.state='failed') AS failed,count(*) FILTER(WHERE c.run_id IS NULL) AS pending FROM stack_provider_attempts a LEFT JOIN stack_run_results c ON c.run_id=a.run_id WHERE a.organization_id=? AND a.project_id=? AND a.budget_day=?::date AND a.provider=?",(row,index)->new Provider(provider,row.getLong("reserved"),row.getLong("succeeded"),row.getLong("failed"),row.getLong("pending")),user.organizationId(),user.projectId(),day,provider)).toList();
+        // One statement snapshot keeps all provider outcomes coherent while completions arrive.
+        var providers=jdbc.query("""
+            WITH providers(provider,position) AS (
+                VALUES ('ollama',1),('openai',2),('openai-compatible',3)
+            ), attempts AS (
+                SELECT a.provider,a.run_id,c.state,c.run_id AS completed_run_id
+                FROM stack_provider_attempts a
+                LEFT JOIN stack_run_results c ON c.run_id=a.run_id
+                WHERE a.organization_id=? AND a.project_id=? AND a.budget_day=?::date
+            )
+            SELECT p.provider,count(a.run_id) AS reserved,
+                   count(a.run_id) FILTER(WHERE a.state='succeeded') AS succeeded,
+                   count(a.run_id) FILTER(WHERE a.state='failed') AS failed,
+                   count(a.run_id) FILTER(WHERE a.completed_run_id IS NULL) AS pending
+            FROM providers p LEFT JOIN attempts a ON a.provider=p.provider
+            GROUP BY p.provider,p.position ORDER BY p.position
+            """,(row,index)->new Provider(row.getString("provider"),row.getLong("reserved"),row.getLong("succeeded"),row.getLong("failed"),row.getLong("pending")),user.organizationId(),user.projectId(),day);
         long total=providers.stream().mapToLong(Provider::reservedAttempts).sum();
         return new Usage(user.organizationId(),user.projectId(),day,"UTC",Instant.now(),ProviderBudget.DAILY_LIMIT,total,Math.max(0,ProviderBudget.DAILY_LIMIT-total),providers,"immutable-provider-reservations",false,false);
     });}

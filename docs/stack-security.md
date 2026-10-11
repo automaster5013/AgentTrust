@@ -77,3 +77,6 @@ Schema 6의 실제 65개 파일·15개 이미지와 HIGH/CRITICAL 0건을 확인
 이 결과는 해당 커밋과 보관된 취약점 보고서에 한정된다. 새로운 취약점 검사나 서버 배포를 수행한 결과가 아니다. 별도 공식 Grafana 후보는 유효한 플러그인 서명에도 HIGH/CRITICAL 56건으로 실패하여 적용하지 않았다. 현재 Grafana 보안 수정, 운영 IdP/TLS·신뢰키·백업과 전체 시스템 복구 검증이 남아 있으며 `productionSecurityVerified`, `officialObservabilitySecurityVerified`, `productionDeploymentApproved`는 계속 `false`다. 이후 커밋의 전달물은 다시 검증한다.
 
 소스 검사도 앞으로 해당 실행이 만든 임시 작업 디렉터리에 Git archive·tracked source·bare history 사본을 생성하고 성공/실패 종료 때 소유권을 확인하여 회수한다. 기존 보관 사본과 검사 보고서에는 적용하지 않는다. 작업 디렉터리가 교체됐거나 부모 소유권이 달라지면 정리를 거부하고 검사를 미완료로 표시한다.
+
+
+2026-10-11의 `d43ae410ec966c454a632b0bfa2d738ee257e0f0`는 [전체 전달 CI](https://github.com/automaster5013/AgentTrust/actions/runs/38129714309)의 네 작업이 성공했다. 15개 게시 이미지 실행·HIGH/CRITICAL 0건·30개 이미지/SBOM 서명을 확인했으며, 인증된 artifact 메타데이터의 archive digest를 대조한 뒤 로컬 소비자 검증기로 서명을 독립 암호 검증했다. 해당 이미지 검사 보고서의 `temporaryArchivesRemoved=true`도 확인했다. 이는 이 커밋의 실제 검사 근거이며 이후 기능 커밋의 CI 결과는 별도로 확인한다. Grafana와 운영 준비 항목의 미완료 상태는 유지한다.

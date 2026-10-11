@@ -56,3 +56,8 @@ node --experimental-strip-types scripts/stack-verify-campaign-receipt.ts --bundl
 [참조 정답 평가](stack-reference-evaluation.md)의 실제 로컬 검사, [보안](stack-security.md)의 커밋별 CI와 [기능 이전 범위](stack-feature-parity.md)를 근거로 확인한다. 원래 JavaScript 구현의 테스트 수나 GitHub 언어 비율을 새 스택의 완료율로 설명하지 않는다. 유료 OpenAI 호출, 운영 KMS·키 교체, 동적 기업 등록, stateful 운영 배포·HA·운영 복구는 별도 완료 조건이다. Grafana 취약점의 전체 이미지 재검증도 운영 배포 전에 필요하다.
 
 프로젝트의 평가·버전 등록·승인/반려 이력은 화면 아래 **프로젝트 감사 기록**에서 조회한다. 조회자 계정도 같은 범위의 기록을 읽을 수 있다. [감사 조회의 범위와 페이지 경계](stack-audit.md)를 함께 확인한다.
+
+
+이전 캠페인과 비교 기준은 [캠페인 이력](stack-campaign-history.md)에서 찾는다. 최근 50개 목록 밖의 캠페인도 같은 데이터셋 버전으로 탐색하고 기존 Java 비교 API에서 조건을 다시 확인할 수 있다. [모델 실행 한도](stack-provider-usage.md)는 실제 예약 기록을 보여주며 과금액을 추정하지 않는다.
+
+검증된 원본 번들과 별도로 신뢰한 공개키를 준비했다면 [과거 HTML 보고서](stack-observation-report.md)를 생성해 검토할 수 있다. 이 요약은 자체 서명이나 현재 릴리스 권한을 제공하지 않는다.
