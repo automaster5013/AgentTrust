@@ -14,4 +14,14 @@ Next.js BFF·WebFlux·Java·PostgreSQL의 실제 조회 경로를 반복한다. 
 
 추가한 네 경로도 현재 검사에 포함한다. 버전 종류, 두 평가 큐와 정책의 준비 상태, 운영 준비/배포 권한 false를 확인한다. 위 60분 완료 근거는 당시 여섯 경로에만 해당하며, 확장 경로의 장시간 검사 결과는 실제 완료 후 별도로 기록한다.
 
+감사 내보내기까지 포함한 11개 경로는 다음 명령으로 관찰한다.
+
+```powershell
+python scripts/stack-readonly-soak.py --minutes 180 --readers 20 --audit-export
+```
+
+추가 경로는 [프로젝트 감사 내보내기](stack-audit-export.md)의 조직·프로젝트 범위, 서명과 현재 배포 권한 false, UTF-8 바이트 수·SHA-256, 256 KiB 상한과 최대 500건 및 전체/부분 이력 표시의 일치를 확인한다. 프로젝트별 분당 최대 110개의 조회이며 기존 한도를 변경하지 않는다. 각 경로의 지연 표본은 따로 집계하고, 최종 업무 테이블 지문과 세션 종료가 모두 확인돼야 완료다. 실행 명령 자체와 중간 요청 횟수는 완료 근거가 아니다.
+
 Extended ten-path evidence completed on 2026-10-11: the 180-minute run observed 10,803.55 seconds, 180 rounds and 36,000 requests with zero failures. After applying the core/console changes, a separate 60-minute run observed 3,603.794 seconds, 60 rounds and 12,000 requests with zero failures. Both used 20 independent sessions across two synthetic organizations and verified all 15 business tables unchanged and their own sessions logged out. The corresponding independent-key signed-review observations completed 180 reviews over 90 minutes before application and 120 reviews over 60 minutes afterward. These are separate bounded observations; their counts must not be represented as simultaneous customer traffic or inference throughput.
+
+2026-10-11 19:06:40–21:06:53 UTC에는 불변 기준에 묶인 캠페인으로 120분의 서명 관찰 검사를 완료했다. 120회 반복에서 서명 240회를 검증했고 실제 관찰 시간은 7,203.827초였다. 기준 조건의 SHA-256 결합을 확인했으며 16개 업무 테이블이 동일하고 자체 세션이 모두 종료됐다. 업무 데이터 쓰기와 유료 API 호출은 없었다. 이 결과는 해당 로컬 서비스의 개발용 서명 검증에 한정되며 새 양쪽 근거 번들의 적용·검증 완료를 뜻하지 않는다. 함께 실행한 11개 조회 경로의 180분 검사는 별도 완료 보고서로 확인해야 한다.
