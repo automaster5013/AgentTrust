@@ -1,5 +1,5 @@
 import {test,expect,type Page} from '@playwright/test';
-import {createHash} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {readFileSync,readdirSync,statSync} from 'node:fs';import {resolve} from 'node:path';
 const users=JSON.parse(readFileSync(resolve(process.cwd(),'../../.local/stack/demo-credentials.json'),'utf-8')) as {username:string;password:string;organizationId:string}[];
@@ -88,6 +88,8 @@ test('administrator creates an immutable baseline campaign and approves the actu
  const root=resolve(process.cwd(),'../../.local'),files=readdirSync(root).filter(name=>/^stack-baseline-gate-[a-f0-9-]{36}\.json$/.test(name)).sort((a,b)=>statSync(resolve(root,b)).mtimeMs-statSync(resolve(root,a)).mtimeMs);
  const reference=files.map(name=>JSON.parse(readFileSync(resolve(root,name),'utf8'))).find(value=>value.completed&&value.baselineCampaignId);expect(reference).toBeTruthy();
  const baseline=await (await page.request.get('/backend/campaigns/'+reference.baselineCampaignId)).json();expect(baseline.agentVersion.definition.provider).toBe('synthetic');
+ const csrf=(await (await page.request.get('/backend/csrf')).json()).token;const fresh=await page.request.post('/backend/campaigns',{headers:{'X-CSRF-TOKEN':csrf,Origin:'http://127.0.0.1:4320','Idempotency-Key':randomUUID()},data:{agentVersionId:baseline.agent_version_id,datasetVersionId:baseline.dataset_version_id,requiresApproval:true}});expect(fresh.status()).toBe(200);reference.baselineCampaignId=(await fresh.json()).id;
+ await expect.poll(async()=>(await (await page.request.get('/backend/campaigns/'+reference.baselineCampaignId)).json()).state,{timeout:35000}).toBe('succeeded');await page.reload();await expect(page.getByRole('button',{name:'로그아웃',exact:true})).toBeVisible();
  const region=page.getByRole('region',{name:'버전과 평가 캠페인',exact:true});
  await region.getByLabel('캠페인 에이전트 버전',{exact:true}).selectOption(baseline.agent_version_id);
  await region.getByLabel('캠페인 데이터셋 버전',{exact:true}).selectOption(baseline.dataset_version_id);
@@ -109,6 +111,9 @@ test('administrator creates an immutable baseline campaign and approves the actu
  await checks.getByRole('button',{name:'현재 판정 서명 확인',exact:true}).click();
  await expect(checks.getByText('서명 확인 완료 · 합성 릴리스 허용',{exact:true})).toBeVisible();
  await expect(checks.getByText('서명에 묶인 비교 기준 '+reference.baselineCampaignId+' · 유효 기간 3600초',{exact:true})).toBeVisible();
+ await region.getByLabel('서명 기록 메모',{exact:true}).fill('Own complete baseline archive observation');await region.getByRole('button',{name:'현재 판정의 서명 기록 저장',exact:true}).click();await expect(region.getByText('브라우저 Ed25519 서명 검증 완료 · 개발용 공개키',{exact:true})).toBeVisible();
+ const event=page.waitForEvent('download');await region.getByRole('button',{name:'검증된 서명·근거 번들 다운로드',exact:true}).click();const download=await event;expect(await download.failure()).toBeNull();const stream=await download.createReadStream();let bytes=Buffer.alloc(0);for await(const chunk of stream!){bytes=Buffer.concat([bytes,chunk]);expect(bytes.length).toBeLessThanOrEqual(524288)}const bundle=JSON.parse(bytes.toString('utf8'));expect(bundle.schemaVersion).toBe(2);expect(bundle.baseline.campaign.id).toBe(reference.baselineCampaignId);expect(JSON.parse(Buffer.from(bundle.receipt.payloadBase64,'base64').toString('utf8')).schemaVersion).toBe(3);await expect(region.getByRole('status',{name:'버전과 캠페인 작업 상태',exact:true})).toContainText('기준 캠페인의 부모와 1개 자식 보관본도 검증했습니다.');phase('actual Java v3 historical signature binds both complete archive chains and browser downloads the verified comparison baseline');
+ let unexpected=false;const note=()=>{unexpected=true};page.on('download',note);try{const changed=structuredClone(bundle);changed.baseline.children[0].archive.contentBase64=Buffer.from('changed comparison bytes').toString('base64');const receiptId=bundle.receipt.receiptId;await page.route('**/backend/campaigns/'+candidate.id+'/receipts/'+receiptId+'/bundle',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(changed)}));await region.getByRole('button',{name:'검증된 서명·근거 번들 다운로드',exact:true}).click();await expect(region.getByRole('status',{name:'버전과 캠페인 작업 상태',exact:true})).toContainText('서명과 모든 보관 바이트의 연결을 검증하지 못해 번들을 내보내지 않았습니다.');expect(unexpected).toBe(false)}finally{page.off('download',note)}phase('altered baseline child is refused before a second browser download');
  phase('actual UI admission freezes baseline and age; Python completion and administrator review lead to verified Java v2 current signature');
 });
 

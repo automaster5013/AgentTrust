@@ -92,6 +92,8 @@ jobs:
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-baseline-unresolved-smoke.py
           python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-baseline-bundle-smoke.py
+          python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-audit-smoke.py
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-audit-export-smoke.py
@@ -195,6 +197,7 @@ jobs:
             .local/stack-campaign-smoke-*.json
             .local/stack-baseline-gate-*.json
             .local/stack-baseline-unresolved-*.json
+            .local/stack-baseline-bundle-*.json
             .local/stack-audit-smoke-*.json
             .local/stack-audit-export-*.json
             .local/stack-execution-profile-*.json
@@ -310,6 +313,8 @@ jobs:
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-baseline-unresolved-smoke.py
           python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-baseline-bundle-smoke.py
+          python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-audit-smoke.py
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-audit-export-smoke.py
@@ -368,6 +373,7 @@ jobs:
             .local/stack-campaign-smoke-*.json
             .local/stack-baseline-gate-*.json
             .local/stack-baseline-unresolved-*.json
+            .local/stack-baseline-bundle-*.json
             .local/stack-audit-smoke-*.json
             .local/stack-audit-export-*.json
             .local/stack-execution-profile-*.json

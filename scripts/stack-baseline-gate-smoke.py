@@ -1,5 +1,5 @@
 """Own synthetic campaigns only: immutable baseline admission, actual OPA and signed expiry."""
-import datetime,hashlib,json,pathlib,secrets,subprocess,time,uuid
+import base64,datetime,hashlib,json,pathlib,secrets,subprocess,time,uuid
 from stack_test_client import StackClient
 from stack_business_fingerprint import sql
 ROOT=pathlib.Path(__file__).resolve().parent.parent
@@ -83,17 +83,18 @@ try:
     after=verify(admin,user,candidate);assert not after['allowed']
     assert admin.request('campaigns/'+candidate['id']+'/release-requirements')==requirements
     checked('natural 60-second baseline expiry bounds permitted signature; fresh approval cannot override expired evidence')
-    report['phase']='historical-v2-bundle'
+    report['phase']='historical-v3-baseline-bundle'
     receipt=admin.request('campaigns/'+candidate['id']+'/receipts','POST',{'note':'Own expired-baseline observation'},{'Idempotency-Key':str(uuid.uuid4())})
     bundle=admin.request('campaigns/'+candidate['id']+'/receipts/'+receipt['receiptId']+'/bundle')
+    assert bundle['schemaVersion']==2 and json.loads(base64.b64decode(receipt['payloadBase64']))['schemaVersion']==3
     code="""import {readFileSync} from 'node:fs';import {observationReport} from './scripts/stack-observation-report.ts';import {createHash} from 'node:crypto';
 const v=JSON.parse(readFileSync(0,'utf8')),digest=createHash('sha256').update(JSON.stringify(v.bundle)).digest('hex');
 const result=await observationReport(v.bundle,readFileSync('.local/stack/gate-keys/public-key.pem','utf8'),{organization:v.user.organizationId,project:v.user.projectId,campaign:v.campaign},digest);
-if(!result.html.includes(v.baseline)||!result.html.includes('발급 당시 허용 안 됨')||!result.html.includes('기준 캠페인의 별도 보관 바이트는 이 번들에 포함되지 않습니다.'))throw Error('BASELINE_REPORT_UNVERIFIED');
-console.log(JSON.stringify({verified:true,childArchives:result.childArchives,htmlBytes:Buffer.byteLength(result.html),networkUsed:false}));"""
+if(!result.baselineBytesVerified||!result.html.includes(v.baseline)||!result.html.includes('발급 당시 허용 안 됨')||!result.html.includes('실제 회귀 비교를 오프라인에서 검증했습니다.'))throw Error('BASELINE_REPORT_UNVERIFIED');
+console.log(JSON.stringify({verified:true,childArchives:result.childArchives,baselineBytesVerified:true,baselineChildArchives:result.baselineChildArchives,htmlBytes:Buffer.byteLength(result.html),networkUsed:false}));"""
     result=subprocess.run(['node','--experimental-strip-types','--input-type=module','-e',code],input=json.dumps({'bundle':bundle,'user':user,'campaign':candidate['id'],'baseline':baseline['id']}),cwd=ROOT,capture_output=True,text=True,encoding='utf-8',timeout=15)
     assert result.returncode==0;report['historicalBundle']=json.loads(result.stdout);assert report['historicalBundle']['verified']
-    checked('actual Java v2 historical signature and parent/child bytes verify offline after expiry; report retains signed baseline conditions')
+    checked('actual Java v3 historical signature binds candidate and baseline parent/child bytes; offline report verifies both chains and recomputes comparison after expiry')
     report.update(completed=True,candidateCampaignId=candidate['id'],baselineCampaignId=baseline['id'],evidenceExpiresAtEpochMillis=requirements['evidenceExpiresAtEpochMillis'])
 except Exception as error:report.update(code='BASELINE_GATE_UNVERIFIED',errorType=type(error).__name__)
 finally:
