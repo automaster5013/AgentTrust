@@ -21,7 +21,7 @@ Gitleaks는 redaction을 적용한다. `gitleaks.ignore`는 사람이 소스와 
 python scripts/stack-security-images.py
 ```
 
-로컬 CPU 모델, 수정 NATS와 Collector를 포함한 열네 전달 이미지의 정확한 실행 ID를 archive로 내보내 Syft CycloneDX SBOM과 Trivy HIGH/CRITICAL 결과를 생성한다. 모든 registry 환경 변수가 제공되면 `ghcr.io/...@sha256:...` 형식만 허용한다. Docker socket을 scanner에 전달하지 않는다. Linux에서 `docker save`의 기본 archive 모드 0600은 비루트 scanner가 읽을 수 없어, 새로 내보낸 공개 소프트웨어 archive만 0644로 설정하고 읽기 전용으로 마운트한다. 실제 Linux 파일시스템 fixture에서 0600 거부·0644 SBOM 생성과 임시 볼륨 제거를 검증했다. 취약점 DB 다운로드에는 공개 네트워크를 사용하며 검사 전용 디스크 캐시를 이용한다. `ignore-unfixed`나 취약점 예외를 적용하지 않는다. 오류로 보고서를 만들지 못한 경우도 실패다.
+로컬 CPU 모델, 수정 NATS와 Collector를 포함한 Promptfoo SDK 평가기를 포함한 열다섯 전달 이미지의 정확한 실행 ID를 archive로 내보내 Syft CycloneDX SBOM과 Trivy HIGH/CRITICAL 결과를 생성한다. 모든 registry 환경 변수가 제공되면 `ghcr.io/...@sha256:...` 형식만 허용한다. Docker socket을 scanner에 전달하지 않는다. Linux에서 `docker save`의 기본 archive 모드 0600은 비루트 scanner가 읽을 수 없어, 새로 내보낸 공개 소프트웨어 archive만 0644로 설정하고 읽기 전용으로 마운트한다. 실제 Linux 파일시스템 fixture에서 0600 거부·0644 SBOM 생성과 임시 볼륨 제거를 검증했다. 취약점 DB 다운로드에는 공개 네트워크를 사용하며 검사 전용 디스크 캐시를 이용한다. `ignore-unfixed`나 취약점 예외를 적용하지 않는다. 오류로 보고서를 만들지 못한 경우도 실패다.
 
 최초 실제 여덟 이미지 검사에서 HIGH/CRITICAL 183건을 확인하여 원래 스택 전환의 배포 준비를 차단했다. 취약점 예외 없이 Spring Boot 4.1.1/Jackson 3.1.7, Python Alpine 기반, 고정 Go 1.27.2와 OPA/MinIO 의존성 갱신, 사용하지 않는 런타임 도구 제거로 수정했다. 기존 마이그레이션·업무 데이터는 수정하지 않았다. Java 18개·Gateway 11개·Python 6개·TypeScript 11개 계약, 인증/DB/벡터/객체 장애 복구, 비루트 새 PostgreSQL 초기화, 서비스 재시작 후 BFF 흐름을 다시 검증했다. 스캔의 최종 여덟 이미지 통과는 최종 보고서에서 별도로 확인한다.
 
@@ -30,6 +30,11 @@ CI는 소스 보안→소스 통합→정확한 registry digest 실행→이미�
 별도 공식 인프라 검사에서 NATS 12건·Collector 4건·Tempo 4건·Loki 4건·Prometheus 8건·Grafana 64건의 HIGH/CRITICAL을 확인했다. NATS 2.12.15를 고정 소스와 Go 1.27.2/새 Alpine으로 재빌드하여 0건과 실제 JetStream 영속 복구를 검증했다. 원래 관측성 공식 이미지의 합계는 84건이다. Collector의 4건은 동일 upstream 버전 재빌드와 실제 재검사에서 0건으로 수정했다. Tempo·Loki도 각각 원래 4건을 수정한 registry 이미지의 실제 스캔 0건과 로컬 통합을 확인했다. Prometheus도 고정 소스·UI·두 실행 바이너리를 재빌드하여 원격 및 로컬 HIGH/CRITICAL 0건과 실제 관측 경로를 검증했다. Grafana의 원래 보고서 64건에 대한 수정·재검증은 남아 있다. 이는 이미지별 발견 건수이며 고유 CVE 84개라는 뜻이 아니다. Redis는 0건이었다. 전달 manifest의 `productionSecurityVerified=false`, `officialObservabilitySecurityVerified=false`는 이 한계를 명시한다. 전달 이미지의 서명이 전체 운영 스택의 안전성이나 배포 승인을 뜻하지 않는다.
 
 [4069f08 기준선 CI](https://github.com/automaster5013/AgentTrust/actions/runs/38073013830)에서 네 작업이 통과하고 정확한 열 이미지의 HIGH/CRITICAL 0건·이미지 서명·SBOM attestation 검증을 확인했다. 다운로드 artifact checksum과 열 SBOM Sigstore bundle의 독립 로컬 암호 검증도 통과했다. 이후 변경은 해당 SHA의 CI·전달 근거를 따로 확인한다. 컨테이너 공급망 서명은 현재 평가 승인 게이트의 서명이 아니며 서버 배포를 수행하지 않는다. 소스 보안 CI와 기존 JavaScript CI는 각각의 검사 범위를 가진다.
+
+
+2026-10-11 별도 Grafana 후보는 고정 서버 소스와 공식 서명이 유효한 13개 플러그인으로 실제 실행했다. 전체 Docker 이미지 검사에서 HIGH/CRITICAL 56건이 남아 게시와 적용을 거부했다. 서버 수정만으로 플러그인의 내장 Go 의존성이 갱신되지 않는다. 공식 서명 검증을 끄거나 취약 바이너리를 검사에서 제외하지 않는다. 단순 파일시스템 검사는 Go 실행 파일을 탐지하지 못할 수 있으므로 전체 이미지 결과를 기준으로 판단한다. [후보 검사](https://github.com/automaster5013/AgentTrust/actions/runs/38111502365)는 원래 실행 이미지의 검증 완료를 뜻하지 않는다.
+
+이미지 검사 전 모든 실행 ID와 예상 archive 크기를 확인한다. Windows에서는 예상 archive 총량 외에 22GiB, Linux에서는 4GiB 여유 공간을 요구하고 각 export 전에 다시 확인한다. 부족하면 첫 archive를 만들기 전에 실패 보고서를 남긴다. 로컬 공간 부족으로 검사를 거부한 결과는 검사 통과를 뜻하지 않는다.
 
 ## 수동 전달물 검증
 

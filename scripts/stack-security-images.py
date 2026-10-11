@@ -1,5 +1,5 @@
 """Create Syft SBOMs and Trivy reports for exact exported image IDs, without a Docker socket."""
-import datetime,hashlib,json,os,pathlib,re,subprocess,uuid,traceback
+import datetime,hashlib,json,os,pathlib,re,shutil,subprocess,uuid,traceback
 root=pathlib.Path(__file__).resolve().parent.parent
 directory=root/'.local'/('stack-security-images-'+str(uuid.uuid4()));directory.mkdir(parents=True)
 inputs=directory/'inputs';inputs.mkdir();output=directory/'reports';output.mkdir();cache=root/'.local/stack-security-cache';cache.mkdir(exist_ok=True);temporary=cache/'tmp';temporary.mkdir(exist_ok=True)
@@ -14,9 +14,23 @@ try:
  report['revision']=run(['git','rev-parse','HEAD']).stdout.strip()
  registry=any(name in os.environ for name in names.values());report['registryImageReferences']=registry
  if registry:assert all(re.fullmatch(r'ghcr\.io/[a-z0-9-]+/agenttrust-'+name+r'@sha256:[a-f0-9]{64}',os.environ.get(env,'')) for name,env in names.items())
+ report['currentStage']='image-and-disk-preflight';identities={};archive_estimate=0
  for name,env in names.items():
-  reference=os.environ[env] if registry else 'agenttrust-'+name+':local';image=json.loads(run(['docker','image','inspect',reference]).stdout)[0];image_id=image['Id'];assert re.fullmatch('sha256:[a-f0-9]{64}',image_id)
+  reference=os.environ[env] if registry else 'agenttrust-'+name+':local';image=json.loads(run(['docker','image','inspect',reference]).stdout)[0]
+  if not re.fullmatch('sha256:[a-f0-9]{64}',image['Id']) or type(image.get('Size')) is not int or not 0<image['Size']<=2*1073741824:raise ValueError('Image outside bounded export contract')
+  identities[name]=(reference,image['Id'],image['Size']+67108864);archive_estimate+=image['Size']+67108864
+ reserve=(22 if os.name=='nt' else 4)*1073741824
+ required=reserve+archive_estimate;available=shutil.disk_usage(root).free
+ report.update(archiveEstimateBytes=archive_estimate,requiredFreeBytes=required,availableFreeBytes=available,imagesInspected=len(identities),exportPreflightPassed=available>=required)
+ if available<required:raise ValueError('Insufficient disk headroom before image export')
+ remaining=archive_estimate
+ for name in names:
+  reference,image_id,estimate=identities[name]
+  report['currentImage']=name;report['currentStage']='bounded-image-export'
+  if shutil.disk_usage(root).free<reserve+remaining:raise ValueError('Disk headroom changed during image export')
   archive=inputs/(name+'.tar');run(['docker','image','save','-o',str(archive),image_id]);archive.chmod(0o644);report['exportedArchiveMode']=oct(archive.stat().st_mode & 0o777);checksum=hashlib.file_digest(archive.open('rb'),'sha256').hexdigest()
+  if not 0<archive.stat().st_size<=estimate:raise ValueError('Image archive exceeds bounded estimate')
+  remaining-=estimate
   report['currentImage']=name;report['currentStage']='sbom'
   sbom=scanner(['syft','docker-archive:/in/'+name+'.tar','-o','cyclonedx-json=/out/'+name+'.cdx.json','--quiet'],'none');(output/(name+'.syft.log')).write_text(sbom.stderr,encoding='utf-8');report['currentTool']='syft';report['currentToolExitCode']=sbom.returncode;assert sbom.returncode==0
   inventory=json.loads((output/(name+'.cdx.json')).read_text(encoding='utf-8'));assert inventory['bomFormat']=='CycloneDX' and len(inventory.get('components',[]))>0
