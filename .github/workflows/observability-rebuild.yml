@@ -5,7 +5,7 @@ on:
       component:
         type: choice
         required: true
-        options: [tempo, loki]
+        options: [tempo, loki, prometheus]
 permissions:
   contents: read
 concurrency:
@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0
       - name: Validate fixed component and source security
         run: |
-          case "$COMPONENT" in tempo|loki) ;; *) exit 1 ;; esac
+          case "$COMPONENT" in tempo|loki|prometheus) ;; *) exit 1 ;; esac
           docker build -t agenttrust-security:local tools/security
           python3 scripts/stack-security-source.py
       - name: Build pinned upstream source with patched dependencies

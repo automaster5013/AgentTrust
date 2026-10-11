@@ -1,6 +1,6 @@
 # 새 스택의 실제 관측 경로
 
-OpenTelemetry Collector 0.162.0은 고정 OCB와 동일 버전의 upstream 구성 요소로 재빌드한다. Prometheus 3.15.0, Tempo 3.1.0, Loki 3.7.8, Grafana 13.2.3은 공식 digest를 고정하며 별도 stack-* 서비스와 새 전용 볼륨에 실행한다. Java API/Gateway는 checksum으로 고정한 Java agent 2.32.0, Python은 고정 SDK 1.45.1을 사용한다. 기본 프로필에서는 계측을 활성화하지 않는다.
+OpenTelemetry Collector 0.162.0은 고정 OCB와 동일 버전의 upstream 구성 요소로 재빌드한다. Tempo 3.1.0과 Loki 3.7.8도 고정 upstream 소스를 재빌드한다. Prometheus 3.15.0과 Grafana 13.2.3은 공식 digest를 고정하며 별도 stack-* 서비스와 새 전용 볼륨에 실행한다. Java API/Gateway는 checksum으로 고정한 Java agent 2.32.0, Python은 고정 SDK 1.45.1을 사용한다. 기본 프로필에서는 계측을 활성화하지 않는다.
 
 ```powershell
 python scripts/stack-observability-setup.py
@@ -34,4 +34,10 @@ Prometheus와 Loki는 7일 보존을 구성한다. 운영 백업·HA·장애 경
 
 `services/telemetry`는 실제 설정에서 사용하는 receiver, exporter, processor, health extension 8개와 설정 provider 3개를 고정한 Collector 배포다. Go 1.27.2, x/net 0.60.0, gRPC 1.83.2로 빌드하며 OCB 바이너리와 라이선스도 checksum으로 검증한다. 기술이나 기존 수집 경로를 대체하지 않는다. 로컬 실제 이미지의 Syft SBOM 468개 구성 요소와 Trivy HIGH/CRITICAL 0건을 확인했다. 교체 후 관측 9개, 큐 trace 부모 연결 3개, Collector 중단·복구 4개 검사가 통과했다. 생성된 Collector 모듈에는 자체 Go 테스트가 없으므로 이 결과를 단위 테스트 통과로 표현하지 않는다.
 
-Tempo와 Loki의 고정 소스 재빌드는 `Pinned observability image rebuild` 수동 CI에서 각각 실행할 수 있다. HIGH/CRITICAL 0건 이후에만 digest 후보를 게시하며, 후보 상태에는 실제 통합·서명·운영 배포 미확인을 명시한다. 해당 후보를 기존 서비스에 적용한 통합 결과는 별도 검증 전까지 완료로 주장하지 않는다. Prometheus와 Grafana의 보안 수정은 남아 있다.
+Tempo·Loki·Prometheus의 고정 소스 재빌드는 `Pinned observability image rebuild` 수동 CI에서 각각 실행할 수 있다. HIGH/CRITICAL 0건 이후에만 digest 후보를 게시하며, 후보 상태에는 실제 통합·서명·운영 배포 미확인을 명시한다. 해당 후보를 기존 서비스에 적용한 통합 결과는 별도 검증 전까지 완료로 주장하지 않는다. Prometheus와 Grafana의 보안 수정은 남아 있다.
+
+## Tempo와 Loki 수정 이미지
+
+[Tempo 후보 CI](https://github.com/automaster5013/AgentTrust/actions/runs/38101740338)와 [Loki 후보 CI](https://github.com/automaster5013/AgentTrust/actions/runs/38101741680)는 고정 upstream 소스를 Go 1.27.2와 x/net 0.60.0으로 재빌드했다. Syft 구성 요소는 각각 1,343개·1,321개이며 Trivy HIGH/CRITICAL 0건이다. 공식 라이선스와 원래 제품 버전을 유지한다. 후보 artifact archive digest와 보고서 checksum을 확인한 뒤 실제 registry digest를 로컬에 적용했고, 관측 9개·큐 연결 3개·Collector 장애 복구 4개 검사가 통과했다. 새 Compose 소스 빌드와 열세 이미지 전달에 두 서비스를 포함했다. 열세 이미지의 새 CI·서명 전달 결과는 완료 후 별도로 확인한다.
+
+Grafana 공식 플러그인 바이너리의 직접 수정은 기존 plugin 서명을 무효화하므로 서명 검증을 비활성화하지 않는다. 서버와 번들 플러그인의 수정 배포본을 따로 확인해야 한다. Prometheus의 신규 Dockerfile은 원래 React/Mantine UI와 내장 자산, prometheus·promtool 두 바이너리를 재빌드하도록 준비했으나 실제 원격 빌드·검사·통합 전에는 수정 완료가 아니다.

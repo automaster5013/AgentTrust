@@ -10,12 +10,13 @@ revision='1'*40;repository='automaster5013/AgentTrust'
 
 def raw(value):return json.dumps(value,separators=(',',':')).encode()
 
-def fixture(label,telemetry=False):
+def fixture(label,telemetry=False,observations=False):
     folder=directory/label;folder.mkdir()
     names=delivery.IMAGES+('telemetry',) if telemetry else delivery.IMAGES
+    if observations:names=delivery.IMAGES+('telemetry','tempo','loki')
     images={name:'ghcr.io/automaster5013/agenttrust-'+name+'@sha256:'+'1'*64 for name in names}
     values={'revision.txt':revision.encode()+b'\n'}
-    manifest={'schemaVersion':3 if telemetry else 2,'revision':revision,'images':images,'sourceIntegrationPassed':True,
+    manifest={'schemaVersion':4 if observations else 3 if telemetry else 2,'revision':revision,'images':images,'sourceIntegrationPassed':True,
               'registryImagesRuntimeVerified':True,'imageSecurityVerified':True,'keylessSignaturesVerified':True,
               'sbomAttestationsVerified':True,'deliveryStatus':'security-verified-signed','serverDeployed':False,
               'productionSecurityVerified':False,'officialObservabilitySecurityVerified':False}
@@ -45,6 +46,19 @@ def checksum(folder):
     return delivery.digest((folder/'checksums.json').read_bytes())
 
 class Boundaries(unittest.TestCase):
+    def test_observation_delivery_requires_each_storage_signature(self):
+        folder,pinned=fixture('observation-schema',observations=True)
+        self.assertEqual(13,len(delivery.validate(folder,revision,pinned,repository)[2]))
+        (folder/'loki.signature.bundle.json').unlink();pinned=checksum(folder)
+        with self.assertRaises(ValueError):delivery.validate(folder,revision,pinned,repository)
+
+    def test_observation_schema_cannot_be_unknown_or_downgraded(self):
+        folder,_=fixture('observation-downgrade',observations=True)
+        for schema in [3,5]:
+            manifest=json.loads((folder/'manifest.json').read_bytes());manifest['schemaVersion']=schema
+            (folder/'manifest.json').write_bytes(raw(manifest));pinned=checksum(folder)
+            with self.assertRaises(ValueError):delivery.validate(folder,revision,pinned,repository)
+
     def test_telemetry_delivery_requires_its_four_files_and_matching_schema(self):
         folder,pinned=fixture('telemetry-schema',telemetry=True)
         self.assertEqual(11,len(delivery.validate(folder,revision,pinned,repository)[2]))

@@ -60,7 +60,9 @@ services:
     depends_on:
       stack-observability-init:
         condition: service_completed_successfully
-    image: grafana/tempo:3.1.0@sha256:3076b8dcdfb32fd6bc5ccef85e7b7313e6199b9cb84366257fc17ecb696db5fd
+    build:
+      context: ./services/tempo
+    image: agenttrust-tempo:local
     user: '10001:10001'
     command: [-config.file=/etc/tempo.yaml, -target=all]
     volumes: [./infra/stack-observability/tempo.yaml:/etc/tempo.yaml:ro, stack-tempo-data:/var/tempo]
@@ -75,7 +77,9 @@ services:
     depends_on:
       stack-observability-init:
         condition: service_completed_successfully
-    image: grafana/loki:3.7.8@sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193
+    build:
+      context: ./services/loki
+    image: agenttrust-loki:local
     user: '10001:10001'
     command: [-config.file=/etc/loki.yaml]
     volumes: [./infra/stack-observability/loki.yaml:/etc/loki.yaml:ro, stack-loki-data:/var/loki]

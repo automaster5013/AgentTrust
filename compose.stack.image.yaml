@@ -21,3 +21,7 @@ services:
     image: ${STACK_MESSAGING_IMAGE:?Provide verified messaging image digest}
   stack-otel:
     image: ${STACK_TELEMETRY_IMAGE:?Provide verified telemetry image digest}
+  stack-tempo:
+    image: ${STACK_TEMPO_IMAGE:?Provide verified trace storage image digest}
+  stack-loki:
+    image: ${STACK_LOKI_IMAGE:?Provide verified log storage image digest}
