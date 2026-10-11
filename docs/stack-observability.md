@@ -1,6 +1,6 @@
 # 새 스택의 실제 관측 경로
 
-OpenTelemetry Collector 0.162.0, Prometheus 3.15.0, Tempo 3.1.0, Loki 3.7.8, Grafana 13.2.3을 digest로 고정해 별도 stack-* 서비스와 새 전용 볼륨에 실행한다. Java API/Gateway는 checksum으로 고정한 Java agent 2.32.0, Python은 고정 SDK 1.45.1을 사용한다. 기본 프로필에서는 계측을 활성화하지 않는다.
+OpenTelemetry Collector 0.162.0은 고정 OCB와 동일 버전의 upstream 구성 요소로 재빌드한다. Prometheus 3.15.0, Tempo 3.1.0, Loki 3.7.8, Grafana 13.2.3은 공식 digest를 고정하며 별도 stack-* 서비스와 새 전용 볼륨에 실행한다. Java API/Gateway는 checksum으로 고정한 Java agent 2.32.0, Python은 고정 SDK 1.45.1을 사용한다. 기본 프로필에서는 계측을 활성화하지 않는다.
 
 ```powershell
 python scripts/stack-observability-setup.py
@@ -29,3 +29,9 @@ Prometheus와 Loki는 7일 보존을 구성한다. 운영 백업·HA·장애 경
 - [OpenTelemetry Python context propagation](https://opentelemetry.io/docs/languages/python/propagation/)
 
 `python scripts/stack-observability-outage-smoke.py`는 이 프로젝트의 실행 중인 Collector만 확인 후 잠시 중지한다. 실제 통과/필수 차단 평가의 완료, 승인 필요 보류, 필수 실패 승인 거부, 통과 평가의 승인 후 반려, 복구 뒤 동일 거부와 새 큐 trace 연결의 네 검증을 통과했다. 모든 종료 경로에서 Collector와 자체 로그인 세션을 복구한다. 관측 중단은 실제 OPA 권한이나 불변 근거를 대체하지 않으며, 다른 관측 서비스/운영 장애 복구까지 검증한 것은 아니다.
+
+## Collector 소스 재빌드 검증
+
+`services/telemetry`는 실제 설정에서 사용하는 receiver, exporter, processor, health extension 8개와 설정 provider 3개를 고정한 Collector 배포다. Go 1.27.2, x/net 0.60.0, gRPC 1.83.2로 빌드하며 OCB 바이너리와 라이선스도 checksum으로 검증한다. 기술이나 기존 수집 경로를 대체하지 않는다. 로컬 실제 이미지의 Syft SBOM 468개 구성 요소와 Trivy HIGH/CRITICAL 0건을 확인했다. 교체 후 관측 9개, 큐 trace 부모 연결 3개, Collector 중단·복구 4개 검사가 통과했다. 생성된 Collector 모듈에는 자체 Go 테스트가 없으므로 이 결과를 단위 테스트 통과로 표현하지 않는다.
+
+Tempo와 Loki의 고정 소스 재빌드는 `Pinned observability image rebuild` 수동 CI에서 각각 실행할 수 있다. HIGH/CRITICAL 0건 이후에만 digest 후보를 게시하며, 후보 상태에는 실제 통합·서명·운영 배포 미확인을 명시한다. 해당 후보를 기존 서비스에 적용한 통합 결과는 별도 검증 전까지 완료로 주장하지 않는다. Prometheus와 Grafana의 보안 수정은 남아 있다.

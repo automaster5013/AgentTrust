@@ -35,9 +35,17 @@ def validate(directory,revision,checksums_hash,repository):
     require(re.fullmatch('[a-f0-9]{40}',revision) and re.fullmatch('[a-f0-9]{64}',checksums_hash))
     require(re.fullmatch('[A-Za-z0-9-]+/[A-Za-z0-9_.-]+',repository))
     directory=directory.resolve(strict=True)
-    require(directory.is_dir() and {path.name for path in directory.iterdir()}==FILES)
+    require(directory.is_dir())
+    manifest_path=directory/'manifest.json'
+    require(manifest_path.is_file() and not manifest_path.is_symlink() and 0<manifest_path.stat().st_size<=MAX_FILE)
+    manifest_preview=json_bytes(manifest_path.read_bytes())
+    if manifest_preview.get('schemaVersion')==2:names=IMAGES
+    elif manifest_preview.get('schemaVersion')==3:names=IMAGES+('telemetry',)
+    else:raise ValueError('Unsupported delivery schema')
+    files={name+'.'+suffix for name in names for suffix in ['cdx.json','trivy.json','signature.bundle.json','sbom.bundle.json']}|{'revision.txt','manifest.json','runtime-identity.json','security-proof.json','checksums.json'}
+    require({path.name for path in directory.iterdir()}==files)
     values={};total=0
-    for name in sorted(FILES):
+    for name in sorted(files):
         path=directory/name
         require(path.is_file() and not path.is_symlink() and path.resolve().parent==directory)
         size=path.stat().st_size
@@ -50,11 +58,11 @@ def validate(directory,revision,checksums_hash,repository):
     require(values['revision.txt'].decode('utf-8').strip()==revision)
     require(digest(values['checksums.json'])==checksums_hash)
     checksums=json_bytes(values['checksums.json'])
-    require(set(checksums)==FILES-{'checksums.json'})
+    require(set(checksums)==files-{'checksums.json'})
     require(all(isinstance(value,str) and re.fullmatch('[a-f0-9]{64}',value) and digest(values[name])==value for name,value in checksums.items()))
     manifest=json_bytes(values['manifest.json']);runtime=json_bytes(values['runtime-identity.json']);proof=json_bytes(values['security-proof.json'])
-    require(manifest['schemaVersion']==2 and manifest['revision']==runtime['revision']==proof['revision']==revision)
-    require(set(manifest['images'])==set(runtime['images'])==set(proof['images'])==set(IMAGES))
+    require(manifest==manifest_preview and manifest['revision']==runtime['revision']==proof['revision']==revision)
+    require(set(manifest['images'])==set(runtime['images'])==set(proof['images'])==set(names))
     require(manifest['images']==runtime['images'] and runtime['runtimeImageIdentityVerified'] is True)
     require(all(manifest[key] is True for key in ['sourceIntegrationPassed','registryImagesRuntimeVerified','imageSecurityVerified','keylessSignaturesVerified','sbomAttestationsVerified']))
     require(manifest['deliveryStatus']=='security-verified-signed')
@@ -66,7 +74,7 @@ def validate(directory,revision,checksums_hash,repository):
     require(type(proof['highCriticalFindings']) is int and proof['highCriticalFindings']==0)
     owner=repository.split('/')[0].lower()
     records=[]
-    for name in IMAGES:
+    for name in names:
         reference=manifest['images'][name]
         require(re.fullmatch('ghcr\\.io/'+re.escape(owner)+'/agenttrust-'+name+'@sha256:[a-f0-9]{64}',reference))
         image_digest=reference.split('@sha256:')[1]

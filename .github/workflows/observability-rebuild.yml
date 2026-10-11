@@ -1,0 +1,67 @@
+name: Pinned observability image rebuild
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        type: choice
+        required: true
+        options: [tempo, loki]
+permissions:
+  contents: read
+concurrency:
+  group: observation-rebuild-${{ github.ref }}-${{ inputs.component }}
+  cancel-in-progress: false
+jobs:
+  build-scan:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    permissions:
+      contents: read
+      packages: write
+    env:
+      COMPONENT: ${{ inputs.component }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Validate fixed component and source security
+        run: |
+          case "$COMPONENT" in tempo|loki) ;; *) exit 1 ;; esac
+          docker build -t agenttrust-security:local tools/security
+          python3 scripts/stack-security-source.py
+      - name: Build pinned upstream source with patched dependencies
+        run: |
+          docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" -t "agenttrust-$COMPONENT:local" "services/$COMPONENT"
+      - name: Generate SBOM and refuse all HIGH or CRITICAL findings
+        run: python3 scripts/stack-observability-security.py --name "$COMPONENT" --reference "agenttrust-$COMPONENT:local"
+      - name: Publish immutable candidate for integration review
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          export DOCKER_CONFIG="$RUNNER_TEMP/observation-docker-config"
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/agenttrust-$COMPONENT:$GITHUB_SHA"
+          docker tag "agenttrust-$COMPONENT:local" "$image"
+          docker push "$image"
+          docker pull "$image"
+          mkdir -p observation-candidate
+          docker image inspect "$image" --format '{{index .RepoDigests 0}}' > "observation-candidate/$COMPONENT.txt"
+          printf '%s\n' "$GITHUB_SHA" > observation-candidate/revision.txt
+          printf '%s\n' '{"runtimeIntegrationVerified":false,"keylessSignatureVerified":false,"productionDeploymentApproved":false,"actualDeploymentPerformed":false}' > observation-candidate/status.json
+          docker logout ghcr.io
+      - name: Preserve bounded public diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: observation-rebuild-${{ inputs.component }}-${{ github.sha }}
+          include-hidden-files: true
+          path: |
+            .local/stack-observation-security-*/summary.json
+            .local/stack-observation-security-*/reports/*.cdx.json
+            .local/stack-observation-security-*/reports/*.trivy.json
+            .local/stack-security-source-*/summary.json
+            observation-candidate/
+          if-no-files-found: error
+          retention-days: 7

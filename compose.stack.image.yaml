@@ -19,3 +19,5 @@ services:
     image: ${STACK_DATABASE_IMAGE:?Provide verified database image digest}
   stack-nats:
     image: ${STACK_MESSAGING_IMAGE:?Provide verified messaging image digest}
+  stack-otel:
+    image: ${STACK_TELEMETRY_IMAGE:?Provide verified telemetry image digest}

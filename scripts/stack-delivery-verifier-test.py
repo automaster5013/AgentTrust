@@ -10,18 +10,19 @@ revision='1'*40;repository='automaster5013/AgentTrust'
 
 def raw(value):return json.dumps(value,separators=(',',':')).encode()
 
-def fixture(label):
+def fixture(label,telemetry=False):
     folder=directory/label;folder.mkdir()
-    images={name:'ghcr.io/automaster5013/agenttrust-'+name+'@sha256:'+'1'*64 for name in delivery.IMAGES}
+    names=delivery.IMAGES+('telemetry',) if telemetry else delivery.IMAGES
+    images={name:'ghcr.io/automaster5013/agenttrust-'+name+'@sha256:'+'1'*64 for name in names}
     values={'revision.txt':revision.encode()+b'\n'}
-    manifest={'schemaVersion':2,'revision':revision,'images':images,'sourceIntegrationPassed':True,
+    manifest={'schemaVersion':3 if telemetry else 2,'revision':revision,'images':images,'sourceIntegrationPassed':True,
               'registryImagesRuntimeVerified':True,'imageSecurityVerified':True,'keylessSignaturesVerified':True,
               'sbomAttestationsVerified':True,'deliveryStatus':'security-verified-signed','serverDeployed':False,
               'productionSecurityVerified':False,'officialObservabilitySecurityVerified':False}
     runtime={'revision':revision,'images':images,'runtimeImageIdentityVerified':True}
     proof={'revision':revision,'images':{},'completed':True,'keylessIdentity':'https://github.com/'+repository+'/.github/workflows/original-stack.yml@refs/heads/main',
            'oidcIssuer':'https://token.actions.githubusercontent.com','highCriticalFindings':0,'serverDeployed':False}
-    for name in delivery.IMAGES:
+    for name in names:
         sbom={'bomFormat':'CycloneDX','components':[]};scan={'SchemaVersion':2,'Results':[{}]}
         values[name+'.cdx.json']=raw(sbom);values[name+'.trivy.json']=raw(scan)
         for suffix,predicate_type,predicate in [('signature.bundle.json','https://sigstore.dev/cosign/sign/v1',{}),('sbom.bundle.json','https://cyclonedx.org/bom',sbom)]:
@@ -39,11 +40,21 @@ def fixture(label):
     return folder,checksum(folder)
 
 def checksum(folder):
-    values={name:hashlib.sha256((folder/name).read_bytes()).hexdigest() for name in delivery.FILES-{'checksums.json'}}
+    values={path.name:hashlib.sha256(path.read_bytes()).hexdigest() for path in folder.iterdir() if path.is_file() and path.name!='checksums.json'}
     (folder/'checksums.json').write_bytes(raw(values))
     return delivery.digest((folder/'checksums.json').read_bytes())
 
 class Boundaries(unittest.TestCase):
+    def test_telemetry_delivery_requires_its_four_files_and_matching_schema(self):
+        folder,pinned=fixture('telemetry-schema',telemetry=True)
+        self.assertEqual(11,len(delivery.validate(folder,revision,pinned,repository)[2]))
+        manifest=json.loads((folder/'manifest.json').read_bytes());manifest['schemaVersion']=2
+        (folder/'manifest.json').write_bytes(raw(manifest));pinned=checksum(folder)
+        with self.assertRaises(ValueError):delivery.validate(folder,revision,pinned,repository)
+        manifest['schemaVersion']=3;(folder/'manifest.json').write_bytes(raw(manifest))
+        (folder/'telemetry.sbom.bundle.json').unlink();pinned=checksum(folder)
+        with self.assertRaises(ValueError):delivery.validate(folder,revision,pinned,repository)
+
     def test_linux_docker_verifier_matches_nonroot_bundle_owner(self):
         verifier=delivery.Verifier.__new__(delivery.Verifier)
         verifier.directory=directory;verifier.docker_tools=True;verifier.root=None;verifier.image='sha256:'+'1'*64

@@ -5,15 +5,15 @@ def run(args):return subprocess.run(args,cwd=root,capture_output=True,text=True,
 stage='prepare'
 try:
  revision=run(['git','rev-parse','HEAD']).stdout.strip();assert re.fullmatch('[a-f0-9]{40}',revision)
- references={'core-api':os.environ['STACK_CORE_IMAGE'],'ai-worker':os.environ['STACK_WORKER_IMAGE'],'console':os.environ['STACK_CONSOLE_IMAGE'],'opa':os.environ['STACK_OPA_IMAGE'],'identity':os.environ['STACK_IDENTITY_IMAGE'],'gateway':os.environ['STACK_GATEWAY_IMAGE'],'object-store':os.environ['STACK_OBJECT_IMAGE'],'database':os.environ['STACK_DATABASE_IMAGE'],'local-model':os.environ['STACK_MODEL_IMAGE'],'messaging':os.environ['STACK_MESSAGING_IMAGE']};verified={}
+ references={'core-api':os.environ['STACK_CORE_IMAGE'],'ai-worker':os.environ['STACK_WORKER_IMAGE'],'console':os.environ['STACK_CONSOLE_IMAGE'],'opa':os.environ['STACK_OPA_IMAGE'],'identity':os.environ['STACK_IDENTITY_IMAGE'],'gateway':os.environ['STACK_GATEWAY_IMAGE'],'object-store':os.environ['STACK_OBJECT_IMAGE'],'database':os.environ['STACK_DATABASE_IMAGE'],'local-model':os.environ['STACK_MODEL_IMAGE'],'messaging':os.environ['STACK_MESSAGING_IMAGE'],'telemetry':os.environ['STACK_TELEMETRY_IMAGE']};verified={}
  for name,image in references.items():
   stage=name+'-image-identity'
   assert re.fullmatch(r'ghcr\.io/[a-z0-9-]+/agenttrust-'+name+r'@sha256:[a-f0-9]{64}',image)
-  service={'database':'db','local-model':'ollama','messaging':'nats'}.get(name,name)
+  service={'database':'db','local-model':'ollama','messaging':'nats','telemetry':'otel'}.get(name,name)
   container=json.loads(run(['docker','inspect','agenttrust-stack-'+service+'-1']).stdout)[0];expected=json.loads(run(['docker','image','inspect',image]).stdout)[0]
   labels=container['Config']['Labels'];assert labels['com.docker.compose.project']=='agenttrust' and labels['com.docker.compose.service']=='stack-'+service and labels['org.opencontainers.image.revision']==revision
   assert container['Image']==expected['Id'] and container['State']['Health']['Status']=='healthy'
-  assert container['HostConfig']['ReadonlyRootfs'] and container['HostConfig']['CapDrop']==['ALL'] and 'no-new-privileges:true' in container['HostConfig']['SecurityOpt'];assert container['Config']['User']=={'core-api':'10001:10001','ai-worker':'10001','console':'node','opa':'10001','identity':'1000','gateway':'10001:10001','object-store':'10001:10001','database':'70:70','local-model':'10001:10001','messaging':'10001'}[name]
+  assert container['HostConfig']['ReadonlyRootfs'] and container['HostConfig']['CapDrop']==['ALL'] and 'no-new-privileges:true' in container['HostConfig']['SecurityOpt'];assert container['Config']['User']=={'core-api':'10001:10001','ai-worker':'10001','console':'node','opa':'10001','identity':'1000','gateway':'10001:10001','object-store':'10001:10001','database':'70:70','local-model':'10001:10001','messaging':'10001','telemetry':'10001:10001'}[name]
   verified[name]=image
  stage='java-runtimes'
  assert 'version "21.' in run(['docker','exec','agenttrust-stack-core-api-1','java','-version']).stderr
@@ -24,6 +24,8 @@ try:
  assert 'Keycloak 26.8.0' in run(['docker','exec','agenttrust-stack-identity-1','/opt/keycloak/bin/kc.sh','--version']).stdout
  assert 'RELEASE.2025-10-15T17-29-55Z' in run(['docker','exec','agenttrust-stack-object-store-1','minio','--version']).stdout
  provision=json.loads(run(['docker','inspect','agenttrust-stack-object-init-1']).stdout)[0];assert provision['State']['ExitCode']==0 and provision['State']['Status']=='exited' and provision['Image']==json.loads(run(['docker','image','inspect',references['object-store']]).stdout)[0]['Id']
+ stage='telemetry-version'
+ assert '0.162.0' in run(['docker','exec','agenttrust-stack-otel-1','/otelcol','--version']).stdout
  stage='messaging-version'
  assert run(['docker','exec','agenttrust-stack-nats-1','/nats-server','--version']).stdout.strip()=='nats-server: v2.12.15'
  stage='local-model-version'
@@ -36,6 +38,7 @@ try:
  stage='identity-metadata'
  with urllib.request.urlopen('http://127.0.0.1:4321/api/auth-info',timeout=10) as response:assert json.loads(response.read(4097))['identityProvider']=='keycloak'
  result={'revision':revision,'images':verified,'actualRuntimes':{'core-api':'Java 21','ai-worker':'Python 3.14','console':'Node.js 24','opa':'OPA 1.21.1','identity':'Keycloak 26.8.0','gateway':'Java 21 / Spring WebFlux','cache':'Redis 8.2','object-store':'MinIO RELEASE.2025-10-15T17-29-55Z','database':'PostgreSQL 17 / pgvector 0.8.7','local-model':'Ollama 0.40.2 CPU / patched Go 1.27.2','messaging':'NATS JetStream 2.12.15 / patched Go 1.27.2'},'identityProvider':'keycloak','runtimeImageIdentityVerified':True,'serverDeployed':False}
+ result['actualRuntimes']['telemetry']='OpenTelemetry Collector 0.162.0 / patched Go 1.27.2'
  directory=root/'stack-delivery';directory.mkdir(exist_ok=True);(directory/'runtime-identity.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
  print(json.dumps({'completed':True,'images':len(verified),'actualRuntimesVerified':True,'serverDeployed':False}))
 except Exception as error:
