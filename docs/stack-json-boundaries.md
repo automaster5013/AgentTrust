@@ -15,3 +15,5 @@ python scripts/stack-json-text-smoke.py --stalled-body
 이 명령은 자기 OIDC 세션으로 잘못된 문자/인코딩 요청 여섯 개의 실제 거부 경로를 확인하고, 종료되지 않은 chunked 요청 본문이 시간 제한으로 중단되는지도 검사한다. 새 버전·평가·승인·모델 호출을 생성하지 않으며, 전후 15개 업무 테이블의 지문을 대조하고 자기 세션을 종료한다. 로컬의 한도와 검증은 운영 ingress·TLS·고객 부하 SLO의 완료를 뜻하지 않는다.
 
 동일 객체의 중복 필드와 하나의 요청에 연속된 JSON 문서도 400으로 거부한다. 서로 다른 객체에서 같은 필드 이름을 쓰는 정상 문서는 허용한다. 실제 검사는 존재하지 않는 합성 실행 ID를 먼저 확인한 뒤 중복 결정 필드와 두 문서를 전송하므로 승인 데이터가 생성되지 않는다.
+
+Runtime verification for source revision `15fce601ebdfba5fdf3c886a9a73f3fc27d9e221`: 10 actual OIDC/BFF controls passed, including a stalled chunked body released after 10.024 seconds with HTTP 502. All 15 business tables were unchanged and owned application/identity sessions closed. The Java 85-test build and TypeScript 69 tests passed. [Full source and registry-image CI](https://github.com/automaster5013/AgentTrust/actions/runs/38147084755) completed successfully.

@@ -220,3 +220,11 @@ if ($actual -ne $expected) { throw 'Delivery manifest checksum mismatch' }
 [고정 CI 실행 37232066978](https://github.com/automaster5013/AgentTrust/actions/runs/37232066978)의 커밋 `0ce3e74bd597544c66b7d2e68c10d57e5efe5353`에서 333개 테스트·후보 발행·이미지 실행·승격이 모두 성공했다. 실제 전달 ZIP 체크섬과 오프라인 묶음, 독립 지정한 저장소·revision·실행/시도·digest의 온라인 GitHub 기록을 대조했다. 이미지 서명이나 독립 provenance 인증을 했다고 주장하지 않는다.
 
 검증 digest `ghcr.io/automaster5013/agenttrust@sha256:c44ef96aa21b89c85205dfd05140142c9d9e531023ae71d077182679b7841cd5`를 기존 agenttrust API·워커에만 적용했다. 실제 이미지 식별·격리, 전환 전후 저장 근거 보존과 기본 10단계·기준 비교 12단계의 서명 시연·정리를 확인하고 소스 컨테이너로 복귀했다. LogiTrack은 변경하지 않았다. 같은 스키마의 로컬 기존 설치 점검이며 새 설치·이전 스키마 롤백·무중단·상용 서버 배포·SLA 검증이 아니다. 보고서와 키는 비공개 `.local`에 보관한다.
+
+## Original-stack delivery validation — 2026-10-11
+
+Implementation revision `15fce601ebdfba5fdf3c886a9a73f3fc27d9e221` passed [original-stack CI](https://github.com/automaster5013/AgentTrust/actions/runs/38147084755) and [legacy installation CI](https://github.com/automaster5013/AgentTrust/actions/runs/38147084593). The authenticated source diagnostic artifact confirms 21 browser tests passed. JSON boundary checks passed ten actual controls in both source and exact registry-image execution environments. Fifteen image/SBOM pairs were independently verified locally, including offline certificate-tampering rejection; see [security evidence](stack-security.md). No production server was deployed.
+
+Local observations: a 180-minute pre-apply read-only soak completed 36,000 requests with zero failures; a separate 90-minute independent-key soak completed 180 signed reviews. After applying only the core and console changes, another 60-minute soak completed 12,000 reads with zero failures and 120 signed reviews. Each completed soak independently verified all 15 business-table fingerprints and its own session cleanup. These synthetic, bounded observations do not establish customer throughput or an SLA.
+
+The existing JavaScript business installation and LogiTrack assets remain preserved. Runtime changes retain two rollback image references. Docker image security evidence covers the 15 listed delivery components; the separate Grafana blocker and production IdP/TLS, trust-key operations and full-system recovery work remain open.

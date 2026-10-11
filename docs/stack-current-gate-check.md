@@ -26,3 +26,5 @@ Java의 시간·입력 경계 테스트, TypeScript의 실제 Ed25519·변조·�
 `python scripts/stack-current-gate-check-smoke.py`는 먼저 완료된 참조 정답 캠페인 검사 결과를 찾아 기존 캠페인만 읽는다. 자체 Keycloak/애플리케이션 세션을 종료하며 새 모델 호출이나 평가를 생성하지 않는다. GitHub 소스 통합과 게시 이미지 실행 검증에서도 이 명령을 실행한다. 특정 커밋의 CI 완료 여부는 해당 실행 결과로 별도 확인한다.
 
 브라우저 검사에는 실제 서명 검증, 다른 요청으로 재사용한 응답의 거절, 요청 실패 시 이전 표시 제거와 표시 만료가 포함된다. 로컬 검증은 운영 서버 배포나 배포 권한의 최종 검증을 뜻하지 않는다.
+
+At source revision `15fce601ebdfba5fdf3c886a9a73f3fc27d9e221`, actual browser checks verified expiry even when the wall clock moves backward, cancellation of an earlier campaign selection, bounded timeout of a stalled request and a fresh retry with an actual Java signature. A 90-minute independent-key review soak completed 180 signed reviews without business writes; all 15 tables and owned-session cleanup passed. [Full source and registry-image CI](https://github.com/automaster5013/AgentTrust/actions/runs/38147084755) passed. Development trust remains explicit and deployment authority remains false.
