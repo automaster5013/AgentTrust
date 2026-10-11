@@ -1,7 +1,7 @@
 FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS ui
 RUN apk add --no-cache bash make gzip
 ADD --checksum=sha256:eb57341b8b54fddaeededb15dbb77cc30a11750cecca301bfda02478fdff3a00 https://registry.npmjs.org/pnpm/-/pnpm-12.11.2.tgz /pnpm.tar.gz
-RUN mkdir /pnpm && tar -xzf /pnpm.tar.gz --strip-components=1 -C /pnpm && ln -s /pnpm/bin/pnpm.cjs /usr/local/bin/pnpm
+RUN mkdir /pnpm && tar -xzf /pnpm.tar.gz --strip-components=1 -C /pnpm && ln -s /pnpm/pnpm /usr/local/bin/pnpm && pnpm --version
 ADD --checksum=sha256:eee7ec029ffdba7d9ee59171cad5ddaff10e71514b0bae1a6fde6dc1ae99e181 https://codeload.github.com/prometheus/prometheus/tar.gz/5241a27fe3c6983549fccc32f6e65917408c63cd /source.tar.gz
 RUN mkdir /source && tar -xzf /source.tar.gz --strip-components=1 -C /source
 WORKDIR /source/web/ui
