@@ -1,0 +1,84 @@
+{
+  "grafanaVersion": "13.2.3",
+  "plugins": [
+    {
+      "downloadUrl": "https://grafana.com/api/plugins/elasticsearch/versions/12.9.2/download?os=linux&arch=amd64",
+      "id": "elasticsearch",
+      "sha256": "abda2fe09dc33779e9e2328601a89c357193dc7086b75866f02f7929ff174399",
+      "version": "12.9.2"
+    },
+    {
+      "downloadUrl": "https://grafana.com/api/plugins/grafana-postgresql-datasource/versions/13.0.4/download?os=linux&arch=amd64",
+      "id": "grafana-postgresql-datasource",
+      "sha256": "d34f44bd13213502de4394955fcc170d70fb822531c181bff0179f216c35a0e0",
+      "version": "13.0.4"
+    },
+    {
+      "downloadUrl": "https://grafana.com/api/plugins/grafana-pyroscope-datasource/versions/13.0.7/download?os=linux&arch=amd64",
+      "id": "grafana-pyroscope-datasource",
+      "sha256": "397266357522001d19433d3b77c49f6bbf2210aea5e2a8d51bedb93ebc74b773",
+      "version": "13.0.7"
+    },
+    {
+      "downloadUrl": "https://grafana.com/api/plugins/influxdb/versions/13.1.7/download?os=linux&arch=amd64",
+      "id": "influxdb",
+      "sha256": "640a19f8494d41b2d4f12b10670348506698fd3b0a5ac9e32e9601cb65b40897",
+      "version": "13.1.7"
+    },
+    {
+      "downloadUrl": "https://grafana.com/api/plugins/jaeger/versions/13.0.5/download?os=linux&arch=amd64",
+      "id": "jaeger",
+      "sha256": "dc57642e289ba81a2dd7179b0f7e945966f5db1234c7aaf9e470a2db34207ce1",
+      "version": "13.0.5"
+    },
+    {
+      "downloadUrl": "https://grafana.com/api/plugins/loki/versions/13.2.2/download?os=linux&arch=amd64",
+      "id": "loki",
+      "sha256": "0d1f5794d34febc54e55ac05ac92ea4ad6548ec3f2521865116c9ed46f7d55e9",
+      "version": "13.2.2"
+    },
+    {
+      "downloadUrl": "https://grafana.com/api/plugins/mssql/versions/13.0.7/download?os=linux&arch=amd64",
+      "id": "mssql",
+      "sha256": "4c7482151acda930ff35b45bafa0d90ec8636c8f92350a20a287496bf7e202b0",
+      "version": "13.0.7"
+    },
+    {
+      "downloadUrl": "https://grafana.com/api/plugins/mysql/versions/13.1.4/download?os=linux&arch=amd64",
+      "id": "mysql",
+      "sha256": "70ad88d3a304c677ef59603adb644ff9958d3abaae773793b8710d69651845c6",
+      "version": "13.1.4"
+    },
+    {
+      "downloadUrl": "https://grafana.com/api/plugins/opentsdb/versions/13.0.4/download?os=linux&arch=amd64",
+      "id": "opentsdb",
+      "sha256": "5fbe65a810453d7edc40e968fb3e19f1114d17d82401c4806727eee5b2f7f612",
+      "version": "13.0.4"
+    },
+    {
+      "downloadUrl": "https://grafana.com/api/plugins/prometheus/versions/13.2.3/download?os=linux&arch=amd64",
+      "id": "prometheus",
+      "sha256": "8bdd6583e398f84d497dabec0287563b9eee471d711dea08a21482db5cd5a294",
+      "version": "13.2.3"
+    },
+    {
+      "downloadUrl": "https://grafana.com/api/plugins/stackdriver/versions/12.6.2/download?os=linux&arch=amd64",
+      "id": "stackdriver",
+      "sha256": "4792fb5705567b03dc0089db1bd688fbc541f9b8bb47e40488b7b6a32a19bf5a",
+      "version": "12.6.2"
+    },
+    {
+      "downloadUrl": "https://grafana.com/api/plugins/tempo/versions/13.2.4/download?os=linux&arch=amd64",
+      "id": "tempo",
+      "sha256": "a89fa4ee83a61e58dac30eae3ce42ae6f677545d05e419b88f0a6f5f6cfdf8e7",
+      "version": "13.2.4"
+    },
+    {
+      "downloadUrl": "https://grafana.com/api/plugins/zipkin/versions/12.4.9/download?os=linux&arch=amd64",
+      "id": "zipkin",
+      "sha256": "94e67f5f4236925282a88a4cf7407582310fd4efa77cde1a67252e57fbd63b15",
+      "version": "12.4.9"
+    }
+  ],
+  "schemaVersion": 1
+}

@@ -5,7 +5,7 @@ on:
       component:
         type: choice
         required: true
-        options: [tempo, loki, prometheus]
+        options: [tempo, loki, prometheus, grafana]
 permissions:
   contents: read
 concurrency:
@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build-scan:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || (github.ref == 'refs/heads/grafana-official-security-candidate' && inputs.component == 'grafana')
     runs-on: ubuntu-latest
     timeout-minutes: 65
     permissions:
@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0
       - name: Validate fixed component and source security
         run: |
-          case "$COMPONENT" in tempo|loki|prometheus) ;; *) exit 1 ;; esac
+          case "$COMPONENT" in tempo|loki|prometheus|grafana) ;; *) exit 1 ;; esac
           docker build -t agenttrust-security:local tools/security
           python3 scripts/stack-security-source.py
       - name: Build pinned upstream source with patched dependencies
@@ -36,6 +36,9 @@ jobs:
           docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" -t "agenttrust-$COMPONENT:local" "services/$COMPONENT"
       - name: Generate SBOM and refuse all HIGH or CRITICAL findings
         run: python3 scripts/stack-observability-security.py --name "$COMPONENT" --reference "agenttrust-$COMPONENT:local"
+      - name: Verify all official Grafana plugin signatures in isolated runtime
+        if: inputs.component == 'grafana'
+        run: python3 scripts/stack-grafana-signature-probe.py
       - name: Publish immutable candidate for integration review
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -62,6 +65,7 @@ jobs:
             .local/stack-observation-security-*/reports/*.cdx.json
             .local/stack-observation-security-*/reports/*.trivy.json
             .local/stack-security-source-*/summary.json
+            .local/stack-grafana-signatures-*/summary.json
             observation-candidate/
           if-no-files-found: error
           retention-days: 7
