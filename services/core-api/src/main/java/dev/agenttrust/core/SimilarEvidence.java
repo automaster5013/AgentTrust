@@ -15,13 +15,17 @@ import org.springframework.web.server.ResponseStatusException;
 public class SimilarEvidence {
  private final RunService runs;private final JdbcTemplate jdbc;private final ObjectMapper mapper;private final List<DemoUser> scopes;private final String token;
  private final BoundedJsonHttp http=new BoundedJsonHttp();
+ private record FeaturePosition(java.sql.Timestamp completedAt,UUID id){}
+ private final Map<String,FeaturePosition> positions=new HashMap<>();
  public SimilarEvidence(RunService runs,JdbcTemplate jdbc,ObjectMapper mapper,@Value("${agenttrust.demo-credentials-file}") String file) throws Exception {
   this.runs=runs;this.jdbc=jdbc;this.mapper=mapper;token=Files.readString(Path.of("/run/secrets/stack-worker-token"));if(!token.matches("[a-f0-9]{64}"))throw new IllegalStateException("Feature configuration unavailable");
   var known=new HashSet<String>();var rows=new ArrayList<DemoUser>();for(var row:mapper.readTree(Files.readString(Path.of(file)))){UUID org=UUID.fromString(row.path("organizationId").asText()),project=UUID.fromString(row.path("projectId").asText());if(known.add(org+"/"+project))rows.add(new DemoUser("feature-indexer","unused",org,project,UUID.fromString(row.path("actorId").asText()),"viewer"));}scopes=List.copyOf(rows);
  }
  @Scheduled(fixedDelay=2000,initialDelay=4000)
- void indexPending(){for(var user:scopes){try{var rows=runs.scoped(user,()->jdbc.queryForList("SELECT c.run_id FROM stack_run_results c LEFT JOIN stack_rule_vectors v ON v.run_id=c.run_id WHERE c.organization_id=? AND c.project_id=? AND v.run_id IS NULL AND c.result->>'executionEngine' IN ('python-synthetic','python-unavailable','java-synthetic','python-ollama','python-openai','python-openai-compatible') ORDER BY c.completed_at,c.run_id LIMIT 20",user.organizationId(),user.projectId()));
+ void indexPending(){for(var user:scopes){try{String scope=user.organizationId()+"/"+user.projectId();var position=positions.get(scope);var arguments=new ArrayList<Object>(List.of(user.organizationId(),user.projectId()));String boundary="";if(position!=null){boundary=" AND (c.completed_at,c.run_id)>(?,?)";arguments.add(position.completedAt());arguments.add(position.id());}String next=boundary;
+  var rows=runs.scoped(user,()->jdbc.queryForList("SELECT c.run_id,c.completed_at FROM stack_run_results c LEFT JOIN stack_rule_vectors v ON v.run_id=c.run_id WHERE c.organization_id=? AND c.project_id=? AND v.run_id IS NULL AND c.result->>'executionEngine' IN ('python-synthetic','python-unavailable','java-synthetic','python-ollama','python-openai','python-openai-compatible')"+next+" ORDER BY c.completed_at,c.run_id LIMIT 20",arguments.toArray()));
   indexRows(user,rows);
+  if(rows.isEmpty())positions.remove(scope);else{var last=rows.getLast();positions.put(scope,new FeaturePosition((java.sql.Timestamp)last.get("completed_at"),(UUID)last.get("run_id")));}
  }catch(Exception unavailable){/* Retry unavailable scopes independently. */}}}
  void indexRows(DemoUser user,List<Map<String,Object>> rows){
   if(rows.size()>20)throw new IllegalArgumentException("Feature batch exceeds limit");
