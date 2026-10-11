@@ -48,7 +48,9 @@ try:
     assert create(admin,agent,dataset,baseline['id'],60,key)['id']==candidate['id']
     create(admin,agent,dataset,baseline['id'],61,key,409);create(admin,agent,dataset,None,None,key,409)
     create(admin,agent,dataset,baseline['id'],None,expected=400);create(admin,agent,dataset,None,60,expected=400)
-    for age in [59,86401]:create(admin,agent,dataset,baseline['id'],age,expected=400)
+    for age in [59,86401,60.5,'60',True]:create(admin,agent,dataset,baseline['id'],age,expected=400)
+    admin.request('versions/agents','POST',{'key':'baseline-agent-'+suffix,'version':1.5,'provider':'synthetic','description':'Fractional version must fail'},expected=400)
+    admin.request('versions/datasets','POST',{'key':'baseline-data-'+suffix,'version':1.5,'cases':[{'id':'required','scenario':'pass','required':True}]},expected=400)
     checked('atomic baseline admission and exact replay bind age; changed and partial parameters refused')
     other=admin.request('versions/agents','POST',{'key':'baseline-other-'+suffix,'version':1,'provider':'synthetic','description':'Wrong agent name'})
     create(admin,other,dataset,baseline['id'],3600,expected=409)

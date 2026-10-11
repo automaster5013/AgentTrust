@@ -88,6 +88,13 @@ test_baseline_regression_blocks_and_unknown_evidence_is_inconclusive if {
     not other.deploymentAllowed
 }
 
+test_execution_error_remains_inconclusive_even_with_a_reported_regression if {
+    requirements := object.union(baseline,{"comparison":{"status":"regression","deploymentAuthority":false}})
+    result := data.agenttrust.release.decision with input as object.union(base,{"state":"failed","evaluationDecision":"inconclusive","releaseRequirements":requirements})
+    result.decision == "inconclusive"
+    not result.deploymentAllowed
+}
+
 test_malformed_baseline_bound_never_allows_release if {
     every age in [59,86401,60.5,"60",null] {
         not data.agenttrust.release.decision.deploymentAllowed with input as object.union(base,{"releaseRequirements":object.union(baseline,{"evidenceMaxAgeSeconds":age})})

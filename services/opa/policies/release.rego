@@ -95,6 +95,7 @@ outcome := "block" if {
 } else := "block" if {
     valid_scope
     release_requirements.enabled == true
+    input.state == "succeeded"
     release_requirements.comparison.status == "regression"
 } else := "block" if {
     valid_scope

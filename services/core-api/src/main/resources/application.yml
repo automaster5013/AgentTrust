@@ -34,6 +34,7 @@ spring:
       allow-coercion-of-scalars: false
     deserialization:
       fail-on-unknown-properties: true
+      accept-float-as-int: false
 management:
   endpoints:
     web:
