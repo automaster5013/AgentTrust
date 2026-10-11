@@ -157,3 +157,5 @@ npm.cmd test
 ![v0.163 점검한 기존 기준 선택](docs/evidence/acceptance-selection-v163.jpg)
 
 평가 실행 중단 흐름과 권한·근거 보존 계약은 [평가·캠페인 취소](docs/stack-cancellation.md)를 참고하세요.
+
+이전 평가의 조직별 페이지 탐색은 [프로젝트 평가 이력](docs/stack-run-history.md)을 참고하세요.

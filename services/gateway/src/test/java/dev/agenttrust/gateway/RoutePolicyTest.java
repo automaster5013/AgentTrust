@@ -4,6 +4,15 @@ import org.springframework.http.HttpMethod;
 import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 class RoutePolicyTest {
+    @org.junit.jupiter.api.Test void runHistoryNavigationIsBoundedReadOnlyAndProtected(){
+        assertTrue(RoutePolicy.allowed("/api/run-history",HttpMethod.GET));
+        assertTrue(RoutePolicy.allowed("/api/run-history/"+"A".repeat(84),HttpMethod.GET));
+        assertTrue(RoutePolicy.protectedPath("/api/run-history"));
+        assertTrue(RoutePolicy.protectedPath("/api/run-history/"+"A".repeat(84)));
+        assertFalse(RoutePolicy.allowed("/api/run-history/"+"A".repeat(80),HttpMethod.GET));
+        assertFalse(RoutePolicy.allowed("/api/run-history",HttpMethod.POST));
+        assertFalse(RoutePolicy.allowed("/api/run-history/"+"A".repeat(84),HttpMethod.POST));
+    }
  @Test void cancellationIsABoundedProtectedWriteOnly(){String id="11111111-1111-4111-8111-111111111111";for(String kind:new String[]{"runs","campaigns"}){String path="/api/"+kind+"/"+id+"/cancel";assertTrue(RoutePolicy.allowed(path,HttpMethod.POST));assertTrue(RoutePolicy.protectedPath(path));assertFalse(RoutePolicy.allowed(path,HttpMethod.GET));assertFalse(RoutePolicy.allowed(path,HttpMethod.DELETE));}}
  @Test void challengeChecksAreAuthenticatedBoundedAndReadOnly(){String id="11111111-1111-4111-8111-111111111111",path="/api/campaigns/"+id+"/gate-check/"+"a".repeat(64);assertTrue(RoutePolicy.allowed(path,HttpMethod.GET));assertTrue(RoutePolicy.protectedPath(path));assertFalse(RoutePolicy.allowed(path,HttpMethod.POST));assertFalse(RoutePolicy.allowed(path+"a",HttpMethod.GET));assertFalse(RoutePolicy.allowed(path.substring(0,path.length()-1),HttpMethod.GET));}
  @Test void auditNavigationIsBoundedReadOnlyAndQuotaProtected(){String token="A".repeat(80);assertTrue(RoutePolicy.allowed("/api/audit",HttpMethod.GET));assertTrue(RoutePolicy.allowed("/api/audit/"+token,HttpMethod.GET));assertTrue(RoutePolicy.protectedPath("/api/audit"));assertTrue(RoutePolicy.protectedPath("/api/audit/"+token));assertFalse(RoutePolicy.allowed("/api/audit",HttpMethod.POST));assertFalse(RoutePolicy.allowed("/api/audit/"+token,HttpMethod.POST));assertFalse(RoutePolicy.allowed("/api/audit/"+token+"=",HttpMethod.GET));assertFalse(RoutePolicy.allowed("/api/audit/short",HttpMethod.GET));}

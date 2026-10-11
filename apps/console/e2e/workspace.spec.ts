@@ -14,6 +14,30 @@ async function login(page:Page,name:string){
 }
 test.afterEach(async({page})=>{const csrf=await page.request.get('/backend/csrf');const token=(await csrf.json()).token;const logout=await page.request.post('/backend/logout',{headers:{'X-CSRF-TOKEN':token,Origin:'http://127.0.0.1:4320'},data:{}});expect(logout.status()).toBe(200);expect((await page.request.get('/backend/me')).status()).toBe(401);const value=await logout.json();if(value.logoutUrl){expect(value.logoutUrl).toBe('http://127.0.0.1:4322/realms/agenttrust/protocol/openid-connect/logout?client_id=agenttrust-console&post_logout_redirect_uri=http%3A%2F%2F127.0.0.1%3A4320%2F');await page.goto(value.logoutUrl);if(new URL(page.url()).port==='4322'){await page.locator('#kc-logout').click();await page.waitForURL('http://127.0.0.1:4320/')}phase('own identity provider session logged out')}phase('own session logged out')});
 
+test('viewer navigates real older evaluation pages and opens scoped evidence',async({page})=>{
+ await login(page,'demo-viewer');
+ const region=page.getByRole('region',{name:'프로젝트 평가 이력',exact:true});
+ await region.getByRole('button',{name:'최신 평가 이력 조회',exact:true}).click();
+ await expect(region.locator('[data-run-history-id]')).toHaveCount(25);
+ const first=await region.locator('[data-run-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-run-history-id')));
+ expect(first.length).toBe(25);
+ await region.getByRole('button',{name:'다음 평가 페이지',exact:true}).click();
+ await expect(region.getByText(/이력 페이지 2/)).toBeVisible();
+ const older=await region.locator('[data-run-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-run-history-id')));
+ expect(older.length).toBeGreaterThan(0);expect(older.some(id=>first.includes(id))).toBe(false);
+ await region.getByRole('button',{name:'평가 근거 '+older[0]!.slice(0,8),exact:true}).click();
+ await expect(page.locator('.evidence').getByText('실행 '+older[0],{exact:true})).toBeVisible();
+ await region.getByRole('button',{name:'이전 평가 페이지',exact:true}).click();
+ await expect(region.getByText(/이력 페이지 1/)).toBeVisible();
+ expect(await region.locator('[data-run-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-run-history-id')))).toEqual(first);
+  const snapshot=await (await page.request.get('/backend/run-history')).json();
+  await page.route('**/backend/run-history',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...snapshot,projectId:'ffffffff-ffff-4fff-8fff-ffffffffffff'})}));
+  await region.getByRole('button',{name:'최신 평가 이력 조회',exact:true}).click();
+  await expect(region.getByText('평가 이력을 확인하지 못했습니다. 다시 조회해 주세요.',{exact:true})).toBeVisible();
+  await expect(region.locator('[data-run-history-id]')).toHaveCount(0);
+ phase('actual read-only browser history returns distinct pages and opens the selected existing evaluation');
+});
+
 test('viewer verifies a fresh signed gate and clears replayed unavailable and expired checks',async({page})=>{
  await login(page,'demo-viewer');
  await page.clock.install({time:new Date()});
