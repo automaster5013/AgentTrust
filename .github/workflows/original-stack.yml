@@ -113,6 +113,8 @@ jobs:
         run: |
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-receipt-smoke.py
+          node --experimental-strip-types --test scripts/stack-observation-report-test.ts
+          python3 scripts/stack-observation-report-smoke.py
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-observation-matrix.py
       - name: Audit fixed verifier dependency installation
@@ -185,6 +187,8 @@ jobs:
             .local/stack-provider-usage-*.json
             .local/stack-campaign-archive-*/summary.json
             .local/stack-campaign-receipt-*/summary.json
+            .local/stack-observation-report-*/summary.json
+            .local/stack-observation-report-*/report.html
             .local/stack-campaign-observation-matrix-*/summary.json
             .local/stack-observability-smoke-*.json
             .local/stack-prometheus-smoke-*.json
@@ -282,6 +286,8 @@ jobs:
           python3 scripts/stack-campaign-evidence-test.py
           python3 scripts/stack-campaign-archive-smoke.py
           python3 scripts/stack-campaign-receipt-smoke.py
+          node --experimental-strip-types --test scripts/stack-observation-report-test.ts
+          python3 scripts/stack-observation-report-smoke.py
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-observation-matrix.py
           python3 scripts/stack-object-smoke.py
@@ -330,6 +336,8 @@ jobs:
             .local/stack-provider-usage-*.json
             .local/stack-campaign-archive-*/summary.json
             .local/stack-campaign-receipt-*/summary.json
+            .local/stack-observation-report-*/summary.json
+            .local/stack-observation-report-*/report.html
             .local/stack-campaign-observation-matrix-*/summary.json
             .local/stack-object-smoke-*.json
             .local/stack-vector-smoke-*.json
