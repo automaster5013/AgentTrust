@@ -12,6 +12,16 @@ async function login(page:Page,name:string){
  else {await expect(page.getByRole('button',{name:'로그인',exact:true})).toBeEnabled();await page.evaluate(value=>{const account=document.querySelector<HTMLInputElement>('input[name="username"]')!,password=document.querySelector<HTMLInputElement>('input[name="password"]')!;account.value=value.username;password.value=value.password;account.form!.requestSubmit()}, {username:user.username,password:user.password})}
  await expect(page.getByRole('button',{name:'로그아웃',exact:true})).toBeVisible();await expect(page.getByText('조직 '+user.organizationId.slice(0,8),{exact:true})).toBeVisible();
 }
+test.beforeEach(async({page},info)=>{
+ page.on('response',response=>{if(response.status()===429&&new URL(response.url()).origin==='http://127.0.0.1:4320'&&new URL(response.url()).pathname.startsWith('/backend/'))phase('actual gateway HTTP 429 observed; no quota bypass or automatic business write retry')});
+ if(process.env.STACK_E2E_QUOTA_GUARD==='true'){
+  const started=Date.now();info.setTimeout(125000);
+  const budget=JSON.parse(execFileSync(process.platform==='win32'?'python':'python3',[resolve(process.cwd(),'../../scripts/stack-browser-quota-guard.py')],{encoding:'utf-8',timeout:75000,maxBuffer:16384}));
+  expect(budget.completed).toBe(true);expect(budget.quotaLimitsChanged).toBe(false);expect(budget.redisEntriesDeleted).toBe(false);info.setTimeout(45000+Date.now()-started);
+  phase('read-only Redis test headroom verified; quotas expire naturally without changing limits or deleting counters');if(budget.waitedForNaturalExpiry)phase('actual project quota expired naturally before this browser test');
+ }
+});
+
 test.afterEach(async({page})=>{const csrf=await page.request.get('/backend/csrf');const token=(await csrf.json()).token;const logout=await page.request.post('/backend/logout',{headers:{'X-CSRF-TOKEN':token,Origin:'http://127.0.0.1:4320'},data:{}});expect(logout.status()).toBe(200);expect((await page.request.get('/backend/me')).status()).toBe(401);const value=await logout.json();if(value.logoutUrl){expect(value.logoutUrl).toBe('http://127.0.0.1:4322/realms/agenttrust/protocol/openid-connect/logout?client_id=agenttrust-console&post_logout_redirect_uri=http%3A%2F%2F127.0.0.1%3A4320%2F');await page.goto(value.logoutUrl);if(new URL(page.url()).port==='4322'){await page.locator('#kc-logout').click();await page.waitForURL('http://127.0.0.1:4320/')}phase('own identity provider session logged out')}phase('own session logged out')});
 
 test('viewer navigates real older evaluation pages and opens scoped evidence',async({page})=>{
@@ -293,6 +303,12 @@ test('viewer verifies an older registered version before selecting it for campai
   const row=region.locator('[data-version-history-id]').last(),id=await row.getAttribute('data-version-history-id');
   const response=page.waitForResponse(r=>r.url().endsWith('/versions/'+kind+'/'+id)&&r.request().method()==='GET');await row.getByRole('button').click();expect((await response).status()).toBe(200);
   await expect(region.getByText(/내용·해시 확인 후 선택:/)).toBeVisible();await expect(page.getByLabel(selectLabel,{exact:true})).toHaveValue(id!);
+  const alternate=region.locator('[data-version-history-id]').first(),alternateId=await alternate.getAttribute('data-version-history-id');expect(alternateId).not.toBe(id);
+  const detail=await (await page.request.get('/backend/versions/'+kind+'/'+alternateId)).json(),match=/^(.*T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(?:Z|\+00:00)$/.exec(detail.created_at);expect(match).not.toBeNull();
+  const nanos=Number((match![2]??'').padEnd(9,'0')),changed=nanos%1000000===999000?nanos-1000:nanos+1000,created_at=match![1]+'.'+String(changed).padStart(9,'0')+'Z';expect(Date.parse(created_at)).toBe(Date.parse(detail.created_at));
+  const detailRoute='**/backend/versions/'+kind+'/'+alternateId;await page.route(detailRoute,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...detail,created_at})}));
+  try{await alternate.getByRole('button').click();await expect(region.getByText('버전 내용과 해시를 확인하지 못했습니다. 선택을 적용하지 않았습니다.',{exact:true})).toBeVisible();await expect(page.getByLabel(selectLabel,{exact:true})).toHaveValue(id!)}finally{await page.unroute(detailRoute)}
+  phase(kind+' detail with a one-microsecond metadata substitution is refused while the earlier verified selection remains');
   const snapshot=await (await page.request.get('/backend/version-history/'+kind)).json();await page.route('**/backend/version-history/'+kind,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...snapshot,kind:kind==='agents'?'datasets':'agents'})}));
   await region.getByRole('button',{name:label+' 버전 이력 조회',exact:true}).click();await expect(region.getByText('버전 이력을 확인하지 못했습니다. 다시 조회해 주세요.',{exact:true})).toBeVisible();await expect(region.locator('[data-version-history-id]')).toHaveCount(0);await expect(page.getByLabel(selectLabel,{exact:true})).toHaveValue(id!);await page.unroute('**/backend/version-history/'+kind);
  }

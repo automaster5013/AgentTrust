@@ -6,7 +6,7 @@ Next.js BFF는 요청을 최대 16 KiB, 중계 응답을 최대 1 MiB의 UTF-8 �
 
 Java Core API도 POST 실행·버전·캠페인·내부 완료/예약의 JSON 본문을 파싱 전에 16 KiB로 제한한다. 엄격한 UTF-8로 읽은 뒤 JSON 문자열과 필드 이름의 NUL·짝이 없는 UTF-16 surrogate를 400으로 거부한다. PostgreSQL 저장 실패 또는 해시 생성 시 문자 대체로 넘어가지 않도록 하는 경계다. 한글·다국어·정상 이모지는 원래 바이트를 유지한다. UTF-16 인코딩 본문을 UTF-8 JSON으로 자동 추정하지 않으며, Java에 UTF-8이 아닌 charset을 명시해 검증한 문자를 재해석하는 요청도 거부한다.
 
-소스 검증은 Java 82개와 TypeScript 67개 테스트·타입 검사에서 통과했다. 스트림 검사 9개에는 실제 loopback HTTP의 큰 응답 취소와 헤더 후 멈춘 응답의 시간 제한·연결 종료도 포함된다. 실행 서비스 반영과 실제 OIDC/BFF의 잘못된 입력 검사 완료는 별도 검증 근거로 기록한다.
+소스 검증은 Java 84개와 TypeScript 69개 테스트·타입 검사에서 통과했다. 스트림 검사 9개에는 실제 loopback HTTP의 큰 응답 취소와 헤더 후 멈춘 응답의 시간 제한·연결 종료도 포함된다. 실행 서비스 반영과 실제 OIDC/BFF의 잘못된 입력 검사 완료는 별도 검증 근거로 기록한다.
 
 ```powershell
 python scripts/stack-json-text-smoke.py --stalled-body

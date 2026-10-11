@@ -27,3 +27,8 @@ export function versionHistoryPage(value:unknown,user:Identity,kind:VersionKind,
  if(page.nextCursor!==null){if(typeof page.nextCursor!=='string'||entries.length!==25)throw Error('INVALID_VERSION_HISTORY_CURSOR');const next=cursor(page.nextCursor,user,kind),last=entries.at(-1)!,at=time(last.created_at);if(next.id!==last.id||next.seconds!==at.seconds||next.nanos!==at.nanos)throw Error('INVALID_VERSION_HISTORY_CURSOR');}
  return {entries,nextCursor:page.nextCursor as string|null};
 }
+
+/** Bind fetched immutable content to the exact PostgreSQL history coordinates. */
+export function verifyVersionHistoryBinding(row:Version,detail:Version):void{
+ if(detail.id!==row.id||detail.resource_key!==row.resource_key||detail.version!==row.version||detail.content_sha256!==row.content_sha256||time(detail.created_at).text!==time(row.created_at).text)throw Error('INVALID_VERSION_BINDING');
+}
