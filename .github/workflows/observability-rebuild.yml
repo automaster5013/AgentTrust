@@ -29,6 +29,10 @@ jobs:
       - name: Validate fixed component and source security
         run: |
           case "$COMPONENT" in tempo|loki|prometheus|grafana) ;; *) exit 1 ;; esac
+          if [ "$COMPONENT" = grafana ]; then
+            python3 services/grafana/unpack-plugins-test.py
+            python3 -O services/grafana/unpack-plugins-test.py
+          fi
           docker build -t agenttrust-security:local tools/security
           python3 scripts/stack-security-source.py
       - name: Build pinned upstream source with patched dependencies
