@@ -13,6 +13,49 @@ async function login(page:Page,name:string){
 }
 test.afterEach(async({page})=>{const csrf=await page.request.get('/backend/csrf');const token=(await csrf.json()).token;const logout=await page.request.post('/backend/logout',{headers:{'X-CSRF-TOKEN':token,Origin:'http://127.0.0.1:4320'},data:{}});expect(logout.status()).toBe(200);expect((await page.request.get('/backend/me')).status()).toBe(401);const value=await logout.json();if(value.logoutUrl){expect(value.logoutUrl).toBe('http://127.0.0.1:4322/realms/agenttrust/protocol/openid-connect/logout?client_id=agenttrust-console&post_logout_redirect_uri=http%3A%2F%2F127.0.0.1%3A4320%2F');await page.goto(value.logoutUrl);if(new URL(page.url()).port==='4322'){await page.locator('#kc-logout').click();await page.waitForURL('http://127.0.0.1:4320/')}phase('own identity provider session logged out')}phase('own session logged out')});
 
+test('viewer verifies a fresh signed gate and clears replayed unavailable and expired checks',async({page})=>{
+ await login(page,'demo-viewer');
+ await page.clock.install({time:new Date()});
+ const region=page.getByRole('region',{name:'버전과 평가 캠페인',exact:true});
+ const records=await (await page.request.get('/backend/campaigns')).json() as {id:string}[];
+ let selected:string|null=null;
+ for(const row of records){const record=await (await page.request.get('/backend/campaigns/'+row.id)).json();if(record.state==='succeeded'&&(await page.request.get('/backend/campaigns/'+row.id+'/evidence')).ok()){selected=row.id;break}}
+ expect(selected).not.toBeNull();
+ await region.getByRole('button',{name:'캠페인 '+selected!.slice(0,8),exact:true}).click();
+ const checks=page.getByRole('region',{name:'서명된 현재 판정 확인',exact:true});
+ const received=page.waitForResponse(response=>response.url().includes('/gate-check/')&&response.status()===200);
+ await checks.getByRole('button',{name:'현재 판정 서명 확인',exact:true}).click();
+ const frame=await (await received).json();
+ await expect(checks.getByText(/서명 확인 완료/)).toBeVisible();phase('viewer independently verifies actual Java current-check signature in browser');
+ await page.route('**/backend/campaigns/'+selected+'/gate-check/*',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(frame)}));
+ await checks.getByRole('button',{name:'현재 판정 서명 확인',exact:true}).click();
+ await expect(checks.getByRole('status')).toContainText('서명·범위·유효 시간을 확인하지 못했습니다.');await expect(checks.getByText(/서명 확인 완료/)).toHaveCount(0);phase('replayed signed response for a different challenge is refused');
+ await page.unroute('**/backend/campaigns/'+selected+'/gate-check/*');
+ await checks.getByRole('button',{name:'현재 판정 서명 확인',exact:true}).click();await expect(checks.getByText(/서명 확인 완료/)).toBeVisible();
+ await page.route('**/backend/campaigns/'+selected+'/gate-check/*',route=>route.fulfill({status:503,contentType:'application/json',body:'{"code":"TEST_CHECK_UNAVAILABLE"}'}));
+ await checks.getByRole('button',{name:'현재 판정 서명 확인',exact:true}).click();await expect(checks.getByText(/서명 확인 완료/)).toHaveCount(0);await expect(checks.getByRole('status')).toContainText('서명·범위·유효 시간을 확인하지 못했습니다.');phase('request failure clears earlier signed status');
+ await page.unroute('**/backend/campaigns/'+selected+'/gate-check/*');
+ await checks.getByRole('button',{name:'현재 판정 서명 확인',exact:true}).click();await expect(checks.getByText(/서명 확인 완료/)).toBeVisible();
+ await page.clock.setSystemTime(new Date(Date.now()-60000));await page.clock.runFor(31000);
+ await expect(checks.getByText(/서명 확인 완료/)).toHaveCount(0);await expect(checks.getByRole('status')).toContainText('확인 시간이 만료됐습니다.');phase('signed result expires even when browser wall clock moves backward; no evaluation or approval is created');
+});
+
+test('a delayed signed check cannot populate another selected campaign',async({page})=>{
+ await login(page,'demo-viewer');const region=page.getByRole('region',{name:'버전과 평가 캠페인',exact:true});
+ const records=await (await page.request.get('/backend/campaigns')).json() as {id:string}[];
+ const candidates:string[]=[];
+ for(const row of records){const record=await (await page.request.get('/backend/campaigns/'+row.id)).json();if(record.state==='succeeded'&&(await page.request.get('/backend/campaigns/'+row.id+'/evidence')).ok())candidates.push(row.id);if(candidates.length===2)break}
+ expect(candidates.length).toBe(2);const [first,second]=candidates;
+ await region.getByRole('button',{name:'캠페인 '+first.slice(0,8),exact:true}).click();
+ let release!:()=>void,received!:()=>void;const held=new Promise<void>(resolve=>{release=resolve}),ready=new Promise<void>(resolve=>{received=resolve});
+ await page.route('**/backend/campaigns/'+first+'/gate-check/*',async route=>{const response=await route.fetch();received();await held;try{await route.fulfill({response})}catch{/* The old component aborted its request. */}});
+ const checks=page.getByRole('region',{name:'서명된 현재 판정 확인',exact:true});
+ await checks.getByRole('button',{name:'현재 판정 서명 확인',exact:true}).click();await ready;
+ await region.getByRole('button',{name:'캠페인 '+second.slice(0,8),exact:true}).click();
+ release();await expect(region.getByText('캠페인 '+second,{exact:true})).toBeVisible();await expect(checks.getByText(/서명 확인 완료/)).toHaveCount(0);
+ await checks.getByRole('button',{name:'현재 판정 서명 확인',exact:true}).click();await expect(checks.getByText(/서명 확인 완료/)).toBeVisible();phase('old selection response is aborted; only newly selected campaign can display its independently verified check');
+});
+
 test('viewer navigates scoped audit history without duplicate rows and clears unavailable pages',async({page})=>{
  await login(page,'demo-viewer');const region=page.getByRole('region',{name:'프로젝트 감사 기록',exact:true});await region.getByRole('button',{name:'최신 감사 기록 조회',exact:true}).click();await expect(region.getByText('페이지 1 · 25개 기록',{exact:true})).toBeVisible();
  const first=await region.locator('tbody tr').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-audit-id')));expect(new Set(first).size).toBe(25);await region.getByRole('button',{name:'다음 감사 페이지',exact:true}).click();await expect(region.getByText(/페이지 2 · \d+개 기록/)).toBeVisible();const second=await region.locator('tbody tr').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-audit-id')));expect(second.some(id=>first.includes(id))).toBe(false);phase('actual scoped PostgreSQL audit history navigates without duplicated records');
