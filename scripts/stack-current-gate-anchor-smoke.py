@@ -26,6 +26,7 @@ try:
  assert foreign['failedStage']=='existing-campaign' and foreign.get('unexpectedHttpStatus')==404
  report['checks'].append('foreign organization cannot obtain the existing campaign observation')
  with tempfile.TemporaryDirectory(prefix='current-gate-anchor-owned-',dir=ROOT/'.local') as work:
+  assert pathlib.Path(work).resolve().parent==(ROOT/'.local').resolve()
   wrong=pathlib.Path(work)/'wrong-public.pem';der=bytes.fromhex('302a300506032b6570032100')+secrets.token_bytes(32)
   wrong.write_text('-----BEGIN PUBLIC KEY-----\n'+base64.b64encode(der).decode()+'\n-----END PUBLIC KEY-----\n',encoding='ascii')
   refused=cli(['--campaign',campaign,'--trusted-public-key',str(wrong)],1)

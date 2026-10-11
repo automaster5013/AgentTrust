@@ -152,6 +152,7 @@ def main():
                         or verified.get('currentDeploymentAuthority') is not False \
                         or verified.get('trustedKeyId') != expected_key_id \
                         or time.monotonic() - began >= 30 \
+                        or (time.monotonic()-began)*1000 >= verified['expiresAtEpochMillis']-verified['checkedAtEpochMillis'] \
                         or int(time.time()*1000) < started \
                         or int(time.time()*1000) >= verified['expiresAtEpochMillis']:
                     raise ValueError('Current signed observation unavailable')
