@@ -61,3 +61,5 @@ node --experimental-strip-types scripts/stack-verify-campaign-receipt.ts --bundl
 이전 캠페인과 비교 기준은 [캠페인 이력](stack-campaign-history.md)에서 찾는다. 최근 50개 목록 밖의 캠페인도 같은 데이터셋 버전으로 탐색하고 기존 Java 비교 API에서 조건을 다시 확인할 수 있다. [모델 실행 한도](stack-provider-usage.md)는 실제 예약 기록을 보여주며 과금액을 추정하지 않는다.
 
 검증된 원본 번들과 별도로 신뢰한 공개키를 준비했다면 [과거 HTML 보고서](stack-observation-report.md)를 생성해 검토할 수 있다. 이 요약은 자체 서명이나 현재 릴리스 권한을 제공하지 않는다.
+
+평가 실행 전 화면의 **평가 경로 상태 확인**으로 현재 데이터베이스·Python/NATS·OPA 연결을 확인할 수 있습니다. 세 연결이 확인돼도 실제 모델 실행 성공이나 릴리스 승인으로 간주하지 않습니다. [계약과 장애 검증](stack-evaluation-readiness.md)을 참고하세요.

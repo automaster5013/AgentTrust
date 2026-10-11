@@ -6,7 +6,7 @@
 
 기존 JavaScript v0.187은 비교 기준으로 보존한다. 현재 개발은 Next.js/TypeScript, Java 21/Spring Boot/WebFlux, Python/FastAPI와 원래 인프라 스택의 실제 평가·릴리스 경로를 확장한다. [기능 보존 표](stack-feature-parity.md)가 완료 범위를, 아래 기존 버전 기록은 이전 JavaScript 설치의 근거를 설명한다.
 
-이번 구간에는 스캐너 임시 이미지/소스 사본과 Terraform provider 작업의 자동 회수, 개발용 난수 결합 현재 판정 서명 확인, 미완료 평가·캠페인 취소, 조직별 이전 평가/캠페인 탐색과 비교 기준 선택, 실제 모델 예약 한도 조회와 검증된 과거 HTML 근거 요약을 구현했다. 상세 계약과 실제 검증은 [현재 판정 확인](stack-current-gate-check.md), [취소](stack-cancellation.md), [평가 이력](stack-run-history.md)을 참고한다. 운영 배포 토큰·KMS·동적 기업 조직 등록·일반 품질 데이터셋·운영 클러스터는 남은 작업이다. 원격 CI 성공은 해당 커밋 실행이 완료된 후에만 기록한다.
+이번 구간에는 인증된 Java API에서 PostgreSQL·Python/NATS 두 평가 큐·OPA의 준비 상태를 읽고 화면에서 확인하는 기능, 스캐너 임시 이미지/소스 사본과 Terraform provider 작업의 자동 회수, 개발용 난수 결합 현재 판정 서명 확인, 미완료 평가·캠페인 취소, 조직별 이전 평가/캠페인 탐색과 비교 기준 선택, 실제 모델 예약 한도 조회와 검증된 과거 HTML 근거 요약을 구현했다. 상세 계약과 실제 검증은 [현재 판정 확인](stack-current-gate-check.md), [취소](stack-cancellation.md), [평가 이력](stack-run-history.md)을 참고한다. 운영 배포 토큰·KMS·동적 기업 조직 등록·일반 품질 데이터셋·운영 클러스터는 남은 작업이다. 원격 CI 성공은 해당 커밋 실행이 완료된 후에만 기록한다.
 
 ## 다음 개발 우선순위
 

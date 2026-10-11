@@ -152,6 +152,7 @@ jobs:
           python3 scripts/stack-campaign-history-smoke.py
           python3 scripts/stack-provider-usage-query-test.py
           python3 scripts/stack-provider-usage-smoke.py
+          python3 scripts/stack-evaluation-readiness-smoke.py
           python3 scripts/stack-observability-smoke.py
           python3 scripts/stack-prometheus-smoke.py
           python3 scripts/stack-quality-verifier-smoke.py
@@ -205,6 +206,7 @@ jobs:
             .local/stack-object-backup-*/summary.json
             .local/stack-provider-smoke-*.json
             .local/stack-provider-integrity-*/summary.json
+            .local/stack-evaluation-readiness-*.json
             .local/stack-browser-*.json
           if-no-files-found: ignore
           retention-days: 7
@@ -313,6 +315,7 @@ jobs:
           python3 scripts/stack-campaign-history-smoke.py
           python3 scripts/stack-provider-usage-query-test.py
           python3 scripts/stack-provider-usage-smoke.py
+          python3 scripts/stack-evaluation-readiness-smoke.py
           python3 scripts/stack-observability-smoke.py
           python3 scripts/stack-prometheus-smoke.py
           python3 scripts/stack-quality-verifier-smoke.py

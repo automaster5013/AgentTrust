@@ -260,3 +260,21 @@ test('viewer selects an existing historical baseline and verifies a real campaig
  await expect(page.getByText(/새 필수 실패: 없음/)).toBeVisible();
  phase('read-only historical dataset navigation supplies the real baseline to Java comparison verification');
 });
+
+
+test('viewer checks real evaluation dependencies and clears untrusted or unavailable observations',async({page})=>{
+ await login(page,'demo-viewer');const region=page.getByRole('region',{name:'평가 경로 준비 상태',exact:true});
+ await region.getByRole('button',{name:'평가 경로 상태 확인',exact:true}).click();
+ await expect(region.getByText('평가 경로 연결 확인 완료',{exact:true})).toBeVisible();
+ await expect(region.getByText('Python 평가 워커·NATS 큐 · 연결 확인',{exact:true})).toBeVisible();
+ const snapshot=await (await page.request.get('/backend/evaluation-readiness')).json();
+ await page.route('**/backend/evaluation-readiness',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({...snapshot,ready:false,dependencies:snapshot.dependencies.map((d:{name:string;available:boolean})=>({...d,available:d.name!=='worker-queue'}))})}));
+ await region.getByRole('button',{name:'평가 경로 상태 확인',exact:true}).click();
+ await expect(region.getByText('Python 평가 워커·NATS 큐 · 확인 불가',{exact:true})).toBeVisible();
+ await page.unroute('**/backend/evaluation-readiness');
+ await page.route('**/backend/evaluation-readiness',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...snapshot,projectId:'ffffffff-ffff-4fff-8fff-ffffffffffff'})}));
+ await region.getByRole('button',{name:'평가 경로 상태 확인',exact:true}).click();
+ await expect(region.getByText('준비 상태를 확인하지 못했습니다. 다시 조회해 주세요.',{exact:true})).toBeVisible();
+ await expect(region.locator('time')).toHaveCount(0);await expect(region.locator('li')).toHaveCount(0);
+ phase('actual ready dependency response, simulated unavailable rendering and foreign-scope clearing verified');
+});
