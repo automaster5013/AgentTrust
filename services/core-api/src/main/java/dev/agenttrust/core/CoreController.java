@@ -25,6 +25,8 @@ public class CoreController {
     public record Create(@NotBlank @Pattern(regexp="pass|block|missing_evidence|error") String scenario, @NotNull Boolean requiresApproval,@Pattern(regexp="synthetic|ollama|openai|openai-compatible") String provider) {}
     @PostMapping("/runs") Map<String,Object> create(@AuthenticationPrincipal DemoUser user,@RequestHeader("Idempotency-Key") String key,@Valid @RequestBody Create body) {return service.create(user,key,body.scenario(),body.requiresApproval(),body.provider()==null?"synthetic":body.provider());}
     public record Review(@NotBlank @Pattern(regexp="approved|rejected") String decision,@NotBlank @Size(max=500) String reason) {}
+    public record Cancel(@NotBlank @Size(max=200) String reason) {}
+    @PostMapping("/runs/{id}/cancel") Map<String,Object> cancel(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id,@Valid @RequestBody Cancel body){return service.cancel(user,id,body.reason());}
     @GetMapping("/runs/{id}/reviews") List<Map<String,Object>> reviews(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id) {return service.reviews(user,id);}
     @PostMapping("/runs/{id}/reviews") Map<String,Object> review(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id,@Valid @RequestBody Review body) {return service.review(user,id,body.decision(),body.reason());}
     @GetMapping("/runs/{id}/gate") Evaluation.Gate gate(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id) {return service.gate(user,id);}

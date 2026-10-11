@@ -142,6 +142,7 @@ jobs:
           python3 scripts/stack-quality-campaign-smoke.py
           python3 scripts/stack-review-preflight-smoke.py
           python3 scripts/stack-current-gate-check-smoke.py
+          python3 scripts/stack-cancellation-smoke.py
           python3 scripts/stack-observability-smoke.py
           python3 scripts/stack-prometheus-smoke.py
           python3 scripts/stack-quality-verifier-smoke.py
@@ -176,6 +177,7 @@ jobs:
             .local/stack-quality-campaign-*/summary.json
             .local/stack-review-preflight-*.json
             .local/stack-current-gate-check-*.json
+            .local/stack-cancellation-*.json
             .local/stack-campaign-archive-*/summary.json
             .local/stack-campaign-receipt-*/summary.json
             .local/stack-campaign-observation-matrix-*/summary.json
@@ -288,6 +290,7 @@ jobs:
           python3 scripts/stack-quality-campaign-smoke.py
           python3 scripts/stack-review-preflight-smoke.py
           python3 scripts/stack-current-gate-check-smoke.py
+          python3 scripts/stack-cancellation-smoke.py
           python3 scripts/stack-observability-smoke.py
           python3 scripts/stack-prometheus-smoke.py
           python3 scripts/stack-quality-verifier-smoke.py
@@ -315,6 +318,7 @@ jobs:
             .local/stack-quality-campaign-*/summary.json
             .local/stack-review-preflight-*.json
             .local/stack-current-gate-check-*.json
+            .local/stack-cancellation-*.json
             .local/stack-campaign-archive-*/summary.json
             .local/stack-campaign-receipt-*/summary.json
             .local/stack-campaign-observation-matrix-*/summary.json

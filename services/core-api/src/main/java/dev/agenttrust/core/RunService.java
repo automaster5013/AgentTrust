@@ -1,5 +1,7 @@
 package dev.agenttrust.core;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -103,6 +105,18 @@ public class RunService {
     }
     public List<Map<String,Object>> reviews(DemoUser user,UUID id) {
         return scoped(user,()->{get(user,id);return jdbc.queryForList("SELECT id,actor_id,decision,reason,created_at,review_sequence,policy_version,policy_digest FROM stack_reviews WHERE run_id=? AND organization_id=? AND project_id=? ORDER BY review_sequence DESC LIMIT 50",id,user.organizationId(),user.projectId());});
+    }
+    public Map<String,Object> cancel(DemoUser user,UUID id,String reason) {
+        requireWriter(user);RunCancellation.reason(reason);
+        return scoped(user,()->{
+            jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"completion/"+id);
+            var record=getScoped(user,id);UUID actor=jdbc.queryForObject("SELECT actor_id FROM stack_runs WHERE id=? AND organization_id=? AND project_id=?",UUID.class,id,user.organizationId(),user.projectId());RunCancellation.owner(user,actor);
+            if(RunCancellation.cancelled((JsonNode)record.get("result")))return record;
+            if(!"queued".equals(record.get("state")))throw new ResponseStatusException(HttpStatus.CONFLICT);
+            String value;try{value=mapper.writeValueAsString(RunCancellation.result(reason));}catch(Exception unavailable){throw new IllegalStateException("Cancellation unavailable");}
+            jdbc.update("INSERT INTO stack_run_results(run_id,organization_id,project_id,state,decision,result) VALUES(?,?,?,?,?,?::jsonb)",id,user.organizationId(),user.projectId(),"failed","inconclusive",value);
+            audit(user,"evaluation.cancelled",id);return getScoped(user,id);
+        });
     }
     public Map<String,Object> review(DemoUser user,UUID id,String decision,String reason) {
         if(!user.role().equals("admin"))throw new ResponseStatusException(HttpStatus.FORBIDDEN);

@@ -71,6 +71,25 @@ public class CampaignService {
     public Evaluation.Gate gate(DemoUser user,UUID id){return runs.scoped(user,()->{
         jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"campaign-review/"+id);var value=get(user,id);value.put("result",mapper.valueToTree(value.get("result")));var reviews=reviews(user,id);return policy.decide(user,id,value,reviews.isEmpty()?null:reviews.getFirst());
     });}
+    public Map<String,Object> cancel(DemoUser user,UUID id,String reason){
+        if(!List.of("admin","editor").contains(user.role()))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        RunCancellation.reason(reason);
+        return runs.scoped(user,()->{
+            jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"campaign-review/"+id);
+            admission(user,id);UUID actor=jdbc.queryForObject("SELECT actor_id FROM stack_campaigns WHERE id=? AND organization_id=? AND project_id=?",UUID.class,id,user.organizationId(),user.projectId());RunCancellation.owner(user,actor);
+            var children=cases(user,id);
+            children.stream().map(c->c.runId().toString()).sorted().forEach(child->jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"completion/"+child));
+            var record=get(user,id);children=cases(user,id);
+            int changed=0;boolean previouslyCancelled=false;
+            for(var child:children){
+                if(child.state().equals("queued")){runs.cancel(user,child.runId(),reason);changed++;}
+                else previouslyCancelled|=RunCancellation.cancelled((JsonNode)runs.get(user,child.runId()).get("result"));
+            }
+            if(changed==0&&!previouslyCancelled)throw new ResponseStatusException(HttpStatus.CONFLICT);
+            if(changed>0)runs.audit(user,"campaign.cancelled",id);
+            return get(user,id);
+        });
+    }
     public Map<String,Object> compare(DemoUser user,UUID id,UUID baseline){return runs.scoped(user,()->{
         if(id.equals(baseline))throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         var current=get(user,id);var previous=get(user,baseline);

@@ -1,4 +1,5 @@
 import {test,expect,type Page} from '@playwright/test';
+import {execFileSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';import {resolve} from 'node:path';
 const users=JSON.parse(readFileSync(resolve(process.cwd(),'../../.local/stack/demo-credentials.json'),'utf-8')) as {username:string;password:string;organizationId:string}[];
 function phase(description:string){test.info().annotations.push({type:'phase',description})}
@@ -146,4 +147,36 @@ if(process.env.STACK_E2E_LOCAL_MODEL==='true')test('local model provider evidenc
  await expect.poll(async()=>{const response=await page.request.get('/backend/runs/'+id+'/evidence');if(response.status()===200){digest=(await response.json()).contentSha256;return true}expect(response.status()).toBe(409);return false},{timeout:30000}).toBe(true);
  await page.getByRole('button',{name:'근거 해시·버전 확인',exact:true}).click();await expect(page.getByText('SHA-256 '+digest,{exact:true})).toBeVisible();phase('real Ollama admission and engine match; browser verifies provider-bound archive');
  await page.getByLabel('결정',{exact:true}).selectOption('rejected');await page.getByRole('button',{name:'검토 저장·게이트 확인',exact:true}).click();await expect(page.getByText('릴리스 허용 안 됨',{exact:true})).toBeVisible();phase('model pass never overrides current rejection');
+});
+
+
+test('administrator cancels a real pending evaluation and campaign through browser controls',async({page})=>{
+ await login(page,'demo-admin');
+ const worker='agenttrust-stack-ai-worker-1';
+ const running=execFileSync('docker',['inspect',worker,'--format','{{.State.Running}}'],{encoding:'utf8',timeout:15000}).trim();expect(running).toBe('true');
+ try{
+  execFileSync('docker',['stop','--time','10',worker],{timeout:25000});
+  await page.getByRole('button',{name:'평가 실행',exact:true}).click();
+  await expect(page.getByLabel('평가 취소 사유',{exact:true})).toBeVisible();
+  await page.getByLabel('평가 취소 사유',{exact:true}).fill('Browser synthetic cancellation');
+  await page.getByRole('button',{name:'평가 취소',exact:true}).click();
+  await expect(page.getByText('평가 취소 결과를 확인했습니다.',{exact:true})).toBeVisible();
+  await expect(page.locator('.evidence').getByText(/실행 엔진 java-cancelled/)).toBeVisible();
+  await expect(page.locator('.evidence .gate').getByText('릴리스 허용 안 됨',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'평가 취소',exact:true})).toHaveCount(0);
+  const csrf=(await (await page.request.get('/backend/csrf')).json()).token,headers={'X-CSRF-TOKEN':csrf,Origin:'http://127.0.0.1:4320'};
+  const suffix=crypto.randomUUID().slice(0,8);
+  const a=await page.request.post('/backend/versions/agents',{headers,data:{key:'browser-cancel-agent-'+suffix,version:1,provider:'synthetic',description:'Browser cancellation fixture'}});expect(a.status()).toBe(200);const agent=await a.json();
+  const d=await page.request.post('/backend/versions/datasets',{headers,data:{key:'browser-cancel-data-'+suffix,version:1,cases:[{id:'required',scenario:'pass',required:true}]}});expect(d.status()).toBe(200);const dataset=await d.json();
+  const c=await page.request.post('/backend/campaigns',{headers:{...headers,'Idempotency-Key':crypto.randomUUID()},data:{agentVersionId:agent.id,datasetVersionId:dataset.id,requiresApproval:true}});expect(c.status()).toBe(200);const campaign=await c.json();
+  await page.reload();await expect(page.getByRole('button',{name:'로그아웃',exact:true})).toBeVisible();
+  const region=page.getByRole('region',{name:'버전과 평가 캠페인',exact:true});
+  await region.getByRole('button',{name:'캠페인 '+campaign.id.slice(0,8),exact:true}).click();
+  await region.getByLabel('캠페인 취소 사유',{exact:true}).fill('Browser pending campaign cancellation');
+  await region.getByRole('button',{name:'미완료 사례 취소',exact:true}).click();
+  await expect(region.getByText('캠페인의 미완료 사례 취소를 확인했습니다.',{exact:true})).toBeVisible();
+  const saved=await (await page.request.get('/backend/campaigns/'+campaign.id)).json();expect(saved.state).toBe('failed');expect(saved.decision).toBe('inconclusive');
+  expect((await (await page.request.get('/backend/campaigns/'+campaign.id+'/gate')).json()).deploymentAllowed).toBe(false);
+  phase('actual browser verifies terminal cancellation and denied release for run and campaign');
+ }finally{execFileSync('docker',['start',worker],{timeout:25000});phase('dedicated worker restored');}
 });

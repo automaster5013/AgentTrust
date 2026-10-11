@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {campaign,comparison,datasetVersion,versions,campaignGate,verifiedAgentVersion,verifiedCampaign,verifiedCampaignArchive} from '../src/lib/campaign-contracts.ts';
+import {campaign,comparison,datasetVersion,versions,campaignGate,verifiedAgentVersion,verifiedCampaign,verifiedCampaignArchive,verifiedCancelledCampaign} from '../src/lib/campaign-contracts.ts';
 import {type Identity} from '../src/lib/contracts.ts';
 const uid=(n:number)=>String(n).repeat(8)+'-'+String(n).repeat(4)+'-4'+String(n).repeat(3)+'-8'+String(n).repeat(3)+'-'+String(n).repeat(12);
 const user:Identity={username:'demo-admin',actorId:uid(1),organizationId:uid(2),projectId:uid(3),role:'admin',identityProvider:'keycloak',runtime:'java21-spring-boot'};
@@ -28,3 +28,5 @@ test('new agent contracts hash actual fixed execution profiles and reject profil
  const changed={...definition,executionProfile:{...profile,implementationSha256:'e'.repeat(64)}};await assert.rejects(verifiedAgentVersion({...value,definition:changed,content_sha256:await hash(changed)},user));
  const unsafe={...definition,executionProfile:{...profile,maxAttempts:2}};await assert.rejects(verifiedAgentVersion({...value,definition:unsafe,content_sha256:await hash(unsafe)},user));
 });
+
+test('cancelled campaign preserves child and immutable version bindings',async()=>{const {doc}=await archiveFixture(),before=structuredClone(doc.campaign);before.state='queued';before.decision='inconclusive';before.cases[0].state='queued';before.cases[0].decision='inconclusive';before.result.state='queued';before.result.decision='inconclusive';before.result.rules[0].status='inconclusive';const previous=await verifiedCampaign(before,user,before.id),after=structuredClone(before);after.state='failed';after.cases[0].state='failed';after.result.state='failed';assert.equal((await verifiedCancelledCampaign(after,user,previous)).decision,'inconclusive');await assert.rejects(()=>verifiedCancelledCampaign({...after,cases:[{...after.cases[0],runId:uid(8)}]},user,previous));await assert.rejects(()=>verifiedCancelledCampaign(before,user,previous));const completed=await verifiedCampaign(doc.campaign,user,doc.campaign.id);await assert.rejects(()=>verifiedCancelledCampaign(after,user,completed));});

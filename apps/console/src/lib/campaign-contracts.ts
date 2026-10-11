@@ -10,6 +10,12 @@ export type Campaign=CampaignSummary&{organization_id:string;project_id:string;a
 export type Comparison={status:'no-regression'|'regression'|'inconclusive';newlyFailedRequiredCases:string[];unresolvedRequiredCases:string[];improvedRequiredCases:string[];deploymentAuthority:false};
 export type ChildArchive={runId:string;contentSha256:string;contentBytes:number;storageVersion:string};
 export type CampaignArchive={contentSha256:string;contentBytes:number;storageVersion:string;childArchives:ChildArchive[]};
+export async function verifiedCancelledCampaign(value:unknown,user:Identity,previous:Campaign):Promise<Campaign>{
+ const result=await verifiedCampaign(value,user,previous.id);
+ if(result.state!=='failed'||result.decision!=='inconclusive'||result.agent_version_id!==previous.agent_version_id||result.dataset_version_id!==previous.dataset_version_id||result.agent_content_sha256!==previous.agent_content_sha256||result.dataset_content_sha256!==previous.dataset_content_sha256||result.cases.length!==previous.cases.length)throw Error('INVALID_CANCELLATION');
+ result.cases.forEach((item,index)=>{const old=previous.cases[index];if(item.runId!==old.runId||item.caseId!==old.caseId||item.required!==old.required||item.provider!==old.provider||item.scenario!==old.scenario||item.state==='queued'||old.state!=='queued'&&(item.state!==old.state||item.decision!==old.decision))throw Error('INVALID_CANCELLATION')});
+ return result;
+}
 function obj(v:unknown):Record<string,unknown>{if(!v||typeof v!=='object'||Array.isArray(v))throw Error('INVALID_CAMPAIGN');return v as Record<string,unknown>}
 function str(v:unknown,max=300):string{if(typeof v!=='string'||v.length>max)throw Error('INVALID_CAMPAIGN');return v}
 function uuid(v:unknown):string{const s=str(v,36);if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(s))throw Error('INVALID_CAMPAIGN');return s}

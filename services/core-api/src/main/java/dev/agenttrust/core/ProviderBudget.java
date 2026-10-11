@@ -13,6 +13,7 @@ public class ProviderBudget {
  public ProviderBudget(RunService runs,JdbcTemplate jdbc){this.runs=runs;this.jdbc=jdbc;}
  Map<String,Object> reserve(DemoUser scope,UUID id,String scenario,String provider){
   return runs.scoped(scope,()->{
+   jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"completion/"+id);
    jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"provider-budget/"+scope.organizationId()+"/"+scope.projectId());
    var admission=jdbc.queryForList("SELECT r.scenario,r.provider,r.state,(r.created_at <= clock_timestamp()-interval '2 minutes') AS expired FROM stack_runs r LEFT JOIN stack_run_results c ON c.run_id=r.id WHERE r.id=? AND r.organization_id=? AND r.project_id=? AND c.run_id IS NULL",id,scope.organizationId(),scope.projectId());
    if(admission.isEmpty())throw new ResponseStatusException(HttpStatus.NOT_FOUND);
