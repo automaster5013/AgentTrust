@@ -5,9 +5,9 @@ docker build -t agenttrust-infrastructure:local tools/infrastructure
 python scripts/stack-infrastructure-check.py
 ```
 
-Helm 4.3.0, Terraform 1.16.5, Kubeconform 0.8.0 공식 파일의 SHA-256을 검증한다. Kubernetes 1.34.0 schema 저장소의 commit도 고정한다. 실제 Helm strict lint/render와 32개 Kubernetes 리소스의 strict schema 검사, 네 거부 입력, Terraform format/validate와 네 mock plan이 통과했다. `.local/stack-infrastructure-*/summary.json`에 결과를 남긴다. 공개 도구·schema/provider 다운로드만 사용하고 `.kube`·비밀·Docker socket을 마운트하지 않으며 실제 클러스터에 연결하거나 적용하지 않는다. GitHub의 별도 infrastructure workflow가 같은 검증을 반복한다.
+Helm 4.3.0, Terraform 1.16.5, Kubeconform 0.8.0 공식 파일의 SHA-256을 검증한다. Kubernetes 1.34.0 schema 저장소의 commit도 고정한다. 실제 Helm strict lint/render와 36개 Kubernetes 리소스의 strict schema 검사, 네 거부 입력, Terraform format/validate와 네 mock plan이 통과했다. `.local/stack-infrastructure-*/summary.json`에 결과를 남긴다. 공개 도구·schema/provider 다운로드만 사용하고 `.kube`·비밀·Docker socket을 마운트하지 않으며 실제 클러스터에 연결하거나 적용하지 않는다. GitHub의 별도 infrastructure workflow가 같은 검증을 반복한다.
 
-`charts/agenttrust-review`는 전환 API·Python 워커·Next.js·WebFlux·OPA의 다섯 애플리케이션과 ClusterIP 서비스를 만든다. 단일 replica, 비루트 UID, 읽기 전용 root, capability 제거, RuntimeDefault seccomp, service-account token 미마운트, bounded memory/CPU/tmp와 readiness/startup probe를 적용한다. 기본 deny와 지정 애플리케이션 경로·DNS·의존 서비스 namespace의 필요한 포트만 허용하는 16개 NetworkPolicy를 렌더한다. NetworkPolicy를 실제로 집행하는 CNI가 필요하며 네트워크 동작을 클러스터에서 검증한 것은 아니다.
+`charts/agenttrust-review`는 전환 API·Python 워커·Next.js·WebFlux·OPA·Promptfoo 정답 검증기의 여섯 애플리케이션과 ClusterIP 서비스를 만든다. 단일 replica, 비루트 UID, 읽기 전용 root, capability 제거, RuntimeDefault seccomp, service-account token 미마운트, bounded memory/CPU/tmp와 readiness/startup probe를 적용한다. 기본 deny와 지정 애플리케이션 경로·DNS·의존 서비스 namespace의 필요한 포트만 허용하는 18개 NetworkPolicy를 렌더한다. NetworkPolicy를 실제로 집행하는 CNI가 필요하며 네트워크 동작을 클러스터에서 검증한 것은 아니다.
 
 차트 기본값에는 실행할 가짜 이미지를 넣지 않는다. 다섯 정확한 `ghcr.io/automaster5013/agenttrust-*@sha256:...` 참조와 Git SHA를 제공해야 렌더한다. CI 검사만 발급되지 않은 `1` digest fixture를 사용한다. mutable tag·public production 모드·외부 의존 DNS·알 수 없는 설정을 거부한다. 차트 자체가 Sigstore admission controller는 아니다. 실제 적용 전에는 보안 전달 artifact와 독립 Cosign 검증을 통해 해당 digest를 확인해야 한다.
 

@@ -43,6 +43,8 @@ python scripts/stack-delivery-verify.py --bundle <검증한-artifact-폴더> --e
 
 검증기는 기존 schema 2의 열 이미지·45개 파일 또는 Collector를 추가한 schema 3의 열한 이미지·49개 파일, 또는 Tempo·Loki를 추가한 schema 4의 열세 이미지·57개 파일, Prometheus를 추가한 schema 5의 열네 이미지·61개 파일과 크기 제한, checksum map·manifest·실행 이미지 digest·기록된 취약점 결과·SBOM 내용을 확인한 다음, 각 schema의 모든 이미지와 SBOM 서명(20개·22개·26개·28개)을 Cosign 3.1.3으로 암호 검증한다. workflow repository/ref/SHA와 OIDC issuer를 고정하며 검증 생략 옵션을 사용하지 않는다. Docker 실행은 검사 도구의 실제 image ID를 고정하고 공개 전달물 폴더만 읽기 전용으로 마운트한다. Docker socket과 registry 인증 파일은 전달하지 않는다. 기본 경로는 공개 Sigstore 신뢰 루트를 조회하기 위해 네트워크를 사용한다. 별도로 신뢰한 Sigstore TrustedRoot JSON을 `--trusted-root`로 지정하면 Docker 검증의 네트워크를 차단한다. 호스트에 정확한 Cosign 버전을 설치했다면 `--docker-tools`를 생략할 수 있다.
 
+참조 정답 검증기를 추가하는 schema 6은 15개 이미지·65개 파일·30개 이미지 및 SBOM 서명을 요구한다. 기존 schema 2–5 검증은 유지한다. 로컬 경계 테스트 15개는 통과했으며, 새 schema의 실제 원격 전달·30개 서명 검증 완료 여부는 해당 CI 결과로 별도 확인한다. 로컬 검증기 이미지의 실제 Promptfoo SDK 테스트와 취약점 검사만으로 전체 전달 완료를 주장하지 않는다.
+
 신뢰 루트의 로컬 검증은 Cosign의 기본 embedded TUF root에서 `cosign initialize`로 인증한 `trusted_root.json`을 사용했다. 이는 [Sigstore의 TUF 저장소](https://github.com/sigstore/root-signing)에서 전달하는 공개 신뢰 자료다. 온라인 경로와 Docker 네트워크를 차단한 경로 모두 실제 이미지/SBOM 서명 20개를 검증했으며, 서명 바이트를 변조하고 checksum을 다시 계산한 복사본은 거부됐다. 원본 artifact는 수정하지 않았다.
 
 검증 성공은 저장된 Trivy 보고서의 무결성과 서명을 확인한 결과다. 새 취약점 스캔이나 registry 이미지 실행, 서버 배포를 수행하지 않는다. 출력의 `productionDeploymentApproved=false`와 `actualDeploymentPerformed=false`를 유지한다. 운영 배포에는 관측성 취약점 해결, 외부 인증/TLS, 운영 비밀 관리와 복구 검증이 추가로 필요하다. CI에서도 업로드 전에 동일한 소비자 검증기를 실행한다. 경계 테스트는 중복 JSON, 변경된 checksum map, 다른 repository/revision, 추가 파일, 거짓 운영 완료 주장 및 Python 최적화 모드에서의 검증 우회를 거부하는지 확인한다.

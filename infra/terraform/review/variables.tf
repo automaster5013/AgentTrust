@@ -28,7 +28,7 @@ variable "existing_secret" {
 variable "images" {
   type = map(string)
   validation {
-    condition     = toset(keys(var.images)) == toset(["core-api", "ai-worker", "gateway", "console", "opa"]) && alltrue([for name, image in var.images : can(regex("^ghcr\\.io/automaster5013/agenttrust-${name}@sha256:[a-f0-9]{64}$", image))])
+    condition     = toset(keys(var.images)) == toset(["core-api", "ai-worker", "gateway", "console", "opa", "quality-verifier"]) && alltrue([for name, image in var.images : can(regex("^ghcr\\.io/automaster5013/agenttrust-${name}@sha256:[a-f0-9]{64}$", image))])
     error_message = "Five exact tested application digests are required; mutable tags and external repositories are refused."
   }
 }

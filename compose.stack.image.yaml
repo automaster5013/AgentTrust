@@ -27,3 +27,5 @@ services:
     image: ${STACK_LOKI_IMAGE:?Provide verified log storage image digest}
   stack-prometheus:
     image: ${STACK_PROMETHEUS_IMAGE:?validated registry image required}
+  stack-quality-verifier:
+    image: ${STACK_QUALITY_VERIFIER_IMAGE:?validated reference verifier registry image required}

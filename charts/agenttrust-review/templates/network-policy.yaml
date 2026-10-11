@@ -16,7 +16,7 @@ spec:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
           podSelector: {matchLabels: {k8s-app: kube-dns}}
       ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
-{{- $paths := list (dict "from" "console" "to" "gateway" "port" 8080) (dict "from" "gateway" "to" "core-api" "port" 8080) (dict "from" "core-api" "to" "ai-worker" "port" 8000) (dict "from" "core-api" "to" "opa" "port" 8181) (dict "from" "ai-worker" "to" "core-api" "port" 8080) }}
+{{- $paths := list (dict "from" "console" "to" "gateway" "port" 8080) (dict "from" "gateway" "to" "core-api" "port" 8080) (dict "from" "core-api" "to" "ai-worker" "port" 8000) (dict "from" "core-api" "to" "opa" "port" 8181) (dict "from" "ai-worker" "to" "core-api" "port" 8080) (dict "from" "ai-worker" "to" "quality-verifier" "port" 9105) }}
 {{- range $path := $paths }}
 ---
 apiVersion: networking.k8s.io/v1

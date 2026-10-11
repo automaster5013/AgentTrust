@@ -7,11 +7,12 @@ variables {
   kube_context        = "agenttrust-review-fixture"
   revision            = "1111111111111111111111111111111111111111"
   images = {
-    core-api  = "ghcr.io/automaster5013/agenttrust-core-api@sha256:1111111111111111111111111111111111111111111111111111111111111111"
-    ai-worker = "ghcr.io/automaster5013/agenttrust-ai-worker@sha256:1111111111111111111111111111111111111111111111111111111111111111"
-    gateway   = "ghcr.io/automaster5013/agenttrust-gateway@sha256:1111111111111111111111111111111111111111111111111111111111111111"
-    console   = "ghcr.io/automaster5013/agenttrust-console@sha256:1111111111111111111111111111111111111111111111111111111111111111"
-    opa       = "ghcr.io/automaster5013/agenttrust-opa@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    core-api         = "ghcr.io/automaster5013/agenttrust-core-api@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    ai-worker        = "ghcr.io/automaster5013/agenttrust-ai-worker@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    gateway          = "ghcr.io/automaster5013/agenttrust-gateway@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    console          = "ghcr.io/automaster5013/agenttrust-console@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    opa              = "ghcr.io/automaster5013/agenttrust-opa@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    quality-verifier = "ghcr.io/automaster5013/agenttrust-quality-verifier@sha256:1111111111111111111111111111111111111111111111111111111111111111"
   }
   dependencies = {
     namespace   = "agenttrust-dependencies"
@@ -41,7 +42,7 @@ run "review_plan_has_no_plaintext_credentials" {
 run "mutable_images_rejected" {
   command = plan
   variables {
-    images = { core-api = "ghcr.io/automaster5013/agenttrust-core-api:main", ai-worker = "fixture", gateway = "fixture", console = "fixture", opa = "fixture" }
+    images = { core-api = "ghcr.io/automaster5013/agenttrust-core-api:main", ai-worker = "fixture", gateway = "fixture", console = "fixture", opa = "fixture", quality-verifier = "fixture" }
   }
   expect_failures = [var.images]
 }

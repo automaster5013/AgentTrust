@@ -10,14 +10,15 @@ revision='1'*40;repository='automaster5013/AgentTrust'
 
 def raw(value):return json.dumps(value,separators=(',',':')).encode()
 
-def fixture(label,telemetry=False,observations=False,prometheus=False):
+def fixture(label,telemetry=False,observations=False,prometheus=False,quality=False):
     folder=directory/label;folder.mkdir()
     names=delivery.IMAGES+('telemetry',) if telemetry else delivery.IMAGES
     if observations:names=delivery.IMAGES+('telemetry','tempo','loki')
     if prometheus:names=delivery.IMAGES+('telemetry','tempo','loki','prometheus')
+    if quality:names=delivery.IMAGES+('telemetry','tempo','loki','prometheus','quality-verifier')
     images={name:'ghcr.io/automaster5013/agenttrust-'+name+'@sha256:'+'1'*64 for name in names}
     values={'revision.txt':revision.encode()+b'\n'}
-    manifest={'schemaVersion':5 if prometheus else 4 if observations else 3 if telemetry else 2,'revision':revision,'images':images,'sourceIntegrationPassed':True,
+    manifest={'schemaVersion':6 if quality else 5 if prometheus else 4 if observations else 3 if telemetry else 2,'revision':revision,'images':images,'sourceIntegrationPassed':True,
               'registryImagesRuntimeVerified':True,'imageSecurityVerified':True,'keylessSignaturesVerified':True,
               'sbomAttestationsVerified':True,'deliveryStatus':'security-verified-signed','serverDeployed':False,
               'productionSecurityVerified':False,'officialObservabilitySecurityVerified':False}
@@ -47,6 +48,21 @@ def checksum(folder):
     return delivery.digest((folder/'checksums.json').read_bytes())
 
 class Boundaries(unittest.TestCase):
+    def test_reference_verifier_requires_both_signed_proofs(self):
+        for suffix in ['signature.bundle.json','sbom.bundle.json']:
+            folder,pinned=fixture('quality-'+suffix,quality=True)
+            self.assertEqual(15,len(delivery.validate(folder,revision,pinned,repository)[2]))
+            self.assertEqual(65,len(list(folder.iterdir())))
+            (folder/('quality-verifier.'+suffix)).unlink();pinned=checksum(folder)
+            with self.assertRaises(ValueError):delivery.validate(folder,revision,pinned,repository)
+
+    def test_reference_schema_cannot_be_downgraded_or_unknown(self):
+        folder,_=fixture('quality-downgrade',quality=True)
+        for schema in [2,3,4,5,7,6.0,'6',True,None]:
+            manifest=json.loads((folder/'manifest.json').read_bytes());manifest['schemaVersion']=schema
+            (folder/'manifest.json').write_bytes(raw(manifest));pinned=checksum(folder)
+            with self.assertRaises(ValueError):delivery.validate(folder,revision,pinned,repository)
+
     def test_schema_identifier_requires_an_integer(self):
         folder,_=fixture('schema-type',prometheus=True)
         for schema in [5.0,'5',True,None]:

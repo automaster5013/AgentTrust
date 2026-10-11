@@ -53,20 +53,30 @@ public class RunService {
     List<Map<String,Object>> pending(DemoUser scope) {
         return scoped(scope,()->jdbc.queryForList("SELECT r.id,r.scenario,r.provider,(r.created_at < now()-interval '2 minutes') AS expired FROM stack_runs r LEFT JOIN stack_run_results c ON c.run_id=r.id WHERE r.organization_id=? AND r.project_id=? AND r.state='queued' AND c.run_id IS NULL ORDER BY r.created_at,r.id LIMIT 20",scope.organizationId(),scope.projectId()));
     }
-    public record CampaignBinding(UUID campaignId,String caseId,UUID agentVersionId,UUID datasetVersionId,String executionProfileSha256) {public CampaignBinding(UUID c,String i,UUID a,UUID d){this(c,i,a,d,null);}}
+    public record CampaignBinding(UUID campaignId,String caseId,UUID agentVersionId,UUID datasetVersionId,String executionProfileSha256,Map<String,String> qualityCase) {public CampaignBinding(UUID c,String i,UUID a,UUID d){this(c,i,a,d,null,null);}public CampaignBinding(UUID c,String i,UUID a,UUID d,String p){this(c,i,a,d,p,null);}}
     private List<Map<String,Object>> bindings(UUID id) {
-        return jdbc.queryForList("SELECT c.campaign_id,c.case_id,p.agent_version_id,p.dataset_version_id,a.content_json,a.content_sha256 FROM stack_campaign_cases c JOIN stack_campaigns p ON p.id=c.campaign_id JOIN stack_agent_versions a ON a.id=p.agent_version_id WHERE c.run_id=?",id);
+        return jdbc.queryForList("SELECT c.campaign_id,c.case_id,p.agent_version_id,p.dataset_version_id,a.content_json,a.content_sha256,c.case_index,c.required,d.content_json AS dataset_json,d.content_sha256 AS dataset_hash,p.dataset_content_sha256 AS admitted_dataset_hash,p.agent_content_sha256 AS admitted_agent_hash FROM stack_campaign_cases c JOIN stack_campaigns p ON p.id=c.campaign_id JOIN stack_agent_versions a ON a.id=p.agent_version_id JOIN stack_dataset_versions d ON d.id=p.dataset_version_id WHERE c.run_id=?",id);
+    }
+    private Map<String,String> qualityCase(Map<String,Object> row){
+        try{
+            var agent=mapper.readTree((String)row.get("content_json"));if(!agent.path("contract").asText().equals(QualityDefinition.CONTRACT))return null;
+            String source=(String)row.get("dataset_json"),hash=(String)row.get("dataset_hash");
+            if(source==null||!ArchiveIntegrity.sha256(source.getBytes(StandardCharsets.UTF_8)).equals(hash)||!hash.equals(row.get("admitted_dataset_hash"))||!row.get("content_sha256").equals(row.get("admitted_agent_hash")))throw new IllegalStateException("Reference binding unavailable");
+            var dataset=mapper.readTree(source);var item=dataset.path("cases").path(((Number)row.get("case_index")).intValue());
+            if(!dataset.path("contract").asText().equals(QualityDefinition.CONTRACT)||!item.path("id").asText().equals(row.get("case_id"))||!item.path("scenario").asText().equals("quality")||!item.path("required").isBoolean()||item.path("required").asBoolean()!=(Boolean)row.get("required")||!item.path("input").isTextual()||!item.path("expected").isTextual())throw new IllegalStateException("Reference binding unavailable");
+            return QualityDefinition.sample(mapper,item.path("input").asText(),item.path("expected").asText());
+        }catch(Exception invalid){throw new IllegalStateException("Reference binding unavailable");}
     }
     private void bindingScoped(UUID id,CampaignBinding supplied) {
         var rows=bindings(id);
         if(rows.isEmpty()){if(supplied!=null)throw new ResponseStatusException(HttpStatus.CONFLICT);return;}
         var row=rows.getFirst();
-        if(supplied==null||!row.get("campaign_id").equals(supplied.campaignId())||!row.get("case_id").equals(supplied.caseId())||!row.get("agent_version_id").equals(supplied.agentVersionId())||!row.get("dataset_version_id").equals(supplied.datasetVersionId())||!java.util.Objects.equals(ExecutionProfiles.binding(mapper,(String)row.get("content_json"),(String)row.get("content_sha256")),supplied.executionProfileSha256()))throw new ResponseStatusException(HttpStatus.CONFLICT);
+        if(supplied==null||!row.get("campaign_id").equals(supplied.campaignId())||!row.get("case_id").equals(supplied.caseId())||!row.get("agent_version_id").equals(supplied.agentVersionId())||!row.get("dataset_version_id").equals(supplied.datasetVersionId())||!java.util.Objects.equals(ExecutionProfiles.binding(mapper,(String)row.get("content_json"),(String)row.get("content_sha256")),supplied.executionProfileSha256())||!java.util.Objects.equals(qualityCase(row),supplied.qualityCase()))throw new ResponseStatusException(HttpStatus.CONFLICT);
     }
     void validateBinding(DemoUser scope,UUID id,CampaignBinding supplied){scoped(scope,()->{bindingScoped(id,supplied);return null;});}
     Map<String,Object> job(DemoUser scope,Map<String,Object> run){return scoped(scope,()->{
         UUID id=(UUID)run.get("id");var body=new java.util.HashMap<String,Object>();body.put("runId",id.toString());body.put("organizationId",scope.organizationId().toString());body.put("projectId",scope.projectId().toString());body.put("scenario",run.get("scenario"));body.put("provider",run.get("provider"));var rows=bindings(id);
-        if(!rows.isEmpty()){var row=rows.getFirst();body.put("campaignId",row.get("campaign_id").toString());body.put("caseId",row.get("case_id"));body.put("agentVersionId",row.get("agent_version_id").toString());body.put("datasetVersionId",row.get("dataset_version_id").toString());String profile=ExecutionProfiles.binding(mapper,(String)row.get("content_json"),(String)row.get("content_sha256"));if(profile!=null)body.put("executionProfileSha256",profile);}return Map.copyOf(body);
+        if(!rows.isEmpty()){var row=rows.getFirst();body.put("campaignId",row.get("campaign_id").toString());body.put("caseId",row.get("case_id"));body.put("agentVersionId",row.get("agent_version_id").toString());body.put("datasetVersionId",row.get("dataset_version_id").toString());String profile=ExecutionProfiles.binding(mapper,(String)row.get("content_json"),(String)row.get("content_sha256"));if(profile!=null)body.put("executionProfileSha256",profile);var sample=qualityCase(row);if(sample!=null)body.put("qualityCase",sample);}return Map.copyOf(body);
     });}
     public Map<String,Object> complete(DemoUser scope,UUID id,String scenario,Evaluation.Result result) {
         return complete(scope,id,scenario,result,null);

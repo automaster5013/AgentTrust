@@ -3,6 +3,7 @@
 {{- $definitions := dict
  "core-api" (dict "uid" 10001 "port" 8080 "memory" "768Mi" "cpu" "2" "tmp" "128Mi" "health" "/actuator/health" "secrets" (list "stack-demo-credentials" "stack-worker-token" "stack-nats-token" "stack-opa-token" "stack-oidc-client-secret" "stack-minio-user" "stack-minio-password"))
  "ai-worker" (dict "uid" 10001 "port" 8000 "memory" "256Mi" "cpu" "1" "tmp" "32Mi" "health" "/health" "secrets" (list "stack-worker-token" "stack-nats-token"))
+ "quality-verifier" (dict "uid" 1000 "port" 9105 "memory" "512Mi" "cpu" "1" "tmp" "64Mi" "health" "/health" "secrets" (list "stack-worker-token"))
  "gateway" (dict "uid" 10001 "port" 8080 "memory" "384Mi" "cpu" "1" "tmp" "64Mi" "health" "/actuator/health" "secrets" (list "stack-redis-token"))
  "console" (dict "uid" 1000 "port" 3000 "memory" "512Mi" "cpu" "1" "tmp" "64Mi" "health" "/" "secrets" (list))
  "opa" (dict "uid" 10001 "port" 8181 "memory" "128Mi" "cpu" "500m" "tmp" "32Mi" "health" "/health" "secrets" (list "stack-opa-auth.json")) }}

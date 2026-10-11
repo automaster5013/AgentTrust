@@ -12,6 +12,8 @@
 
 CI에는 소스 실행과 정확한 registry 이미지 실행의 복원 훈련을 추가했다. 업로드하는 것은 비밀이 없는 `summary.json`뿐이다. 암호화 archive·개발 키·fixture 환경 파일은 artifact에 포함하지 않는다. 원격 통과 여부는 해당 CI가 완료한 뒤 별도로 확인한다.
 
+암호화 도구는 각 실행 환경에서 먼저 `docker build -t agenttrust-security:local tools/security`로 준비한다. GitHub Actions의 다른 job에서 만든 로컬 이미지는 전달되지 않는다. 소스 CI 38105472954는 이 이미지가 없어서 암호화 스냅샷 단계에서 실패했으며 source 서비스 복구·fixture 정리는 확인됐다. 각 백업 job의 빌드와 서비스 정지 전 이미지 preflight를 추가했으며, 수정 후 원격 통과 결과는 별도 확인한다.
+
 이 결과는 개발 DB의 제한된 복원 훈련이다. Keycloak 인증 정보, MinIO 증거 바이트, JetStream의 메시지·consumer 상태, 서명 키, Redis와 운영 설정의 일관된 전체 복원은 검증하지 않았다. 새 DB에서 API를 실행한 복구, HA, 실제 RPO/RTO, 운영 키 관리 및 정기적인 원격 백업도 남아 있다. 임시 키를 제거한 암호화 파일은 보관용 운영 백업이 아니다.
 
 ## MinIO 개발 복원 훈련

@@ -21,9 +21,10 @@ public final class ExecutionProfiles {
   try{
    if(!ArchiveIntegrity.sha256(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)).equals(storedHash))throw new IllegalArgumentException("Version source hash differs");
    var definition=mapper.readTree(content);if(definition.path("contract").asText().equals(VersionDefinition.CONTRACT))return null;
-   if(!definition.path("contract").asText().equals("fixed-scenarios-v2"))throw new IllegalArgumentException("Unsupported agent contract");
+   if(!List.of("fixed-scenarios-v2",QualityDefinition.CONTRACT).contains(definition.path("contract").asText()))throw new IllegalArgumentException("Unsupported agent contract");
    var profile=definition.path("executionProfile");String hash=definition.path("executionProfileSha256").asText();
-   if(!hash.matches("[a-f0-9]{64}")||!profile.path("provider").asText().equals(definition.path("provider").asText())||!hash.equals(ArchiveIntegrity.sha256(mapper.writeValueAsBytes(canonical(mapper.convertValue(profile,Object.class))))))throw new IllegalArgumentException("Version execution profile differs");return hash;
+   String expected=definition.path("contract").asText().equals(QualityDefinition.CONTRACT)?"reference-execution-profile-v1":"fixed-execution-profile-v1";
+   if(!hash.matches("[a-f0-9]{64}")||!profile.path("contract").asText().equals(expected)||!profile.path("provider").asText().equals(definition.path("provider").asText())||!hash.equals(ArchiveIntegrity.sha256(mapper.writeValueAsBytes(canonical(mapper.convertValue(profile,Object.class))))))throw new IllegalArgumentException("Version execution profile differs");return hash;
   }catch(Exception invalid){throw new IllegalStateException("Version execution profile unavailable");}
  }
 }

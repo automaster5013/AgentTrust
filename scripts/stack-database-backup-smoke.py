@@ -55,6 +55,11 @@ def crypt(operation,data):
 
 try:
     if shutil.disk_usage(root).free<(20 if os.name=='nt' else 4)*1073741824:raise ValueError('Insufficient disk headroom')
+    # Jobs do not share local Docker images. Refuse before stopping writers if the
+    # pinned cryptography tool has not been built in this job.
+    stage='cryptography-tool-preflight'
+    run(['docker','image','inspect','agenttrust-security:local'])
+    stage='source-identity'
     source=inspect('agenttrust-stack-db-1')
     if source['Config']['Labels'].get('com.docker.compose.project')!='agenttrust' or source['Config']['Labels'].get('com.docker.compose.service')!='stack-db' or source['State']['Health']['Status']!='healthy':raise ValueError('Unexpected source database')
     image=source['Image']

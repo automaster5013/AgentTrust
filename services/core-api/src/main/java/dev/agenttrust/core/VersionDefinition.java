@@ -9,7 +9,7 @@ import java.util.TreeMap;
 /** A bounded evaluation contract, never an executable agent or caller-controlled URL. */
 public final class VersionDefinition {
     public static final String CONTRACT="fixed-scenarios-v1";
-    public record Case(String id,String scenario,Boolean required) {}
+    public record Case(String id,String scenario,Boolean required,String input,String expected) {public Case(String id,String scenario,Boolean required){this(id,scenario,required,null,null);}}
     static void coordinate(String key,Integer version) {
         if(key==null||!key.matches("[a-z][a-z0-9-]{2,63}")||version==null||version<1||version>1000000)
             throw new IllegalArgumentException("Invalid version coordinate");
@@ -24,7 +24,7 @@ public final class VersionDefinition {
         var ids=new HashSet<String>();boolean required=false;
         var values=new java.util.ArrayList<Map<String,Object>>();
         for(var item:cases) {
-            if(item==null||item.id()==null||!item.id().matches("[a-z][a-z0-9-]{0,63}")||!ids.add(item.id())||item.scenario()==null||!List.of("pass","block","missing_evidence","error").contains(item.scenario())||item.required()==null)
+            if(item==null||item.id()==null||!item.id().matches("[a-z][a-z0-9-]{0,63}")||!ids.add(item.id())||item.scenario()==null||!List.of("pass","block","missing_evidence","error").contains(item.scenario())||item.required()==null||item.input()!=null||item.expected()!=null)
                 throw new IllegalArgumentException("Invalid dataset case");
             required|=item.required();
             values.add(new TreeMap<>(Map.of("id",item.id(),"scenario",item.scenario(),"required",item.required())));

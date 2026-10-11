@@ -1,0 +1,70 @@
+{
+  "ollama": {
+    "contentSha256": "796b005e3d7b79d5012b1f1629b54d704007b27ce7c0b4bee7965b6e0d73066f",
+    "definition": {
+      "answerComparison": "Unicode-NFC-trim-exact",
+      "arbitraryCodeAllowed": false,
+      "callerSelectedUrlAllowed": false,
+      "contract": "reference-execution-profile-v1",
+      "executionDeadlineSeconds": 120,
+      "inputReservationTokens": 256,
+      "inputUtf8Bytes": 192,
+      "maxAttempts": 1,
+      "maxCases": 2,
+      "model": "qwen3:0.6b",
+      "modelRuntimeDigest": "sha256:6f76d4346c34ba89df6e137fb661b4bb4daf322c1151b6ef0dfda981070a851f",
+      "modelSourceManifestDigest": "sha256:7df6b6e09427a769808717c0a93cadc4ae99ed4eb8bf5ca557c90846becea435",
+      "outputReservationTokens": 128,
+      "outputUtf8Bytes": 2048,
+      "provider": "ollama",
+      "providerTimeoutSeconds": 60,
+      "rawModelOutputRetained": false,
+      "referenceUtf8Bytes": 128,
+      "schemaVersion": 1,
+      "sourceSha256": {
+        "providers.py": "590c385a619c770ad680c0e70ba454f806ce9f3904ecd264a08bde228ba5cb9b",
+        "quality_application.py": "4a50d479039c5db280a840c1201affe519c888dca9cfaf9746c57f1c12b1ec2c",
+        "quality_evaluator.py": "854d17a4184fb743951ef986b0d8f661b9eb50036482928d820c71f2dca07bd2",
+        "quality_profiles.py": "529e9e3d47cbd59d351ac408dc659a1d928d0d45a520511cc097a84c81853b2c",
+        "quality_provider.py": "18f23c96ea3990687b86d89eab7eb2dc5338da1d8a5db3d04ab8fece2ae9f7f9",
+        "quality_worker.py": "4056d4099e8efefa2e04e074a67bc5ef4f78ff78eff53e0be0e4fe827466a640"
+      },
+      "validatorProfileSha256": "36a32e236a51f92d38cfcfa199f061d822ae590d340660723405b6c1c54501f7",
+      "verifierTimeoutSeconds": 17
+    }
+  },
+  "openai-compatible": {
+    "contentSha256": "74145e2f2b99eb54d14f8a014c8fb2c461e22077a876c589859f5a04abb61eaa",
+    "definition": {
+      "answerComparison": "Unicode-NFC-trim-exact",
+      "arbitraryCodeAllowed": false,
+      "callerSelectedUrlAllowed": false,
+      "contract": "reference-execution-profile-v1",
+      "executionDeadlineSeconds": 120,
+      "inputReservationTokens": 256,
+      "inputUtf8Bytes": 192,
+      "maxAttempts": 1,
+      "maxCases": 2,
+      "model": "qwen3:0.6b",
+      "modelRuntimeDigest": "sha256:6f76d4346c34ba89df6e137fb661b4bb4daf322c1151b6ef0dfda981070a851f",
+      "modelSourceManifestDigest": "sha256:7df6b6e09427a769808717c0a93cadc4ae99ed4eb8bf5ca557c90846becea435",
+      "outputReservationTokens": 128,
+      "outputUtf8Bytes": 2048,
+      "provider": "openai-compatible",
+      "providerTimeoutSeconds": 60,
+      "rawModelOutputRetained": false,
+      "referenceUtf8Bytes": 128,
+      "schemaVersion": 1,
+      "sourceSha256": {
+        "providers.py": "590c385a619c770ad680c0e70ba454f806ce9f3904ecd264a08bde228ba5cb9b",
+        "quality_application.py": "4a50d479039c5db280a840c1201affe519c888dca9cfaf9746c57f1c12b1ec2c",
+        "quality_evaluator.py": "854d17a4184fb743951ef986b0d8f661b9eb50036482928d820c71f2dca07bd2",
+        "quality_profiles.py": "529e9e3d47cbd59d351ac408dc659a1d928d0d45a520511cc097a84c81853b2c",
+        "quality_provider.py": "18f23c96ea3990687b86d89eab7eb2dc5338da1d8a5db3d04ab8fece2ae9f7f9",
+        "quality_worker.py": "4056d4099e8efefa2e04e074a67bc5ef4f78ff78eff53e0be0e4fe827466a640"
+      },
+      "validatorProfileSha256": "36a32e236a51f92d38cfcfa199f061d822ae590d340660723405b6c1c54501f7",
+      "verifierTimeoutSeconds": 17
+    }
+  }
+}

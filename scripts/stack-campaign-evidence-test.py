@@ -8,6 +8,19 @@ def proof(value,**scope):
 def fixture():
  owner={'organizationId':id(),'projectId':id()};scope={'organization_id':owner['organizationId'],'project_id':owner['projectId']};agent_def={'contract':'fixed-scenarios-v1','description':'고정 평가','provider':'synthetic'};data_def={'contract':'fixed-scenarios-v1','cases':[{'id':'required-pass','scenario':'pass','required':True}]};agent={**scope,'id':id(),'definition':agent_def,'content_sha256':sha(agent_def)};data={**scope,'id':id(),'definition':data_def,'content_sha256':sha(data_def)};run_id=id();result={'state':'succeeded','decision':'pass','executionEngine':'python-synthetic','rules':[{'id':'required-output','required':True,'status':'pass','reason':'Synthetic'}]};child={'id':run_id,'provider':'synthetic','scenario':'pass','result':result};child_doc={'schemaVersion':1,'runId':run_id,**owner,'provider':'synthetic','scenario':'pass','result':result};child_proof=proof(child_doc,runId=run_id,**owner);reference={key:child_proof[key] for key in ['runId','contentSha256','contentBytes','storageVersion']};record={**scope,'id':id(),'agent_version_id':agent['id'],'dataset_version_id':data['id'],'agent_content_sha256':agent['content_sha256'],'dataset_content_sha256':data['content_sha256'],'agentVersion':agent,'datasetVersion':data,'state':'succeeded','cases':[{'runId':run_id}]};parent={'schemaVersion':2,'kind':'campaign-evidence','deploymentAuthority':False,'campaign':record,'childArchives':[reference]};parent_proof=proof(parent,campaignId=record['id'],**owner);return owner,record,parent,parent_proof,child,child_proof,reference
 class EvidenceContracts(unittest.TestCase):
+ def test_reference_profile_and_expected_answer_bytes_remain_bound(self):
+  owner,record,parent,_,_,_,reference=fixture()
+  profile={'contract':'reference-execution-profile-v1','provider':'ollama'}
+  agent={'contract':'reference-answer-v1','provider':'ollama','executionProfile':profile,'executionProfileSha256':sha(profile)}
+  dataset={'contract':'reference-answer-v1','cases':[{'id':'required-pass','scenario':'quality','required':True,'input':'Return READY.','expected':'READY'}]}
+  for name,binding,definition in [('agentVersion','agent',agent),('datasetVersion','dataset',dataset)]:
+   record[name]['definition']=definition;record[name]['content_sha256']=sha(definition);record[binding+'_content_sha256']=sha(definition)
+  self.assertEqual(verify_parent(proof(parent,campaignId=record['id'],**owner),owner,record),[reference])
+  changed=copy.deepcopy(parent);changed['campaign']['datasetVersion']['definition']['cases'][0]['expected']='OTHER'
+  with self.assertRaises(ValueError):verify_parent(proof(changed,campaignId=record['id'],**owner),owner,changed['campaign'])
+  changed=copy.deepcopy(parent);changed['campaign']['agentVersion']['definition']['executionProfile']['provider']='openai-compatible'
+  definition=changed['campaign']['agentVersion']['definition'];changed['campaign']['agentVersion']['content_sha256']=sha(definition);changed['campaign']['agent_content_sha256']=sha(definition)
+  with self.assertRaises(ValueError):verify_parent(proof(changed,campaignId=record['id'],**owner),owner,changed['campaign'])
  def test_matching_bytes_and_scoped_parent_child_chain(self):
   owner,record,parent,parent_proof,child,child_proof,reference=fixture();self.assertEqual(verify_parent(parent_proof,owner,record),[reference]);self.assertEqual(verify_child(child_proof,owner,child,reference)['result'],child['result'])
  def test_substituted_parent_bytes_scope_versions_and_children_are_refused(self):

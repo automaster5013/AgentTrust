@@ -29,7 +29,8 @@
         "ai-worker",
         "gateway",
         "console",
-        "opa"
+        "opa",
+        "quality-verifier"
       ],
       "properties": {
         "core-api": {
@@ -51,6 +52,10 @@
         "opa": {
           "type": "string",
           "pattern": "^ghcr\\.io/automaster5013/agenttrust-opa@sha256:[a-f0-9]{64}$"
+        },
+        "quality-verifier": {
+          "type": "string",
+          "pattern": "^ghcr\\.io/automaster5013/agenttrust-quality-verifier@sha256:[a-f0-9]{64}$"
         }
       }
     },
