@@ -48,5 +48,7 @@ except Exception as error:report['errorType']=type(error).__name__;report['failu
 finally:
  try:scratch.close();report['temporaryArchivesRemoved']=True
  except Exception as cleanup_error:report['temporaryArchivesRemoved']=False;report['completed']=False;report['cleanupErrorType']=type(cleanup_error).__name__
- report['finishedAt']=datetime.datetime.now(datetime.timezone.utc).isoformat();path=directory/'summary.json';path.open('x',encoding='utf-8').write(json.dumps(report,indent=2)+'\n');print(json.dumps({'completed':report['completed'],'images':len(report['images']),'reportPath':str(path),'rawSecretsPrinted':False}))
+ report['finishedAt']=datetime.datetime.now(datetime.timezone.utc).isoformat();path=directory/'summary.json'
+ with path.open('x',encoding='utf-8') as stream:stream.write(json.dumps(report,indent=2)+'\n')
+ print(json.dumps({'completed':report['completed'],'images':len(report['images']),'reportPath':str(path),'rawSecretsPrinted':False}))
 if not report['completed']:raise SystemExit(1)
