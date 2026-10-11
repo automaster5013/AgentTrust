@@ -94,6 +94,10 @@ def main():
             references = verify_parent(proof, owner, record)
             for case, reference in zip(record['cases'], references):
                 child = client.request('runs/' + case['runId'])
+                if child['scenario'] != case['scenario'] or child['provider'] != case['provider'] \
+                        or child['result']['state'] != case['state'] \
+                        or child['result']['decision'] != case['decision']:
+                    raise ValueError('Child result disagrees with campaign case')
                 verify_child(client.request('runs/' + case['runId'] + '/evidence'), owner, child, reference)
             report['childArchivesVerified'] = len(references)
             report['parentContentSha256'] = proof['contentSha256']
