@@ -2,6 +2,8 @@
 
 기업 개발팀이 입력·기대 정답을 고정하고, 실제 로컬 모델의 결과와 사람의 릴리스 승인을 분리해 확인하는 시연이다. 현재 검토 화면은 `http://127.0.0.1:4320`의 Next.js/TypeScript 앱이다. [설치](stack-local.md), [공급자 준비](stack-providers.md), [서명 기록 준비](stack-campaigns.md)를 순서대로 따른다. 설치 전에 디스크 여유를 확인하고 기존 비밀·DB·LogiTrack 자산을 보존한다.
 
+시연 전에 [읽기 전용 점검](stack-review-preflight.md)을 실행하면 로그인·감사 응답과 이미 생성된 캠페인의 보관 근거·현재 정책 조회를 확인할 수 있다. 점검은 평가나 승인을 만들지 않으며 배포 준비 완료를 뜻하지 않는다.
+
 ## 1. 조직 계정으로 로그인한다
 
 Keycloak 버튼으로 로그인한다. 합성 계정은 비공개 `.local/stack/demo-credentials.json`에서 직접 확인한다. `demo-admin`은 실행·승인·반려, `demo-editor`는 실행, `demo-viewer`는 조회 권한을 갖는다. 화면의 조직·프로젝트·역할과 API의 실제 권한 검사를 함께 확인한다. 다른 조직의 UUID를 알고 있어도 그 기록에 접근할 수 없어야 한다.
