@@ -147,6 +147,9 @@ jobs:
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-review-preflight-smoke.py
           python3 scripts/stack-current-gate-check-smoke.py
+          node --experimental-strip-types --test scripts/stack-current-gate-anchor-test.ts
+          python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-current-gate-anchor-smoke.py
           python3 scripts/stack-cancellation-smoke.py
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-run-history-smoke.py
@@ -189,6 +192,7 @@ jobs:
             .local/stack-quality-campaign-*/summary.json
             .local/stack-review-preflight-*.json
             .local/stack-current-gate-check-*.json
+            .local/stack-current-gate-anchor-*.json
             .local/stack-cancellation-*.json
             .local/stack-run-history-*.json
             .local/stack-campaign-history-*.json
@@ -312,6 +316,9 @@ jobs:
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-review-preflight-smoke.py
           python3 scripts/stack-current-gate-check-smoke.py
+          node --experimental-strip-types --test scripts/stack-current-gate-anchor-test.ts
+          python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-current-gate-anchor-smoke.py
           python3 scripts/stack-cancellation-smoke.py
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-run-history-smoke.py
@@ -347,6 +354,7 @@ jobs:
             .local/stack-quality-campaign-*/summary.json
             .local/stack-review-preflight-*.json
             .local/stack-current-gate-check-*.json
+            .local/stack-current-gate-anchor-*.json
             .local/stack-cancellation-*.json
             .local/stack-run-history-*.json
             .local/stack-campaign-history-*.json

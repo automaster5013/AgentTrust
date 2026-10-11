@@ -1,11 +1,15 @@
 """Read existing original-stack review data; never create an evaluation or approval."""
 import argparse
+import base64
 import datetime
 import hashlib
 import json
 import pathlib
 import re
 import uuid
+import secrets
+import subprocess
+import time
 
 from stack_campaign_evidence import bounded_json, identifier, verify_child, verify_parent
 from stack_test_client import StackClient
@@ -54,6 +58,7 @@ def main():
     parser.add_argument('--username', choices=['demo-admin', 'demo-editor', 'demo-viewer', 'other-admin'],
                         default='demo-viewer')
     parser.add_argument('--campaign', help='Canonical UUID of an existing campaign in this account scope')
+    parser.add_argument('--trusted-public-key', help='Separately trusted Ed25519 PUBLIC KEY PEM for a fresh signed campaign observation')
     args = parser.parse_args()
     report = {
         'completed': False, 'businessDataWrites': False, 'paidApiCalls': False,
@@ -66,6 +71,27 @@ def main():
     stage = 'configuration'
     try:
         campaign = identifier(args.campaign) if args.campaign else None
+        if args.trusted_public_key and not campaign:
+            raise ValueError('Signed current observation requires a campaign')
+        public_key = None
+        expected_key_id = None
+        if args.trusted_public_key:
+            public_key = pathlib.Path(args.trusted_public_key).resolve(strict=True)
+            if not public_key.is_file() or public_key.stat().st_size > 4096:
+                raise ValueError('Invalid public trust anchor')
+            with public_key.open('rb') as stream:
+                pem_bytes = stream.read(4097)
+            if len(pem_bytes)>4096:
+                raise ValueError('Invalid public trust anchor')
+            pem = pem_bytes.decode('ascii')
+            match = re.fullmatch(r'-----BEGIN PUBLIC KEY-----\r?\n([A-Za-z0-9+/=\r\n]+)-----END PUBLIC KEY-----\r?\n?',pem)
+            if not match:
+                raise ValueError('Invalid public trust anchor')
+            der = base64.b64decode(match.group(1).replace('\r','').replace('\n',''),validate=True)
+            if len(der)!=44 or der[:12]!=bytes.fromhex('302a300506032b6570032100'):
+                raise ValueError('Invalid Ed25519 public trust anchor')
+            expected_key_id=hashlib.sha256(der).hexdigest()
+
         credentials = bounded_json(ROOT / '.local/stack/demo-credentials.json', 65536)
         if not isinstance(credentials, list) or not 1 <= len(credentials) <= 16:
             raise ValueError('Invalid local account configuration')
@@ -109,6 +135,32 @@ def main():
                 raise ValueError('Current policy unavailable')
             report['currentGateAllowedAtRead'] = gate['deploymentAllowed']
             report['checks'].append('current OPA observation is separate from historical byte integrity')
+            if public_key:
+                stage = 'signed-current-gate'
+                challenge = secrets.token_hex(32)
+                started = int(time.time() * 1000)
+                began = time.monotonic()
+                frame = client.request('campaigns/' + campaign + '/gate-check/' + challenge)
+                result = subprocess.run(['node', '--experimental-strip-types',
+                    'scripts/stack-verify-current-gate.ts', '--trusted-public-key', str(public_key)],
+                    cwd=ROOT, input=json.dumps({'user':owner, 'record':record, 'evidence':proof,
+                        'frame':frame, 'campaignId':campaign, 'challenge':challenge,
+                        'requestStartedAt':started}), capture_output=True, text=True, encoding='utf-8',
+                    timeout=15, check=True)
+                verified = json.loads(result.stdout)
+                if verified.get('completed') is not True or verified.get('signatureVerified') is not True \
+                        or verified.get('currentDeploymentAuthority') is not False \
+                        or verified.get('trustedKeyId') != expected_key_id \
+                        or time.monotonic() - began >= 30 \
+                        or int(time.time()*1000) < started \
+                        or int(time.time()*1000) >= verified['expiresAtEpochMillis']:
+                    raise ValueError('Current signed observation unavailable')
+                report.update(signatureVerified=True, trustedGateKeyId=verified['trustedKeyId'],
+                    currentGateAllowedAtRead=verified['deploymentAllowedAtRead'],
+                    currentGateCheckedAtEpochMillis=verified['checkedAtEpochMillis'],
+                    currentGateExpiresAtEpochMillis=verified['expiresAtEpochMillis'])
+                report['checks'].append('fresh Java signature binds request challenge and scope to a separately trusted development public key')
+
         report['completed'] = True
     except Exception as error:
         report.update(failedStage=stage, errorType=type(error).__name__, code='STACK_REVIEW_PREFLIGHT_UNVERIFIED')
@@ -136,6 +188,7 @@ def main():
             'failedStage', 'errorType', 'code', 'ownSessionLoggedOut', 'loginPhase',
             'oidcAuthorizationCodePkceVerified', 'ownIdentityProviderSessionClosed',
             'unexpectedHttpStatus', 'expectedHttpStatus', 'responseCode',
+            'trustedGateKeyId', 'currentGateCheckedAtEpochMillis', 'currentGateExpiresAtEpochMillis',
         }
         report = {key: value for key, value in report.items() if key in permitted}
         report['finishedAt'] = datetime.datetime.now(datetime.timezone.utc).isoformat()

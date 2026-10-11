@@ -65,3 +65,5 @@ node --experimental-strip-types scripts/stack-verify-campaign-receipt.ts --bundl
 평가 실행 전 화면의 **평가 경로 상태 확인**으로 현재 데이터베이스·Python/NATS·OPA 연결을 확인할 수 있습니다. 세 연결이 확인돼도 실제 모델 실행 성공이나 릴리스 승인으로 간주하지 않습니다. [계약과 장애 검증](stack-evaluation-readiness.md)을 참고하세요.
 
 캠페인 준비 화면의 에이전트·데이터셋 **버전 이력 조회**로 최근 50개 밖의 보관 버전을 탐색할 수 있습니다. 선택 전에 실제 불변 내용과 SHA-256을 확인합니다. [이력과 선택 계약](stack-version-history.md)을 참고하세요.
+
+검토용 CLI에 `--trusted-public-key`를 지정하면 별도 신뢰한 공개 키로 요청 난수에 결합한 현재 Java 판정 서명을 확인합니다. 파일로 남는 요약은 조회 당시 검사 결과이며 현재 배포 토큰이 아닙니다. [공개 키 고정과 만료 계약](stack-review-preflight.md)을 참고하세요.
