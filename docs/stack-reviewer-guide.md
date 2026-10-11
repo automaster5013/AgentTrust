@@ -67,3 +67,25 @@ node --experimental-strip-types scripts/stack-verify-campaign-receipt.ts --bundl
 캠페인 준비 화면의 에이전트·데이터셋 **버전 이력 조회**로 최근 50개 밖의 보관 버전을 탐색할 수 있습니다. 선택 전에 실제 불변 내용과 SHA-256을 확인합니다. [이력과 선택 계약](stack-version-history.md)을 참고하세요.
 
 검토용 CLI에 `--trusted-public-key`를 지정하면 별도 신뢰한 공개 키로 요청 난수에 결합한 현재 Java 판정 서명을 확인합니다. 파일로 남는 요약은 조회 당시 검사 결과이며 현재 배포 토큰이 아닙니다. [공개 키 고정과 만료 계약](stack-review-preflight.md)을 참고하세요.
+
+## Actual read-only screen review — 2026-10-12 KST
+
+These are the actual Next.js console at implementation revision `15fce60`, using its own synthetic viewer session. The disabled evaluation action reflects the real viewer role. Readiness and immutable history were queried without creating evaluations, versions, model calls or reviews. Desktop and 390px mobile images were visually inspected; all 15 business-table fingerprints matched the completed post-apply soak and both application/identity sessions closed.
+
+![Actual Next.js viewer console at 1440px](evidence/stack-reviewer-desktop-20261012.png)
+
+![Actual dependency observation at 390px](evidence/stack-readiness-mobile-20261012.png)
+
+The readiness observation follows this implemented read-only path. A successful dependency observation does not grant release or production deployment permission.
+
+```mermaid
+flowchart LR
+  Viewer[Authenticated viewer] --> BFF[Next.js TypeScript BFF]
+  BFF --> Gateway[Spring WebFlux gateway]
+  Gateway --> Quota[Redis project quota]
+  Gateway --> Core[Java 21 Spring Boot]
+  Core --> Database[PostgreSQL restricted scoped connection]
+  Core --> Worker[Python FastAPI readiness]
+  Worker --> NATS[NATS JetStream consumer information]
+  Core --> Policy[OPA bounded inconclusive probe]
+```
