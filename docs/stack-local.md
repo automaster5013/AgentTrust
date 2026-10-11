@@ -7,7 +7,7 @@ python scripts/stack-setup.py
 python scripts/stack-identity-setup.py
 python scripts/stack-gateway-setup.py
 python scripts/stack-object-setup.py
-docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml build stack-core-api stack-ai-worker stack-console stack-opa stack-identity stack-gateway stack-object-store stack-db stack-nats
+docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml build stack-core-api stack-ai-worker stack-console stack-opa stack-identity stack-gateway stack-object-store stack-db stack-nats stack-quality-verifier
 docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console
 python scripts/stack-identity-profile.py
 python scripts/stack-identity-smoke.py
