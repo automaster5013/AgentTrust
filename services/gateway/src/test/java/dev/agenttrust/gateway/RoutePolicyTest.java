@@ -4,6 +4,12 @@ import org.springframework.http.HttpMethod;
 import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 class RoutePolicyTest {
+    @org.junit.jupiter.api.Test void providerUsageIsAnAuthenticatedReadOnlyPath(){
+        assertTrue(RoutePolicy.allowed("/api/provider-usage",HttpMethod.GET));
+        assertTrue(RoutePolicy.protectedPath("/api/provider-usage"));
+        assertFalse(RoutePolicy.allowed("/api/provider-usage",HttpMethod.POST));
+        assertFalse(RoutePolicy.allowed("/api/provider-usage/foreign",HttpMethod.GET));
+    }
     @org.junit.jupiter.api.Test void runHistoryNavigationIsBoundedReadOnlyAndProtected(){
         assertTrue(RoutePolicy.allowed("/api/run-history",HttpMethod.GET));
         assertTrue(RoutePolicy.allowed("/api/run-history/"+"A".repeat(84),HttpMethod.GET));

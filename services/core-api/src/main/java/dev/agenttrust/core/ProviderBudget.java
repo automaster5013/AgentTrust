@@ -9,6 +9,7 @@ import org.springframework.web.server.ResponseStatusException;
 /** Immutable single-use reservation; ambiguous execution is never automatically billed again. */
 @Service
 public class ProviderBudget {
+ static final int DAILY_LIMIT=100;
  private final RunService runs;private final JdbcTemplate jdbc;
  public ProviderBudget(RunService runs,JdbcTemplate jdbc){this.runs=runs;this.jdbc=jdbc;}
  Map<String,Object> reserve(DemoUser scope,UUID id,String scenario,String provider){
@@ -20,7 +21,7 @@ public class ProviderBudget {
    var row=admission.getFirst();if(!scenario.equals(row.get("scenario"))||!provider.equals(row.get("provider"))||provider.equals("synthetic")||!row.get("state").equals("queued"))throw new ResponseStatusException(HttpStatus.CONFLICT);
    if((Boolean)row.get("expired")||jdbc.queryForObject("SELECT count(*) FROM stack_provider_attempts WHERE run_id=?",Long.class,id)>0)return denied(id);
    long used=jdbc.queryForObject("SELECT count(*) FROM stack_provider_attempts WHERE organization_id=? AND project_id=? AND budget_day=(now() AT TIME ZONE 'UTC')::date",Long.class,scope.organizationId(),scope.projectId());
-   if(used>=100)return denied(id);
+   if(used>=DAILY_LIMIT)return denied(id);
    jdbc.update("INSERT INTO stack_provider_attempts(run_id,organization_id,project_id,provider) VALUES(?,?,?,?)",id,scope.organizationId(),scope.projectId(),provider);
    return Map.of("runId",id,"allowed",true,"reservedInputTokens",256,"reservedOutputTokens",128);
   });

@@ -1,0 +1,13 @@
+import type {Identity} from './contracts';
+export type ProviderUsage={budgetDay:string;observedAt:string;dailyLimit:number;reservedAttempts:number;remainingAttempts:number;providers:{provider:'ollama'|'openai'|'openai-compatible';reservedAttempts:number;succeededRuns:number;failedRuns:number;pendingRuns:number}[]};
+function object(value:unknown):Record<string,unknown>{if(!value||typeof value!=='object'||Array.isArray(value))throw Error('INVALID_USAGE');return value as Record<string,unknown>}
+function count(value:unknown):number{if(typeof value!=='number'||!Number.isSafeInteger(value)||value<0||value>100)throw Error('INVALID_USAGE');return value}
+export function providerUsage(value:unknown,user:Identity):ProviderUsage{
+ const v=object(value);if(Object.keys(v).sort().join(',')!=='billableUsageMeasured,budgetDay,countingBasis,dailyLimit,deploymentAuthority,observedAt,organizationId,projectId,providers,remainingAttempts,reservedAttempts,timeZone')throw Error('INVALID_USAGE');
+ if(v.organizationId!==user.organizationId||v.projectId!==user.projectId||v.timeZone!=='UTC'||v.dailyLimit!==100||v.countingBasis!=='immutable-provider-reservations'||v.billableUsageMeasured!==false||v.deploymentAuthority!==false||!Array.isArray(v.providers)||v.providers.length!==3)throw Error('INVALID_USAGE_SCOPE');
+ if(typeof v.budgetDay!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(v.budgetDay)||new Date(v.budgetDay+'T00:00:00Z').toISOString().slice(0,10)!==v.budgetDay||typeof v.observedAt!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(v.observedAt)||!Number.isFinite(Date.parse(v.observedAt)))throw Error('INVALID_USAGE_DATE');
+ const names=['ollama','openai','openai-compatible'] as const;
+ const providers=v.providers.map((value,index)=>{const p=object(value);if(Object.keys(p).sort().join(',')!=='failedRuns,pendingRuns,provider,reservedAttempts,succeededRuns'||p.provider!==names[index])throw Error('INVALID_USAGE_PROVIDER');const reservedAttempts=count(p.reservedAttempts),succeededRuns=count(p.succeededRuns),failedRuns=count(p.failedRuns),pendingRuns=count(p.pendingRuns);if(succeededRuns+failedRuns+pendingRuns!==reservedAttempts)throw Error('INVALID_USAGE_COUNTS');return {provider:names[index],reservedAttempts,succeededRuns,failedRuns,pendingRuns}});
+ const reservedAttempts=count(v.reservedAttempts),remainingAttempts=count(v.remainingAttempts);if(providers.reduce((n,p)=>n+p.reservedAttempts,0)!==reservedAttempts||remainingAttempts!==100-reservedAttempts)throw Error('INVALID_USAGE_COUNTS');
+ return {budgetDay:v.budgetDay,observedAt:v.observedAt,dailyLimit:100,reservedAttempts,remainingAttempts,providers};
+}

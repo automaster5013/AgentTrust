@@ -38,6 +38,21 @@ test('viewer navigates real older evaluation pages and opens scoped evidence',as
  phase('actual read-only browser history returns distinct pages and opens the selected existing evaluation');
 });
 
+test('viewer reads real provider reservations and clears an invented billed usage response',async({page})=>{
+ await login(page,'demo-viewer');
+ const region=page.getByRole('region',{name:'프로젝트 모델 실행 한도',exact:true});
+ const snapshot=await (await page.request.get('/backend/provider-usage')).json();
+ await region.getByRole('button',{name:'현재 실행 한도 조회',exact:true}).click();
+ await expect(region.getByText(/UTC 기준일/)).toBeVisible();
+ await expect(region.getByText(new RegExp('남은 예약 '+snapshot.remainingAttempts+'회'))).toBeVisible();
+ await expect(region.getByRole('table',{name:'공급자별 예약과 평가 상태'})).toBeVisible();
+ await page.route('**/backend/provider-usage',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...snapshot,billableUsageMeasured:true})}));
+ await region.getByRole('button',{name:'현재 실행 한도 조회',exact:true}).click();
+ await expect(region.getByText('실행 한도를 확인하지 못했습니다. 다시 조회해 주세요.',{exact:true})).toBeVisible();
+ await expect(region.getByRole('table')).toHaveCount(0);
+ phase('browser displays actual scoped reservations and refuses invented paid usage');
+});
+
 test('viewer verifies a fresh signed gate and clears replayed unavailable and expired checks',async({page})=>{
  await login(page,'demo-viewer');
  await page.clock.install({time:new Date()});
