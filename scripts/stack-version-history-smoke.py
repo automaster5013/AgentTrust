@@ -24,12 +24,15 @@ try:
  totals={}
  for kind,table in [('agents','stack_agent_versions'),('datasets','stack_dataset_versions')]:
   org=str(uuid.UUID(user['organizationId']));project=str(uuid.UUID(user['projectId']))
-  expected=sql("SELECT id FROM "+table+" WHERE organization_id='"+org+"' AND project_id='"+project+"' ORDER BY created_at DESC,id DESC;").splitlines()
+  coordinates=sql("SELECT id,to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') FROM "+table+" WHERE organization_id='"+org+"' AND project_id='"+project+"' ORDER BY created_at DESC,id DESC;").splitlines()
+  expected=[line.split('|',1)[0] for line in coordinates];timestamps={line.split('|',1)[0]:datetime.datetime.fromisoformat(line.split('|',1)[1].replace('Z','+00:00')) for line in coordinates}
   seen=[];token=None;pages=[]
   for _ in range(9):
    page=admin.request('version-history/'+kind+('/'+token if token else ''));checked=verify(page,user,kind,token);seen+=checked['ids'];pages.append(page);token=checked['nextCursor']
    if token is None:break
   assert token is None and seen==expected and len(seen)==len(set(seen)) and seen
+  for page in pages:
+   for entry in page['entries']:assert datetime.datetime.fromisoformat(entry['createdAt'].replace('Z','+00:00'))==timestamps[entry['id']]
   boundary=cursor(pages[0]['entries'][-1],user,kind)
   other_kind='datasets' if kind=='agents' else 'agents'
   checked=verify(viewer.request('version-history/'+kind+'/'+boundary),viewer_user,kind,boundary);assert checked['ids']==expected[len(pages[0]['entries']):len(pages[0]['entries'])+25]
@@ -39,11 +42,12 @@ try:
   raw=bytearray(base64.urlsafe_b64decode(boundary));raw[:3]=b'BAD';admin.request('version-history/'+kind+'/'+base64.urlsafe_b64encode(raw).decode(),expected=400)
   for entry in [pages[0]['entries'][0],pages[-1]['entries'][-1]]:
    detail=viewer.request('versions/'+kind+'/'+entry['id']);assert detail['content_sha256']==entry['contentSha256'] and detail['resource_key']==entry['resourceKey'] and detail['version']==entry['version']
-   code="import {readFileSync} from 'node:fs';import {verifiedAgentVersion,verifiedDatasetVersion} from './apps/console/src/lib/campaign-contracts.ts';const v=JSON.parse(readFileSync(0,'utf8'));await (v.kind==='agents'?verifiedAgentVersion:verifiedDatasetVersion)(v.detail,v.user);"
-   subprocess.run(['node','--experimental-strip-types','--input-type=module','-e',code],cwd=ROOT,input=json.dumps({'detail':detail,'user':viewer_user,'kind':kind}),capture_output=True,text=True,encoding='utf-8',timeout=15,check=True)
+   assert datetime.datetime.fromisoformat(detail['created_at'].replace('Z','+00:00'))==timestamps[entry['id']]
+   code="import {readFileSync} from 'node:fs';import {verifyVersionHistoryBinding} from './apps/console/src/lib/version-history.ts';import {verifiedAgentVersion,verifiedDatasetVersion} from './apps/console/src/lib/campaign-contracts.ts';const v=JSON.parse(readFileSync(0,'utf8'));const detail=await (v.kind==='agents'?verifiedAgentVersion:verifiedDatasetVersion)(v.detail,v.user);verifyVersionHistoryBinding({id:v.entry.id,resource_key:v.entry.resourceKey,version:v.entry.version,content_sha256:v.entry.contentSha256,created_at:v.entry.createdAt},detail);"
+   subprocess.run(['node','--experimental-strip-types','--input-type=module','-e',code],cwd=ROOT,input=json.dumps({'detail':detail,'entry':entry,'user':viewer_user,'kind':kind}),capture_output=True,text=True,encoding='utf-8',timeout=15,check=True)
    foreign.request('versions/'+kind+'/'+entry['id'],expected=404)
   totals[kind]={'rows':len(seen),'pages':len(pages)}
-  report['checks'].append(kind+' full scoped pagination, kind/tenant boundary rejection and actual oldest/newest byte-hash verification')
+  report['checks'].append(kind+' full scoped pagination, kind/tenant boundary rejection and actual oldest/newest byte-hash and independent PostgreSQL microsecond verification')
  assert fingerprint()==before
  report.update(completed=True,businessTablesUnchanged=len(before),registries=totals)
 except Exception as error:report.update(code='VERSION_HISTORY_UNVERIFIED',errorType=type(error).__name__)
