@@ -307,3 +307,17 @@ test('mobile reviewer reads actual readiness and immutable version history witho
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2)).toBe(true);
  phase('390px actual scoped readiness and version navigation have no horizontal overflow');
 });
+
+
+test('a stalled current gate request times out and a fresh retry verifies the actual signature',async({page})=>{
+ await login(page,'demo-viewer');const region=page.getByRole('region',{name:'버전과 평가 캠페인',exact:true});
+ const records=await (await page.request.get('/backend/campaigns')).json() as {id:string}[];let selected:string|null=null;
+ for(const row of records){const record=await (await page.request.get('/backend/campaigns/'+row.id)).json();if(record.state==='succeeded'&&(await page.request.get('/backend/campaigns/'+row.id+'/evidence')).ok()){selected=row.id;break}}
+ expect(selected).not.toBeNull();await region.getByRole('button',{name:'캠페인 '+selected!.slice(0,8),exact:true}).click();
+ const checks=page.getByRole('region',{name:'서명된 현재 판정 확인',exact:true});let received!:()=>void,release!:()=>void;const ready=new Promise<void>(resolve=>{received=resolve}),held=new Promise<void>(resolve=>{release=resolve});
+ const routePattern='**/backend/campaigns/'+selected+'/gate-check/*';
+ await page.route(routePattern,async route=>{received();await held;try{await route.abort()}catch{/* request already aborted by the component deadline */}});
+ try{await checks.getByRole('button',{name:'현재 판정 서명 확인',exact:true}).click();await ready;await expect(checks.getByRole('status')).toContainText('서명·범위·유효 시간을 확인하지 못했습니다.',{timeout:15000});await expect(checks.getByRole('button',{name:'현재 판정 서명 확인',exact:true})).toBeEnabled();await expect(checks.getByText(/서명 확인 완료/)).toHaveCount(0)}finally{release();await page.unroute(routePattern)}
+ await checks.getByRole('button',{name:'현재 판정 서명 확인',exact:true}).click();await expect(checks.getByText(/서명 확인 완료/)).toBeVisible();
+ phase('stalled request releases busy state at the bounded deadline; actual fresh Java signature verifies on retry');
+});

@@ -1,5 +1,11 @@
 package dev.agenttrust.core;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonToken;
+import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ReadListener;
 import jakarta.servlet.ServletException;
@@ -9,6 +15,7 @@ import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import org.springframework.http.MediaType;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -24,6 +31,7 @@ public class JsonBodyLimitFilter extends OncePerRequestFilter {
         if(request.getContentLengthLong()>16384) {reject(response);return;}
         byte[] bytes=request.getInputStream().readNBytes(16385);
         if(bytes.length>16384) {reject(response);return;}
+        if(!validText(bytes,request.getCharacterEncoding(),request.getContentType())) {response.setStatus(400);response.setContentType("application/json");response.getWriter().write("{\"code\":\"INVALID_JSON_TEXT\"}");return;}
         var wrapped=new HttpServletRequestWrapper(request) {
             @Override public ServletInputStream getInputStream() {
                 var stream=new ByteArrayInputStream(bytes);
@@ -37,6 +45,32 @@ public class JsonBodyLimitFilter extends OncePerRequestFilter {
             }
         };
         chain.doFilter(wrapped,response);
+    }
+    // Reject text that PostgreSQL cannot store or UTF-8 encoders would silently replace.
+    // This is bounded by the body limit and does not materialize a JSON tree.
+    private static boolean validText(byte[] bytes,String encoding,String contentType) {
+        try {
+            Charset declared=contentType==null?null:MediaType.parseMediaType(contentType).getCharset();
+            if(declared!=null && !declared.equals(StandardCharsets.UTF_8)) return false;
+            if(encoding!=null && !Charset.forName(encoding).equals(StandardCharsets.UTF_8)) return false;
+            String text=StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString();
+            try(var parser=new JsonFactory().createParser(text)) {
+                JsonToken token;
+                while((token=parser.nextToken())!=null) {
+                    if(token==JsonToken.FIELD_NAME || token==JsonToken.VALUE_STRING) {
+                        String value=parser.getText();
+                        for(int i=0;i<value.length();i++) {
+                            char c=value.charAt(i);
+                            if(c==0 || Character.isLowSurrogate(c)) return false;
+                            if(Character.isHighSurrogate(c)) {
+                                if(++i>=value.length() || !Character.isLowSurrogate(value.charAt(i))) return false;
+                            }
+                        }
+                    }
+                }
+            }
+            return true;
+        } catch(IOException|IllegalArgumentException failure) {return false;}
     }
     private static void reject(HttpServletResponse response) throws IOException {response.setStatus(413);response.setContentType("application/json");response.getWriter().write("{\"code\":\"REQUEST_TOO_LARGE\"}");}
 }

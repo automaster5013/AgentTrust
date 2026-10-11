@@ -3,16 +3,17 @@ import argparse,datetime,json,pathlib,subprocess,time,uuid
 from stack_test_client import StackClient
 from stack_business_fingerprint import fingerprint,sql
 ROOT=pathlib.Path(__file__).resolve().parent.parent
-parser=argparse.ArgumentParser();parser.add_argument('--worker-interruption',action='store_true');args=parser.parse_args()
-report={'completed':False,'checks':[],'businessDataWrites':False,'paidApiCalls':False,'credentialsRecorded':False};clients=[];stopped=False
+parser=argparse.ArgumentParser();parser.add_argument('--worker-interruption',action='store_true');parser.add_argument('--nats-interruption',action='store_true');parser.add_argument('--policy-interruption',action='store_true');args=parser.parse_args()
+report={'completed':False,'checks':[],'businessDataWrites':False,'paidApiCalls':False,'credentialsRecorded':False};clients=[];stopped_service=None
 
 def validate(value,user,status):
  code="import {readFileSync} from 'node:fs';import {evaluationReadiness} from './apps/console/src/lib/evaluation-readiness.ts';const v=JSON.parse(readFileSync(0,'utf8'));console.log(JSON.stringify(evaluationReadiness(v.value,v.user,v.status)));"
  result=subprocess.run(['node','--experimental-strip-types','--input-type=module','-e',code],cwd=ROOT,input=json.dumps({'value':value,'user':user,'status':status}),capture_output=True,text=True,encoding='utf-8',timeout=15,check=True)
  return json.loads(result.stdout)
 
-def worker(command):
- subprocess.run(['docker',command,'agenttrust-stack-ai-worker-1'],cwd=ROOT,capture_output=True,text=True,encoding='utf-8',timeout=40,check=True)
+def owned_service(service,command):
+ assert service in ['ai-worker','nats','opa'] and command in ['stop','start']
+ subprocess.run(['docker',command,'agenttrust-stack-'+service+'-1'],cwd=ROOT,capture_output=True,text=True,encoding='utf-8',timeout=40,check=True)
 
 def recovered(client,user):
  for attempt in range(15):
@@ -36,23 +37,25 @@ try:
   client.request('evaluation-readiness','POST',{},expected=502)
   client.request('evaluation-readiness?projectId='+user['projectId'],expected=502)
   report['checks'].append(name+' checks own authenticated dependency scope and GET-only route')
- if args.worker_interruption:
+ for service,enabled,unavailable in [('ai-worker',args.worker_interruption,'worker-queue'),('nats',args.nats_interruption,'worker-queue'),('opa',args.policy_interruption,'policy')]:
+  if not enabled:continue
   assert sql("SELECT count(*) FROM stack_runs r LEFT JOIN stack_run_results c ON c.run_id=r.id WHERE r.state='queued' AND c.run_id IS NULL;").splitlines()[-1]=='0'
-  worker('stop');stopped=True
+  stopped_service=service
   try:
+   owned_service(service,'stop')
    value=validate(client.request('evaluation-readiness',expected=503),user,503)
-   assert {d['name']:d['available'] for d in value['dependencies']}=={'database':True,'worker-queue':False,'policy':True}
-   report['checks'].append('stopped worker produces scoped structured 503 while database and policy remain available')
+   assert {d['name']:d['available'] for d in value['dependencies']}=={name:name!=unavailable for name in ['database','worker-queue','policy']}
+   report['checks'].append('stopped '+service+' produces scoped structured 503 with only '+unavailable+' unavailable')
   finally:
-   worker('start');stopped=False
-  recovered(client,user);report['checks'].append('restored worker returns independently validated ready observation')
+   owned_service(service,'start');stopped_service=None
+  recovered(client,user);report['checks'].append('restored '+service+' returns independently validated ready observation')
  assert fingerprint()==before
- report.update(completed=True,businessTablesUnchanged=len(before),workerInterruption=args.worker_interruption)
+ report.update(completed=True,businessTablesUnchanged=len(before),workerInterruption=args.worker_interruption,natsInterruption=args.nats_interruption,policyInterruption=args.policy_interruption)
 except Exception as error:report.update(errorType=type(error).__name__,code='EVALUATION_READINESS_UNVERIFIED')
 finally:
- if stopped:
-  try:worker('start')
-  except Exception:report['workerRecoveryUnverified']=True
+ if stopped_service:
+  try:owned_service(stopped_service,'start')
+  except Exception:report['dependencyRecoveryUnverified']=True
  closed=True
  for client in reversed(clients):
   try:client.logout()
