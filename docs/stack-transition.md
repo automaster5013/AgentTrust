@@ -23,8 +23,8 @@
 | Observability | OpenTelemetry + Prometheus + Tempo + Loki + Grafana | 실제 HTTP 공유 trace·평가 counter·정제된 로그·자동 대시보드·합성 canary 제거 9개 로컬 검증. 8개 registry 이미지의 관측성 통합 CI 성공. 공식 관측성 이미지의 취약점 수정은 남아 있음 | 요청→평가 추적·메트릭·로그·대시보드·민감 정보 제외 |
 | Local | Docker Compose | 로컬 모델·참조 검증기를 포함한 전환 런타임 17개 서비스의 Compose 실행·헬스·워커/메시징/API 재시작·기한 초과 검증 | 별도 서비스/DB로 새 흐름 실행·재시작 보존 |
 | Production | Kubernetes + Helm + Terraform | 검토용 앱 차트 36개 리소스 strict schema·거부 입력·Terraform validate와 6개 mock plan 로컬/원격 CI 통과. 실제 클러스터·공개 운영·stateful 배포는 미수행 | 지정 환경의 렌더/검증·비밀·헬스·배포/복귀. 실제 배포는 별도 결과 |
-| CI/CD | GitHub Actions | Java/Python/TypeScript·NATS·브라우저·OPA 통합과 4개 불변 게시 이미지 CI 성공. Keycloak 5개 이미지 확장 CI 성공. Gateway 6개 이미지 확장 CI 성공. MinIO 7개 이미지 확장 CI 성공. pgvector/관측성 포함 8개 registry 이미지 실행 CI 성공. 열 이미지의 실행·보안·서명 기준선 CI 성공. 새 참조 검증기를 포함한 15개 이미지의 해당 커밋 CI는 별도 확인 | Java/Python/TypeScript 검사·통합·이미지 검증 |
-| Security | Trivy + Syft + Cosign + Gitleaks + Semgrep | Semgrep/Gitleaks 실제 소스·전체 이력 CI 성공. 열 이미지 기준선의 HIGH/CRITICAL 0건·Cosign 이미지/SBOM 서명 20개 원격 및 독립 오프라인 검증. 새 15개 이미지·30개 서명의 해당 커밋 CI는 별도 확인. 관측성 공식 이미지 취약점 수정은 남음 | 각 도구의 실행 결과·검증 가능한 SBOM/서명·실패 게이트 |
+| CI/CD | GitHub Actions | Source revision `15fce60` passed source security, Java/Python/TypeScript integration, 21 browser tests, exact execution of 15 registry images and signed image security delivery. [CI proof](https://github.com/automaster5013/AgentTrust/actions/runs/38147084755). Legacy CI also passed. No production server deployed. | Per-revision source, runtime and delivery evidence |
+| Security | Trivy + Syft + Cosign + Gitleaks + Semgrep | At `15fce60`, source/history scans passed and 15 images had zero HIGH/CRITICAL findings. All 30 image/SBOM signatures passed independent local and offline verification; certificate tampering was refused even with a recomputed checksum map. Grafana remediation remains open. [Evidence](stack-security.md). | Actual scan/SBOM/signature/failure-gate results for the stated scope |
 
 ## 구현 순서
 
@@ -115,3 +115,5 @@ pgvector 0.8.7은 실제 같은 프로젝트 규칙 특징 코사인 검색, 조
 [906 기준 소스·이미지 보안 및 10개 게시 이미지 CI](https://github.com/automaster5013/AgentTrust/actions/runs/38063258865)는 완료됐고 각 이미지의 실제 서명·SBOM 근거를 확인했다. [4069f08 캠페인 보관·개발용 서명 CI](https://github.com/automaster5013/AgentTrust/actions/runs/38073013830)는 네 작업 모두 통과했다. 정확한 열 게시 이미지의 실행·HIGH/CRITICAL 0건·이미지와 SBOM keyless 서명을 확인했고 전달 checksum과 열 SBOM의 로컬 암호 검증도 통과했다. 실행 프로필·전체 번들 확장의 원격 결과는 해당 새 커밋에서 별도 확인한다.
 
 현재 게이트를 배포 실행에 사용하는 서명 토큰, 운영 KMS·키 교체, 일반적인 모델 품질 평가, 운영 클러스터 배포, HA·백업 복구와 관측 이미지의 남은 취약점 해결은 완료되지 않았다. 이 범위를 기능 보존 표와 공급자·보안 문서에서 계속 구분한다.
+
+GitHub Linguist measurement at 2026-10-11 16:34 UTC: JavaScript 39.49%, Python 26.14%, TypeScript 14.63%, Java 14.57%. Existing JavaScript remains the comparison implementation. No language exclusion attributes were added. Source-byte ratios are not completion percentages; the table and actual functional evidence define scope.
