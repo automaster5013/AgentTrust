@@ -1,5 +1,7 @@
 """Scan one pinned observation image without credentials or a Docker socket in scanners."""
-import argparse,datetime,hashlib,json,os,pathlib,re,shutil,subprocess,uuid
+import argparse,datetime,hashlib,json,os,pathlib,re,shutil,subprocess,uuid,importlib.util
+_scratch_spec=importlib.util.spec_from_file_location('scan_scratch',pathlib.Path(__file__).with_name('stack-scan-scratch.py'))
+_scratch_module=importlib.util.module_from_spec(_scratch_spec);_scratch_spec.loader.exec_module(_scratch_module)
 
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--name',choices=['telemetry','tempo','loki','prometheus','grafana'],required=True)
@@ -12,6 +14,7 @@ minimum_free_gib=20 if os.name=='nt' else 4
 if shutil.disk_usage(root).free<minimum_free_gib*1073741824:raise SystemExit('Insufficient disk headroom')
 directory=root/'.local'/('stack-observation-security-'+str(uuid.uuid4()));directory.mkdir(parents=True)
 inputs=directory/'inputs';inputs.mkdir();output=directory/'reports';output.mkdir()
+scratch=_scratch_module.ScanScratch(inputs)
 cache=root/'.local/stack-observation-security-cache';cache.mkdir(exist_ok=True);temporary=cache/'tmp';temporary.mkdir(exist_ok=True)
 if os.name!='nt':
     for path in [output,cache,temporary]:path.chmod(0o777)
@@ -35,7 +38,7 @@ try:
     image=json.loads(identity.stdout)[0];image_id=image['Id']
     if not re.fullmatch('sha256:[a-f0-9]{64}',image_id):raise ValueError('Invalid image identity')
     report['imageId']=image_id
-    stage='archive';archive=inputs/(args.name+'.tar')
+    stage='archive';archive=scratch.reserve(args.name+'.tar')
     saved=run(['docker','image','save','-o',str(archive),image_id])
     if saved.returncode or not 0<archive.stat().st_size<=1073741824:raise ValueError('Image export unavailable or too large')
     archive.chmod(0o644)
@@ -61,6 +64,8 @@ try:
                   completed=not findings and scan.returncode==0)
 except Exception as error:report.update(failedStage=stage,errorType=type(error).__name__)
 finally:
+    try:scratch.close();report['temporaryArchivesRemoved']=True
+    except Exception as cleanup_error:report.update(temporaryArchivesRemoved=False,completed=False,cleanupErrorType=type(cleanup_error).__name__)
     report['finishedAt']=datetime.datetime.now(datetime.timezone.utc).isoformat()
     (directory/'summary.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     print(json.dumps({**report,'reportPath':str(directory/'summary.json')}))

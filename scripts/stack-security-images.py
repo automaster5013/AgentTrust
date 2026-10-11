@@ -1,8 +1,11 @@
 """Create Syft SBOMs and Trivy reports for exact exported image IDs, without a Docker socket."""
-import datetime,hashlib,json,os,pathlib,re,shutil,subprocess,uuid,traceback
+import datetime,hashlib,json,os,pathlib,re,shutil,subprocess,uuid,traceback,importlib.util
+_scratch_spec=importlib.util.spec_from_file_location('scan_scratch',pathlib.Path(__file__).with_name('stack-scan-scratch.py'))
+_scratch_module=importlib.util.module_from_spec(_scratch_spec);_scratch_spec.loader.exec_module(_scratch_module)
 root=pathlib.Path(__file__).resolve().parent.parent
 directory=root/'.local'/('stack-security-images-'+str(uuid.uuid4()));directory.mkdir(parents=True)
 inputs=directory/'inputs';inputs.mkdir();output=directory/'reports';output.mkdir();cache=root/'.local/stack-security-cache';cache.mkdir(exist_ok=True);temporary=cache/'tmp';temporary.mkdir(exist_ok=True)
+scratch=_scratch_module.ScanScratch(inputs)
 if os.name!='nt':
  for path in [output,cache,temporary]:path.chmod(0o777)
 report={'completed':False,'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'images':{},'dockerSocketMounted':False,'rawSecretsPrinted':False,'ignoredUnfixedVulnerabilities':False,'reportsDirectory':str(output)}
@@ -28,7 +31,8 @@ try:
   reference,image_id,estimate=identities[name]
   report['currentImage']=name;report['currentStage']='bounded-image-export'
   if shutil.disk_usage(root).free<reserve+remaining:raise ValueError('Disk headroom changed during image export')
-  archive=inputs/(name+'.tar');run(['docker','image','save','-o',str(archive),image_id]);archive.chmod(0o644);report['exportedArchiveMode']=oct(archive.stat().st_mode & 0o777);checksum=hashlib.file_digest(archive.open('rb'),'sha256').hexdigest()
+  archive=scratch.reserve(name+'.tar');run(['docker','image','save','-o',str(archive),image_id]);archive.chmod(0o644);report['exportedArchiveMode']=oct(archive.stat().st_mode & 0o777)
+  with archive.open('rb') as stream:checksum=hashlib.file_digest(stream,'sha256').hexdigest()
   if not 0<archive.stat().st_size<=estimate:raise ValueError('Image archive exceeds bounded estimate')
   remaining-=estimate
   report['currentImage']=name;report['currentStage']='sbom'
@@ -38,8 +42,11 @@ try:
   scan=scanner(['trivy','image','--input','/in/'+name+'.tar','--cache-dir','/cache','--scanners','vuln','--severity','HIGH,CRITICAL','--format','json','--output','/out/'+name+'.trivy.json','--exit-code','1','--timeout','8m','--no-progress','--quiet'],'bridge');(output/(name+'.trivy.log')).write_text(scan.stderr,encoding='utf-8');assert scan.returncode in [0,1] and (output/(name+'.trivy.json')).is_file()
   value=json.loads((output/(name+'.trivy.json')).read_text(encoding='utf-8'));assert value.get('SchemaVersion')==2;findings=[v for result in value.get('Results',[]) for v in result.get('Vulnerabilities') or []];assert all(row['Severity'] in ['HIGH','CRITICAL'] for row in findings)
   result={'reference':reference,'imageId':image_id,'archiveSha256':checksum,'components':len(inventory['components']),'highCriticalFindings':len(findings),'scannerExitCode':scan.returncode,'sbomSha256':hashlib.sha256((output/(name+'.cdx.json')).read_bytes()).hexdigest(),'vulnerabilityReportSha256':hashlib.sha256((output/(name+'.trivy.json')).read_bytes()).hexdigest()};report['images'][name]=result;print(json.dumps({'image':name,'components':result['components'],'highCriticalFindings':len(findings),'rawSecretsPrinted':False}),flush=True)
+  scratch.remove(archive)
  report['completed']=set(report['images'])==set(names) and all(v['highCriticalFindings']==0 and v['scannerExitCode']==0 for v in report['images'].values())
 except Exception as error:report['errorType']=type(error).__name__;report['failureLocations']=[{'file':pathlib.Path(t.filename).name,'line':t.lineno} for t in traceback.extract_tb(error.__traceback__)]
 finally:
+ try:scratch.close();report['temporaryArchivesRemoved']=True
+ except Exception as cleanup_error:report['temporaryArchivesRemoved']=False;report['completed']=False;report['cleanupErrorType']=type(cleanup_error).__name__
  report['finishedAt']=datetime.datetime.now(datetime.timezone.utc).isoformat();path=directory/'summary.json';path.open('x',encoding='utf-8').write(json.dumps(report,indent=2)+'\n');print(json.dumps({'completed':report['completed'],'images':len(report['images']),'reportPath':str(path),'rawSecretsPrinted':False}))
 if not report['completed']:raise SystemExit(1)
