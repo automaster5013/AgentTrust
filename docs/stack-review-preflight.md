@@ -1,0 +1,26 @@
+# 기존 데이터를 읽는 시연 전 점검
+
+원래 스택의 [로컬 실행](stack-local.md)을 준비한 뒤 로그인·프로젝트 감사 조회와 이미 만들어진 캠페인 근거를 확인한다. 새로운 에이전트·데이터셋·평가·검토를 만들지 않는다. Docker 서비스나 기존 데이터·LogiTrack 자산을 정리하거나 재시작하지 않는다.
+
+```powershell
+python scripts/stack-review-preflight.py
+python scripts/stack-review-preflight.py --username demo-admin --campaign <기존-캠페인-UUID>
+```
+
+기본 계정은 `demo-viewer`다. 선택 가능한 합성 계정은 `demo-admin`, `demo-editor`, `demo-viewer`, `other-admin`이며 비밀번호는 인수로 받지 않는다. 비공개 `.local/stack/demo-credentials.json`을 크기 제한과 함께 읽는다. 고정된 `127.0.0.1:4320` BFF와 로컬 Keycloak OIDC/PKCE를 사용하며 임의 URL을 받지 않는다.
+
+기본 실행은 인증된 조직·프로젝트와 최대 25개 감사 응답의 범위·구조를 확인한다. 이 검사는 전체 감사 내역의 내보내기·서명·페이지 탐색 검증을 대신하지 않는다. 캠페인을 지정하면 그 계정 범위의 기존 캠페인과 부모 근거를 읽고, 기록된 최대 8개 자식의 저장 버전·원본 바이트 해시·불변 버전 내용을 기존 오프라인 검증기로 대조한다. 마지막에는 현재 OPA 게이트를 별도로 조회한다. 다른 조직의 캠페인은 UUID를 알아도 거부된다.
+
+`completed=true`와 종료 코드 0은 선택한 읽기 점검을 완료했다는 뜻이다. `currentGateAllowedAtRead`는 조회 순간의 정책 결과이며 시간이 지나거나 승인·반려 상태가 바뀌면 달라질 수 있다. 이 도구의 `deploymentAuthority`, `productionReady`, `signatureVerified`, `imageSecurityVerified`는 항상 `false`다. 현재 정책이 릴리스를 차단해도 보관 근거의 읽기 점검은 완료될 수 있다. 새로운 모델 추론·유료 API·배포 명령·서명 생성은 실행하지 않는다.
+
+요청은 기존 테스트 클라이언트의 15초 제한을 사용한다. 근거 준비 중 409, 저장소 장애 503, 범위 외 404나 인증 오류는 실패로 기록한다. 자동 재시도나 합성 통과로 바꾸지 않는다. 실제 서비스를 복구한 뒤 다시 실행한다. 종료 시 자기 BFF와 IdP 세션을 닫으며, 세션 정리 실패도 종료 코드 1이다.
+
+비밀이 없는 역할·범위 해시·기록 수·검증 해시·현재 게이트 관찰과 오류 상태를 `.local/stack-review-preflight-*.json`에 남긴다. 비밀번호·토큰·모델 입력/응답·검토 사유는 기록하지 않는다. 보고서는 운영 백업, 현재 배포 토큰, 전체 스택 건강 상태나 독립적인 디지털 서명 검증이 아니다.
+
+```powershell
+python scripts/stack-review-preflight-smoke.py
+```
+
+회귀 검사는 앞서 완료된 참조 정답 캠페인 보고서를 사용한다. 실제 조회자·관리자 읽기, 다른 조직의 거부, 잘못된 캠페인 입력의 인증 전 거부와 모든 public 업무 테이블의 행 수·SHA-256 불변을 확인한다. 새로운 평가를 생성하지 않으며 진행 중인 완료 작업이 있으면 시작 전에 거부한다. CLI 실행 전에 이미 예약된 보관 작업의 업무 지문이 안정될 때까지 최대 40초 동안 확인하며, CLI 실행 전후 지문은 정확히 같아야 한다. 집중적인 HTTP·모델·장애 검사와 동시에 실행하지 않는다. PostgreSQL의 역할·행 보안·감사 불변성 자체 검사는 별도 기존 통합 검사를 따른다.
+
+Core의 보관 HTTP 클라이언트는 최대 2개의 유휴 연결을 20초 뒤 정리한다. 고정 MinIO 소스의 기본 유휴 제한은 [30초](https://github.com/minio/minio/blob/9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a/internal/http/server.go#L42)다. 연결·읽기·쓰기 1초, 전체 요청 2초와 자동 재시도 금지는 유지한다. Java 회귀 검사는 실제 루프백 HTTP 연결의 정리와 명시적 요청마다 정확히 한 번의 전송을 확인한다. 이 설정은 모든 저장소 장애나 가용성을 보장하지 않으며 503은 계속 실패로 처리한다.

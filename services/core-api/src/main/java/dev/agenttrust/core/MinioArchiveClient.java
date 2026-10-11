@@ -5,16 +5,23 @@ import java.io.ByteArrayInputStream;
 import java.nio.file.*;
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import okhttp3.OkHttpClient;
+import okhttp3.ConnectionPool;
 @Component
 @ConditionalOnProperty(name="agenttrust.object-mode",havingValue="minio")
 public class MinioArchiveClient {
  private static final String BUCKET="stack-evidence";private final MinioClient client;
  public MinioArchiveClient() throws Exception {
   String user=Files.readString(Path.of("/run/secrets/stack-minio-user")),password=Files.readString(Path.of("/run/secrets/stack-minio-password"));if(!user.equals("stack-evidence")||!password.matches("[a-f0-9]{64}"))throw new IllegalStateException("Evidence configuration unavailable");
-  var http=new OkHttpClient.Builder().connectTimeout(Duration.ofSeconds(1)).readTimeout(Duration.ofSeconds(1)).writeTimeout(Duration.ofSeconds(1)).callTimeout(Duration.ofSeconds(2)).followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false).build();client=MinioClient.builder().endpoint("http://stack-object-store:9000").region("us-east-1").credentials(user,password).httpClient(http).build();
+  client=MinioClient.builder().endpoint("http://stack-object-store:9000").region("us-east-1").credentials(user,password).httpClient(archiveHttp()).build();
+ }
+ static OkHttpClient archiveHttp(){
+  // The pinned MinIO server closes idle HTTP connections after 30 seconds.
+  // Retire them first; do not replay writes or weaken the per-call deadline.
+  return new OkHttpClient.Builder().connectionPool(new ConnectionPool(2,20,TimeUnit.SECONDS)).connectTimeout(Duration.ofSeconds(1)).readTimeout(Duration.ofSeconds(1)).writeTimeout(Duration.ofSeconds(1)).callTimeout(Duration.ofSeconds(2)).followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false).build();
  }
  record Stored(byte[] content,String version){}
  Stored read(String key,String version) throws Exception {

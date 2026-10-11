@@ -65,3 +65,11 @@ Collector 추가 전달 schema의 경계 테스트는 8개가 로컬에서 통�
 Tempo·Loki를 포함한 schema 4의 경계 테스트는 로컬 10개가 통과했으며 누락된 저장 서비스 서명, schema 축소와 미지원 schema를 거부한다. 변경한 소비자 검증기로 기존 5ea0f52 전달물의 이미지/SBOM 서명 20개도 Docker 네트워크를 차단한 채 실제 암호 검증했다. schema 4의 원격 전체 전달 검증은 새 CI 완료 후 별도 기록한다. [개발 DB 복원 훈련](stack-backup.md)은 운영 키 관리나 전체 시스템 복구를 증명하지 않는다.
 
 Prometheus를 포함한 schema 5의 경계 테스트 13개가 로컬에서 통과했다. 14개 이미지 각각의 이미지 서명과 SBOM attestation, 정확히 61개 파일을 요구하며 Prometheus proof 누락·schema 축소·미지원 schema를 거부한다. 전체 28개 실제 원격 서명 검증과 새 커밋 registry 실행은 CI 완료 후 별도로 확인한다.
+
+## 15개 이미지의 실제 전달 검증
+
+[6962d11848f3d01bbd023a9207017bc5d0bde2bf CI](https://github.com/automaster5013/AgentTrust/actions/runs/38115649221)의 소스 보안·소스 통합·정확한 registry 이미지 실행·보안/서명 네 작업이 모두 통과했다. 내려받은 runtime 및 security artifact의 GitHub archive digest와 내부 checksum을 대조했다. 소스 통합 보고서 35개와 registry 실행 보고서 23개가 완료됐으며 브라우저 10개 검사는 소스 통합에서 수행했다.
+
+Schema 6의 실제 65개 파일·15개 이미지와 HIGH/CRITICAL 0건을 확인하고, 별도로 인증한 공개 TrustedRoot와 네트워크가 차단된 Cosign 3.1.3으로 30개 이미지/SBOM 서명을 독립 암호 검증했다. 같은 revision·repository·main ref·OIDC issuer를 고정했다. 복사본의 실제 인증서 서명 한 바이트를 변조하고 checksum map까지 다시 계산해도 `cryptographic-verification` 단계에서 거부됐다. 변조 복사본은 메모리 파일시스템에만 만들었고 원본 65개 파일의 바이트는 그대로였다.
+
+이 결과는 해당 커밋과 보관된 취약점 보고서에 한정된다. 새로운 취약점 검사나 서버 배포를 수행한 결과가 아니다. 별도 공식 Grafana 후보는 유효한 플러그인 서명에도 HIGH/CRITICAL 56건으로 실패하여 적용하지 않았다. 현재 Grafana 보안 수정, 운영 IdP/TLS·신뢰키·백업과 전체 시스템 복구 검증이 남아 있으며 `productionSecurityVerified`, `officialObservabilitySecurityVerified`, `productionDeploymentApproved`는 계속 `false`다. 이후 커밋의 전달물은 다시 검증한다.
