@@ -298,3 +298,12 @@ test('viewer verifies an older registered version before selecting it for campai
  }
  phase('actual immutable version content/hash checked before controlled selection; foreign-kind page refused');
 });
+
+
+test('mobile reviewer reads actual readiness and immutable version history without horizontal overflow',async({page})=>{
+ await page.setViewportSize({width:390,height:844});await login(page,'demo-viewer');
+ const ready=page.getByRole('region',{name:'평가 경로 준비 상태',exact:true});await ready.getByRole('button',{name:'평가 경로 상태 확인',exact:true}).click();await expect(ready.getByText('평가 경로 연결 확인 완료',{exact:true})).toBeVisible();
+ for(const label of ['에이전트','데이터셋']){const region=page.getByRole('region',{name:'프로젝트 '+label+' 버전 이력',exact:true});await region.getByRole('button',{name:label+' 버전 이력 조회',exact:true}).click();await expect(region.locator('[data-version-history-id]').first()).toBeVisible();expect(await region.evaluate(element=>element.scrollWidth<=element.clientWidth+2)).toBe(true);}
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2)).toBe(true);
+ phase('390px actual scoped readiness and version navigation have no horizontal overflow');
+});
