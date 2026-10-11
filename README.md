@@ -12,7 +12,7 @@
 
 **참조 정답 평가**: [불변 입력·정답과 두 평가기](docs/stack-reference-evaluation.md)를 연결했습니다. Java API·Python 실제 로컬 추론·Promptfoo SDK·Next.js 화면의 캠페인 검사 9개와 브라우저 검사 9개가 로컬에서 통과했습니다. [6962d11의 소스 통합·게시 이미지 실행·보안·서명 CI](https://github.com/automaster5013/AgentTrust/actions/runs/38115649221)가 모두 통과했습니다. 이 커밋의 소스 검사 보고서 35개(브라우저 10개 검사)와 정확한 registry 이미지 실행 보고서 23개를 대조했습니다. 이후 변경은 새 커밋의 CI를 별도로 따릅니다.
 
-**기업 개발팀의 비교·검토 흐름 (2026-10-12)**: [생성 시 고정하는 비교 기준과 근거 만료](docs/stack-baseline-gate.md)는 실제 Python 평가·Java 서명·OPA 정책·Next.js 화면에 연결했습니다. [최신 500개 감사 메타데이터 내보내기](docs/stack-audit-export.md)는 로컬 API와 브라우저에서 범위·바이트 해시·잘림 표시를 검증했으며 독립 감사 서명이나 전체 이력 보관 파일을 의미하지 않습니다.
+**기업 개발팀의 비교·검토 흐름 (2026-10-12)**: [생성 시 고정하는 비교 기준과 근거 만료](docs/stack-baseline-gate.md)는 실제 Python 평가·Java 서명·OPA 정책·Next.js 화면에 연결했습니다. [후보와 기준의 양쪽 근거 번들](docs/stack-baseline-bundle.md)은 실제 Java v3 서명·MinIO 부모/자식 바이트·독립 공개키·비교 재계산과 브라우저 다운로드 및 변조 거부를 로컬 검증했습니다. [최신 500개 감사 메타데이터 내보내기](docs/stack-audit-export.md)는 로컬 API와 브라우저에서 범위·바이트 해시·잘림 표시를 검증했으며 독립 감사 서명이나 전체 이력 보관 파일을 의미하지 않습니다. 새 번들의 CI·게시 이미지 결과는 해당 revision으로 별도 확인합니다.
 
 **새 스택 검토 경로**: [실제 기술 스택의 시연 순서](docs/stack-reviewer-guide.md)를 따라 입력·정답 고정, 실제 모델 평가, 승인·반려와 과거 근거 검증을 확인합니다. [로컬 실행](docs/stack-local.md) 후 `http://127.0.0.1:4320`에서 실제 Keycloak 로그인·평가·승인/반려를 확인합니다. [기능 이전 범위](docs/stack-feature-parity.md)는 완료된 흐름과 고정 시나리오 [버전 등록·다중 사례 캠페인·제한된 회귀 비교](docs/stack-campaigns.md)와 아직 이전하지 않은 범용 품질 평가·운영 신뢰키·서명된 현재 배포 토큰을 구분합니다. [인프라 검증](docs/stack-infrastructure.md)은 로컬과 GitHub CI에서 통과했으며 실제 클러스터 배포는 수행하지 않았습니다. [보안 범위](docs/stack-security.md)의 관측성 공식 이미지 수정이 남아 있어 운영 배포 승인을 뜻하지 않습니다.
 
@@ -22,7 +22,7 @@
 
 1. [새 스택 로컬 실행](docs/stack-local.md)에서 개발 설정과 필요한 Compose 프로필을 준비합니다.
 2. [새 스택 시연](docs/stack-reviewer-guide.md)에서 Keycloak 로그인, 불변 버전, Python 평가, OPA 판정과 관리자 검토를 확인합니다.
-3. [고정 비교 기준](docs/stack-baseline-gate.md)과 [감사 내보내기](docs/stack-audit-export.md)의 실제 검증 범위를 확인합니다.
+3. [고정 비교 기준](docs/stack-baseline-gate.md), [양쪽 근거 번들](docs/stack-baseline-bundle.md), [감사 내보내기](docs/stack-audit-export.md)의 실제 검증 범위를 확인합니다.
 4. [기능 이전 범위](docs/stack-feature-parity.md)와 [커밋별 전달 증거](docs/github-delivery.md)를 대조합니다. 언어 비율과 기존 구현의 테스트 수를 새 스택의 완료율로 사용하지 않습니다.
 
 아래는 2026-10-12 새 스택에서 촬영한 조회자 화면입니다. 조회자는 평가를 생성할 수 없으며, 표시된 평가 통과와 관리자 검토 후 릴리스 허용을 구분합니다. 캡처는 당시 합성 데이터의 화면이며 현재 실행 결과를 대신하지 않습니다.

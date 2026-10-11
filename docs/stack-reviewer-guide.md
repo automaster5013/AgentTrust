@@ -68,6 +68,8 @@ node --experimental-strip-types scripts/stack-verify-campaign-receipt.ts --bundl
 
 검증된 원본 번들과 별도로 신뢰한 공개키를 준비했다면 [과거 HTML 보고서](stack-observation-report.md)를 생성해 검토할 수 있다. 이 요약은 자체 서명이나 현재 릴리스 권한을 제공하지 않는다.
 
+기준이 지정된 새 v3 과거 판정의 [양쪽 근거 번들](stack-baseline-bundle.md)은 후보와 기준의 부모·자식 바이트 및 저장 버전을 함께 검증한다. 원본 번들을 내려받기 전에 브라우저가 실제 사례로 비교를 다시 계산하며, 변경된 기준 근거는 다운로드를 거부한다. 과거에 발급된 v1/v2 판정은 원래 계약을 유지한다.
+
 평가 실행 전 화면의 **평가 경로 상태 확인**으로 현재 데이터베이스·Python/NATS·OPA 연결을 확인할 수 있습니다. 세 연결이 확인돼도 실제 모델 실행 성공이나 릴리스 승인으로 간주하지 않습니다. [계약과 장애 검증](stack-evaluation-readiness.md)을 참고하세요.
 
 캠페인 준비 화면의 에이전트·데이터셋 **버전 이력 조회**로 최근 50개 밖의 보관 버전을 탐색할 수 있습니다. 선택 전에 실제 불변 내용과 SHA-256을 확인합니다. [이력과 선택 계약](stack-version-history.md)을 참고하세요.
@@ -95,3 +97,18 @@ flowchart LR
   Worker --> NATS[NATS JetStream consumer information]
   Core --> Policy[OPA bounded inconclusive probe]
 ```
+
+## Windows 개발 호스트의 브라우저 검증
+
+Node 24와 실행 중인 로컬 새 스택, 비공개 `.local/stack/demo-credentials.json`의 개발용 합성 계정을 사용한다. 이 검사는 평가·검토·취소용 합성 기록을 생성하므로 데이터 지문을 대조하는 읽기 전용 부하 검사와 동시에 실행하지 않는다. 쿠키·비밀번호·브라우저 trace·영상은 보고서에 기록하지 않는다.
+
+```powershell
+Set-Location C:\AgentTrust\apps\console
+npm ci --ignore-scripts
+$env:PLAYWRIGHT_BROWSERS_PATH='C:\AgentTrust\.local\playwright-browsers'
+npx playwright install chromium --only-shell
+$env:STACK_E2E_QUOTA_GUARD='true'
+npx playwright test
+```
+
+패키지 lock에 고정된 Playwright가 요구하는 headless Chromium과 실행 보조 파일만 프로젝트 캐시에 설치한다. 브라우저 패키지 의존성을 설치한 것만으로 실행 파일이 준비되지는 않는다. 패키지 버전을 바꾸면 설치 명령을 다시 수행한다. quota guard는 Redis 값을 읽고 자연 만료를 기다리며 한도를 바꾸거나 카운터를 삭제하지 않는다. 실제 테스트 결과는 비공개 `.local/stack-browser-*.json`에 남으며, `completed: true`와 모든 테스트의 통과 상태를 확인한다. CI의 Linux 브라우저 설치와 실행 결과는 별도로 확인한다.
