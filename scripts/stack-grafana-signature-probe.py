@@ -15,6 +15,8 @@ password = directory / 'password'
 password.write_text(secrets.token_hex(32), encoding='utf-8')
 password.chmod(0o644)
 lock = root / 'services/grafana/plugins.lock.json'
+(directory / 'plugins.lock.json').write_bytes(lock.read_bytes())
+(directory / 'plugins.lock.json').chmod(0o644)
 name = 'agenttrust-grafana-signatures-' + identity
 report = {'completed': False, 'network': 'none', 'hostPortsPublished': False,
           'unsignedPluginsAllowed': False, 'actualDeploymentPerformed': False,
@@ -93,7 +95,6 @@ try:
                    '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true',
                    '--memory', '256m', '--cpus', '1', '--pids-limit', '64',
                    '--mount', 'type=bind,source=' + str(directory) + ',target=/in,readonly',
-                   '--mount', 'type=bind,source=' + str(lock) + ',target=/in/plugins.lock.json,readonly',
                    'agenttrust-security:local', 'python', '/in/probe.py'])
     assert checked.returncode == 0
     evidence = json.loads(checked.stdout)
