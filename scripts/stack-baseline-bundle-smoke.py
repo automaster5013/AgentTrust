@@ -15,7 +15,7 @@ try:
   receipt=admin.request('campaigns/'+candidate+'/receipts','POST',{'note':'Own '+kind+' comparison byte-chain observation'},{'Idempotency-Key':str(uuid.uuid4())});payload=json.loads(base64.b64decode(receipt['payloadBase64']));assert payload['schemaVersion']==3 and payload['baselineArchives']['campaignId']==baseline and payload['observedGate']['deploymentAllowed'] is False
   bundle=viewer.request('campaigns/'+candidate+'/receipts/'+receipt['receiptId']+'/bundle');assert bundle['schemaVersion']==2 and bundle['baseline']['campaign']['id']==baseline
   foreign.request('campaigns/'+candidate+'/receipts/'+receipt['receiptId']+'/bundle',expected=404);viewer.request('campaigns/'+candidate+'/receipts','POST',{'note':'Viewer cannot sign'},{'Idempotency-Key':str(uuid.uuid4())},expected=403)
-  result=subprocess.run(['node','--experimental-strip-types','scripts/stack-baseline-bundle-offline-test.ts'],input=json.dumps({'bundle':bundle,'user':owner,'campaignId':candidate,'receiptId':receipt['receiptId']}),cwd=ROOT,capture_output=True,text=True,encoding='utf-8',timeout=20)
+  result=subprocess.run(['node','--experimental-strip-types','scripts/stack-baseline-bundle-offline-verify.ts'],input=json.dumps({'bundle':bundle,'user':owner,'campaignId':candidate,'receiptId':receipt['receiptId']}),cwd=ROOT,capture_output=True,text=True,encoding='utf-8',timeout=20)
   assert result.returncode==0;proof=json.loads(result.stdout);assert proof['completed'] and proof['baselineBytesVerified'] and proof['negativeControls']==6 and proof['networkUsed'] is False
   report['checks'].append({'baselineState':kind,'actualJavaSignatureVerified':True,'baselineBytesVerified':True,'negativeControls':6,'foreignScopeRefused':True,'viewerIssueRefused':True})
  report['completed']=True
