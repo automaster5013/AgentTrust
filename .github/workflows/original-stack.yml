@@ -161,6 +161,8 @@ jobs:
           python3 scripts/stack-review-preflight-smoke.py
           python3 scripts/stack-current-gate-check-smoke.py
           node --experimental-strip-types --test scripts/stack-current-gate-anchor-test.ts
+          python3 scripts/stack-verify-audit-export-test.py
+          python3 scripts/stack-audit-export-offline-smoke.py
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-current-gate-anchor-smoke.py
           python3 scripts/stack-cancellation-smoke.py
@@ -350,6 +352,8 @@ jobs:
           python3 scripts/stack-review-preflight-smoke.py
           python3 scripts/stack-current-gate-check-smoke.py
           node --experimental-strip-types --test scripts/stack-current-gate-anchor-test.ts
+          python3 scripts/stack-verify-audit-export-test.py
+          python3 scripts/stack-audit-export-offline-smoke.py
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-current-gate-anchor-smoke.py
           python3 scripts/stack-cancellation-smoke.py

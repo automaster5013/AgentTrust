@@ -11,3 +11,17 @@ TypeScript는 해시·바이트 수·조직·프로젝트·스키마·최대 행
 2026-10-12 로컬에서 Java 97개, WebFlux 23개, TypeScript 78개 검사와 TypeScript 타입 검사가 통과했다. `python scripts/stack-audit-export-smoke.py`의 실제 OIDC·API·RLS 검증 4개 묶음과 전체 브라우저 검사 22개가 통과했다. 501개 동일 시각 테스트 기록의 최신 500개와 후속 추가의 스냅샷 보존을 확인했다. 서비스 적용 전후 업무 테이블 16개는 동일했고, 자체 합성 기록을 추가한 후에도 창 시작 이전 업무 테이블 14개의 원본 행 해시를 보존했다. 이 변경의 GitHub CI와 게시 이미지 결과는 해당 revision의 실행 결과로 별도 확인한다.
 
 반복 읽기 검사는 `python scripts/stack-readonly-soak.py --minutes 180 --readers 20 --audit-export`로 내보내기를 포함한 11개 경로를 관찰할 수 있다. 별도 공개키 검토는 `stack-signed-review-soak.py --minutes 120 --campaign <UUID> --require-baseline`으로 기존 기준 결합 캠페인의 범위·부모·자식 바이트 및 기준 조건 해시를 반복 검증한다. 실행·승인·추론을 요청하지 않고 완료 시 업무 테이블의 전후 해시와 자체 세션 종료를 확인한다. 명령을 지원하는 것과 해당 기간의 관찰을 완료하는 것은 별도 결과다.
+
+## 내려받은 파일의 오프라인 확인
+
+브라우저 파일명에 포함된 짧은 해시는 기대 해시로 사용하지 않는다. 전체 SHA-256과 기대 조직·프로젝트 UUID를 별도로 확인한 뒤 실행한다.
+
+```powershell
+node --experimental-strip-types scripts/stack-verify-audit-export.ts --file <감사-파일.json> --sha256 <기대-전체-SHA256> --organization <조직-UUID> --project <프로젝트-UUID>
+```
+
+CLI는 최대 256KiB의 UTF-8 원본 바이트, 기대 해시, 범위, 행 수·순서·중복·마이크로초 경계와 포함 범위를 기존 브라우저 검증기로 확인한다. 파일을 변경하지 않고 네트워크 요청도 하지 않는다. 성공은 종료 코드 0, 잘못된 입력이나 검증 실패는 1이며 원본 감사 내용·경로를 출력하지 않는다. `issuerAuthenticated=false`, `signed=false`, `currentDeploymentAuthority=false`를 유지한다. 파일과 해시를 같은 출처에서 받는 것만으로 독립 발급자의 진위를 입증할 수 없다.
+
+`python scripts/stack-verify-audit-export-test.py`는 정상 빈 스냅샷·500개 기록, 페이지 사이 순서·중복·경계 오류, 정확한 256KiB 경계, 해시·범위 오류, 잘못된 UTF-8·크기·JSON, 권한·포함 범위 모순과 중복 인자를 독립 프로세스로 검사한다. 로컬 실제 파일의 검증·바이트 변경 거부·18개 업무 테이블 보존·세션 종료를 확인했다. GitHub CI는 해당 리비전 결과로 별도 확인한다.
+
+`python scripts/stack-audit-export-offline-smoke.py`는 현재 조회자 계정의 기존 파일을 실제 API로 읽어 CLI 검증·바이트 변경 거부·18개 업무 테이블 보존·세션 종료를 확인한다. 소스와 게시 이미지 CI 모두 같은 읽기 검사를 실행한다. 새 평가·승인·감사 업무 기록을 만들지 않는다.
