@@ -2,15 +2,33 @@ import {test,expect,type Page} from '@playwright/test';
 import {createHash,randomUUID} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {readFileSync,readdirSync,statSync} from 'node:fs';import {resolve} from 'node:path';
+import {auditFilters} from '../src/lib/audit-search';
 const users=JSON.parse(readFileSync(resolve(process.cwd(),'../../.local/stack/demo-credentials.json'),'utf-8')) as {username:string;password:string;organizationId:string}[];
 test('viewer searches actual scoped audit actions and resources and rejects a substituted search frame',async({page})=>{
- await login(page,'demo-viewer');const reference=await (await page.request.get('/backend/audit-search/all/all')).json();expect(reference.entries).toHaveLength(25);const entry=reference.entries[0];const region=page.getByRole('region',{name:'감사 기록 검색',exact:true});
+ await login(page,'demo-viewer');const reference=await (await page.request.get('/backend/audit-search/all/all')).json();expect(reference.entries).toHaveLength(25);const entry=reference.entries.find((value:{action:string;resourceId:string})=>{try{auditFilters(value.action,value.resourceId);return true}catch{return false}});expect(entry).toBeDefined();const region=page.getByRole('region',{name:'감사 기록 검색',exact:true});
  await region.getByLabel('감사 작업 종류',{exact:true}).selectOption(entry.action);await region.getByLabel('감사 대상 ID',{exact:true}).fill(entry.resourceId);await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.locator('[data-audit-search-id="'+entry.id+'"]')).toBeVisible();
  const rows=region.locator('[data-audit-search-id]');for(let index=0;index<await rows.count();index++){await expect(rows.nth(index)).toContainText(entry.action);await expect(rows.nth(index)).toContainText(entry.resourceId)}
  await region.getByLabel('감사 작업 종류',{exact:true}).selectOption('all');await expect(rows).toHaveCount(0);await region.getByLabel('감사 대상 ID',{exact:true}).fill('');await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);const first=await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')));
  await region.getByRole('button',{name:'다음 검색 페이지',exact:true}).click();await expect(region.getByText('검색 페이지 2 · 25개 기록',{exact:true})).toBeVisible();const second=await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')));expect(second.some(id=>first.includes(id))).toBe(false);await region.getByRole('button',{name:'이전 검색 페이지',exact:true}).click();await expect(region.getByText('검색 페이지 1 · 25개 기록',{exact:true})).toBeVisible();expect(await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')))).toEqual(first);
  const path='**/backend/audit-search/all/all';try{await page.route(path,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...reference,filters:{action:'review.approved',resourceId:null}})}));await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('감사 검색을 확인하지 못했습니다.');await expect(rows).toHaveCount(0)}finally{await page.unroute(path)}
- phase('actual viewer audit action/resource search and distinct keyset pages verified; changed filters clear old results and a substituted frame cannot display records; no business writes');
+ // Hold a real old-condition response until a new search has completed. The
+ // cancelled request must not restore its rows, status or pagination controls.
+ let releaseOld!:()=>void,oldStarted!:()=>void,oldFinished!:()=>void;const heldOld=new Promise<void>(resolve=>{releaseOld=resolve}),startedOld=new Promise<void>(resolve=>{oldStarted=resolve}),finishedOld=new Promise<void>(resolve=>{oldFinished=resolve});
+ await page.route(path,async route=>{oldStarted();await heldOld;try{await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(reference)})}catch{expect(route.request().failure()?.errorText).toMatch(/abort|cancel|failed/i)}finally{oldFinished()}});
+ try{
+  await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await startedOld;await expect(region.getByRole('button',{name:'감사 기록 검색 실행',exact:true})).toBeDisabled();
+  await region.getByLabel('감사 작업 종류',{exact:true}).selectOption(entry.action);await region.getByLabel('감사 대상 ID',{exact:true}).fill(entry.resourceId);await expect(rows).toHaveCount(0);await expect(region.getByRole('button',{name:'감사 기록 검색 실행',exact:true})).toBeEnabled();
+  await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.locator('[data-audit-search-id="'+entry.id+'"]')).toBeVisible();const fresh=await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')));
+  releaseOld();await finishedOld;await expect.poll(()=>rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')))).toEqual(fresh);await expect(region.getByRole('status')).toHaveText('');
+  for(let index=0;index<await rows.count();index++){await expect(rows.nth(index)).toContainText(entry.action);await expect(rows.nth(index)).toContainText(entry.resourceId)}
+  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+ }finally{releaseOld();await page.unroute(path)}
+ let invalidRequests=0;const countInvalid=()=>{invalidRequests++};const invalidPath='**/backend/audit-search/**/invalid-target';await page.route(invalidPath,async route=>{countInvalid();await route.abort()});
+ try{await region.getByLabel('감사 대상 ID',{exact:true}).fill('invalid-target');await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('감사 검색을 확인하지 못했습니다.');await expect(rows).toHaveCount(0);expect(invalidRequests).toBe(0)}finally{await page.unroute(invalidPath)}
+ await region.getByLabel('감사 작업 종류',{exact:true}).selectOption('all');await region.getByLabel('감사 대상 ID',{exact:true}).fill('');
+ try{await page.route(path,route=>route.fulfill({status:503,contentType:'application/json',body:'{}'}));await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('감사 검색을 확인하지 못했습니다.');await expect(rows).toHaveCount(0);await expect(region.getByRole('button',{name:'감사 기록 검색 실행',exact:true})).toBeEnabled()}finally{await page.unroute(path)}
+ await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);await expect(region.getByRole('status')).toHaveText('');
+ phase('actual viewer audit search verifies distinct pages, rejects substituted frames and ignores a delayed cancelled response after a new condition finishes; mobile viewport has no document overflow; invalid UUID sends no request and an HTTP 503 clears results before a successful manual retry; no business writes');
 });
 
 test('administrator retires an owned version in the browser and cannot select it for a new campaign',async({page})=>{

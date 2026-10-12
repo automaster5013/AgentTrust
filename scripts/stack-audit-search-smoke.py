@@ -5,17 +5,21 @@ from stack_business_fingerprint import fingerprint
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 report={'completed':False,'checks':[],'businessDataWrites':False,'paidProviderCalls':False,'credentialsRecorded':False};clients=[]
 def verified(value,user,filters,token=None):
- code="import {readFileSync} from 'node:fs';import {auditSearchPage} from './apps/console/src/lib/audit-search.ts';const v=JSON.parse(readFileSync(0,'utf8'));await auditSearchPage(v.page,v.user,v.filters,v.token);const changed=structuredClone(v.page);changed.filters.resourceId=v.filters.resourceId===null?v.user.actorId:null;let refused=false;try{await auditSearchPage(changed,v.user,v.filters,v.token)}catch{refused=true}if(!refused)throw Error('FILTER_SUBSTITUTION_ACCEPTED');console.log(JSON.stringify({verified:true,changedFiltersRefused:true}));"
+ code="import {readFileSync} from 'node:fs';import {auditSearchPage,auditFilters} from './apps/console/src/lib/audit-search.ts';const v=JSON.parse(readFileSync(0,'utf8'));await auditSearchPage(v.page,v.user,v.filters,v.token);const changed=structuredClone(v.page);changed.filters.resourceId=v.filters.resourceId===null?v.user.actorId:null;let refused=false;try{await auditSearchPage(changed,v.user,v.filters,v.token)}catch{refused=true}if(!refused)throw Error('FILTER_SUBSTITUTION_ACCEPTED');const searchable=v.page.entries.filter(entry=>{try{auditFilters(entry.action,entry.resourceId);return true}catch{return false}});console.log(JSON.stringify({verified:true,changedFiltersRefused:true,searchable}));"
  result=subprocess.run(['node','--experimental-strip-types','--input-type=module','-e',code],input=json.dumps({'page':value,'user':user,'filters':filters,'token':token}),cwd=ROOT,capture_output=True,text=True,encoding='utf-8',timeout=20)
  assert result.returncode==0 and json.loads(result.stdout)['verified']
+ return json.loads(result.stdout)['searchable']
 try:
  before=fingerprint();assert len(before)==18
  credentials=json.loads((ROOT/'.local/stack/demo-credentials.json').read_text(encoding='utf-8'))
  viewer=StackClient('http://127.0.0.1:4320',credentials,report,clients);user=viewer.login('demo-viewer')
- first=viewer.request('audit-search/all/all');assert len(first['entries'])==25 and first['nextCursor'];verified(first,user,{'action':None,'resourceId':None})
- token=first['nextCursor'];second=viewer.request('audit-search/all/all/'+token);verified(second,user,{'action':None,'resourceId':None},token);assert not {v['id'] for v in first['entries']}&{v['id'] for v in second['entries']}
+ first=viewer.request('audit-search/all/all');assert len(first['entries'])==25 and first['nextCursor'];eligible=verified(first,user,{'action':None,'resourceId':None})
+ token=first['nextCursor'];second=viewer.request('audit-search/all/all/'+token);eligible+=verified(second,user,{'action':None,'resourceId':None},token);assert not {v['id'] for v in first['entries']}&{v['id'] for v in second['entries']}
  report['checks'].append('viewer verifies two distinct actual keyset pages and their exact microsecond tenant boundary')
- entry=first['entries'][0];action=entry['action'];resource=entry['resourceId'];filters={'action':action,'resourceId':resource}
+ # Earlier CI fault tests append test.fixture.* audit actions. They remain
+ # visible in unfiltered history but are deliberately not selectable filters.
+ assert eligible,'No existing supported audit action in two scoped pages'
+ entry=eligible[0];report['selectedAction']=entry['action'];action=entry['action'];resource=entry['resourceId'];filters={'action':action,'resourceId':resource}
  matching=viewer.request('audit-search/'+action+'/'+resource);verified(matching,user,filters);assert matching['entries'] and any(v['id']==entry['id'] for v in matching['entries']) and all(v['action']==action and v['resourceId']==resource for v in matching['entries'])
  viewer.request('audit-search/'+action+'/'+resource+'/'+token,expected=400)
  viewer.request('audit-search/review.deleted/all',expected=400)
