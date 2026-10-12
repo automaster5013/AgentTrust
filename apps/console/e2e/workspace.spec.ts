@@ -404,7 +404,8 @@ test('viewer verifies an older registered version before selecting it for campai
   const row=region.locator('[data-version-history-id]').last(),id=await row.getAttribute('data-version-history-id');
   const response=page.waitForResponse(r=>r.url().endsWith('/versions/'+kind+'/'+id)&&r.request().method()==='GET');await row.getByRole('button',{name:new RegExp('^'+label+' 버전 .* 선택$')}).click();expect((await response).status()).toBe(200);
   await expect(region.getByText(/내용·해시·활성 상태 확인 후 선택:/)).toBeVisible();await expect(page.getByLabel(selectLabel,{exact:true})).toHaveValue(id!);
-  const alternate=region.locator('[data-version-history-id]').first(),alternateId=await alternate.getAttribute('data-version-history-id');expect(alternateId).not.toBe(id);
+  if(!first.includes(id)){await region.getByRole('button',{name:'이전 '+label+' 버전 페이지',exact:true}).click();await expect(region.getByText(new RegExp(label+' 버전 페이지 1 '))).toBeVisible();expect(await region.locator('[data-version-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-history-id')))).toEqual(first);}
+  const alternateId=first.find(value=>value!==id);expect(alternateId).toBeTruthy();const alternate=region.locator('[data-version-history-id="'+alternateId+'"]');expect(alternateId).not.toBe(id);
   const detail=await (await page.request.get('/backend/versions/'+kind+'/'+alternateId)).json(),match=/^(.*T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(?:Z|\+00:00)$/.exec(detail.created_at);expect(match).not.toBeNull();
   const nanos=Number((match![2]??'').padEnd(9,'0')),changed=nanos%1000000===999000?nanos-1000:nanos+1000,created_at=match![1]+'.'+String(changed).padStart(9,'0')+'Z';expect(Date.parse(created_at)).toBe(Date.parse(detail.created_at));
   const detailRoute='**/backend/versions/'+kind+'/'+alternateId;await page.route(detailRoute,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...detail,created_at})}));
