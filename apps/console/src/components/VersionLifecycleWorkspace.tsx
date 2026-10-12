@@ -3,7 +3,7 @@ import {useEffect,useRef,useState} from 'react';
 import {RequestScope,type Identity} from '../lib/contracts';
 import {verifiedAgentVersion,verifiedDatasetVersion,type Version} from '../lib/campaign-contracts';
 import {versionLifecycle,type VersionLifecycle} from '../lib/version-lifecycle';
-export default function VersionLifecycleWorkspace({user,kind,version,disabled}:{user:Identity;kind:'agents'|'datasets';version:Version;disabled:boolean}){
+export default function VersionLifecycleWorkspace({user,kind,version,disabled,onRetired}:{user:Identity;kind:'agents'|'datasets';version:Version;disabled:boolean;onRetired?:()=>void}){
  const [state,setState]=useState<VersionLifecycle|null>(null),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
  const scope=useRef(new RequestScope()),active=useRef<AbortController|null>(null),path='versions/'+kind+'/'+version.id+'/lifecycle';
  useEffect(()=>{scope.current.next();active.current?.abort();setState(null);setBusy(false);setMessage('');return ()=>{scope.current.next();active.current?.abort()}},[user.actorId,user.organizationId,user.projectId,version.id,kind]);
@@ -12,7 +12,7 @@ export default function VersionLifecycleWorkspace({user,kind,version,disabled}:{
   try{
    const raw=await request('versions/'+kind+'/'+version.id,controller),verified=kind==='agents'?await verifiedAgentVersion(raw,user):await verifiedDatasetVersion(raw,user);
    if(verified.id!==version.id||verified.content_sha256!==version.content_sha256)throw Error('INVALID_VERSION');
-   if(reason!==undefined){if(user.role!=='admin'||!reason.trim()||reason.length>500)throw Error('INVALID_RETIREMENT');const csrf=await request('csrf',controller);if(typeof csrf.token!=='string'||csrf.token.length>2048)throw Error('INVALID_CSRF');const result=await request(path+'/retirement',controller,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':csrf.token},body:JSON.stringify({reason})});const checked=versionLifecycle(result,user,kind,version.id,version.content_sha256);if(checked.state!=='retired')throw Error('INVALID_RETIREMENT');}
+   if(reason!==undefined){if(user.role!=='admin'||!reason.trim()||reason.length>500)throw Error('INVALID_RETIREMENT');const csrf=await request('csrf',controller);if(typeof csrf.token!=='string'||csrf.token.length>2048)throw Error('INVALID_CSRF');const result=await request(path+'/retirement',controller,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':csrf.token},body:JSON.stringify({reason})});const checked=versionLifecycle(result,user,kind,version.id,version.content_sha256);if(checked.state!=='retired')throw Error('INVALID_RETIREMENT');if(scope.current.current(generation)){setState(checked);setMessage('폐기 상태를 확인했습니다. 새 실행과 현재 릴리스 허용에 사용할 수 없습니다.');onRetired?.();}return;}
    const checked=versionLifecycle(await request(path,controller),user,kind,version.id,version.content_sha256);
    if(scope.current.current(generation)){setState(checked);setMessage(checked.state==='retired'?'폐기 상태를 확인했습니다. 새 실행과 현재 릴리스 허용에 사용할 수 없습니다.':'활성 상태를 확인했습니다.')}
   }catch{if(scope.current.current(generation))setMessage('버전 상태 또는 폐기 결과를 확인하지 못했습니다. 상태를 다시 조회해 주세요.')}finally{if(scope.current.current(generation))setBusy(false)}
