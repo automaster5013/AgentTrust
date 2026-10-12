@@ -488,3 +488,32 @@ test('a stalled current gate request times out and a fresh retry verifies the ac
  await checks.getByRole('button',{name:'현재 판정 서명 확인',exact:true}).click();await expect(checks.getByText(/서명 확인 완료/)).toBeVisible();
  phase('stalled request releases busy state at the bounded deadline; actual fresh Java signature verifies on retry');
 });
+
+
+test('viewer recovers from a stalled evaluation detail without retaining prior evidence',async({page})=>{
+ await login(page,'demo-viewer');const region=page.getByRole('region',{name:'프로젝트 평가 이력',exact:true});await region.getByRole('button',{name:'최신 평가 이력 조회',exact:true}).click();const row=region.locator('[data-run-history-id]').first();const id=await row.getAttribute('data-run-history-id');expect(id).toBeTruthy();const button=row.getByRole('button',{name:'평가 근거 '+id!.slice(0,8),exact:true});await button.click();await expect(page.locator('.evidence').getByText('실행 '+id,{exact:true})).toBeVisible();
+ const path='**/backend/runs/'+id;let release!:()=>void,started!:()=>void,finished!:()=>void;const held=new Promise<void>(resolve=>{release=resolve}),entered=new Promise<void>(resolve=>{started=resolve}),done=new Promise<void>(resolve=>{finished=resolve});
+ await page.route(path,async route=>{const response=await route.fetch();started();await held;try{await route.fulfill({response})}catch{expect(route.request().failure()?.errorText).toMatch(/abort|cancel|failed/i)}finally{finished()}});
+ try{await button.click();await entered;await expect(page.locator('.evidence')).toHaveCount(0);await expect(page.getByText('평가 근거를 확인하지 못했습니다. 다시 선택해 주세요.',{exact:true})).toBeVisible({timeout:12000});release();await done;await expect(page.locator('.evidence')).toHaveCount(0)}finally{release();await page.unroute(path)}
+ await button.click();await expect(page.locator('.evidence').getByText('실행 '+id,{exact:true})).toBeVisible();phase('actual ten-second detail deadline clears prior evidence and permission; late response remains refused and a manual scoped API retry recovers; no business writes');
+ const gatePath='**/backend/runs/'+id+'/gate';let releaseGate!:()=>void,gateStarted!:()=>void,gateFinished!:()=>void;const gateHeld=new Promise<void>(resolve=>{releaseGate=resolve}),gateEntered=new Promise<void>(resolve=>{gateStarted=resolve}),gateDone=new Promise<void>(resolve=>{gateFinished=resolve});
+ await page.route(gatePath,async route=>{const response=await route.fetch();gateStarted();await gateHeld;try{await route.fulfill({response})}catch{expect(route.request().failure()?.errorText).toMatch(/abort|cancel|failed/i)}finally{gateFinished()}});
+ try{await button.click();await gateEntered;await expect(page.locator('.evidence')).toHaveCount(0);await expect(page.getByText('평가 근거를 확인하지 못했습니다. 다시 선택해 주세요.',{exact:true})).toBeVisible({timeout:12000});releaseGate();await gateDone;await expect(page.locator('.evidence')).toHaveCount(0)}finally{releaseGate();await page.unroute(gatePath)}
+ await button.click();await expect(page.locator('.evidence').getByText('실행 '+id,{exact:true})).toBeVisible();phase('a stalled real OPA gate response shares the detail deadline and cannot display partially verified evidence or earlier permission; manual retry recovers');
+
+});
+
+
+test('viewer recovers bounded archive and similarity reads after stalled responses',async({page})=>{
+ await login(page,'demo-viewer');
+ const frame=await (await page.request.get('/backend/audit-search/evaluation.completed/all')).json();const id=frame.entries[0].resourceId;const value=await (await page.request.get('/backend/runs/'+id)).json();expect(value.state).not.toBe('queued');
+ const history=page.getByRole('region',{name:'프로젝트 평가 이력',exact:true});await history.getByRole('button',{name:'최신 평가 이력 조회',exact:true}).click();
+ const audit=page.getByRole('region',{name:'감사 기록 검색',exact:true});await audit.getByLabel('감사 작업 종류',{exact:true}).selectOption('evaluation.completed');await audit.getByLabel('감사 대상 ID',{exact:true}).fill(id);await audit.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await audit.getByRole('button',{name:'평가 근거 '+id.slice(0,8),exact:true}).first().click();await expect(page.locator('.evidence').getByText('실행 '+id,{exact:true})).toBeVisible();
+ for(const item of [{suffix:'evidence',button:'근거 해시·버전 확인',failure:'보관된 근거를 확인하지 못했습니다. 잠시 후 다시 확인해 주세요.'},{suffix:'similar',button:'유사 근거 찾기',failure:'유사 근거를 조회하지 못했습니다. 색인 준비 후 다시 확인해 주세요.'}]){
+  const path='**/backend/runs/'+id+'/'+item.suffix;let release!:()=>void,started!:()=>void,finished!:()=>void;const held=new Promise<void>(resolve=>{release=resolve}),entered=new Promise<void>(resolve=>{started=resolve}),done=new Promise<void>(resolve=>{finished=resolve});const button=page.locator('.evidence').getByRole('button',{name:item.button,exact:true});
+  await page.route(path,async route=>{const response=await route.fetch();started();await held;try{await route.fulfill({response})}catch{expect(route.request().failure()?.errorText).toMatch(/abort|cancel|failed/i)}finally{finished()}});
+  try{await button.click();await entered;await expect(button).toBeDisabled();await expect(page.getByText(item.failure,{exact:true})).toBeVisible({timeout:12000});await expect(button).toBeEnabled();release();await done;await expect(page.getByText(item.failure,{exact:true})).toBeVisible()}finally{release();await page.unroute(path)}
+  await button.click();await expect(button).toBeEnabled();if(item.suffix==='evidence')await expect(page.getByText('서버와 브라우저의 바이트 해시 검증 완료',{exact:false})).toBeVisible();else await expect(page.getByText('같은 프로젝트의 규칙 특징이 비슷한 평가를 조회했습니다.',{exact:true})).toBeVisible();
+ }
+ phase('actual ten-second archived-byte and pgvector read deadlines release controls, refuse delayed results and recover through manual real scoped API retries; no business writes');
+});

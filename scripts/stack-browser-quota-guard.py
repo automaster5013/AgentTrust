@@ -21,12 +21,13 @@ def main():
   state=subprocess.run(['docker','inspect','--format','{{index .Config.Labels "com.docker.compose.project"}} {{index .Config.Labels "com.docker.compose.service"}}','agenttrust-stack-redis-1'],cwd=ROOT,capture_output=True,text=True,encoding='utf-8',timeout=10,check=True)
   assert state.stdout.strip()=='agenttrust stack-redis'
   # Token travels only via stdin into a container-local environment, never argv or output.
-  script='IFS= read -r REDISCLI_AUTH; export REDISCLI_AUTH; for key in "$@"; do redis-cli --user stack-gateway --raw GET "$key"; redis-cli --user stack-gateway --raw TTL "$key"; done'
+  script='IFS= read -r REDISCLI_AUTH; export REDISCLI_AUTH; redis-cli --user stack-gateway --raw EVAL "$1" 2 "$2" "$3"'
+  snapshot="return {redis.call('GET',KEYS[1]) or '0',redis.call('TTL',KEYS[1]),redis.call('GET',KEYS[2]) or '0',redis.call('TTL',KEYS[2])}"
   while True:
    wait=0
    for scope in sorted(scopes):
     keys=['stack:quota:'+scope+':'+kind for kind in ['read','write']]
-    result=subprocess.run(['docker','exec','-i','agenttrust-stack-redis-1','sh','-c',script,'quota-guard',*keys],cwd=ROOT,input=token+b'\n',capture_output=True,timeout=10,check=True)
+    result=subprocess.run(['docker','exec','-i','agenttrust-stack-redis-1','sh','-c',script,'quota-guard',snapshot,*keys],cwd=ROOT,input=token+b'\n',capture_output=True,timeout=10,check=True)
     assert len(result.stdout)<=1024;values=result.stdout.decode('ascii').splitlines();assert len(values)==4
     for offset,limit,reserve in [(0,240,96),(2,60,16)]:wait=max(wait,wait_seconds(int(values[offset] or '0'),int(values[offset+1]),limit,reserve))
    if not wait:break
