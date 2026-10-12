@@ -4,6 +4,26 @@ import {execFileSync} from 'node:child_process';
 import {readFileSync,readdirSync,statSync} from 'node:fs';import {resolve} from 'node:path';
 const users=JSON.parse(readFileSync(resolve(process.cwd(),'../../.local/stack/demo-credentials.json'),'utf-8')) as {username:string;password:string;organizationId:string}[];
 
+test('administrator retires an owned version in the browser and cannot select it for a new campaign',async({page})=>{
+ await login(page,'demo-admin');
+ const csrf=(await (await page.request.get('/backend/csrf')).json()).token,key='browser-life-'+randomUUID();
+ const registered=await page.request.post('/backend/versions/agents',{headers:{'X-CSRF-TOKEN':csrf,Origin:'http://127.0.0.1:4320'},data:{key,version:1,provider:'synthetic',description:'Own browser retirement fixture'}});expect(registered.status()).toBe(200);const original=await registered.json();
+ const region=page.getByRole('region',{name:'프로젝트 에이전트 버전 이력',exact:true});await region.getByRole('button',{name:'에이전트 버전 이력 조회',exact:true}).click();
+ const row=region.locator('[data-version-history-id="'+original.id+'"]');await expect(row).toBeVisible();await row.getByRole('button',{name:'버전 상태 확인',exact:true}).click();await expect(row.getByText('상태: 활성',{exact:true})).toBeVisible();
+ await row.getByLabel('버전 폐기 사유',{exact:true}).fill('Own browser immutable retirement');await row.getByRole('button',{name:'이 버전 폐기',exact:true}).click();await expect(row.getByText('상태: 폐기',{exact:true})).toBeVisible();await expect(row.getByText('폐기 사유: Own browser immutable retirement',{exact:true})).toBeVisible();await expect(row.getByRole('button',{name:'이 버전 폐기',exact:true})).toHaveCount(0);
+ const selection=page.getByLabel('캠페인 에이전트 버전',{exact:true}),before=await selection.inputValue();let campaignPosts=0;page.on('request',request=>{if(new URL(request.url()).pathname==='/backend/campaigns'&&request.method()==='POST')campaignPosts++});
+ await row.getByRole('button',{name:'에이전트 버전 '+key+' / v1 선택',exact:true}).click();await expect(region.getByText('폐기된 버전입니다. 새 평가 실행에 선택할 수 없습니다.',{exact:true})).toBeVisible();await expect(selection).toHaveValue(before);expect(campaignPosts).toBe(0);
+ expect(await (await page.request.get('/backend/versions/agents/'+original.id)).json()).toEqual(original);phase('actual Java retirement through administrator UI preserves immutable bytes and refuses retired selection without campaign submission');
+});
+
+test('viewer reads an actual retired version without a retirement control',async({page})=>{
+ await login(page,'demo-viewer');const region=page.getByRole('region',{name:'프로젝트 에이전트 버전 이력',exact:true});await region.getByRole('button',{name:'에이전트 버전 이력 조회',exact:true}).click();await expect(region.locator('[data-version-history-id]').first()).toBeVisible();
+ const ids=await region.locator('[data-version-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-history-id')));let retired:{id:string;reason:string}|null=null;
+ for(const id of ids.slice(0,10)){const response=await page.request.get('/backend/versions/agents/'+id+'/lifecycle');expect(response.status()).toBe(200);const value=await response.json();if(value.state==='retired'){retired={id:id!,reason:value.reason};break}}
+ expect(retired).not.toBeNull();const row=region.locator('[data-version-history-id="'+retired!.id+'"]');await row.getByRole('button',{name:'버전 상태 확인',exact:true}).click();await expect(row.getByText('상태: 폐기',{exact:true})).toBeVisible();await expect(row.getByText('폐기 사유: '+retired!.reason,{exact:true})).toBeVisible();await expect(row.getByRole('button',{name:'이 버전 폐기',exact:true})).toHaveCount(0);await expect(row.getByLabel('버전 폐기 사유',{exact:true})).toHaveCount(0);
+ phase('actual viewer Keycloak session reads scoped immutable retirement and has no retirement form');
+});
+
 test('viewer downloads bounded scoped audit JSON and refuses changed bytes before download',async({page})=>{
  await login(page,'demo-viewer');const region=page.getByRole('region',{name:'프로젝트 감사 기록',exact:true});const identity=await (await page.request.get('/backend/me')).json();const frame=await (await page.request.get('/backend/audit-export')).json();
  const event=page.waitForEvent('download');await region.getByRole('button',{name:'감사 기록 JSON 다운로드',exact:true}).click();const download=await event;expect(await download.failure()).toBeNull();const stream=await download.createReadStream();expect(stream).not.toBeNull();let bytes=Buffer.alloc(0);for await(const chunk of stream!){bytes=Buffer.concat([bytes,chunk]);expect(bytes.length).toBeLessThanOrEqual(262144)}
