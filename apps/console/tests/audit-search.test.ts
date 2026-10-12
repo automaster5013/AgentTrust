@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {createHash} from 'node:crypto';
-import {auditFilters,auditSearchPage,auditSearchPath,type AuditFilters} from '../src/lib/audit-search.ts';
+import {auditFilters,auditSearchPage,auditSearchPath,auditRunTarget,type AuditFilters} from '../src/lib/audit-search.ts';
 import {proxyPath,oauthQuery} from '../src/lib/proxy-policy.ts';import type {Identity} from '../src/lib/contracts.ts';
 const org='11111111-1111-4111-8111-111111111111',project='22222222-2222-4222-8222-222222222222',actor='33333333-3333-4333-8333-333333333333';const user={organizationId:org,projectId:project,actorId:actor} as Identity;
 const filters=auditFilters('version.agents.retired',actor);
@@ -35,4 +35,10 @@ test('audit search preserves unknown fixture history while refusing invalid prec
  for(const nanos of [-1,1,123456001,1000000000]){const raw=Buffer.from(token(precise),'base64url');raw.writeInt32BE(nanos,73);await assert.rejects(()=>auditSearchPage(page([]),user,filters,raw.toString('base64url')))}
  for(const seconds of [-1n,253402300800n]){const raw=Buffer.from(token(precise),'base64url');raw.writeBigInt64BE(seconds,65);await assert.rejects(()=>auditSearchPage(page([]),user,filters,raw.toString('base64url')))}
  for(const value of [{...page([]),signed:true},{...page([]),filters:{...filters,organizationId:org}},page([{...row(8),createdAt:'2026-02-30T09:00:00.123456000Z'}]),page([row(8,123456001)]),page([],token(precise)),page([row(8)],token(row(8)))])await assert.rejects(()=>auditSearchPage(value,user,filters));
+});
+
+test('audit navigation only opens run coordinates for evaluation and review actions',()=>{
+ for(const action of ['evaluation.queued','evaluation.completed','evaluation.cancelled','review.approved','review.rejected'])assert.equal(auditRunTarget({action,resourceId:actor}),actor);
+ for(const action of ['campaign.queued','campaign.observation.signed','version.agents.retired','test.fixture.audit-export','evaluation.completed/../campaigns'])assert.equal(auditRunTarget({action,resourceId:actor}),null);
+ for(const resourceId of ['1-1-1-1-1','AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA',actor+'?project=other'])assert.equal(auditRunTarget({action:'evaluation.completed',resourceId}),null);
 });
