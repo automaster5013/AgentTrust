@@ -16,9 +16,10 @@ try:
  first=viewer.request('audit-search/all/all');assert len(first['entries'])==25 and first['nextCursor'];eligible=verified(first,user,{'action':None,'resourceId':None})
  token=first['nextCursor'];second=viewer.request('audit-search/all/all/'+token);eligible+=verified(second,user,{'action':None,'resourceId':None},token);assert not {v['id'] for v in first['entries']}&{v['id'] for v in second['entries']}
  report['checks'].append('viewer verifies two distinct actual keyset pages and their exact microsecond tenant boundary')
- # Earlier CI fault tests append test.fixture.* audit actions. They remain
- # visible in unfiltered history but are deliberately not selectable filters.
- assert eligible,'No existing supported audit action in two scoped pages'
+ # Export/navigation tests can prepend over 500 unsupported fixture actions.
+ # Read a known completed lifecycle event directly; never rewrite that history.
+ supported=viewer.request('audit-search/version.agents.retired/all');eligible=verified(supported,user,{'action':'version.agents.retired','resourceId':None})
+ assert eligible,'Existing lifecycle smoke must supply a retired agent audit'
  entry=eligible[0];report['selectedAction']=entry['action'];action=entry['action'];resource=entry['resourceId'];filters={'action':action,'resourceId':resource}
  matching=viewer.request('audit-search/'+action+'/'+resource);verified(matching,user,filters);assert matching['entries'] and any(v['id']==entry['id'] for v in matching['entries']) and all(v['action']==action and v['resourceId']==resource for v in matching['entries'])
  viewer.request('audit-search/'+action+'/'+resource+'/'+token,expected=400)

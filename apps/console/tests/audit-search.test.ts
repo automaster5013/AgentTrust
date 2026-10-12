@@ -26,3 +26,13 @@ test('audit search routes permit only bounded reads without query or alternate s
  for(const invalid of ['ALL','review.deleted','version.agents.retired/../../runs'])assert.throws(()=>auditFilters(invalid,'all'));
  for(const invalid of ['AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA','1-1-1-1-1',actor+'?actor=other'])assert.throws(()=>auditFilters('all',invalid));
 });
+
+test('audit search preserves unknown fixture history while refusing invalid precision and response extensions',async()=>{
+ const unfiltered=auditFilters('all','all'),fixture={...row(9),action:'test.fixture.future-campaign-review'};
+ assert.equal((await auditSearchPage({...page([fixture]),filters:unfiltered},user,unfiltered)).entries[0].action,fixture.action);
+ assert.throws(()=>auditFilters(fixture.action,fixture.resourceId));
+ const precise=row(9,999999000);assert.equal((await auditSearchPage(page([row(8,999998000)]),user,filters,token(precise))).entries.length,1);
+ for(const nanos of [-1,1,123456001,1000000000]){const raw=Buffer.from(token(precise),'base64url');raw.writeInt32BE(nanos,73);await assert.rejects(()=>auditSearchPage(page([]),user,filters,raw.toString('base64url')))}
+ for(const seconds of [-1n,253402300800n]){const raw=Buffer.from(token(precise),'base64url');raw.writeBigInt64BE(seconds,65);await assert.rejects(()=>auditSearchPage(page([]),user,filters,raw.toString('base64url')))}
+ for(const value of [{...page([]),signed:true},{...page([]),filters:{...filters,organizationId:org}},page([{...row(8),createdAt:'2026-02-30T09:00:00.123456000Z'}]),page([row(8,123456001)]),page([],token(precise)),page([row(8)],token(row(8)))])await assert.rejects(()=>auditSearchPage(value,user,filters));
+});
