@@ -19,6 +19,7 @@ public class CampaignController {
     @GetMapping("/{id}") Map<String,Object> get(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id){return campaigns.get(user,id);}
     @GetMapping("/{id}/gate") Evaluation.Gate gate(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id){return campaigns.gate(user,id);}
     @GetMapping("/{id}/release-requirements") Map<String,Object> requirements(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id){return campaigns.releaseRequirements(user,id);}
+    @GetMapping("/{id}/version-lifecycle") Map<String,Object> lifecycle(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id){return campaigns.versionLifecycle(user,id);}
     @PostMapping("/{id}/reviews") Map<String,Object> review(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id,@RequestBody Review body){return campaigns.review(user,id,body.decision(),body.reason());}
     @PostMapping("/{id}/cancel") Map<String,Object> cancel(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id,@RequestBody Cancel body){return campaigns.cancel(user,id,body.reason());}
     @GetMapping("/{id}/comparison/{baseline}") Map<String,Object> compare(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id,@PathVariable UUID baseline){return campaigns.compare(user,id,baseline);}

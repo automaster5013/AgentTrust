@@ -1,7 +1,8 @@
+import {campaignLifecycle,verifyLifecyclePermission,type CampaignLifecycle} from './version-lifecycle.ts';
 import {campaignGate,type Campaign,type CampaignArchive} from './campaign-contracts.ts';
 import {type Identity,type Gate} from './contracts.ts';
 import {releaseRequirements,verifyReleasePermission,type ReleaseRequirements} from './release-requirements.ts';
-export type GateCheck={checkedAtEpochMillis:number;expiresAtEpochMillis:number;keyId:string;observedGate:Gate;currentDeploymentAuthority:false;releaseRequirements?:ReleaseRequirements};
+export type GateCheck={checkedAtEpochMillis:number;expiresAtEpochMillis:number;keyId:string;observedGate:Gate;currentDeploymentAuthority:false;releaseRequirements?:ReleaseRequirements;versionLifecycle?:CampaignLifecycle};
 const domain='agenttrust-local-development';
 function object(value:unknown):Record<string,unknown>{if(!value||typeof value!=='object'||Array.isArray(value))throw Error('INVALID_GATE_CHECK');return value as Record<string,unknown>}
 function hash(value:unknown){if(typeof value!=='string'||! /^[a-f0-9]{64}$/.test(value))throw Error('INVALID_GATE_CHECK');return value}
@@ -18,7 +19,7 @@ export async function verifiedGateCheck(value:unknown,trustValue:unknown,user:Id
  const key=await crypto.subtle.importKey('spki',publicKey,{name:'Ed25519'},false,['verify']);
  if(!await crypto.subtle.verify('Ed25519',key,signature,payload))throw Error('INVALID_GATE_CHECK_SIGNATURE');
  const doc=object(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(payload)));
- if(!(doc.schemaVersion===1&&Object.keys(doc).length===20||doc.schemaVersion===2&&Object.keys(doc).length===21)||doc.kind!=='campaign-current-gate-check'||doc.trustDomain!==domain||doc.currentDeploymentAuthority!==false||doc.challenge!==challenge||doc.campaignId!==record.id||doc.organizationId!==user.organizationId||doc.projectId!==user.projectId||doc.actorId!==user.actorId||doc.agentVersionId!==record.agent_version_id||doc.datasetVersionId!==record.dataset_version_id||doc.agentContentSha256!==record.agent_content_sha256||doc.datasetContentSha256!==record.dataset_content_sha256||doc.evaluationState!==record.state||doc.evaluationDecision!==record.decision||record.state==='queued')throw Error('INVALID_GATE_CHECK_BINDING');
+ if(!(doc.schemaVersion===1&&Object.keys(doc).length===20||doc.schemaVersion===2&&Object.keys(doc).length===21||doc.schemaVersion===3&&Object.keys(doc).length===(doc.releaseRequirements===undefined?21:22))||doc.kind!=='campaign-current-gate-check'||doc.trustDomain!==domain||doc.currentDeploymentAuthority!==false||doc.challenge!==challenge||doc.campaignId!==record.id||doc.organizationId!==user.organizationId||doc.projectId!==user.projectId||doc.actorId!==user.actorId||doc.agentVersionId!==record.agent_version_id||doc.datasetVersionId!==record.dataset_version_id||doc.agentContentSha256!==record.agent_content_sha256||doc.datasetContentSha256!==record.dataset_content_sha256||doc.evaluationState!==record.state||doc.evaluationDecision!==record.decision||record.state==='queued')throw Error('INVALID_GATE_CHECK_BINDING');
  const checkedAt=epoch(doc.checkedAtEpochMillis),expiresAt=epoch(doc.expiresAtEpochMillis);
  if(now<requestStartedAt||checkedAt<requestStartedAt-5000||checkedAt>now+5000||expiresAt<=checkedAt||expiresAt-checkedAt>30000||now>=expiresAt)throw Error('EXPIRED_GATE_CHECK');
  const stored=object(doc.campaignArchive);
@@ -30,7 +31,9 @@ export async function verifiedGateCheck(value:unknown,trustValue:unknown,user:Id
   if(Object.keys(review).length!==6||typeof review.id!=='string'||! /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(review.id)||!['approved','rejected'].includes(String(review.decision))||!Number.isSafeInteger(review.sequence)||(review.sequence as number)<1||typeof review.policyVersion!=='string'||typeof review.policyDigest!=='string'||review.decision==='rejected'&&observedGate.deploymentAllowed)throw Error('INVALID_GATE_CHECK_REVIEW');
   if(observedGate.deploymentAllowed&&record.requires_approval&&(review.decision!=='approved'||review.policyVersion!==observedGate.policyVersion||review.policyDigest!==observedGate.policyDigest||created>checkedAt||checkedAt-created>=3600000||expiresAt>created+3600000))throw Error('INVALID_GATE_CHECK_REVIEW');
  }else if(observedGate.deploymentAllowed&&record.requires_approval)throw Error('INVALID_GATE_CHECK_REVIEW');
- const requirements=doc.schemaVersion===2?releaseRequirements(doc.releaseRequirements,user,record):undefined;
+ const requirements=(doc.schemaVersion===2||doc.schemaVersion===3&&doc.releaseRequirements!==undefined)?releaseRequirements(doc.releaseRequirements,user,record):undefined;
  if(requirements){if(!requirements.enabled)throw Error('INVALID_GATE_CHECK_BINDING');verifyReleasePermission(requirements,observedGate,checkedAt,expiresAt)}
- return {checkedAtEpochMillis:checkedAt,expiresAtEpochMillis:expiresAt,keyId,observedGate,currentDeploymentAuthority:false,...(requirements?{releaseRequirements:requirements}:{})};
+ const lifecycle=doc.schemaVersion===3?campaignLifecycle(doc.versionLifecycle,user,record,requirements):undefined;
+ if(lifecycle)verifyLifecyclePermission(lifecycle,observedGate,checkedAt);
+ return {checkedAtEpochMillis:checkedAt,expiresAtEpochMillis:expiresAt,keyId,observedGate,currentDeploymentAuthority:false,...(requirements?{releaseRequirements:requirements}:{}),...(lifecycle?{versionLifecycle:lifecycle}:{})};
 }

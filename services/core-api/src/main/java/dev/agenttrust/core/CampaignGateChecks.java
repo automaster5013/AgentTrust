@@ -61,9 +61,9 @@ public class CampaignGateChecks {
             var record=campaigns.get(user,campaign);
             if("queued".equals(record.get("state")))throw new ResponseStatusException(HttpStatus.CONFLICT);
             var evidence=archives.evidence(user,campaign);
-            long checkedAt=System.currentTimeMillis();
             var gate=campaigns.gate(user,campaign);
             if(!"evaluated".equals(gate.policyStatus()))throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE);
+            long checkedAt=System.currentTimeMillis();
             var review=campaigns.latestReview(user,campaign);
             var requirements=campaigns.releaseRequirements(user,campaign);
             try {
@@ -71,6 +71,7 @@ public class CampaignGateChecks {
                 var payload=new TreeMap<String,Object>();
                 payload.put("schemaVersion",1);payload.put("kind","campaign-current-gate-check");payload.put("trustDomain",GateSigner.TRUST_DOMAIN);
                 if(Boolean.TRUE.equals(requirements.get("enabled"))){payload.put("schemaVersion",2);payload.put("releaseRequirements",requirements);}
+                payload.put("schemaVersion",3);payload.put("versionLifecycle",campaigns.versionLifecycle(user,campaign));
                 payload.put("currentDeploymentAuthority",false);payload.put("challenge",nonce);payload.put("campaignId",campaign);
                 payload.put("organizationId",user.organizationId());payload.put("projectId",user.projectId());payload.put("actorId",user.actorId());
                 payload.put("checkedAtEpochMillis",checkedAt);payload.put("expiresAtEpochMillis",expiresAt);

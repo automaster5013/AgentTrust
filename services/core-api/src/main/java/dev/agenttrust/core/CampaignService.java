@@ -14,8 +14,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class CampaignService {
-    private final RunService runs;private final VersionRegistry versions;private final JdbcTemplate jdbc;private final ObjectMapper mapper;private final PolicyClient policy;
-    public CampaignService(RunService runs,VersionRegistry versions,JdbcTemplate jdbc,ObjectMapper mapper,PolicyClient policy){this.runs=runs;this.versions=versions;this.jdbc=jdbc;this.mapper=mapper;this.policy=policy;}
+    private final RunService runs;private final VersionRegistry versions;private final JdbcTemplate jdbc;private final ObjectMapper mapper;private final PolicyClient policy;private final VersionLifecycle lifecycle;
+    public CampaignService(RunService runs,VersionRegistry versions,JdbcTemplate jdbc,ObjectMapper mapper,PolicyClient policy,VersionLifecycle lifecycle){this.runs=runs;this.versions=versions;this.jdbc=jdbc;this.mapper=mapper;this.policy=policy;this.lifecycle=lifecycle;}
     public List<Map<String,Object>> list(DemoUser user){return runs.scoped(user,()->jdbc.queryForList("SELECT id,agent_version_id,dataset_version_id,requires_approval,created_at FROM stack_campaigns WHERE organization_id=? AND project_id=? ORDER BY created_at DESC,id DESC LIMIT 50",user.organizationId(),user.projectId()));}
     public Map<String,Object> create(DemoUser user,String key,UUID agentId,UUID datasetId,Boolean approval){
         return create(user,key,agentId,datasetId,approval,null,null);
@@ -30,9 +30,10 @@ public class CampaignService {
             var existing=jdbc.queryForList("SELECT id,request_hash FROM stack_campaigns WHERE organization_id=? AND project_id=? AND idempotency_key=?",user.organizationId(),user.projectId(),key);
             if(!existing.isEmpty()){if(!hash.equals(existing.getFirst().get("request_hash")))throw new ResponseStatusException(HttpStatus.CONFLICT);return get(user,(UUID)existing.getFirst().get("id"));}
             if(jdbc.queryForObject("SELECT count(*) FROM stack_campaigns WHERE organization_id=? AND project_id=?",Integer.class,user.organizationId(),user.projectId())>=200)throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS);
+            lifecycle.lock(user);lifecycle.requireActive(user,"agents",agentId);lifecycle.requireActive(user,"datasets",datasetId);
             var agent=versions.get(user,"agents",agentId);var dataset=versions.get(user,"datasets",datasetId);
             if(baselineId!=null){
-                var baseline=get(user,baselineId);
+                var baseline=get(user,baselineId);lifecycle.requireActive(user,"agents",(UUID)baseline.get("agent_version_id"));lifecycle.requireActive(user,"datasets",(UUID)baseline.get("dataset_version_id"));
                 CampaignReleaseRequirements.compatible(Map.of("agentVersion",agent,"dataset_version_id",datasetId,"dataset_content_sha256",dataset.get("content_sha256")),baseline);
                 if(baseline.get("state").equals("queued"))throw new ResponseStatusException(HttpStatus.CONFLICT);
             }
@@ -75,12 +76,21 @@ public class CampaignService {
         if(decision==null||!List.of("approved","rejected").contains(decision)||reason==null||reason.isBlank()||reason.length()>500)throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         return runs.scoped(user,()->{jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"campaign-review/"+id);var value=get(user,id);
             if(!value.get("decision").equals("pass"))throw new ResponseStatusException(HttpStatus.CONFLICT);
+            if(decision.equals("approved")&&!activeLifecycle(versionLifecycle(user,id)))throw new ResponseStatusException(HttpStatus.CONFLICT,"Campaign version retired");
             UUID review=UUID.randomUUID();jdbc.update("INSERT INTO stack_campaign_reviews(id,campaign_id,organization_id,project_id,actor_id,decision,reason,policy_version,policy_digest) VALUES(?,?,?,?,?,?,?,?,?)",review,id,user.organizationId(),user.projectId(),user.actorId(),decision,reason.strip(),policy.version(),policy.digest());runs.audit(user,"campaign.review."+decision,id);return Map.of("id",review,"decision",decision);
         });
     }
     public Evaluation.Gate gate(DemoUser user,UUID id){return runs.scoped(user,()->{
-        jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"campaign-review/"+id);var value=get(user,id);value.put("result",mapper.valueToTree(value.get("result")));value.put("releaseRequirements",releaseRequirements(user,id));var reviews=reviews(user,id);return policy.decide(user,id,value,reviews.isEmpty()?null:reviews.getFirst());
+        jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"campaign-review/"+id);var value=get(user,id);value.put("result",mapper.valueToTree(value.get("result")));value.put("releaseRequirements",releaseRequirements(user,id));value.put("versionLifecycle",versionLifecycle(user,id));var reviews=reviews(user,id);return policy.decide(user,id,value,reviews.isEmpty()?null:reviews.getFirst());
     });}
+    public Map<String,Object> versionLifecycle(DemoUser user,UUID id){return runs.scoped(user,()->{
+        lifecycle.lock(user);var record=admission(user,id);var entries=new ArrayList<Map<String,Object>>();
+        entries.add(lifecycle.get(user,"agents",(UUID)record.get("agent_version_id")));entries.add(lifecycle.get(user,"datasets",(UUID)record.get("dataset_version_id")));
+        var requirements=jdbc.queryForList("SELECT baseline_campaign_id FROM stack_campaign_release_requirements WHERE campaign_id=? AND organization_id=? AND project_id=?",id,user.organizationId(),user.projectId());
+        if(!requirements.isEmpty()){var baseline=admission(user,(UUID)requirements.getFirst().get("baseline_campaign_id"));entries.add(lifecycle.get(user,"agents",(UUID)baseline.get("agent_version_id")));entries.add(lifecycle.get(user,"datasets",(UUID)baseline.get("dataset_version_id")));}
+        return Map.of("contract","campaign-version-lifecycle-v1","campaignId",id,"organizationId",user.organizationId(),"projectId",user.projectId(),"versions",entries,"deploymentAuthority",false);
+    });}
+    static boolean activeLifecycle(Map<String,Object> value){return ((List<?>)value.get("versions")).stream().allMatch(x->x instanceof Map<?,?> item&&"active".equals(item.get("state")));}
     public Map<String,Object> releaseRequirements(DemoUser user,UUID id){return runs.scoped(user,()->{
         var record=get(user,id);
         var rows=jdbc.queryForList("SELECT baseline_campaign_id,evidence_max_age_seconds FROM stack_campaign_release_requirements WHERE campaign_id=? AND organization_id=? AND project_id=?",id,user.organizationId(),user.projectId());

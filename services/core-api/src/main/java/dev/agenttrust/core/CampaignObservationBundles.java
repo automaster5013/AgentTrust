@@ -29,7 +29,7 @@ public class CampaignObservationBundles {
   try{
    var payload=mapper.readTree(Base64.getDecoder().decode((String)receipt.get("payloadBase64")));bound(payload,parent);var values=archivedChildren(user,campaign,payload.path("childArchives"));
    var bundle=new java.util.HashMap<String,Object>(Map.<String,Object>of("schemaVersion",1,"kind","campaign-observation-bundle","currentDeploymentAuthority",false,"campaign",record,"receipt",receipt,"parent",parent,"children",values));
-   if(payload.path("schemaVersion").asInt()==3){
+   if((payload.path("schemaVersion").asInt()==3||payload.path("schemaVersion").asInt()==4&&payload.has("releaseRequirements"))){
     UUID baseline=UUID.fromString(payload.path("releaseRequirements").path("baselineCampaignId").asText());var baselineRecord=campaigns.get(user,baseline);var baselineParent=parents.evidence(user,baseline);var requirements=campaigns.releaseRequirements(user,campaign);
     var expected=CampaignBaselineArchives.binding(user,requirements,baselineRecord,baselineParent,mapper);if(!mapper.valueToTree(expected).equals(payload.path("baselineArchives")))throw new IllegalArgumentException("Signed baseline archive differs");
     var baselineChildren=archivedChildren(user,baseline,payload.path("baselineArchives").path("childArchives"));bundle.put("schemaVersion",2);bundle.put("baseline",Map.of("campaign",baselineRecord,"parent",baselineParent,"children",baselineChildren));

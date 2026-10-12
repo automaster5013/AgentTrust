@@ -86,7 +86,7 @@ try:
     report['phase']='historical-v3-baseline-bundle'
     receipt=admin.request('campaigns/'+candidate['id']+'/receipts','POST',{'note':'Own expired-baseline observation'},{'Idempotency-Key':str(uuid.uuid4())})
     bundle=admin.request('campaigns/'+candidate['id']+'/receipts/'+receipt['receiptId']+'/bundle')
-    assert bundle['schemaVersion']==2 and json.loads(base64.b64decode(receipt['payloadBase64']))['schemaVersion']==3
+    assert bundle['schemaVersion']==2 and json.loads(base64.b64decode(receipt['payloadBase64']))['schemaVersion']==4
     code="""import {readFileSync} from 'node:fs';import {observationReport} from './scripts/stack-observation-report.ts';import {createHash} from 'node:crypto';
 const v=JSON.parse(readFileSync(0,'utf8')),digest=createHash('sha256').update(JSON.stringify(v.bundle)).digest('hex');
 const result=await observationReport(v.bundle,readFileSync('.local/stack/gate-keys/public-key.pem','utf8'),{organization:v.user.organizationId,project:v.user.projectId,campaign:v.campaign},digest);

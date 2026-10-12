@@ -3,7 +3,7 @@ import argparse,base64,datetime,hashlib,json,pathlib,shutil,subprocess,sys,time,
 from stack_campaign_evidence import bounded_json,identifier
 from stack_business_fingerprint import fingerprint
 ROOT=pathlib.Path(__file__).resolve().parent.parent
-parser=argparse.ArgumentParser();parser.add_argument('--minutes',type=int,default=15);parser.add_argument('--campaign');parser.add_argument('--require-baseline',action='store_true');args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('--minutes',type=int,default=15);parser.add_argument('--campaign');parser.add_argument('--require-baseline',action='store_true');parser.add_argument('--require-lifecycle',action='store_true');args=parser.parse_args()
 if not 1<=args.minutes<=120:raise SystemExit('Unsupported bounded observation window')
 if args.require_baseline and not args.campaign:raise SystemExit('Baseline observation requires an explicit campaign')
 directory=ROOT/'.local'/('stack-signed-review-soak-'+str(uuid.uuid4()));directory.mkdir()
@@ -34,11 +34,15 @@ try:
    assert value['trustedGateKeyId']==key_id and len(value['checks'])==5
    if args.require_baseline:
     assert value.get('releaseRequirementsBound') is True and isinstance(value.get('releaseRequirementsSha256'),str) and len(value['releaseRequirementsSha256'])==64
-   current=(value['scopeSha256'],value['parentContentSha256'],value['childArchivesVerified'],value.get('releaseRequirementsBound'),value.get('releaseRequirementsSha256'))
+   if args.require_lifecycle:
+    assert value.get('versionLifecycleBound') is True and isinstance(value.get('versionLifecycleSha256'),str) and len(value['versionLifecycleSha256'])==64
+   current=(value['scopeSha256'],value['parentContentSha256'],value['childArchivesVerified'],value.get('releaseRequirementsBound'),value.get('releaseRequirementsSha256'),value.get('versionLifecycleBound'),value.get('versionLifecycleSha256'))
    if pins is None:pins=current
    assert current==pins
    report['releaseRequirementsBound']=value.get('releaseRequirementsBound',False)
    report['releaseRequirementsSha256']=value.get('releaseRequirementsSha256')
+   report['versionLifecycleBound']=value.get('versionLifecycleBound',False)
+   report['versionLifecycleSha256']=value.get('versionLifecycleSha256')
    report['signedReviews']+=1
   report['rounds']+=1;report['elapsedSeconds']=round(time.monotonic()-started,3);report['minimumCDriveFreeBytes']=min(report.get('minimumCDriveFreeBytes',shutil.disk_usage(ROOT).free),shutil.disk_usage(ROOT).free);save()
   while time.monotonic()<min(began+60,deadline):time.sleep(max(0,min(1,min(began+60,deadline)-time.monotonic())))
