@@ -71,6 +71,7 @@ public class CampaignService {
     });}
     private List<Map<String,Object>> reviews(DemoUser user,UUID id){return jdbc.queryForList("SELECT id,decision,reason,actor_id,review_sequence,policy_version,policy_digest,created_at FROM stack_campaign_reviews WHERE campaign_id=? AND organization_id=? AND project_id=? ORDER BY review_sequence DESC LIMIT 50",id,user.organizationId(),user.projectId());}
     Map<String,Object> latestReview(DemoUser user,UUID id){return runs.scoped(user,()->{admission(user,id);var values=reviews(user,id);return values.isEmpty()?null:values.getFirst();});}
+    public Map<String,Object> reviewHistory(DemoUser user,UUID id){return runs.scoped(user,()->{admission(user,id);return Map.of("campaignId",id,"organizationId",user.organizationId(),"projectId",user.projectId(),"entries",reviews(user,id),"limit",50,"deploymentAuthority",false);});}
     public Map<String,Object> review(DemoUser user,UUID id,String decision,String reason){
         if(!user.role().equals("admin"))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         if(decision==null||!List.of("approved","rejected").contains(decision)||reason==null||reason.isBlank()||reason.length()>500)throw new ResponseStatusException(HttpStatus.BAD_REQUEST);

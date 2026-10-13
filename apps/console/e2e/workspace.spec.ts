@@ -4,6 +4,20 @@ import {execFileSync} from 'node:child_process';
 import {readFileSync,readdirSync,statSync} from 'node:fs';import {resolve} from 'node:path';
 import {auditFilters} from '../src/lib/audit-search';
 import {uncertainCampaignWrite} from '../src/lib/campaign-write-error';
+test('viewer reads actual campaign review history and recovers from substituted scope and HTTP 503',async({page})=>{
+ await login(page,'demo-viewer');const listResponse=await page.request.get('/backend/campaigns');phase('review-history fixture list HTTP '+listResponse.status());expect(listResponse.status()).toBe(200);const rows=await listResponse.json() as {id:string}[];phase('review-history fixture count '+(Array.isArray(rows)?rows.length:'invalid'));expect(rows.length).toBeGreaterThan(0);const id=rows[0].id;
+ const response=await page.request.get('/backend/campaigns/'+id+'/reviews');expect(response.status()).toBe(200);const frame=await response.json();expect(frame.campaignId).toBe(id);expect(frame.deploymentAuthority).toBe(false);expect(frame.entries.length).toBeLessThanOrEqual(50);
+ await page.getByRole('button',{name:'캠페인 '+id.slice(0,8),exact:true}).click();const region=page.getByRole('region',{name:'캠페인 검토 이력',exact:true}),button=region.getByRole('button',{name:'캠페인 검토 이력 조회',exact:true});await button.click();await expect(region.getByRole('status')).toContainText(frame.entries.length?'최근 검토 이력을 확인했습니다.':'검토 이력이 없습니다.');await expect(region.locator('li')).toHaveCount(frame.entries.length);
+ const path='**/backend/campaigns/'+id+'/reviews';
+ let release!:()=>void,finished!:()=>void,entered!:()=>void;const held=new Promise<void>(resolve=>release=resolve),done=new Promise<void>(resolve=>finished=resolve),started=new Promise<void>(resolve=>entered=resolve);
+ await page.route(path,async route=>{entered();await held;try{await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(frame)})}catch{}finally{finished()}});
+ try{await button.click();await started;await expect(region.locator('li')).toHaveCount(0);await expect(region.getByRole('status')).toContainText('검토 이력을 확인하지 못했습니다.',{timeout:12000});await expect(button).toBeEnabled();release();await done;await expect(region.locator('li')).toHaveCount(0);await expect(region.getByRole('status')).toContainText('검토 이력을 확인하지 못했습니다.')}finally{release();await done;await page.unroute(path)}
+ await page.route(path,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...frame,organizationId:'22222222-2222-4222-8222-222222222222'})}));
+ try{await button.click();await expect(region.getByRole('status')).toContainText('검토 이력을 확인하지 못했습니다.');await expect(region.locator('li')).toHaveCount(0)}finally{await page.unroute(path)}
+ await page.route(path,route=>route.fulfill({status:503,contentType:'application/json',body:'{}'}));try{await button.click();await expect(region.getByRole('status')).toContainText('검토 이력을 확인하지 못했습니다.');await expect(button).toBeEnabled()}finally{await page.unroute(path)}
+ await button.click();await expect(region.getByRole('status')).toContainText(frame.entries.length?'최근 검토 이력을 확인했습니다.':'검토 이력이 없습니다.');await expect(region.locator('li')).toHaveCount(frame.entries.length);
+ phase('actual scoped review history read; substituted scope and503 clear older rows; explicit retry recovers; past reviews are not current deployment authority; no business writes');
+});
 test('administrator sees uncertain cancellation guidance with a synthetic pending read and intercepted POST',async({page})=>{
  await login(page,'demo-admin');const rows=await (await page.request.get('/backend/campaigns')).json() as {id:string}[];expect(rows.length).toBeGreaterThan(0);const id=rows[0].id;
  const record=await (await page.request.get('/backend/campaigns/'+id)).json(),gate=await (await page.request.get('/backend/campaigns/'+id+'/gate')).json();
