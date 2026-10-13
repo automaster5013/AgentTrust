@@ -12,7 +12,7 @@ def invoke(mode,raw=b'',success=True):
 try:
  wanted=expected('https-review','https://console.example.com','https://identity.example.com/realms/agenttrust');assert invoke('draft')['publicClientSettings']==wanted
  invoke('check',json.dumps(wanted).encode());checks=2
- for raw in [b'{}',b'[]',b'{',b'\xff',b'{"clientId":"a","clientId":"b"}',b'{"x":NaN}',b' '*1048577]:invoke('check',raw,False);checks+=1
+ for raw in [b'{}',b'[]',b'{',b'\xff',b'{"clientId":"a","clientId":"b"}',b'{"x":NaN}',b'{"x":1e999}',b' '*1048577]:invoke('check',raw,False);checks+=1
  unsafe=dict(wanted);unsafe['redirectUris']=['https://console.example.com/*'];invoke('check',json.dumps(unsafe).encode(),False);checks+=1
  marker='SYNTHETIC_PRIVATE_MARKER_NOT_A_CREDENTIAL';unsafe['secret']=marker
  result=subprocess.run(ARGS+['--mode','check'],cwd=ROOT,input=json.dumps(unsafe).encode(),capture_output=True,timeout=10);assert result.returncode==1 and marker.encode() not in result.stdout+result.stderr;checks+=1

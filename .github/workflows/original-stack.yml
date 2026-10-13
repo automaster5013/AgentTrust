@@ -142,6 +142,8 @@ jobs:
           python3 scripts/stack-oidc-endpoint-proxy-smoke.py
           python3 scripts/stack-console-health-probe-smoke.py
           python3 scripts/stack-oidc-client-contract-smoke.py
+          python3 scripts/stack-identity-scope-readiness.py
+          python3 scripts/stack-oidc-discovery-smoke.py
           python3 scripts/stack-oidc-client-config-test.py
       - name: Verify real browser evaluation and approval controls
         working-directory: apps/console
