@@ -7,3 +7,8 @@ test('review history binds scope, order and metadata without current deployment 
 test('cross-scope, duplicated, reversed, excessive and malformed review frames fail closed',()=>{
  for(const v of [{...frame(),organizationId:other},{...frame(),deploymentAuthority:true},{...frame(),entries:[entry,entry]},{...frame(),entries:[entry,{...entry,id:other,review_sequence:3}]},{...frame(),entries:Array(51).fill(entry)},{...frame(),entries:[{...entry,policy_digest:'bad'}]},{...frame(),entries:[{...entry,created_at:'invalid'}]}])assert.throws(()=>campaignReviews(v,user,id));
 });
+
+test('review timestamps preserve UTC precision and reject normalized or ambiguous dates',()=>{
+ for(const created_at of ['2026-10-13T12:00:00Z','2026-10-13T12:00:00.644+00:00','2026-10-13T12:00:00.123456Z','2024-02-29T23:59:59.123456789Z'])assert.equal(campaignReviews({...frame(),entries:[{...entry,created_at}]},user,id)[0].createdAt,created_at);
+ for(const created_at of ['2026-02-30T12:00:00Z','2025-02-29T12:00:00Z','2026-10-13T24:00:00Z','2026-10-13','2026-10-13T12:00:00','2026-10-13T12:00:00+09:00'])assert.throws(()=>campaignReviews({...frame(),entries:[{...entry,created_at}]},user,id));
+});
