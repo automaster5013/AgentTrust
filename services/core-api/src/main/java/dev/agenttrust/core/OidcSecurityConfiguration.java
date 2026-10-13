@@ -49,6 +49,9 @@ public class OidcSecurityConfiguration {
         return ClientRegistration.withRegistrationId("keycloak").clientId("agenttrust-console").clientSecret(secret).clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC).authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE).redirectUri(endpoints.callback()).scope("openid","profile","email").authorizationUri(endpoints.publicIssuer()+"/protocol/openid-connect/auth").tokenUri(endpoints.transportIssuer()+"/protocol/openid-connect/token").jwkSetUri(endpoints.transportIssuer()+"/protocol/openid-connect/certs").userInfoUri(endpoints.transportIssuer()+"/protocol/openid-connect/userinfo").userNameAttributeName("sub").issuerUri(endpoints.publicIssuer()).clientName("AgentTrust Keycloak").build();
     }
     @Bean RestClientAuthorizationCodeTokenResponseClient oidcTokens(){return OidcHttpTransport.tokens(Duration.ofSeconds(10));}
+    @Bean org.springframework.security.oauth2.jwt.JwtDecoderFactory<ClientRegistration> oidcSigningKeys(){
+        return registration -> OidcSigningKeys.decoder(registration,Duration.ofSeconds(10));
+    }
     @Bean OidcSessionRegistry oidcSessions(){return new InMemoryOidcSessionRegistry();}
     @Bean HttpSessionEventPublisher sessionEvents(){return new HttpSessionEventPublisher();}
     @Bean OidcBackChannelLogoutHandler backChannelHandler(OidcSessionRegistry sessions){var handler=new OidcBackChannelLogoutHandler(sessions);handler.setSessionCookieName("AGENTTRUST_STACK_SESSION");handler.setLogoutUri("http://127.0.0.1:8080/logout/connect/back-channel/{registrationId}");return handler;}
