@@ -12,6 +12,8 @@ test('editor sees uncertain write guidance after an intercepted POST timeout wit
  await page.route(path,async route=>{if(route.request().method()!=='POST'){await route.continue();return}posts++;entered();await held;try{await route.abort()}catch{}finally{finished()}});
  try{await button.click();await started;await expect(button).toBeDisabled();await expect(page.getByText(uncertainCampaignWrite,{exact:true})).toBeVisible({timeout:12000});await expect(button).toBeEnabled();expect(posts).toBe(1);release();await done;await expect(page.getByText(uncertainCampaignWrite,{exact:true})).toBeVisible();expect(posts).toBe(1)}
  finally{release();await done;await page.unroute(path)}
+ await page.route(path,async route=>{if(route.request().method()==='POST'){posts++;await route.fulfill({status:200,contentType:'application/json',body:'{"fixture-private-response":'})}else await route.continue()});
+ try{await button.click();await expect(page.getByText(uncertainCampaignWrite,{exact:true})).toBeVisible();await expect(button).toBeEnabled();expect(posts).toBe(2);await expect(page.getByText('fixture-private-response',{exact:false})).toHaveCount(0)}finally{await page.unroute(path)}
  phase('registration POST intercepted without forwarding; timeout is uncertain, controls recover and no automatic resubmission occurs; no business writes');
 });
 test('viewer recovers campaign selection after a stalled read and HTTP 503 without automatic retry',async({page})=>{
