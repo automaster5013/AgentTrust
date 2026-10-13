@@ -22,6 +22,8 @@ NEXT_PUBLIC_STACK_APPLICATION_ORIGIN=https://console.example.com
 NEXT_PUBLIC_STACK_PUBLIC_ISSUER=https://identity.example.com/realms/agenttrust
 ```
 
+Console 이미지에는 `dev.agenttrust.oidc.profile`, `dev.agenttrust.oidc.application-origin`, `dev.agenttrust.oidc.public-issuer` 메타데이터와 동일한 읽기 전용 설정 파일을 보관한다. 시작 시 같은 이름의 public 설정을 다른 값으로 덮어쓰면 서버를 시작하지 않는다. `scripts/stack-oidc-image-config.py`는 제공한 주소와 설치된 이미지의 메타데이터를 대조한다. 이 비교 자체는 이미지 서명 검증이 아니므로 신뢰할 정확한 digest와 독립 전달 서명 검증을 먼저 확인해야 한다. `stack-oidc-image-config-test.py`는 실제 HTTPS 후보 이미지의 대조·다른 origin/issuer 거부와 세 설정의 시작 실패 6개를 검사한다.
+
 위 주소는 테스트 예시이며 배포 대상이 아니다. 실제 Keycloak 클라이언트의 redirect URI는 `<Console origin>/backend/login/oauth2/code/keycloak`, post-logout redirect는 `<Console origin>/`로 정확히 등록해야 한다. TLS 인증서 검증을 해제하지 않는다. BFF가 upstream으로부터 받은 세션 쿠키에 Secure·HttpOnly가 없으면 HTTPS 프로필에서 응답을 거부한다. 외부 Host·다른 issuer·다른 redirect 대상·비정상 Origin은 거부한다.
 
 `scripts/stack-oidc-endpoint-proxy-smoke.py`는 HTTPS 설정으로 빌드한 실제 Next.js 이미지와 합성 HTTP upstream을 내부 전용 임시 Docker 네트워크에 연결한다. 공개 포트·비밀·Docker socket을 마운트하지 않으며 9개 경계 검사와 임시 자원 제거·기존 컨테이너 보존을 확인한다. 실제 TLS handshake나 운영 IdP 로그인 검사는 아니다. Java의 실제 Spring authorization resolver는 PKCE S256과 명시한 콜백을 검사한다. 별도로 기존 로컬 Keycloak의 실제 로그인·다운로드·앱/IdP 로그아웃을 확인한다.
