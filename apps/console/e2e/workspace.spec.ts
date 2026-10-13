@@ -4,6 +4,18 @@ import {execFileSync} from 'node:child_process';
 import {readFileSync,readdirSync,statSync} from 'node:fs';import {resolve} from 'node:path';
 import {auditFilters} from '../src/lib/audit-search';
 import {uncertainCampaignWrite} from '../src/lib/campaign-write-error';
+test('administrator sees uncertain cancellation guidance with a synthetic pending read and intercepted POST',async({page})=>{
+ await login(page,'demo-admin');const rows=await (await page.request.get('/backend/campaigns')).json() as {id:string}[];expect(rows.length).toBeGreaterThan(0);const id=rows[0].id;
+ const record=await (await page.request.get('/backend/campaigns/'+id)).json(),gate=await (await page.request.get('/backend/campaigns/'+id+'/gate')).json();
+ record.state='queued';record.decision='inconclusive';record.cases[0].state='queued';record.cases[0].decision='inconclusive';record.result.state='queued';record.result.decision='inconclusive';record.result.rules[0].status='inconclusive';
+ gate.decision='inconclusive';gate.deploymentAllowed=false;
+ const read='**/backend/campaigns/'+id,gatePath=read+'/gate',cancelPath=read+'/cancel';let posts=0;
+ await page.route(read,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(record)}));await page.route(gatePath,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(gate)}));
+ await page.route(cancelPath,async route=>{expect(route.request().method()).toBe('POST');posts++;await route.abort('failed')});
+ try{await page.getByRole('button',{name:'캠페인 '+id.slice(0,8),exact:true}).click();await page.getByLabel('캠페인 취소 사유',{exact:true}).fill('synthetic intercepted cancellation');const button=page.getByRole('button',{name:'미완료 사례 취소',exact:true});await button.click();await expect(page.getByText(uncertainCampaignWrite,{exact:true})).toBeVisible();await expect(button).toBeEnabled();expect(posts).toBe(1);await expect(page.getByText('캠페인의 미완료 사례 취소를 확인했습니다.',{exact:true})).toHaveCount(0)}
+ finally{await page.unroute(cancelPath);await page.unroute(gatePath);await page.unroute(read)}
+ phase('synthetic pending campaign response uses real existing version bindings; cancel POST never forwarded; uncertain guidance and no automatic retry, no real cancellation or business writes');
+});
 test('administrator receives uncertain receipt guidance when the intercepted write loses its response',async({page})=>{
  await login(page,'demo-admin');const records=await (await page.request.get('/backend/campaigns')).json() as {id:string}[];let id:string|null=null;
  for(const row of records){const record=await (await page.request.get('/backend/campaigns/'+row.id)).json();if(record.state!=='queued'&&(await page.request.get('/backend/campaigns/'+row.id+'/evidence')).ok()){id=row.id;break}}
