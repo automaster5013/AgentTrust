@@ -39,6 +39,8 @@ class OidcTlsTransportTest {
                 var explicit=new JdkClientHttpRequestFactory(trustedClient);explicit.setReadTimeout(Duration.ofSeconds(3));
                 var untrusted=RestClient.builder().requestFactory(defaults).build();var trusted=RestClient.builder().requestFactory(explicit).build();
                 var trustFailure=assertThrows(ResourceAccessException.class,()->untrusted.get().uri("https://localhost:"+port+"/metadata").retrieve().body(String.class));assertTrue(hasTlsCause(trustFailure));assertEquals(0,requests.get());
+                var oidcDefault=RestClient.builder().requestFactory(OidcHttpTransport.factory(Duration.ofSeconds(1))).build();
+                var oidcTrustFailure=assertThrows(ResourceAccessException.class,()->oidcDefault.get().uri("https://localhost:"+port+"/metadata").retrieve().body(String.class));assertTrue(hasTlsCause(oidcTrustFailure));assertEquals(0,requests.get());
                 assertEquals("fixture metadata",trusted.get().uri("https://localhost:"+port+"/metadata").retrieve().body(String.class));assertEquals(1,requests.get());
                 var hostnameFailure=assertThrows(ResourceAccessException.class,()->trusted.get().uri("https://127.0.0.1:"+port+"/metadata").retrieve().body(String.class));assertTrue(hasTlsCause(hostnameFailure));assertEquals(1,requests.get());
             }

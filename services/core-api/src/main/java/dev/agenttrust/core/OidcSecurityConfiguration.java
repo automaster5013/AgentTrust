@@ -1,6 +1,8 @@
 package dev.agenttrust.core;
 
 import java.nio.file.Files;
+import java.time.Duration;
+import org.springframework.security.oauth2.client.endpoint.RestClientAuthorizationCodeTokenResponseClient;
 import java.nio.file.Path;
 import org.springframework.core.env.Environment;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -46,16 +48,17 @@ public class OidcSecurityConfiguration {
     static ClientRegistration registration(String secret,OidcEndpointPolicy endpoints) {
         return ClientRegistration.withRegistrationId("keycloak").clientId("agenttrust-console").clientSecret(secret).clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC).authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE).redirectUri(endpoints.callback()).scope("openid","profile","email").authorizationUri(endpoints.publicIssuer()+"/protocol/openid-connect/auth").tokenUri(endpoints.transportIssuer()+"/protocol/openid-connect/token").jwkSetUri(endpoints.transportIssuer()+"/protocol/openid-connect/certs").userInfoUri(endpoints.transportIssuer()+"/protocol/openid-connect/userinfo").userNameAttributeName("sub").issuerUri(endpoints.publicIssuer()).clientName("AgentTrust Keycloak").build();
     }
+    @Bean RestClientAuthorizationCodeTokenResponseClient oidcTokens(){return OidcHttpTransport.tokens(Duration.ofSeconds(10));}
     @Bean OidcSessionRegistry oidcSessions(){return new InMemoryOidcSessionRegistry();}
     @Bean HttpSessionEventPublisher sessionEvents(){return new HttpSessionEventPublisher();}
     @Bean OidcBackChannelLogoutHandler backChannelHandler(OidcSessionRegistry sessions){var handler=new OidcBackChannelLogoutHandler(sessions);handler.setSessionCookieName("AGENTTRUST_STACK_SESSION");handler.setLogoutUri("http://127.0.0.1:8080/logout/connect/back-channel/{registrationId}");return handler;}
-    @Bean SecurityFilterChain oidcSecurity(HttpSecurity http,ClientRegistrationRepository registrations,OidcSessionRegistry sessions,OidcBackChannelLogoutHandler handler,OidcEndpointPolicy endpoints) throws Exception {
+    @Bean SecurityFilterChain oidcSecurity(HttpSecurity http,ClientRegistrationRepository registrations,OidcSessionRegistry sessions,OidcBackChannelLogoutHandler handler,OidcEndpointPolicy endpoints,RestClientAuthorizationCodeTokenResponseClient oidcTokens) throws Exception {
         var resolver=new DefaultOAuth2AuthorizationRequestResolver(registrations,"/oauth2/authorization");resolver.setAuthorizationRequestCustomizer(OAuth2AuthorizationRequestCustomizers.withPkce());
-        var delegate=new OidcUserService();
+        var delegate=new OidcUserService();delegate.setOauth2UserService(OidcHttpTransport.users(Duration.ofSeconds(10)));
         http.authorizeHttpRequests(auth->auth.requestMatchers("/actuator/health","/api/csrf","/api/auth-info","/oauth2/authorization/keycloak","/login/oauth2/code/keycloak","/internal/completions","/internal/provider-reservations").permitAll().anyRequest().authenticated());
         http.csrf(csrf->csrf.ignoringRequestMatchers("/internal/completions","/internal/provider-reservations"));http.requestCache(cache->cache.disable());
         http.oidcLogout(oidc->oidc.oidcSessionRegistry(sessions).backChannel(channel->channel.logoutHandler(handler)));
-        http.oauth2Login(login->login.authorizationEndpoint(endpoint->endpoint.authorizationRequestResolver(resolver)).userInfoEndpoint(endpoint->endpoint.oidcUserService(request->{try{return new OidcWorkspaceUser(delegate.loadUser(request));}catch(IllegalArgumentException error){throw new OAuth2AuthenticationException(new OAuth2Error("invalid_workspace_identity"));}})).successHandler((req,res,auth)->res.sendRedirect(endpoints.home())).failureHandler((req,res,error)->{res.setStatus(401);res.setContentType("application/json");res.getWriter().write("{\"code\":\"OIDC_AUTHENTICATION_FAILED\"}");}));
+        http.oauth2Login(login->login.tokenEndpoint(endpoint->endpoint.accessTokenResponseClient(oidcTokens)).authorizationEndpoint(endpoint->endpoint.authorizationRequestResolver(resolver)).userInfoEndpoint(endpoint->endpoint.oidcUserService(request->{try{return new OidcWorkspaceUser(delegate.loadUser(request));}catch(IllegalArgumentException error){throw new OAuth2AuthenticationException(new OAuth2Error("invalid_workspace_identity"));}})).successHandler((req,res,auth)->res.sendRedirect(endpoints.home())).failureHandler((req,res,error)->{res.setStatus(401);res.setContentType("application/json");res.getWriter().write("{\"code\":\"OIDC_AUTHENTICATION_FAILED\"}");}));
         http.logout(logout->logout.logoutUrl("/api/logout").logoutSuccessHandler((req,res,auth)->{res.setContentType("application/json");res.getWriter().write("{\"authenticated\":false,\"logoutUrl\":\""+endpoints.logout()+"\"}");}));
         http.exceptionHandling(errors->errors.authenticationEntryPoint((req,res,error)->{res.setStatus(401);res.setContentType("application/json");res.getWriter().write("{\"code\":\"AUTHENTICATION_REQUIRED\"}");}).accessDeniedHandler((req,res,error)->{res.setStatus(403);res.setContentType("application/json");res.getWriter().write("{\"code\":\"REQUEST_REFUSED\"}");}));
         http.sessionManagement(session->session.sessionFixation(fixation->fixation.migrateSession()));return http.build();
