@@ -3,6 +3,22 @@ import {createHash,randomUUID} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {readFileSync,readdirSync,statSync} from 'node:fs';import {resolve} from 'node:path';
 import {auditFilters} from '../src/lib/audit-search';
+test('viewer recovers campaign selection after a stalled read and HTTP 503 without automatic retry',async({page})=>{
+ await login(page,'demo-viewer');
+ const records=await (await page.request.get('/backend/campaigns')).json() as {id:string}[];
+ expect(records.length).toBeGreaterThan(0);const id=records[0].id,path='**/backend/campaigns/'+id;
+ const button=page.getByRole('button',{name:'캠페인 '+id.slice(0,8),exact:true});await expect(button).toBeVisible();
+ let release!:()=>void,finished!:()=>void,entered!:()=>void,requests=0;
+ const held=new Promise<void>(resolve=>release=resolve),done=new Promise<void>(resolve=>finished=resolve),started=new Promise<void>(resolve=>entered=resolve);
+ await page.route(path,async route=>{requests++;entered();await held;try{await route.abort()}catch{}finally{finished()}});
+ try{await button.click();await started;await expect(button).toBeDisabled();await expect(button).toBeEnabled({timeout:12000});expect(requests).toBe(1);await expect(page.getByRole('heading',{name:'캠페인 평가 근거',exact:true})).toHaveCount(0)}
+ finally{release();await done;await page.unroute(path)}
+ await page.route(path,route=>route.fulfill({status:503,contentType:'application/json',body:'{}'}));
+ try{await button.click();await expect(page.getByText('캠페인 요청을 확인하지 못했습니다.',{exact:true})).toBeVisible();await expect(button).toBeEnabled()}
+ finally{await page.unroute(path)}
+ await button.click();await expect(page.getByRole('heading',{name:'캠페인 평가 근거',exact:true})).toBeVisible();await expect(button).toBeEnabled();
+ phase('campaign read timeout and503 release controls; no automatic retry or business writes; explicit retry restores actual scoped campaign');
+});
 const users=JSON.parse(readFileSync(resolve(process.cwd(),'../../.local/stack/demo-credentials.json'),'utf-8')) as {username:string;password:string;organizationId:string}[];
 test('viewer searches actual scoped audit actions and resources and rejects a substituted search frame',async({page})=>{
  await login(page,'demo-viewer');const reference=await (await page.request.get('/backend/audit-search/all/all')).json();expect(reference.entries).toHaveLength(25);const supported=await (await page.request.get('/backend/audit-search/version.agents.retired/all')).json();const entry=supported.entries[0];expect(entry).toBeDefined();expect(auditFilters(entry.action,entry.resourceId).action).toBe('version.agents.retired');const region=page.getByRole('region',{name:'감사 기록 검색',exact:true});
