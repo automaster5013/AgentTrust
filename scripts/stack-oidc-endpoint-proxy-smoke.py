@@ -11,7 +11,14 @@ if(process.argv[2]==='serve'){
  http.createServer((q,s)=>{if(q.url==='/fixture/control'){mode=q.headers['x-mode'];s.end();return}if(q.url==='/fixture/count'){s.end(String(count));return}count++;
   if(q.url.startsWith('/oauth2/authorization')){s.writeHead(302,{Location:mode==='evil'?'https://evil.example.com/realms/agenttrust/protocol/openid-connect/auth':'https://identity.example.com/realms/agenttrust/protocol/openid-connect/auth?state=12345678'});s.end();return}
   if(q.url.startsWith('/login/oauth2/code')){s.writeHead(302,{Location:mode==='evil'?'https://evil.example.com/':'https://console.example.com/'});s.end();return}
-  s.setHeader('Content-Type','application/json');s.setHeader('Set-Cookie','AGENTTRUST_STACK_SESSION=fixture; Path=/; HttpOnly'+(mode==='insecure'?'':'; Secure')+'; SameSite=Lax');s.end(JSON.stringify({authenticated:false}));
+  let cookie='AGENTTRUST_STACK_SESSION=fixture; Path=/; HttpOnly'+(mode==='insecure'?'':'; Secure')+'; SameSite=Lax';
+  if(mode==='domain')cookie+='; Domain=example.com';
+  if(mode==='wrong-path')cookie=cookie.replace('Path=/','Path=/backend');
+  if(mode==='same-site-none')cookie=cookie.replace('SameSite=Lax','SameSite=None');
+  if(mode==='missing-same-site')cookie=cookie.replace('; SameSite=Lax','');
+  if(mode==='duplicate-path')cookie+='; Path=/backend';
+  if(mode==='expiry')cookie=cookie.replace('=fixture','=')+'; Max-Age=0';
+  s.setHeader('Content-Type','application/json');s.setHeader('Set-Cookie',cookie);s.end(JSON.stringify({authenticated:false}));
  }).listen(8080,'0.0.0.0');
 }else{
  const base='http://console:3000',headers={Host:'console.example.com'},checks=[];
@@ -31,6 +38,8 @@ if(process.argv[2]==='serve'){
  for(const origin of ['http://console.example.com','https://evil.example.com','https://user@console.example.com','https://console.example.com/']){n=await count();r=await request('logout',{Origin:origin},'POST');assert.equal(r.status,403);assert.equal(await count(),n)}checks.push('foreign-and-ambiguous-post-origins-before-upstream');
  r=await request('logout',{Origin:'https://console.example.com'},'POST');assert.equal(r.status,200);assert.ok(r.headers.get('set-cookie').includes('Secure'));assert.ok(r.headers.get('set-cookie').includes('HttpOnly'));checks.push('pinned-post-origin-and-secure-cookie');
  await mode('insecure');r=await request('logout',{Origin:'https://console.example.com'},'POST');assert.equal(r.status,502);assert.equal(r.headers.get('set-cookie'),null);checks.push('insecure-upstream-cookie-refused');
+ for(const invalid of ['domain','wrong-path','same-site-none','missing-same-site','duplicate-path']){await mode(invalid);r=await request('logout',{Origin:'https://console.example.com'},'POST');assert.equal(r.status,502);assert.equal(r.headers.get('set-cookie'),null);checks.push(invalid+'-upstream-cookie-refused')}
+ await mode('expiry');r=await request('logout',{Origin:'https://console.example.com'},'POST');assert.equal(r.status,200);assert.ok(r.headers.get('set-cookie').includes('Max-Age=0'));checks.push('valid-session-expiry-cookie-forwarded');
  console.log(JSON.stringify({completed:true,checks}));
 }
 """
@@ -49,7 +58,7 @@ try:
   args=['docker','run','-d','--name',name,'--network',network,'--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--memory','256m','--pids-limit','64','--tmpfs','/tmp:size=32m,mode=1777']
   if name==stub:args+=['--user','1000:1000']
   run(args+extra);created.append(name)
- result=json.loads(run(['docker','exec',stub,'node','/fixture.mjs','check'],120));assert result['completed'] and len(result['checks'])==9;report.update(result)
+ result=json.loads(run(['docker','exec',stub,'node','/fixture.mjs','check'],120));assert result['completed'] and len(result['checks'])==15;report.update(result)
 except Exception as error:
  report.update(errorType=type(error).__name__,code='OIDC_PROXY_FIXTURE_UNVERIFIED')
  if isinstance(error,subprocess.CalledProcessError):

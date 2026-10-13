@@ -23,5 +23,13 @@ export function allowedPublicHost(host:string|null,endpoints:OidcEndpoints):bool
   return host!==null&&(host===new URL(endpoints.applicationOrigin).host||endpoints.profile==='local-review'&&host==='localhost:4320');
 }
 export function validateSessionCookie(cookie:string,endpoints:OidcEndpoints):void {
-  if(endpoints.profile==='https-review'&&(!/(?:^|;)\s*Secure(?:;|$)/i.test(cookie)||!/(?:^|;)\s*HttpOnly(?:;|$)/i.test(cookie)))throw Error('INVALID_SESSION_COOKIE');
+  if(endpoints.profile!=='https-review')return;
+  const attributes=new Map<string,string>();
+  for(const part of cookie.split(';').slice(1)){
+    const separator=part.indexOf('=');const name=(separator<0?part:part.slice(0,separator)).trim().toLowerCase();
+    const value=separator<0?'':part.slice(separator+1).trim();
+    if(!name||attributes.has(name))throw Error('INVALID_SESSION_COOKIE');
+    attributes.set(name,value);
+  }
+  if(attributes.get('secure')!==''||attributes.get('httponly')!==''||attributes.get('samesite')?.toLowerCase()!=='lax'||attributes.get('path')!=='/'||attributes.has('domain'))throw Error('INVALID_SESSION_COOKIE');
 }

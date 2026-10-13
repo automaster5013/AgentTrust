@@ -34,3 +34,11 @@ test('HTTPS refuses insecure session cookies and ambiguous request Origin header
   for(const origin of ['https://user@console.example.com','https://console.example.com/','https://console.example.com#fragment','https://console.example.com:443','http://console.example.com'])assert.equal(sameOrigin(origin,e.applicationOrigin),false);
   assert.equal(sameOrigin(e.applicationOrigin,e.applicationOrigin),true);
 });
+
+test('HTTPS session cookie scope is host-only, root-path and unambiguous while local cookies remain supported',()=>{
+  const e=oidcEndpoints('https-review','https://console.example.com','https://identity.example.com/realms/agenttrust');
+  const valid='AGENTTRUST_STACK_SESSION=fixture; Path=/; Secure; HttpOnly; SameSite=Lax';
+  for(const cookie of [valid+'; Domain=example.com',valid+'; Path=/backend',valid+'; SameSite=None',valid.replace('SameSite=Lax','SameSite=None'),valid.replace('Path=/','Path=/backend'),valid.replace('; SameSite=Lax',''),valid+'; Secure=true'])assert.throws(()=>validateSessionCookie(cookie,e),/INVALID_SESSION_COOKIE/);
+  assert.doesNotThrow(()=>validateSessionCookie('AGENTTRUST_STACK_SESSION=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax',e));
+  assert.doesNotThrow(()=>validateSessionCookie('AGENTTRUST_STACK_SESSION=fixture; HttpOnly; SameSite=Lax',oidcEndpoints()));
+});
