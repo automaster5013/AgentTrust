@@ -59,3 +59,9 @@ HTTPS Console proxy responses require session cookies with Secure, HttpOnly, Sam
 The Java HTTPS profile also refuses a configured cookie Domain, non-root cookie Path, or disabled HttpOnly at configuration time, alongside its existing Secure and SameSite=Lax requirements. Absent path/HttpOnly properties use the standard root-path and HttpOnly defaults. The local-review profile retains its existing settings.
 
 The images job also has a 120-minute bound because it builds/publishes immutable images and then repeats actual evaluation, local-model, backup and recovery checks against those registry images. This budget change is awaiting its own CI validation; no checks are removed or treated as passed merely because more time is available.
+
+### Actual TLS transport controls
+
+`OidcTlsTransportTest` creates a short-lived localhost certificate and TLS server entirely within the Java build fixture. Actual Spring RestClient requests verify that the default trust context rejects the untrusted certificate, a fixture-only trust store accepts the certificate for localhost, and the trusted certificate is still refused for a mismatching IP hostname. Rejected handshakes never reach the fixture HTTP handler. The fixture certificate, server and temporary files are removed; no application trust store, realm, runtime service or operator certificate is changed.
+
+This test exercises [Spring's JDK HTTP request factory](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/http/client/JdkClientHttpRequestFactory.html) and an actual TLS handshake. It does not demonstrate public DNS, a production certificate chain, an installed external IdP or a completed HTTPS OAuth login.
