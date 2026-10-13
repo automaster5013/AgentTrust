@@ -29,3 +29,7 @@ Console 이미지에는 `dev.agenttrust.oidc.profile`, `dev.agenttrust.oidc.appl
 `scripts/stack-oidc-endpoint-proxy-smoke.py`는 HTTPS 설정으로 빌드한 실제 Next.js 이미지와 합성 HTTP upstream을 내부 전용 임시 Docker 네트워크에 연결한다. 공개 포트·비밀·Docker socket을 마운트하지 않으며 9개 경계 검사와 임시 자원 제거·기존 컨테이너 보존을 확인한다. 실제 TLS handshake나 운영 IdP 로그인 검사는 아니다. Java의 실제 Spring authorization resolver는 PKCE S256과 명시한 콜백을 검사한다. 별도로 기존 로컬 Keycloak의 실제 로그인·다운로드·앱/IdP 로그아웃을 확인한다.
 
 이 프로필만으로 운영 배포가 준비되지는 않는다. 실제 TLS/프록시 배치, 기업 IdP 등록·조직 claim 관리, 분산 세션, 키 관리, Helm 운영 프로필과 상태 저장 서비스, 복구·HA와 Grafana 보안 조치는 별도다. 기본 Compose와 현재 검토용 Helm은 로컬 검토 설정을 유지한다. 정확한 커밋의 CI 및 게시 이미지 검증은 별도 기록한다.
+
+The image configuration control script exercises 23 checks: actual HTTPS image intent, two otherwise-valid endpoint mismatches, three runtime-startup mismatches, and seventeen malformed endpoint/profile/image inputs rejected before Docker image inspection. Image metadata comparison does not authenticate image bytes; the delivery signature verifier remains a separate requirement.
+
+`python scripts/stack-oidc-contract-smoke.py` runs the same 25 public endpoint inputs through the actual Java 21 policy, TypeScript policy and Python image preflight policy. The Java/Node containers use pinned images, no network, read-only source mounts and bounded temporary memory. The report distinguishes the 75 policy decisions from authenticated IdP or external TLS checks, which this contract test does not perform.

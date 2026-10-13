@@ -56,9 +56,15 @@ spec:
             - {name: STACK_MIGRATION_USER, value: agenttrust_stack}
             - {name: STACK_MIGRATION_PASSWORD, valueFrom: {secretKeyRef: {name: {{ $.Values.existingSecret }}, key: database-migration-password}}}
             - {name: STACK_DEMO_CREDENTIALS_FILE, value: /run/secrets/stack-demo-credentials}
+            - {name: AGENTTRUST_OIDC_PROFILE, value: "local-review"}
+            - {name: AGENTTRUST_OIDC_APPLICATION_ORIGIN, value: "http://127.0.0.1:4320"}
+            - {name: AGENTTRUST_OIDC_PUBLIC_ISSUER, value: "http://127.0.0.1:4322/realms/agenttrust"}
             - {name: STACK_IDENTITY_MODE, value: keycloak}
             - {name: STACK_OBJECT_MODE, value: minio}
 {{- else if eq $name "console" }}
+            - {name: NEXT_PUBLIC_STACK_OIDC_PROFILE, value: "local-review"}
+            - {name: NEXT_PUBLIC_STACK_APPLICATION_ORIGIN, value: "http://127.0.0.1:4320"}
+            - {name: NEXT_PUBLIC_STACK_PUBLIC_ISSUER, value: "http://127.0.0.1:4322/realms/agenttrust"}
             - {name: CORE_API_URL, value: "http://stack-gateway:8080"}
             - {name: HOSTNAME, value: "0.0.0.0"}
             - {name: PORT, value: "3000"}
@@ -78,7 +84,12 @@ spec:
             exec:
               command: [/opa, eval, --fail, 'http.send({"method":"GET","url":"http://127.0.0.1:8181/health"}).status_code == 200']
 {{- else }}
-            httpGet: {path: {{ $def.health }}, port: http}
+            httpGet:
+              path: {{ $def.health }}
+              port: http
+{{- if eq $name "console" }}
+              httpHeaders: [{name: Host, value: "127.0.0.1:4320"}]
+{{- end }}
 {{- end }}
             periodSeconds: 5
             timeoutSeconds: 3
@@ -88,7 +99,12 @@ spec:
             exec:
               command: [/opa, eval, --fail, 'http.send({"method":"GET","url":"http://127.0.0.1:8181/health"}).status_code == 200']
 {{- else }}
-            httpGet: {path: {{ $def.health }}, port: http}
+            httpGet:
+              path: {{ $def.health }}
+              port: http
+{{- if eq $name "console" }}
+              httpHeaders: [{name: Host, value: "127.0.0.1:4320"}]
+{{- end }}
 {{- end }}
             periodSeconds: 5
             timeoutSeconds: 3

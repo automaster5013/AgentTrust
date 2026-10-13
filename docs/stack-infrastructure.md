@@ -37,3 +37,13 @@ Helm 4.3.0, Terraform 1.16.5, Kubeconform 0.8.0 공식 파일의 SHA-256을 검�
 
 
 검증기의 Terraform 작업 디렉터리와 재다운로드 가능한 provider 바이너리는 제한된 컨테이너 `/tmp` 메모리 파일시스템에서만 생성한다. 공개 모듈 네 파일만 복사하므로 로컬 tfvars·state·캐시를 보고서에 포함하지 않는다. 성공/실패 종료 시 새 작업만 회수하며 컨테이너 종료에도 임시 메모리가 해제된다. 호스트에는 summary·렌더·검증 로그를 보존한다. 이전 검사의 보관 폴더에는 적용하지 않는다. tmpfs는 384 MiB이며 lockfile로 고정한 Terraform provider 실행을 허용한다. 컨테이너 메모리는 기존 1 GiB, 비루트·capability 제거·읽기 전용 루트 한도를 유지한다.
+
+### Local OIDC workload and probe contract
+
+The review chart explicitly pins core API and Console to the same `local-review` application origin (`http://127.0.0.1:4320`) and public issuer (`http://127.0.0.1:4322/realms/agenttrust`). A Console image built for another profile refuses these environment values at startup; compare its image intent and independently authenticate its digest before installation. The chart continues to reject production mode.
+
+Console startup and readiness probes send `Host: 127.0.0.1:4320` through `httpHeaders`, preserving the request destination at the Pod IP while making the local profile explicit. Kubernetes recommends the Host header for virtual-host probes rather than changing the probe's destination `host`: [official probe documentation](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/).
+
+The isolated infrastructure check asserts both workload endpoint contracts and both probe headers, renders and validates all 36 resources, and runs four mocked Terraform plans. This validates manifests without contacting a cluster. It does not demonstrate an installed cluster, working port forwards, external HTTPS, persistent dependencies, or high availability.
+
+The public first page currently returns 200 with either the configured Host or a different Host. The Host allowlist applies to `/backend` authentication and proxy requests; the actual Console probe smoke check verifies both public-page responses and foreign-Host backend rejection. The probe header makes intent explicit rather than repairing a demonstrated readiness failure.

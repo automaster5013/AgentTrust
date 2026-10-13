@@ -137,7 +137,9 @@ jobs:
         run: |
           docker build --build-arg NEXT_PUBLIC_STACK_OIDC_PROFILE=https-review --build-arg NEXT_PUBLIC_STACK_APPLICATION_ORIGIN=https://console.example.com --build-arg NEXT_PUBLIC_STACK_PUBLIC_ISSUER=https://identity.example.com/realms/agenttrust -t agenttrust-stack-console:oidc-endpoint-https-candidate apps/console
           python3 scripts/stack-oidc-image-config-test.py
+          python3 scripts/stack-oidc-contract-smoke.py
           python3 scripts/stack-oidc-endpoint-proxy-smoke.py
+          python3 scripts/stack-console-health-probe-smoke.py
       - name: Verify real browser evaluation and approval controls
         working-directory: apps/console
         run: |

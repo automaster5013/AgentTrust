@@ -16,6 +16,15 @@ try:
   spec=doc['spec']['template']['spec'];container=spec['containers'][0];security=container['securityContext'];assert doc['spec']['replicas']==1 and spec['automountServiceAccountToken'] is False and spec['securityContext']['runAsNonRoot'] and spec['securityContext']['seccompProfile']['type']=='RuntimeDefault' and security['readOnlyRootFilesystem'] and security['allowPrivilegeEscalation'] is False and security['capabilities']['drop']==['ALL']
   assert container['resources']['requests'] and container['resources']['limits'] and container['readinessProbe'] and container['startupProbe'] and container['image']==values['images'][container['name']] and all(not v.get('hostPath') for v in spec['volumes']) and not spec.get('hostNetwork')
   assert all(not ('PASSWORD' in entry['name'] and 'value' in entry) for entry in container.get('env',[]))
+ by_name={doc['spec']['template']['spec']['containers'][0]['name']:doc['spec']['template']['spec']['containers'][0] for doc in deployments}
+ console=by_name['console'];core=by_name['core-api']
+ for container,prefix in [(console,'NEXT_PUBLIC_STACK_'),(core,'AGENTTRUST_OIDC_')]:
+  environment={entry['name']:entry.get('value') for entry in container['env']}
+  expected={'PROFILE':'local-review','APPLICATION_ORIGIN':'http://127.0.0.1:4320','PUBLIC_ISSUER':'http://127.0.0.1:4322/realms/agenttrust'}
+  for key,value in expected.items():assert environment[prefix+('OIDC_PROFILE' if prefix=='NEXT_PUBLIC_STACK_' and key=='PROFILE' else key)]==value
+ for probe in ['startupProbe','readinessProbe']:
+  assert console[probe]['httpGet']['httpHeaders']==[{'name':'Host','value':'127.0.0.1:4320'}]
+ report['checks'].append('local OIDC contract pinned in both workloads; console health probes use allowed Host')
  assert not any(doc['kind'] in ['Secret','Ingress','PersistentVolume','PersistentVolumeClaim'] for doc in documents)
  services=[doc for doc in documents if doc['kind']=='Service'];assert len(services)==11 and all(doc['spec']['type'] in ['ClusterIP','ExternalName'] for doc in services)
  policies=[doc for doc in documents if doc['kind']=='NetworkPolicy'];assert len(policies)==18 and any(doc['metadata']['name']=='agenttrust-default-deny' and doc['spec']['policyTypes']==['Ingress','Egress'] for doc in policies)
