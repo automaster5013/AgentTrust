@@ -261,7 +261,8 @@ jobs:
     needs: integration
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 70
+    # Registry execution repeats real evaluation, model, backup and recovery checks.
+    timeout-minutes: 120
     permissions:
       contents: read
       packages: write
