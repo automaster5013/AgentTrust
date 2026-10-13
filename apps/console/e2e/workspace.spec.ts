@@ -4,6 +4,15 @@ import {execFileSync} from 'node:child_process';
 import {readFileSync,readdirSync,statSync} from 'node:fs';import {resolve} from 'node:path';
 import {auditFilters} from '../src/lib/audit-search';
 import {uncertainCampaignWrite} from '../src/lib/campaign-write-error';
+test('administrator receives uncertain receipt guidance when the intercepted write loses its response',async({page})=>{
+ await login(page,'demo-admin');const records=await (await page.request.get('/backend/campaigns')).json() as {id:string}[];let id:string|null=null;
+ for(const row of records){const record=await (await page.request.get('/backend/campaigns/'+row.id)).json();if(record.state!=='queued'&&(await page.request.get('/backend/campaigns/'+row.id+'/evidence')).ok()){id=row.id;break}}
+ expect(id).not.toBeNull();await page.getByRole('button',{name:'캠페인 '+id!.slice(0,8),exact:true}).click();
+ const button=page.getByRole('button',{name:'현재 판정의 서명 기록 저장',exact:true});await expect(button).toBeEnabled();
+ let posts=0;const path='**/backend/campaigns/'+id+'/receipts';await page.route(path,async route=>{if(route.request().method()==='POST'){posts++;await route.abort('failed')}else await route.continue()});
+ try{await button.click();await expect(page.getByText(uncertainCampaignWrite,{exact:true})).toBeVisible();await expect(button).toBeEnabled();expect(posts).toBe(1);await expect(page.getByText('브라우저 Ed25519 서명 검증 완료 · 개발용 공개키',{exact:true})).toHaveCount(0)}finally{await page.unroute(path)}
+ phase('receipt write intercepted and never forwarded; lost response gives fixed uncertain guidance and no automatic retry or verified receipt; no business writes');
+});
 test('editor sees uncertain write guidance after an intercepted POST timeout without resubmission',async({page})=>{
  await login(page,'demo-editor');
  const path='**/backend/versions/agents',button=page.getByRole('button',{name:'에이전트 버전 고정',exact:true});

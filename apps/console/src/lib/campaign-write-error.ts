@@ -3,3 +3,6 @@ export function campaignWriteError(error:unknown):Error {
  if(error instanceof Error&&['TimeoutError','AbortError','TypeError','SyntaxError'].includes(error.name))return Error(uncertainCampaignWrite);
  return error instanceof Error?error:Error('캠페인 요청을 확인하지 못했습니다.');
 }
+export function campaignWriteNotice(error:unknown,fallback:string):string {
+ return error instanceof Error&&error.message===uncertainCampaignWrite?uncertainCampaignWrite:fallback;
+}
