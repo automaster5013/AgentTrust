@@ -16,6 +16,8 @@
 
 **새 스택 검토 경로**: [실제 기술 스택의 시연 순서](docs/stack-reviewer-guide.md)를 따라 입력·정답 고정, 실제 모델 평가, 승인·반려와 과거 근거 검증을 확인합니다. [로컬 실행](docs/stack-local.md) 후 `http://127.0.0.1:4320`에서 실제 Keycloak 로그인·평가·승인/반려를 확인합니다. [기능 이전 범위](docs/stack-feature-parity.md)는 완료된 흐름과 고정 시나리오 [버전 등록·다중 사례 캠페인·제한된 회귀 비교](docs/stack-campaigns.md)와 아직 이전하지 않은 범용 품질 평가·운영 신뢰키·서명된 현재 배포 토큰을 구분합니다. [인프라 검증](docs/stack-infrastructure.md)은 로컬과 GitHub CI에서 통과했으며 실제 클러스터 배포는 수행하지 않았습니다. [보안 범위](docs/stack-security.md)의 관측성 공식 이미지 수정이 남아 있어 운영 배포 승인을 뜻하지 않습니다.
 
+**HTTPS 인증 설정 검토**: [명시한 origin·issuer와 쿠키 계약](docs/stack-oidc-endpoints.md)을 Java OIDC·Next.js 프록시에 연결했습니다. 실제 로컬 로그인·다운로드·앱/IdP 로그아웃과 격리된 HTTPS 설정 프록시의 9개 경계 검사를 확인했습니다. 격리 검사는 합성 HTTP upstream을 사용하며 실제 TLS·운영 IdP·클러스터 배포를 의미하지 않습니다. 해당 커밋의 원격 CI와 게시 이미지 검증은 별도로 확인합니다.
+
 ## 원래 기술 스택으로 먼저 살펴보기
 
 현재 개발과 검토의 중심은 `4320`의 Next.js/TypeScript 화면과 Java/Python 서비스입니다. 다음 순서로 확인하세요.

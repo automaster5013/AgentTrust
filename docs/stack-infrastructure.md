@@ -27,7 +27,7 @@ Helm 4.3.0, Terraform 1.16.5, Kubeconform 0.8.0 공식 파일의 SHA-256을 검�
 
 키마다 workload가 필요한 항목만 `0440`/fsGroup secret volume으로 읽는다. 실제 비밀·kubeconfig·tfvars·state는 `.local` 등 비공개 위치에서 관리한다. Terraform state의 backend·암호화·접근 제어도 운영자 환경에서 결정해야 한다.
 
-현재 OIDC public issuer/callback과 BFF redirect 검증은 루프백 4320/4322로 고정되어 `local-review`만 허용한다. 실제 적용 후 검토 시 포트 전달은 이 주소 계약을 유지해야 하며 실행 중인 Compose와 동시에 같은 host port를 점유할 수 없다. 다섯 앱의 서비스는 외부 LoadBalancer/NodePort/Ingress를 만들지 않는다. 관측 프로필·실제 Ollama의 Kubernetes 배포, 공개 origin/TLS·migrations 전용 Job·분산 세션·HA·rolling upgrade·실제 배포/복귀 시험은 남은 범위다. 이 차트의 렌더 성공을 상용 배포 준비 완료로 사용하지 않는다.
+기본 검토 차트는 루프백 4320/4322의 `local-review`만 허용한다. 애플리케이션의 별도 [HTTPS OIDC 검토 프로필](stack-oidc-endpoints.md)은 명시한 origin·issuer·Secure/Lax 쿠키를 검증하지만, 이 차트의 공개 TLS·운영 프로필이나 실제 클러스터 배포를 구현한 것은 아니다. 실제 적용 후 검토 시 포트 전달은 이 주소 계약을 유지해야 하며 실행 중인 Compose와 동시에 같은 host port를 점유할 수 없다. 다섯 앱의 서비스는 외부 LoadBalancer/NodePort/Ingress를 만들지 않는다. 관측 프로필·실제 Ollama의 Kubernetes 배포, 공개 origin/TLS·migrations 전용 Job·분산 세션·HA·rolling upgrade·실제 배포/복귀 시험은 남은 범위다. 이 차트의 렌더 성공을 상용 배포 준비 완료로 사용하지 않는다.
 
 `4069f08`의 서명된 실제 전달 이미지 digest 다섯 개를 사용한 별도 Helm strict lint/render도 통과해 리소스 32개를 확인했다. 이 검사는 가짜 digest fixture와 구분하며, 네트워크·클러스터 연결 없이 렌더링한 결과다. 클러스터에서의 실행이나 의존 서비스 준비를 뜻하지 않는다. 수동 전달물의 이미지/SBOM 서명 20개를 다시 확인하는 방법은 [보안 전달물 검증](stack-security.md#수동-전달물-검증)에 기록했다.
 
