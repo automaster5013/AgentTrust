@@ -55,3 +55,5 @@ The scope readiness check additionally refuses ambiguous claim collisions, missi
 Client configuration and discovery parsing share the same bounded UTF-8 JSON-object reader. Duplicate keys, nonfinite constants, numeric exponent overflow, non-object roots and oversized input are rejected before contract validation.
 
 HTTPS Console proxy responses require session cookies with Secure, HttpOnly, SameSite=Lax, Path=/ and no Domain attribute. Duplicate cookie attributes are refused. A correctly scoped empty session cookie with Max-Age=0 remains valid for logout. Local-review cookie handling remains unchanged. Fifteen isolated actual-image proxy checks include Domain/path/SameSite/duplicate refusals and valid logout expiry forwarding; they exercise synthetic upstream HTTP and do not prove an external HTTPS handshake.
+
+The Java HTTPS profile also refuses a configured cookie Domain, non-root cookie Path, or disabled HttpOnly at configuration time, alongside its existing Secure and SameSite=Lax requirements. Absent path/HttpOnly properties use the standard root-path and HttpOnly defaults. The local-review profile retains its existing settings.

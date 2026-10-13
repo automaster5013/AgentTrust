@@ -37,6 +37,25 @@ class OidcEndpointPolicyTest {
         environment.setProperty("server.servlet.session.cookie.same-site","lax");
         assertEquals("https://console.example.com/",configuration.oidcEndpoints(environment).home());
     }
+    @Test void httpsCookieScopeRefusesDomainNarrowPathAndScriptReadableSessions() {
+        var configuration=new OidcSecurityConfiguration();
+        var environment=new MockEnvironment().withProperty("agenttrust.oidc.profile","https-review")
+            .withProperty("agenttrust.oidc.application-origin","https://console.example.com")
+            .withProperty("agenttrust.oidc.public-issuer","https://identity.example.com/realms/agenttrust")
+            .withProperty("server.servlet.session.cookie.secure","true")
+            .withProperty("server.servlet.session.cookie.same-site","lax");
+        assertEquals("https://console.example.com/",configuration.oidcEndpoints(environment).home());
+        environment.setProperty("server.servlet.session.cookie.domain","example.com");
+        assertThrows(IllegalArgumentException.class,()->configuration.oidcEndpoints(environment));
+        environment.setProperty("server.servlet.session.cookie.domain","");
+        environment.setProperty("server.servlet.session.cookie.path","/backend");
+        assertThrows(IllegalArgumentException.class,()->configuration.oidcEndpoints(environment));
+        environment.setProperty("server.servlet.session.cookie.path","/");
+        environment.setProperty("server.servlet.session.cookie.http-only","false");
+        assertThrows(IllegalArgumentException.class,()->configuration.oidcEndpoints(environment));
+        environment.setProperty("server.servlet.session.cookie.http-only","true");
+        assertEquals("https://console.example.com/",configuration.oidcEndpoints(environment).home());
+    }
     @Test void localReviewPreservesExactExistingEndpoints() {
         var p=OidcEndpointPolicy.configure("local-review",OidcEndpointPolicy.LOCAL_ORIGIN,OidcEndpointPolicy.LOCAL_ISSUER,false);
         assertEquals("http://127.0.0.1:4320/backend/login/oauth2/code/keycloak",p.callback());

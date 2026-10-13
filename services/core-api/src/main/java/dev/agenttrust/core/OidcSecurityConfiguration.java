@@ -27,7 +27,13 @@ import org.springframework.security.web.session.HttpSessionEventPublisher;
 @ConditionalOnProperty(name="agenttrust.identity-mode",havingValue="keycloak")
 public class OidcSecurityConfiguration {
     @Bean OidcEndpointPolicy oidcEndpoints(Environment environment) {
-        if ("https-review".equals(environment.getProperty("agenttrust.oidc.profile")) && !"lax".equals(environment.getProperty("server.servlet.session.cookie.same-site"))) throw new IllegalArgumentException("OIDC endpoint configuration unavailable");
+        if ("https-review".equals(environment.getProperty("agenttrust.oidc.profile"))) {
+            if (!"lax".equals(environment.getProperty("server.servlet.session.cookie.same-site"))
+                || !"/".equals(environment.getProperty("server.servlet.session.cookie.path","/"))
+                || !environment.getProperty("server.servlet.session.cookie.domain","").isEmpty()
+                || !environment.getProperty("server.servlet.session.cookie.http-only",Boolean.class,true))
+                throw new IllegalArgumentException("OIDC endpoint configuration unavailable");
+        }
         return OidcEndpointPolicy.configure(environment.getProperty("agenttrust.oidc.profile","local-review"),
             environment.getProperty("agenttrust.oidc.application-origin",OidcEndpointPolicy.LOCAL_ORIGIN),
             environment.getProperty("agenttrust.oidc.public-issuer",OidcEndpointPolicy.LOCAL_ISSUER),
