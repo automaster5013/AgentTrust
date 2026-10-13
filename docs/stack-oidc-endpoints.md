@@ -33,3 +33,13 @@ Console 이미지에는 `dev.agenttrust.oidc.profile`, `dev.agenttrust.oidc.appl
 The image configuration control script exercises 23 checks: actual HTTPS image intent, two otherwise-valid endpoint mismatches, three runtime-startup mismatches, and seventeen malformed endpoint/profile/image inputs rejected before Docker image inspection. Image metadata comparison does not authenticate image bytes; the delivery signature verifier remains a separate requirement.
 
 `python scripts/stack-oidc-contract-smoke.py` runs the same 25 public endpoint inputs through the actual Java 21 policy, TypeScript policy and Python image preflight policy. The Java/Node containers use pinned images, no network, read-only source mounts and bounded temporary memory. The report distinguishes the 75 policy decisions from authenticated IdP or external TLS checks, which this contract test does not perform.
+
+`python scripts/stack-oidc-client-contract-smoke.py` inspects the actual local Keycloak client without updating it. The contract requires one exact callback, one exact web origin and logout URI, confidential authorization-code flow, PKCE S256, and disabled implicit/direct password/service-account grants. Eighteen checks include fifteen adverse synthetic HTTPS client settings and a valid synthetic configuration, the actual local client read, and a separate CLI process check of its public fields. Administrative credentials and client secrets remain in memory; the administrator session is closed. This does not validate an external IdP, HTTPS handshake, issuer discovery, production realm policy, or back-channel routing.
+
+Generate an operator-reviewable public client settings fragment without a secret or IdP connection:
+
+```powershell
+python scripts/stack-oidc-client-config.py --mode draft --profile https-review --application-origin https://console.example.com --public-issuer https://identity.example.com/realms/agenttrust
+```
+
+`--mode check` instead reads a client JSON object from standard input, bounded to 1MiB with strict UTF-8, unique JSON keys and finite JSON values. Supply the same endpoint arguments. Success means the specified client fields match the contract; it does not verify realm issuer configuration, DNS ownership, TLS, authenticated discovery, or an installed production client. No client document or credential is echoed in check output. The draft is a public settings fragment for review, not a realm import or applied configuration. Eighteen process controls verify valid generation/checking and malformed/unsafe input rejection, including missing fields and boolean type confusion.
