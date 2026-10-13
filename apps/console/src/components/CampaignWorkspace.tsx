@@ -15,7 +15,7 @@ import {versions,verifiedAgentVersion,verifiedDatasetVersion,campaigns,verifiedC
 import {verifiedObservationBundle} from '../lib/observation-bundles';
 import {verifiedReceipt,receiptIds,type Receipt} from '../lib/receipt-contracts';
 const labels={pass:'통과',block:'차단',inconclusive:'판정 보류'};
-async function json(path:string,init?:RequestInit){const response=await fetch('/backend/'+path,{...init,cache:'no-store'});if(!response.ok)throw Error(response.status===409?'고정 버전의 내용 또는 비교 조건이 맞지 않습니다.':response.status===429?'프로젝트 요청·저장 한도에 도달했습니다.':'캠페인 요청을 확인하지 못했습니다.');return response.json() as Promise<unknown>}
+async function json(path:string,init?:RequestInit){const timeout=AbortSignal.timeout(10000),signal=init?.signal?AbortSignal.any([init.signal,timeout]):timeout;const response=await fetch('/backend/'+path,{...init,signal,cache:'no-store'});if(!response.ok)throw Error(response.status===409?'고정 버전의 내용 또는 비교 조건이 맞지 않습니다.':response.status===429?'프로젝트 요청·저장 한도에 도달했습니다.':'캠페인 요청을 확인하지 못했습니다.');return response.json() as Promise<unknown>}
 export default function CampaignWorkspace({user,disabled,archivesEnabled,signingEnabled}:{user:Identity;disabled:boolean;archivesEnabled:boolean;signingEnabled:boolean}){
  const [datasetMode,setDatasetMode]=useState<'fixed-scenarios'|'reference-answer'>('fixed-scenarios');
  const [agentMode,setAgentMode]=useState<'fixed-scenarios'|'reference-answer'>('fixed-scenarios');
