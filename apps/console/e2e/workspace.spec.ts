@@ -29,6 +29,8 @@ test('viewer recovers campaign selection after a stalled read and HTTP 503 witho
  await page.route(path,route=>route.fulfill({status:503,contentType:'application/json',body:'{}'}));
  try{await button.click();await expect(page.getByText('캠페인 요청을 확인하지 못했습니다.',{exact:true})).toBeVisible();await expect(button).toBeEnabled()}
  finally{await page.unroute(path)}
+ await page.route(path,route=>route.fulfill({status:200,contentType:'application/json',body:'{"fixture-private-read":'}));
+ try{await button.click();await expect(page.getByText('캠페인 요청을 확인하지 못했습니다.',{exact:true})).toBeVisible();await expect(button).toBeEnabled();await expect(page.getByText('fixture-private-read',{exact:false})).toHaveCount(0);await expect(page.getByRole('heading',{name:'캠페인 평가 근거',exact:true})).toHaveCount(0)}finally{await page.unroute(path)}
  await button.click();await expect(page.getByRole('heading',{name:'캠페인 평가 근거',exact:true})).toBeVisible();await expect(button).toBeEnabled();
  phase('campaign read timeout and503 release controls; no automatic retry or business writes; explicit retry restores actual scoped campaign');
 });
