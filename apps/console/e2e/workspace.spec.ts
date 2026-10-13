@@ -3,6 +3,17 @@ import {createHash,randomUUID} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {readFileSync,readdirSync,statSync} from 'node:fs';import {resolve} from 'node:path';
 import {auditFilters} from '../src/lib/audit-search';
+import {uncertainCampaignWrite} from '../src/lib/campaign-write-error';
+test('editor sees uncertain write guidance after an intercepted POST timeout without resubmission',async({page})=>{
+ await login(page,'demo-editor');
+ const path='**/backend/versions/agents',button=page.getByRole('button',{name:'에이전트 버전 고정',exact:true});
+ await expect(button).toBeEnabled();let release!:()=>void,finished!:()=>void,entered!:()=>void,posts=0;
+ const held=new Promise<void>(resolve=>release=resolve),done=new Promise<void>(resolve=>finished=resolve),started=new Promise<void>(resolve=>entered=resolve);
+ await page.route(path,async route=>{if(route.request().method()!=='POST'){await route.continue();return}posts++;entered();await held;try{await route.abort()}catch{}finally{finished()}});
+ try{await button.click();await started;await expect(button).toBeDisabled();await expect(page.getByText(uncertainCampaignWrite,{exact:true})).toBeVisible({timeout:12000});await expect(button).toBeEnabled();expect(posts).toBe(1);release();await done;await expect(page.getByText(uncertainCampaignWrite,{exact:true})).toBeVisible();expect(posts).toBe(1)}
+ finally{release();await done;await page.unroute(path)}
+ phase('registration POST intercepted without forwarding; timeout is uncertain, controls recover and no automatic resubmission occurs; no business writes');
+});
 test('viewer recovers campaign selection after a stalled read and HTTP 503 without automatic retry',async({page})=>{
  await login(page,'demo-viewer');
  const records=await (await page.request.get('/backend/campaigns')).json() as {id:string}[];
