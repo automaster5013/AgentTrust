@@ -43,3 +43,5 @@ python scripts/stack-oidc-client-config.py --mode draft --profile https-review -
 ```
 
 `--mode check` instead reads a client JSON object from standard input, bounded to 1MiB with strict UTF-8, unique JSON keys and finite JSON values. Supply the same endpoint arguments. Success means the specified client fields match the contract; it does not verify realm issuer configuration, DNS ownership, TLS, authenticated discovery, or an installed production client. No client document or credential is echoed in check output. The draft is a public settings fragment for review, not a realm import or applied configuration. Eighteen process controls verify valid generation/checking and malformed/unsafe input rejection, including missing fields and boolean type confusion.
+
+The original-stack integration job now allows 120 minutes for cold builds, browser regressions and the pinned local model. The former 65-minute budget ended two runs before delivery jobs could execute. All required steps and HIGH/CRITICAL refusal criteria remain mandatory; increasing the time budget does not mark a cancelled run as passed.
