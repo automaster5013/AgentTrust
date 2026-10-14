@@ -4,6 +4,13 @@ import org.springframework.http.HttpMethod;
 import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 class RoutePolicyTest {
+ @org.junit.jupiter.api.Test void historicalSigningKeyLookupRemainsAuthenticatedBoundedAndReadOnly(){
+  String path="/api/gate-trust/keys/"+"a".repeat(64);
+  org.junit.jupiter.api.Assertions.assertTrue(RoutePolicy.allowed(path,org.springframework.http.HttpMethod.GET));
+  org.junit.jupiter.api.Assertions.assertTrue(RoutePolicy.protectedPath(path));
+  for(var method:java.util.List.of(org.springframework.http.HttpMethod.POST,org.springframework.http.HttpMethod.PUT,org.springframework.http.HttpMethod.DELETE))org.junit.jupiter.api.Assertions.assertFalse(RoutePolicy.allowed(path,method));
+  for(String tail:java.util.List.of("a".repeat(63),"a".repeat(65),"A".repeat(64),"a".repeat(64)+"/extra",".."))org.junit.jupiter.api.Assertions.assertFalse(RoutePolicy.allowed("/api/gate-trust/keys/"+tail,org.springframework.http.HttpMethod.GET));
+ }
  @Test void lifecycleRoutesHaveExactMethodsAndNoArbitrarySuffix(){String id="11111111-1111-4111-8111-111111111111";for(String kind:new String[]{"agents","datasets"}){String path="/api/versions/"+kind+"/"+id+"/lifecycle";assertTrue(RoutePolicy.allowed(path,HttpMethod.GET));assertTrue(RoutePolicy.protectedPath(path));assertFalse(RoutePolicy.allowed(path,HttpMethod.POST));assertTrue(RoutePolicy.allowed(path+"/retirement",HttpMethod.POST));assertFalse(RoutePolicy.allowed(path+"/retirement",HttpMethod.GET));assertFalse(RoutePolicy.allowed(path+"/retirement/extra",HttpMethod.POST));assertFalse(RoutePolicy.allowed(path,HttpMethod.DELETE));}assertTrue(RoutePolicy.allowed("/api/campaigns/"+id+"/version-lifecycle",HttpMethod.GET));assertFalse(RoutePolicy.allowed("/api/campaigns/"+id+"/version-lifecycle",HttpMethod.POST));}
  @Test void auditExportIsFixedReadOnlyAndQuotaProtected(){assertTrue(RoutePolicy.allowed("/api/audit-export",HttpMethod.GET));assertTrue(RoutePolicy.protectedPath("/api/audit-export"));assertFalse(RoutePolicy.allowed("/api/audit-export",HttpMethod.POST));assertFalse(RoutePolicy.allowed("/api/audit-export/foreign",HttpMethod.GET));}
  @Test void immutableReleaseRequirementsAreProtectedAndReadOnly(){String path="/api/campaigns/11111111-1111-4111-8111-111111111111/release-requirements";assertTrue(RoutePolicy.allowed(path,HttpMethod.GET));assertTrue(RoutePolicy.protectedPath(path));assertFalse(RoutePolicy.allowed(path,HttpMethod.POST));assertFalse(RoutePolicy.allowed(path+"/extra",HttpMethod.GET));}

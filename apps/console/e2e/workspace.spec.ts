@@ -20,6 +20,28 @@ async function existingRecoverableCampaign(page:Page){
  throw Error('Existing recoverable synthetic campaign unavailable');
 }
 
+test('viewer resolves receipt-specific historical signing trust and rejects substituted or unavailable public keys without writes',async({page})=>{
+ await login(page,'demo-viewer');
+ const rows=await (await page.request.get('/backend/campaigns')).json() as {id:string}[];let campaignId='',receiptId='';
+ for(const row of rows){const response=await page.request.get('/backend/campaigns/'+row.id+'/receipts');expect(response.status()).toBe(200);const receipts=await response.json() as {id:string}[];if(receipts.length){campaignId=row.id;receiptId=receipts[0].id;break}}
+ expect(campaignId).not.toBe('');
+ const receipt=await (await page.request.get('/backend/campaigns/'+campaignId+'/receipts/'+receiptId)).json();
+ expect(receipt.keyId).toMatch(/^[a-f0-9]{64}$/);
+ const trustResponse=await page.request.get('/backend/gate-trust/keys/'+receipt.keyId);expect(trustResponse.status()).toBe(200);const trust=await trustResponse.json();
+ const region=page.getByRole('region',{name:'버전과 평가 캠페인',exact:true});await region.getByRole('button',{name:'캠페인 '+campaignId.slice(0,8),exact:true}).click();
+ const history=page.getByRole('region',{name:'서명된 과거 판정',exact:true});await history.getByRole('button',{name:'서명 기록 목록 확인',exact:true}).click();
+ const button=history.getByRole('button',{name:'서명 기록 '+receiptId.slice(0,8)+' 검증',exact:true}),verified=history.getByText('브라우저 Ed25519 서명 검증 완료 · 개발용 공개키',{exact:true});
+ let mode='actual',lookups=0,currentKeyFallbacks=0;const path='**/backend/gate-trust/keys/'+receipt.keyId,currentPath='**/backend/gate-trust';
+ await page.route(path,route=>{lookups++;if(mode==='actual')return route.continue();if(mode==='unavailable')return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({code:'KEY_UNAVAILABLE'})});return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...trust,keyId:'f'.repeat(64)})})});
+ await page.route(currentPath,route=>{currentKeyFallbacks++;return route.continue()});
+ try{
+  await button.click();await expect(verified).toBeVisible();await expect(history.getByText('서명 키 '+receipt.keyId,{exact:true})).toBeVisible();expect(lookups).toBe(1);
+  for(mode of ['substituted','unavailable']){await button.click();await expect(verified).toHaveCount(0);await expect(history.getByRole('button',{name:'검증된 서명·근거 번들 다운로드',exact:true})).toHaveCount(0);await expect(region.getByRole('status',{name:'버전과 캠페인 작업 상태',exact:true})).toContainText('과거 판정의 서명과 보관 근거 연결을 확인하지 못했습니다.')}
+  mode='actual';await button.click();await expect(verified).toBeVisible();const before=lookups,downloadEvent=page.waitForEvent('download');await history.getByRole('button',{name:'검증된 서명·근거 번들 다운로드',exact:true}).click();const download=await downloadEvent;expect(await download.failure()).toBeNull();expect(lookups).toBe(before+1);expect(currentKeyFallbacks).toBe(0);
+ }finally{await page.unroute(path);await page.unroute(currentPath)}
+ phase('actual existing receipt and full bundle use the bounded receipt key lookup; substituted/unavailable trust clears proof and download; explicit retry recovers; no active-key fallback and no business/provider writes');
+});
+
 test('editor preserves uncertain campaign versions and conditions while explicitly retrying the original admission',async({page})=>{
  await login(page,'demo-editor');await expect(page.getByRole('button',{name:'캠페인 실행',exact:true})).toBeEnabled();const {record}=await existingRecoverableCampaign(page),create=page.getByRole('button',{name:'캠페인 실행',exact:true}),panel=page.getByRole('region',{name:'저장 결과가 불확실한 캠페인 요청',exact:true});
  let key='',original:unknown,posts=0,mode='stalled',release!:()=>void,entered!:()=>void,finished!:()=>void;const held=new Promise<void>(r=>release=r),started=new Promise<void>(r=>entered=r),done=new Promise<void>(r=>finished=r),path='**/backend/campaigns',requirementsPath='**/backend/campaigns/'+record.id+'/release-requirements',gatePath='**/backend/campaigns/'+record.id+'/gate';

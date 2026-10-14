@@ -48,6 +48,7 @@ agenttrust:
   identity-mode: ${STACK_IDENTITY_MODE:local-demo}
   object-mode: ${STACK_OBJECT_MODE:disabled}
   gate-signing-mode: ${STACK_GATE_SIGNING_MODE:disabled}
+  gate-retired-keys-file: ${STACK_GATE_RETIRED_KEYS_FILE:}
 logging:
   level:
     org.springframework.security: WARN

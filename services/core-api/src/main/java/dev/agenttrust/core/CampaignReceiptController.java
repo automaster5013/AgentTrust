@@ -12,6 +12,10 @@ public class CampaignReceiptController {
     public CampaignReceiptController(CampaignReceipts receipts,GateSigner signer,CampaignObservationBundles bundles){this.receipts=receipts;this.signer=signer;this.bundles=bundles;}
     public record Issue(String note){}
     @GetMapping("/api/gate-trust") Map<String,Object> trust(){return signer.trust();}
+    @GetMapping("/api/gate-trust/keys/{keyId}") Map<String,Object> historicalTrust(@PathVariable String keyId){
+        if(!keyId.matches("[a-f0-9]{64}"))throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND);
+        var value=signer.trust(keyId);if(value==null)throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND);return value;
+    }
     @GetMapping("/api/campaigns/{campaign}/receipts") List<Map<String,Object>> list(@AuthenticationPrincipal DemoUser user,@PathVariable UUID campaign){return receipts.list(user,campaign);}
     @GetMapping("/api/campaigns/{campaign}/receipts/{id}") Map<String,Object> get(@AuthenticationPrincipal DemoUser user,@PathVariable UUID campaign,@PathVariable UUID id){return receipts.get(user,campaign,id);}
     @GetMapping("/api/campaigns/{campaign}/receipts/{id}/bundle") Map<String,Object> bundle(@AuthenticationPrincipal DemoUser user,@PathVariable UUID campaign,@PathVariable UUID id){return bundles.get(user,campaign,id);}

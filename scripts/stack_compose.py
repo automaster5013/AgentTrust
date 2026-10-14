@@ -11,6 +11,10 @@ def stack_compose(root):
  if (root/'.local/stack/signing-enabled').exists():
   assert (root/'.local/stack/signing-enabled').read_text(encoding='utf-8')=='local-development-v1' and (root/'.local/stack/gate-keys/key-pair.json').is_file()
   command+=['-f','compose.stack.signing.yaml']
+ if (root/'.local/stack/gate-key-rotation-enabled').exists():
+  if not (root/'.local/stack/signing-enabled').is_file() or (root/'.local/stack/gate-key-rotation-enabled').read_text(encoding='utf-8')!='local-development-public-key-archive-v1' or not (root/'.local/stack/gate-keys/retired-public-keys.json').is_file():
+   raise ValueError('Development signing key history unavailable')
+  command+=['-f','compose.stack.key-rotation.yaml']
  names=['STACK_CORE_IMAGE','STACK_WORKER_IMAGE','STACK_CONSOLE_IMAGE','STACK_OPA_IMAGE','STACK_IDENTITY_IMAGE','STACK_GATEWAY_IMAGE','STACK_OBJECT_IMAGE','STACK_DATABASE_IMAGE','STACK_MODEL_IMAGE','STACK_MESSAGING_IMAGE','STACK_TELEMETRY_IMAGE','STACK_TEMPO_IMAGE','STACK_LOKI_IMAGE','STACK_PROMETHEUS_IMAGE','STACK_QUALITY_VERIFIER_IMAGE']
  if any(name in os.environ for name in names):
   assert all(re.fullmatch(r'ghcr\.io/[a-z0-9-]+/agenttrust-[a-z-]+@sha256:[a-f0-9]{64}',os.environ.get(name,'')) for name in names)

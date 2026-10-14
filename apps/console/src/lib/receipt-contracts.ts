@@ -8,6 +8,7 @@ function object(value:unknown):Record<string,unknown>{if(!value||typeof value!==
 function text(value:unknown,max:number){if(typeof value!=='string'||value.length>max)throw Error('INVALID_RECEIPT');return value}
 function uuid(value:unknown){const v=text(value,36);if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(v))throw Error('INVALID_RECEIPT');return v}
 function hash(value:unknown){const v=text(value,64);if(!/^[a-f0-9]{64}$/.test(v))throw Error('INVALID_RECEIPT');return v}
+export function receiptTrustPath(value:unknown):string{return 'gate-trust/keys/'+hash(object(value).keyId)}
 function bytes(value:unknown,max:number){const encoded=text(value,22000);if(!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))throw Error('INVALID_RECEIPT');const result=Uint8Array.from(atob(encoded),x=>x.charCodeAt(0));if(!result.length||result.length>max||btoa(String.fromCharCode(...result))!==encoded)throw Error('INVALID_RECEIPT');return result}
 async function digest(value:Uint8Array<ArrayBuffer>){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',value)),x=>x.toString(16).padStart(2,'0')).join('')}
 function baselineArchives(value:unknown,requirements:ReleaseRequirements,record:Campaign):BaselineArchives{

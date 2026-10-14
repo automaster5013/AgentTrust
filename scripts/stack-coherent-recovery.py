@@ -63,6 +63,8 @@ def private_file(path, data):
 
 def source_preflight():
     reserve()
+    if os.name!='nt' and os.getuid()==0:
+        raise ValueError('Nonroot rehearsal host required')
     sources = {}
     run(['docker', 'image', 'inspect', 'agenttrust-security:local'])
     run(['docker', 'image', 'inspect', ALPINE])
@@ -110,13 +112,18 @@ def source_preflight():
 
 
 class Rehearsal:
-    def __init__(self, sources):
+    def __init__(self, sources, exercise_rotation=False):
         self.sources = sources
         self.id = str(uuid.uuid4())
         self.prefix = 'agenttrust-stack-coldrestore-' + self.id
         self.directory = ROOT/'.local'/('stack-coherent-recovery-' + self.id)
         self.directory.mkdir()
         self.directory.chmod(0o700)
+        if os.name=='nt':
+            owner=run(['whoami']).stdout.decode().strip()
+            run(['icacls',str(self.directory),'/inheritance:r','/grant:r',owner+':(OI)(CI)F','SYSTEM:(OI)(CI)F'])
+        self.exercise_rotation=exercise_rotation
+        self.history_path=None
         self.key = self.directory/'development-key.bin'
         self.stopped, self.containers, self.volumes, self.private = [], [], [], []
         self.network = False
@@ -128,6 +135,8 @@ class Rehearsal:
                        'legacyServicesChanged': False, 'existingVolumeRestoredOver': False,
                        'fixtureHostPortsPublished': False, 'rawSecretsPrinted': False,
                        'keyManagement': 'temporary-local-development-key',
+                       'temporaryPrivateDirectoryOwnerProtected': True,
+                       'developmentKeyRotationRequested': exercise_rotation,
                        'excludedFromRecovery': ['observability history', 'local model download cache',
                                                 'external infrastructure and KMS', 'HA and production RPO/RTO']}
 
@@ -258,6 +267,12 @@ class Rehearsal:
                 args += ['-e', 'STACK_ENABLE_PAID_PROVIDERS=false', '-e', 'STACK_TELEMETRY_ENABLED=false']
             if service == 'stack-core-api':
                 args += ['-e', 'OTEL_SDK_DISABLED=true']
+                if self.exercise_rotation:
+                    self.history_path=self.directory/'retired-public-keys.json'
+                    private_file(self.history_path,b'{"schemaVersion":1,"keys":[]}')
+                    self.history_path.chmod(0o444);self.private.append(self.history_path)
+                    args+=['-e','STACK_GATE_RETIRED_KEYS_FILE=/run/secrets/stack-gate-retired-keys',
+                           '--mount','type=bind,source='+str(self.history_path)+',target=/run/secrets/stack-gate-retired-keys,readonly']
             if entry['workingDirectory']:
                 args += ['--workdir', entry['workingDirectory']]
             for destination, options in entry['tmpfs'].items():
@@ -288,6 +303,60 @@ class Rehearsal:
         if not network['Internal'] or len(network['Containers']) != len(SERVICES):
             raise ValueError('Fixture network membership refused')
         self.check('eleven exact-image nonroot services start only on a fresh internal network without published ports')
+
+    def replace_owned_private(self,path,data):
+        if path not in self.private or path.is_symlink() or path.resolve().parent!=self.directory.resolve():
+            raise ValueError('Fixture private replacement ownership refused')
+        path.chmod(0o600)
+        # Preserve the bind-mounted file inode while changing only owned fixture bytes.
+        path.write_bytes(data);path.chmod(0o444)
+
+    def key_rotation(self,config,old_anchor,credential,tools):
+        self.stage('isolated-development-key-rotation')
+        generated=self.directory/'key-pair.json'
+        if generated.exists():raise ValueError('Existing key generation target refused')
+        self.private.append(generated)
+        user=str(os.getuid())+':'+str(os.getgid()) if os.name!='nt' else '10001:10001'
+        generated_status=json.loads(run(['docker','run','--rm','--pull','never','--log-driver','none','--network','none',
+                                        '--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true',
+                                        '--user',user,'--memory','256m','--cpus','1','--pids-limit','32',
+                                        '--mount','type=bind,source='+str(self.directory)+',target=/output',
+                                        '--entrypoint','java',config['stack-core-api']['imageId'],
+                                        '-Xmx64m','-cp','/app/tools','GateKeyTool','generate','/output/key-pair.json']).stdout)
+        if not generated_status.get('prepared') or generated_status.get('privateKeyPrinted') is not False:
+            raise ValueError('Fixture key generation unavailable')
+        pair=json.loads(generated.read_bytes());public=base64.b64decode(pair['publicKey'],validate=True)
+        if len(public)!=44 or hashlib.sha256(public).hexdigest()!=generated_status['keyId']:
+            raise ValueError('Generated public key identity differs')
+        current_anchor={**old_anchor,'keyId':generated_status['keyId'],'publicKeySpkiBase64':pair['publicKey']}
+        key_path=pathlib.Path(next(f['fixturePath'] for f in config['stack-core-api']['files'] if f['destination']=='/run/secrets/stack-gate-key-pair'))
+        self.replace_owned_private(key_path,generated.read_bytes())
+        proof={}
+        for mode in ['retired','revoked']:
+            history={'schemaVersion':1,'keys':[{'keyId':old_anchor['keyId'],'publicKeySpkiBase64':old_anchor['publicKeySpkiBase64'],'status':mode}]}
+            self.replace_owned_private(self.history_path,json.dumps(history).encode())
+            name=self.prefix+'-stack-core-api'
+            if inspect(name)['Config']['Labels'].get('agenttrust.fixture')!=self.id:
+                raise ValueError('Fixture restart ownership refused')
+            run(['docker','restart',name]);self.wait(name,'stack-core-api')
+            arguments={'mode':mode,'old':old_anchor,'current':current_anchor,
+                       'newReceiptId':proof.get('retired',{}).get('newReceiptId')}
+            source=self.directory/'rotation-probe-input.json'
+            if source.exists():self.replace_owned_private(source,json.dumps(arguments).encode())
+            else:private_file(source,json.dumps(arguments).encode());source.chmod(0o444);self.private.append(source)
+            result=run(['docker','run','--rm','--network',self.prefix,'--read-only','--cap-drop','ALL',
+                        '--security-opt','no-new-privileges:true','--tmpfs','/tmp:size=32m,mode=1777',
+                        '--memory','256m','--cpus','1','--pids-limit','32',
+                        '--mount','type=bind,source='+str(ROOT/'scripts')+',target=/scripts,readonly',
+                        '--mount','type=bind,source='+credential+',target=/credentials.json,readonly',
+                        '--mount','type=bind,source='+str(source)+',target=/rotation-probe-input.json,readonly',
+                        tools,'python','/scripts/stack-key-rotation-probe.py'],timeout=120,check=False)
+            value=json.loads(result.stdout);proof[mode]=value
+            self.report['developmentKeyRotationProof']=proof;self.save()
+            if result.returncode or not value.get('completed') or not value.get('ownSessionsClosed'):
+                raise ValueError('Actual development key rotation unverified')
+        self.report['developmentKeyRotationVerified']=True
+        self.check('only disposable signing bytes rotate: old receipts verify under retired public key, revocation refuses them, and fresh signatures/receipts use the new key')
 
     def execute(self):
         self.stage('source-baseline')
@@ -381,6 +450,8 @@ class Rehearsal:
         if result.returncode or not proof.get('completed') or not proof.get('ownSessionsClosed') or not proof.get('paidProviderCallsPerformed') is False:
             raise ValueError('Restored application recovery probe unavailable')
         self.check('restored Keycloak PKCE identities, tenant/role boundaries, archived bytes, signing identity and fresh Python/NATS evaluation verified')
+        if self.exercise_rotation:
+            self.key_rotation(config,probe_anchor,credential,tools)
         if fingerprint() != before:
             raise ValueError('Original business rows changed during isolated fixture probe')
         for service, source in self.sources.items():
@@ -437,6 +508,7 @@ class Rehearsal:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--execute', action='store_true')
+    parser.add_argument('--exercise-key-rotation',action='store_true')
     args = parser.parse_args()
     try:
         sources = source_preflight()
@@ -448,7 +520,7 @@ def main():
                           'statefulVolumesVerified': len(STATEFUL), 'pendingEvaluations': 0,
                           'sourceServicesStopped': False, 'actualRecoveryPerformed': False}))
         return 0
-    drill = Rehearsal(sources)
+    drill = Rehearsal(sources,args.exercise_key_rotation)
     try:
         drill.execute()
     except Exception as error:

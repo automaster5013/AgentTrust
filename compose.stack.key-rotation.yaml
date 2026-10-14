@@ -1,0 +1,9 @@
+services:
+  stack-core-api:
+    environment:
+      STACK_GATE_RETIRED_KEYS_FILE: /run/secrets/stack-gate-retired-keys
+    secrets:
+      - stack-gate-retired-keys
+secrets:
+  stack-gate-retired-keys:
+    file: .local/stack/gate-keys/retired-public-keys.json
