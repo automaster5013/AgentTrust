@@ -1,5 +1,5 @@
 """Conditional review race in isolated CI only; default mode never submits a review."""
-import argparse,concurrent.futures,datetime,json,pathlib,threading,time,urllib.error,urllib.request,uuid
+import argparse,concurrent.futures,datetime,json,pathlib,subprocess,sys,threading,time,urllib.error,urllib.request,uuid
 from stack_test_client import StackClient
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 parser=argparse.ArgumentParser();parser.add_argument('--allow-synthetic-writes',action='store_true');args=parser.parse_args()
@@ -17,6 +17,13 @@ def race_request(client,path,body,barrier):
     return status
 
 try:
+    if args.allow_synthetic_writes:
+        assert pathlib.Path('/home/runner/work/AgentTrust/AgentTrust').resolve()==ROOT.resolve(), 'Synthetic writes require the isolated GitHub Actions checkout'
+        import os
+        assert os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('GITHUB_REPOSITORY')=='automaster5013/AgentTrust'
+        window=subprocess.run([sys.executable,str(ROOT/'scripts/stack-test-quota-window.py')],cwd=ROOT,capture_output=True,text=True,encoding='utf-8',timeout=75,check=True)
+        assert json.loads(window.stdout)=={'naturalQuotaWindowElapsed':True,'quotaLimitsChanged':False,'redisEntriesDeleted':False}
+        report['naturalQuotaWindowBeforeFixture']=True
     credentials=json.loads((ROOT/'.local/stack/demo-credentials.json').read_text(encoding='utf-8'))
     admin=StackClient('http://127.0.0.1:4320',credentials,report,clients);admin.login('demo-admin')
     viewer=StackClient('http://127.0.0.1:4320',credentials,report,clients);viewer.login('demo-viewer')
@@ -27,9 +34,6 @@ try:
         identifier=rows[0]['id'];viewer.request(resource+'/'+identifier+'/reviews','POST',{'decision':'approved','reason':'Unauthorized synthetic guard probe','expectedReviewSequence':0},expected=403)
         report['checks'].append(resource+' viewer cannot submit a conditional review')
     if args.allow_synthetic_writes:
-        assert pathlib.Path('/home/runner/work/AgentTrust/AgentTrust').resolve()==ROOT.resolve(), 'Synthetic writes require the isolated GitHub Actions checkout'
-        import os
-        assert os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('GITHUB_REPOSITORY')=='automaster5013/AgentTrust'
         report['businessWritesPerformed']=True
         run=admin.request('runs','POST',{'scenario':'pass','requiresApproval':True,'provider':'synthetic'},{'Idempotency-Key':str(uuid.uuid4())})
         for _ in range(40):
