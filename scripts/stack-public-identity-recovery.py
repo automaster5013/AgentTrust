@@ -10,6 +10,7 @@ class PublicIdentityRehearsal(base.Rehearsal):
     def execute(self):
         super().execute();self.report['completed']=False
         self.stage('real-provider-signed-public-logout')
+        before=base.fingerprint()
         config=self.configuration
         settings=dict(value.split('=',1) for value in config['stack-identity']['env'])
         source=self.directory/'identity-probe-input.json'
@@ -22,6 +23,11 @@ class PublicIdentityRehearsal(base.Rehearsal):
         proof=json.loads(result.stdout);self.report['publicIdentityProof']=proof;self.save()
         if result.returncode or not all(proof.get(k) is True for k in ('completed','ownSessionsClosed','fixtureClientConfigurationRestored')):
             raise ValueError('Public identity recovery acceptance unavailable')
+        if base.fingerprint()!=before:raise ValueError('Source business rows changed during public identity fixture')
+        for service,source in self.sources.items():
+            current=base.inspect(source['Id'])
+            if current['Image']!=source['Image'] or not current['State']['Running']:
+                raise ValueError('Source runtime changed during public identity fixture')
         self.check('real provider-signed public logout revokes only its matching session while unsigned requests are refused')
         self.report.update(completed=True,publicIdentityDevelopmentAcceptanceVerified=True)
 

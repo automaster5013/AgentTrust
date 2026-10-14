@@ -33,6 +33,10 @@ tenant columns. Before timing it, the probe reads every listed version's scoped
 detail and binds its identity, content hash and summary fields to the owned
 organization/project. Timed list responses must equal that verified baseline;
 the probe does not invent tenant fields absent from the actual API contract.
+The JDBC list projection serializes timestamps at millisecond precision while
+immutable detail retains microseconds. The detail must fall within that exact
+summary millisecond; timestamps retaining finer precision must match exactly.
+Neighbouring milliseconds, changed hashes and foreign scope remain failures.
 
 The latency phase is separate from queue recovery. It measures a particular
 synthetic fixture on the current host, not an agreed production workload,

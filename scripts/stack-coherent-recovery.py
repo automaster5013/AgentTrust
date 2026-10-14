@@ -432,6 +432,8 @@ class Rehearsal:
         before = fingerprint()
         self.report['sourceBusinessTables'] = len(before)
         revision = run(['git', 'rev-parse', 'HEAD']).stdout.decode().strip()
+        self.report.update(sourceRevision=revision,sourceImageIds={service:source['Image'] for service,source in self.sources.items()})
+        self.save()
         core_files = {m['Destination']: pathlib.Path(m['PrivateHostPath']) for m in self.sources['stack-core-api']['Mounts'] if m['Type'] == 'bind'}
         credentials = json.loads(core_files['/run/secrets/stack-demo-credentials'].read_bytes())
         owner = next(row for row in credentials if row['username'] == 'demo-admin')

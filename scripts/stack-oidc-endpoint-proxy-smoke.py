@@ -9,6 +9,10 @@ import http from 'node:http';import assert from 'node:assert/strict';
 if(process.argv[2]==='serve'){
  let mode='normal',count=0;
  http.createServer((q,s)=>{if(q.url==='/fixture/control'){mode=q.headers['x-mode'];s.end();return}if(q.url==='/fixture/count'){s.end(String(count));return}count++;
+  if(q.url==='/logout/connect/back-channel/keycloak'){
+   assert.equal(q.method,'POST');for(const name of ['cookie','authorization','x-csrf-token','idempotency-key','origin'])assert.equal(q.headers[name],undefined);
+   assert.equal(q.headers['content-type'],'application/x-www-form-urlencoded');let body='';q.on('data',chunk=>body+=chunk);q.on('end',()=>{assert.equal(body,'logout_token=aaa.bbb.ccc');s.writeHead(204,{'Set-Cookie':'AGENTTRUST_STACK_SESSION=must-not-forward; Path=/; Secure; HttpOnly; SameSite=Lax','Location':'https://evil.example.com/'});s.end()});return;
+  }
   if(q.url.startsWith('/oauth2/authorization')){s.writeHead(302,{Location:mode==='evil'?'https://evil.example.com/realms/agenttrust/protocol/openid-connect/auth':'https://identity.example.com/realms/agenttrust/protocol/openid-connect/auth?state=12345678'});s.end();return}
   if(q.url.startsWith('/login/oauth2/code')){s.writeHead(302,{Location:mode==='evil'?'https://evil.example.com/':'https://console.example.com/'});s.end();return}
   let cookie='AGENTTRUST_STACK_SESSION=fixture; Path=/; HttpOnly'+(mode==='insecure'?'':'; Secure')+'; SameSite=Lax';
@@ -22,9 +26,9 @@ if(process.argv[2]==='serve'){
  }).listen(8080,'0.0.0.0');
 }else{
  const base='http://console:3000',headers={Host:'console.example.com'},checks=[];
- const request=(path,extra={},method='GET')=>new Promise((resolve,reject)=>{
+ const request=(path,extra={},method='GET',body='{}')=>new Promise((resolve,reject)=>{
   const q=http.request(base+'/backend/'+path,{headers:{...headers,...extra},method},r=>{r.resume();resolve({status:r.statusCode,headers:{get:key=>{const value=r.headers[key.toLowerCase()];return Array.isArray(value)?value.join(', '):value??null}}})});
-  q.setTimeout(5000,()=>q.destroy(Error('FIXTURE_REQUEST_TIMEOUT')));q.on('error',reject);q.end(method==='POST'?'{}':undefined);
+  q.setTimeout(5000,()=>q.destroy(Error('FIXTURE_REQUEST_TIMEOUT')));q.on('error',reject);q.end(method==='POST'?body:undefined);
  });
  const count=async()=>Number(await(await fetch('http://127.0.0.1:8080/fixture/count')).text());
  const mode=async value=>{await fetch('http://127.0.0.1:8080/fixture/control',{headers:{'X-Mode':value}})};
@@ -40,6 +44,9 @@ if(process.argv[2]==='serve'){
  await mode('insecure');r=await request('logout',{Origin:'https://console.example.com'},'POST');assert.equal(r.status,502);assert.equal(r.headers.get('set-cookie'),null);checks.push('insecure-upstream-cookie-refused');
  for(const invalid of ['domain','wrong-path','same-site-none','missing-same-site','duplicate-path']){await mode(invalid);r=await request('logout',{Origin:'https://console.example.com'},'POST');assert.equal(r.status,502);assert.equal(r.headers.get('set-cookie'),null);checks.push(invalid+'-upstream-cookie-refused')}
  await mode('expiry');r=await request('logout',{Origin:'https://console.example.com'},'POST');assert.equal(r.status,200);assert.ok(r.headers.get('set-cookie').includes('Max-Age=0'));checks.push('valid-session-expiry-cookie-forwarded');
+ r=await request('logout/connect/back-channel/keycloak',{'Content-Type':'application/x-www-form-urlencoded',Cookie:'AGENTTRUST_STACK_SESSION=fixture',Authorization:'Bearer fixture','X-CSRF-TOKEN':'fixture','Idempotency-Key':'fixture'},'POST','logout_token=aaa.bbb.ccc');assert.equal(r.status,204);assert.equal(r.headers.get('set-cookie'),null);assert.equal(r.headers.get('location'),null);checks.push('public-provider-form-strips-browser-credentials-and-upstream-cookies-or-redirects');
+ n=await count();r=await request('logout/connect/back-channel/keycloak',{Host:'stack-console:3000','Content-Type':'application/x-www-form-urlencoded'},'POST','logout_token=aaa.bbb.ccc');assert.equal(r.status,403);assert.equal(await count(),n);checks.push('https-public-receiver-rejects-local-fixture-host');
+ n=await count();r=await request('logout/connect/back-channel/keycloak',{},'GET');assert.equal(r.status,502);assert.equal(await count(),n);checks.push('public-receiver-is-not-a-readable-proxy');
  console.log(JSON.stringify({completed:true,checks}));
 }
 """
@@ -58,7 +65,7 @@ try:
   args=['docker','run','-d','--name',name,'--network',network,'--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--memory','256m','--pids-limit','64','--tmpfs','/tmp:size=32m,mode=1777']
   if name==stub:args+=['--user','1000:1000']
   run(args+extra);created.append(name)
- result=json.loads(run(['docker','exec',stub,'node','/fixture.mjs','check'],120));assert result['completed'] and len(result['checks'])==15;report.update(result)
+ result=json.loads(run(['docker','exec',stub,'node','/fixture.mjs','check'],120));assert result['completed'] and len(result['checks'])==18;report.update(result)
 except Exception as error:
  report.update(errorType=type(error).__name__,code='OIDC_PROXY_FIXTURE_UNVERIFIED')
  if isinstance(error,subprocess.CalledProcessError):
