@@ -4,6 +4,61 @@ import {execFileSync} from 'node:child_process';
 import {readFileSync,readdirSync,statSync} from 'node:fs';import {resolve} from 'node:path';
 import {auditFilters} from '../src/lib/audit-search';
 import {uncertainCampaignWrite} from '../src/lib/campaign-write-error';
+import {uncertainEvaluationWrite} from '../src/lib/evaluation-request';
+async function existingSyntheticEvaluation(page:Page,passOnly=false){
+ const response=await page.request.get('/backend/runs');expect(response.status()).toBe(200);const rows=await response.json() as {id:string;provider:string;scenario:string;state:string;decision:string}[];
+ const row=rows.find(r=>r.provider==='synthetic'&&r.scenario!=='quality'&&r.state!=='queued'&&(!passOnly||r.decision==='pass'));expect(row).toBeTruthy();
+ const record=await (await page.request.get('/backend/runs/'+row!.id)).json(),me=await (await page.request.get('/backend/me')).json(),gate=await (await page.request.get('/backend/runs/'+row!.id+'/gate')).json();return {record,me,gate};
+}
+async function prepareSyntheticEvaluationForm(page:Page,record:{scenario:string;provider:string;requires_approval:boolean}){
+ await page.getByLabel('합성 시나리오',{exact:true}).selectOption(record.scenario);await page.getByLabel('실행 공급자',{exact:true}).selectOption(record.provider);await page.getByLabel('관리자 승인 필요',{exact:true}).setChecked(record.requires_approval);
+}
+test('editor preserves uncertain evaluation input and explicitly resubmits the same admission key',async({page})=>{
+ await login(page,'demo-editor');const {record}=await existingSyntheticEvaluation(page);await prepareSyntheticEvaluationForm(page,record);let posts=0,key='',body:unknown=null;
+ const path='**/backend/runs';await page.route(path,async route=>{if(route.request().method()!=='POST')return route.continue();posts++;const currentKey=route.request().headers()['idempotency-key'],currentBody=route.request().postDataJSON();if(posts===1){key=currentKey;body=currentBody;return route.abort('failed')}expect(currentKey).toBe(key);expect(currentBody).toEqual(body);return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(record)})});
+ try{
+  const create=page.getByRole('button',{name:'평가 실행',exact:true});await create.click();await expect(page.getByText(uncertainEvaluationWrite,{exact:true})).toBeVisible();expect(posts).toBe(1);expect(key).toMatch(/^[a-f0-9-]{36}$/);
+  const pending=page.getByRole('region',{name:'미확인 평가 요청',exact:true});await expect(pending).toBeVisible();await expect(create).toBeDisabled();await page.getByLabel('합성 시나리오',{exact:true}).selectOption(record.scenario==='pass'?'block':'pass');
+  const lookup='**/backend/run-requests/'+key;await page.route(lookup,route=>route.fulfill({status:404,contentType:'application/json',body:'{}'}));try{await pending.getByRole('button',{name:'평가 요청 결과 다시 조회',exact:true}).click();await expect(page.getByText('현재 이 요청의 평가를 찾지 못했습니다.',{exact:false})).toBeVisible();expect(posts).toBe(1);await expect(pending).toBeVisible()}finally{await page.unroute(lookup)}
+  await pending.getByRole('button',{name:'같은 평가 요청 다시 제출',exact:true}).click();await expect(page.locator('.evidence').getByText('실행 '+record.id,{exact:true})).toBeVisible();await expect(pending).toHaveCount(0);await expect(create).toBeEnabled();expect(posts).toBe(2);
+ }finally{await page.unroute(path)}
+ phase('POSTs intercepted and never forwarded; lost receipt holds immutable input and original key; read-only404 does not assert absence or resubmit; explicit second POST uses identical original payload/key despite edited form; synthetic receipt borrows an actual scoped read-only evaluation; no business or provider writes');
+});
+test('editor resolves an uncertain evaluation by scoped request lookup without another submission',async({page})=>{
+ await login(page,'demo-editor');const {record,me}=await existingSyntheticEvaluation(page);await prepareSyntheticEvaluationForm(page,record);let key='',posts=0,mode='foreign';const createPath='**/backend/runs';
+ await page.route(createPath,route=>{if(route.request().method()!=='POST')return route.continue();posts++;key=route.request().headers()['idempotency-key'];return route.fulfill({status:200,contentType:'application/json',body:'{"fixture-private-receipt":'})});
+ try{
+  await page.getByRole('button',{name:'평가 실행',exact:true}).click();await expect(page.getByText(uncertainEvaluationWrite,{exact:true})).toBeVisible();expect(posts).toBe(1);const pending=page.getByRole('region',{name:'미확인 평가 요청',exact:true}),lookup='**/backend/run-requests/'+key,detailPath='**/backend/runs/'+record.id;
+  const frame={requestKey:key,organizationId:me.organizationId,projectId:me.projectId,actorId:me.actorId,runId:record.id,deploymentAuthority:false};
+  await page.route(lookup,route=>route.fulfill({status:mode==='unavailable'?503:200,contentType:'application/json',body:JSON.stringify(mode==='foreign'?{...frame,actorId:randomUUID()}:frame)}));await page.route(detailPath,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(mode==='wrong-input'?{...record,scenario:record.scenario==='pass'?'block':'pass'}:record)}));
+  try{for(const failure of ['foreign','wrong-input','unavailable']){mode=failure;await pending.getByRole('button',{name:'평가 요청 결과 다시 조회',exact:true}).click();await expect(page.getByText('평가 요청의 저장 결과를 조회하지 못했습니다.',{exact:false})).toBeVisible();await expect(page.locator('.evidence')).toHaveCount(0);await expect(pending).toBeVisible();expect(posts).toBe(1)}mode='valid';await pending.getByRole('button',{name:'평가 요청 결과 다시 조회',exact:true}).click();await expect(page.locator('.evidence').getByText('실행 '+record.id,{exact:true})).toBeVisible();await expect(pending).toHaveCount(0);expect(posts).toBe(1)}finally{await page.unroute(lookup);await page.unroute(detailPath)}
+  await expect(page.getByText('fixture-private-receipt',{exact:false})).toHaveCount(0);
+ }finally{await page.unroute(createPath)}
+ phase('single malformed POST never forwarded; read-only synthetic lookup refuses foreign actor mismatched original input and HTTP503 before exact scoped read-only recovery; retained key never generates another submission; actual resolution API is separately verified against existing owned admission');
+});
+test('administrator distinguishes uncertain evaluation review receipts from verified receipt gate-read failure',async({page})=>{
+ await login(page,'demo-admin');const {record}=await existingSyntheticEvaluation(page,true);await page.locator('.runs li button').filter({hasText:record.id.slice(0,8)}).click();
+ await page.getByLabel('검토 사유',{exact:true}).fill('Synthetic intercepted review boundary');const button=page.getByRole('button',{name:'검토 저장·게이트 확인',exact:true}),path='**/backend/runs/'+record.id+'/reviews',gatePath='**/backend/runs/'+record.id+'/gate';let mode='abort',posts=0;
+ await page.route(path,route=>{posts++;if(mode==='abort')return route.abort('failed');if(mode==='refused')return route.fulfill({status:403,body:'fixture-private-refusal'});if(mode==='malformed')return route.fulfill({status:200,contentType:'application/json',body:'{"fixture-private":'});return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({id:randomUUID(),decision:mode==='array'?['approved']:mode==='mismatched'?'rejected':'approved'})})});
+ try{
+  for(const failure of ['abort','malformed','array','mismatched']){mode=failure;await button.click();await expect(page.getByText(uncertainEvaluationWrite,{exact:true})).toBeVisible();await expect(button).toBeEnabled();await expect(page.getByText('릴리스 허용',{exact:true})).toHaveCount(0)}
+  mode='refused';await button.click();await expect(page.getByText('권한 또는 요청 검증을 확인해 주세요.',{exact:true})).toBeVisible();await expect(page.getByText(uncertainEvaluationWrite,{exact:true})).toHaveCount(0);
+  mode='valid';await page.route(gatePath,route=>route.fulfill({status:503,body:'fixture-private-gate'}));try{await button.click();await expect(page.getByText('검토 저장 결과는 확인했지만 현재 게이트를 확인하지 못했습니다.',{exact:false})).toBeVisible();await expect(page.getByText('릴리스 허용',{exact:true})).toHaveCount(0);await expect(button).toBeEnabled()}finally{await page.unroute(gatePath)}expect(posts).toBe(6);await expect(page.getByText('fixture-private',{exact:false})).toHaveCount(0);
+ }finally{await page.unroute(path)}
+ phase('all six review POSTs intercepted and never forwarded; lost/malformed/coerced/substituted receipts clear permission and remain uncertain;403 stays explicit refusal; synthetic valid receipt followed by503 remains distinct from missing receipt; no actual review or business mutation');
+});
+test('administrator bounds stalled evaluation cancellation and separates confirmed receipt from unavailable gate',async({page})=>{
+ await login(page,'demo-admin');const {record,gate}=await existingSyntheticEvaluation(page);const pendingRecord={...record,state:'queued',decision:'inconclusive',result:{state:'queued',decision:'inconclusive',executionEngine:'python-queued',rules:[{id:'worker-completion',required:true,status:'inconclusive',reason:'Synthetic pending cancellation observation'}]}},pendingGate={...gate,decision:'inconclusive',deploymentAllowed:false};
+ const read='**/backend/runs/'+record.id,gatePath=read+'/gate',cancelPath=read+'/cancel';let posts=0,mode='stalled',release!:()=>void,entered!:()=>void,finished!:()=>void;const held=new Promise<void>(resolve=>release=resolve),started=new Promise<void>(resolve=>entered=resolve),done=new Promise<void>(resolve=>finished=resolve);
+ await page.route(read,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(pendingRecord)}));await page.route(gatePath,route=>route.fulfill({status:mode==='confirmed'?503:200,contentType:'application/json',body:JSON.stringify(pendingGate)}));
+ await page.route(cancelPath,async route=>{posts++;if(mode==='stalled'){entered();await held;try{await route.abort('failed')}catch{/* owned timed-out request */}finally{finished()}return}return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...record,state:'failed',decision:'inconclusive',result:{state:'failed',decision:'inconclusive',executionEngine:'java-cancelled',rules:[{id:'evaluation-cancelled',required:true,status:'inconclusive',reason:'Synthetic confirmed cancellation receipt'}]}})})});
+ try{
+  await page.locator('.runs li button').filter({hasText:record.id.slice(0,8)}).click();await page.getByLabel('평가 취소 사유',{exact:true}).fill('Synthetic intercepted cancellation');const button=page.getByRole('button',{name:'평가 취소',exact:true});await button.click();await started;await expect(page.getByText(uncertainEvaluationWrite,{exact:true})).toBeVisible({timeout:15000});await expect(button).toBeEnabled();expect(posts).toBe(1);release();await done;await expect(page.getByText('평가 취소 결과를 확인했습니다.',{exact:true})).toHaveCount(0);
+  mode='confirmed';await button.click();await expect(page.getByText('평가 취소 결과는 확인했지만 현재 게이트를 확인하지 못했습니다.',{exact:false})).toBeVisible();await expect(button).toHaveCount(0);await expect(page.getByText('릴리스 허용',{exact:true})).toHaveCount(0);expect(posts).toBe(2);
+ }finally{release();await page.unroute(cancelPath);await page.unroute(read);await page.unroute(gatePath)}
+ phase('synthetic pending read uses exact existing scope; intercepted cancellation POST stalls to actual10-second browser bound and is never forwarded; no automatic retry or false cancellation success; explicit synthetic valid cancellation receipt followed by503 is shown separately without release permission; original business data unchanged');
+});
+
 test('viewer reads scoped evaluation review history and rejects replayed pages and delayed selection responses',async({page})=>{
  await login(page,'demo-viewer');const rows=await (await page.request.get('/backend/runs')).json() as {id:string}[];expect(rows.length).toBeGreaterThan(0);const id=rows[0].id;
  const actual=await (await page.request.get('/backend/runs/'+id+'/reviews/page')).json();expect(actual.runId).toBe(id);expect(actual.deploymentAuthority).toBe(false);const me=await (await page.request.get('/backend/me')).json(),gate=await (await page.request.get('/backend/runs/'+id+'/gate')).json();

@@ -90,6 +90,7 @@ jobs:
           python3 scripts/stack-campaign-smoke.py
           python3 scripts/stack-campaign-review-history-smoke.py
           python3 scripts/stack-run-review-history-smoke.py
+          python3 scripts/stack-evaluation-request-resolution-smoke.py
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-baseline-gate-smoke.py
           python3 scripts/stack-test-quota-window.py
@@ -336,6 +337,7 @@ jobs:
           python3 scripts/stack-campaign-smoke.py
           python3 scripts/stack-campaign-review-history-smoke.py
           python3 scripts/stack-run-review-history-smoke.py
+          python3 scripts/stack-evaluation-request-resolution-smoke.py
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-baseline-gate-smoke.py
           python3 scripts/stack-test-quota-window.py

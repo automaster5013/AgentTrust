@@ -22,6 +22,15 @@ public class RunService {
     public List<Map<String,Object>> list(DemoUser user) {
         return scoped(user,()->jdbc.queryForList("SELECT r.id, r.provider, r.scenario, r.requires_approval, COALESCE(c.state,r.state) AS state, COALESCE(c.decision,r.decision) AS decision, r.created_at FROM stack_runs r LEFT JOIN stack_run_results c ON c.run_id=r.id WHERE r.organization_id=? AND r.project_id=? ORDER BY r.created_at DESC,r.id DESC LIMIT 50",user.organizationId(),user.projectId()));
     }
+    public Map<String,Object> resolveRequest(DemoUser user,String key){
+        RunRequestKey.validate(key);
+        return scoped(user,()->{
+            var rows=jdbc.queryForList("SELECT id FROM stack_runs WHERE organization_id=? AND project_id=? AND actor_id=? AND idempotency_key=? LIMIT 2",user.organizationId(),user.projectId(),user.actorId(),key);
+            if(rows.isEmpty())throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+            if(rows.size()!=1)throw new IllegalStateException("Evaluation request unavailable");
+            return Map.of("requestKey",key,"organizationId",user.organizationId(),"projectId",user.projectId(),"actorId",user.actorId(),"runId",rows.getFirst().get("id"),"deploymentAuthority",false);
+        });
+    }
     public Map<String,Object> get(DemoUser user, UUID id) {
         return scoped(user,()->getScoped(user,id));
     }
