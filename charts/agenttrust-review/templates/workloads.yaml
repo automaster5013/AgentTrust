@@ -1,4 +1,6 @@
 {{- if ne .Values.mode "local-review" }}{{ fail "Public production origins, TLS and HA are not verified; only local-review is supported" }}{{ end }}
+{{- if not (has .Values.signing.mode (list "disabled" "local-development")) }}{{ fail "Only disabled or local development signing is supported" }}{{ end }}
+{{- if and .Values.signing.historyEnabled (ne .Values.signing.mode "local-development") }}{{ fail "Public key history requires local development signing" }}{{ end }}
 {{- if not (regexMatch "^[a-f0-9]{40}$" .Values.revision) }}{{ fail "An exact tested source revision is required" }}{{ end }}
 {{- $definitions := dict
  "core-api" (dict "uid" 10001 "port" 8080 "memory" "768Mi" "cpu" "2" "tmp" "128Mi" "health" "/actuator/health" "secrets" (list "stack-demo-credentials" "stack-worker-token" "stack-nats-token" "stack-opa-token" "stack-oidc-client-secret" "stack-minio-user" "stack-minio-password"))
@@ -8,6 +10,11 @@
  "console" (dict "uid" 1000 "port" 3000 "memory" "512Mi" "cpu" "1" "tmp" "64Mi" "health" "/" "secrets" (list))
  "opa" (dict "uid" 10001 "port" 8181 "memory" "128Mi" "cpu" "500m" "tmp" "32Mi" "health" "/health" "secrets" (list "stack-opa-auth.json")) }}
 {{- range $name, $def := $definitions }}
+{{- $files := $def.secrets }}
+{{- if and (eq $name "core-api") (eq $.Values.signing.mode "local-development") }}
+{{- $files = append $files "stack-gate-key-pair" }}
+{{- if $.Values.signing.historyEnabled }}{{- $files = append $files "stack-gate-retired-keys" }}{{- end }}
+{{- end }}
 {{- $image := index $.Values.images $name }}
 {{- if not (regexMatch (printf "^ghcr\\.io/automaster5013/agenttrust-%s@sha256:[a-f0-9]{64}$" $name) $image) }}{{ fail (printf "Exact immutable image digest required for %s" $name) }}{{ end }}
 ---
@@ -61,6 +68,10 @@ spec:
             - {name: AGENTTRUST_OIDC_PUBLIC_ISSUER, value: "http://127.0.0.1:4322/realms/agenttrust"}
             - {name: STACK_IDENTITY_MODE, value: keycloak}
             - {name: STACK_OBJECT_MODE, value: minio}
+            - {name: STACK_GATE_SIGNING_MODE, value: {{ $.Values.signing.mode | quote }}}
+{{- if $.Values.signing.historyEnabled }}
+            - {name: STACK_GATE_RETIRED_KEYS_FILE, value: /run/secrets/stack-gate-retired-keys}
+{{- end }}
 {{- else if eq $name "console" }}
             - {name: NEXT_PUBLIC_STACK_OIDC_PROFILE, value: "local-review"}
             - {name: NEXT_PUBLIC_STACK_APPLICATION_ORIGIN, value: "http://127.0.0.1:4320"}
@@ -71,12 +82,16 @@ spec:
 {{- else if eq $name "ai-worker" }}
             - {name: STACK_ENABLE_PAID_PROVIDERS, value: "false"}
             - {name: STACK_TELEMETRY_ENABLED, value: "false"}
+{{- else if eq $name "gateway" }}
+            - {name: AGENTTRUST_OIDC_PROFILE, value: "local-review"}
+            - {name: AGENTTRUST_OIDC_APPLICATION_ORIGIN, value: "http://127.0.0.1:4320"}
+            - {name: AGENTTRUST_OIDC_PUBLIC_ISSUER, value: "http://127.0.0.1:4322/realms/agenttrust"}
 {{- else }}
             []
 {{- end }}
           volumeMounts:
             - {name: temporary, mountPath: /tmp}
-{{- if $def.secrets }}
+{{- if $files }}
             - {name: credentials, mountPath: /run/secrets, readOnly: true}
 {{- end }}
           readinessProbe:
@@ -112,13 +127,13 @@ spec:
       volumes:
         - name: temporary
           emptyDir: {medium: Memory, sizeLimit: {{ $def.tmp }}}
-{{- if $def.secrets }}
+{{- if $files }}
         - name: credentials
           secret:
             secretName: {{ $.Values.existingSecret }}
             defaultMode: 0440
             items:
-{{- range $key := $def.secrets }}
+{{- range $key := $files }}
               - {key: {{ $key }}, path: {{ $key }}}
 {{- end }}
 {{- end }}

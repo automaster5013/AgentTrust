@@ -46,6 +46,17 @@ run "mutable_images_rejected" {
   }
   expect_failures = [var.images]
 }
+run "quota_covers_actual_rendered_chart" {
+  command = plan
+  assert {
+    condition     = tonumber(kubernetes_resource_quota_v1.review.spec[0].hard["limits.cpu"]) * 1000 >= jsondecode(file("${path.module}/rendered-resource-budget.json")).limitsCpuMilli && tonumber(kubernetes_resource_quota_v1.review.spec[0].hard["requests.cpu"]) * 1000 >= jsondecode(file("${path.module}/rendered-resource-budget.json")).requestsCpuMilli
+    error_message = "The namespace CPU quota must admit all six actual rendered workloads together."
+  }
+  assert {
+    condition     = tonumber(trimsuffix(kubernetes_resource_quota_v1.review.spec[0].hard["limits.memory"], "Gi")) * 1073741824 >= jsondecode(file("${path.module}/rendered-resource-budget.json")).limitsMemoryBytes && tonumber(trimsuffix(kubernetes_resource_quota_v1.review.spec[0].hard["requests.memory"], "Gi")) * 1073741824 >= jsondecode(file("${path.module}/rendered-resource-budget.json")).requestsMemoryBytes
+    error_message = "The namespace memory quota must admit the complete rendered workload budget."
+  }
+}
 run "external_dependency_rejected" {
   command = plan
   variables {
@@ -57,4 +68,21 @@ run "empty_context_rejected" {
   command = plan
   variables { kube_context = "" }
   expect_failures = [var.kube_context]
+}
+run "development_signing_history_references_only" {
+  command = plan
+  variables {
+    development_signing = { enabled = true, history_enabled = true }
+  }
+  assert {
+    condition     = jsondecode(helm_release.review[0].values[0]).signing.mode == "local-development" && jsondecode(helm_release.review[0].values[0]).signing.historyEnabled && jsondecode(helm_release.review[0].values[0]).existingSecret == "agenttrust-stack-config"
+    error_message = "Development signing and history must pass only flags and the existing secret name into Helm."
+  }
+}
+run "history_without_development_signing_rejected" {
+  command = plan
+  variables {
+    development_signing = { enabled = false, history_enabled = true }
+  }
+  expect_failures = [var.development_signing]
 }

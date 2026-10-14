@@ -29,7 +29,7 @@ variable "images" {
   type = map(string)
   validation {
     condition     = toset(keys(var.images)) == toset(["core-api", "ai-worker", "gateway", "console", "opa", "quality-verifier"]) && alltrue([for name, image in var.images : can(regex("^ghcr\\.io/automaster5013/agenttrust-${name}@sha256:[a-f0-9]{64}$", image))])
-    error_message = "Five exact tested application digests are required; mutable tags and external repositories are refused."
+    error_message = "Six exact tested application digests are required; mutable tags and external repositories are refused."
   }
 }
 variable "dependencies" {
@@ -44,4 +44,14 @@ variable "install_application" {
   type        = bool
   default     = false
   description = "Explicit second phase after namespace, dependency readiness and secret provisioning. Default creates only isolated namespace/quota."
+}
+
+variable "development_signing" {
+  type        = object({ enabled = bool, history_enabled = bool })
+  default     = { enabled = false, history_enabled = false }
+  description = "Optional development signing secret references only; no private key values, production KMS or deployment authority."
+  validation {
+    condition     = !var.development_signing.history_enabled || var.development_signing.enabled
+    error_message = "Development public-key history requires development signing to be enabled."
+  }
 }

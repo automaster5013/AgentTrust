@@ -40,10 +40,40 @@ Helm 4.3.0, Terraform 1.16.5, Kubeconform 0.8.0 공식 파일의 SHA-256을 검�
 
 ### Local OIDC workload and probe contract
 
-The review chart explicitly pins core API and Console to the same `local-review` application origin (`http://127.0.0.1:4320`) and public issuer (`http://127.0.0.1:4322/realms/agenttrust`). A Console image built for another profile refuses these environment values at startup; compare its image intent and independently authenticate its digest before installation. The chart continues to reject production mode.
+The review chart explicitly pins core API, Gateway and Console to the same `local-review` application origin (`http://127.0.0.1:4320`) and public issuer (`http://127.0.0.1:4322/realms/agenttrust`). A Console image built for another profile refuses these environment values at startup; compare its image intent and independently authenticate its digest before installation. The chart continues to reject production mode.
 
 Console startup and readiness probes send `Host: 127.0.0.1:4320` through `httpHeaders`, preserving the request destination at the Pod IP while making the local profile explicit. Kubernetes recommends the Host header for virtual-host probes rather than changing the probe's destination `host`: [official probe documentation](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/).
 
-The isolated infrastructure check asserts both workload endpoint contracts and both probe headers, renders and validates all 36 resources, and runs four mocked Terraform plans. This validates manifests without contacting a cluster. It does not demonstrate an installed cluster, working port forwards, external HTTPS, persistent dependencies, or high availability.
+The isolated infrastructure check asserts all three workload endpoint contracts and both probe headers. It validates 36 resources in each of three signing profiles (108 total) and runs seven mocked Terraform plans. This validates manifests without contacting a cluster. It does not demonstrate an installed cluster, working port forwards, external HTTPS, persistent dependencies, or high availability.
 
 The public first page currently returns 200 with either the configured Host or a different Host. The Host allowlist applies to `/backend` authentication and proxy requests; the actual Console probe smoke check verifies both public-page responses and foreign-Host backend rejection. The probe header makes intent explicit rather than repairing a demonstrated readiness failure.
+
+### Development signing projection and rendered resource budget
+
+Signing remains disabled by default. Review values may explicitly select
+`signing.mode: local-development` and optionally `signing.historyEnabled: true`.
+Only Core then receives `stack-gate-key-pair` and, when requested,
+`stack-gate-retired-keys` from the existing operator-owned Secret. Both use the
+existing read-only `/run/secrets` projection with mode `0440` and Core's fsGroup.
+Other workloads cannot mount those keys. History with disabled signing,
+production signing, non-boolean history flags and caller-selected key paths are
+rejected. The chart never generates secret contents or production authority.
+
+Terraform exposes the same review-only flags as
+`development_signing = { enabled = true, history_enabled = true }`; only those
+flags and the existing Secret name enter Helm values/state. Missing Secret keys
+must be provisioned by the operator before any installation. Changing key or
+history bytes requires a controlled Core restart and the acceptance checks in
+[development key history](stack-signing-key-history.md). Production KMS,
+custody, rotation, revocation distribution and target-cluster testing remain open.
+
+The six rendered workload CPU limits sum to 6.5 cores. The earlier Terraform
+quota of 6 could not admit all six together; a new independent mock-plan check
+reproduced that failure, and the review quota now permits 7. Container limits were
+not reduced. The checker derives CPU/memory totals from actual Helm output into
+an ephemeral public JSON fixture, then compares them with planned ResourceQuota
+values. Its seven mocked plans include quota coverage, signing/history flag
+propagation and invalid-history refusal. Run them through
+`python scripts/stack-infrastructure-check.py`, which generates that fixture;
+it does not read kubeconfig, tfvars, real state or secret values, and never applies
+resources. A passing plan does not prove a cluster has sufficient node capacity.

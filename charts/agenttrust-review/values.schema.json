@@ -21,6 +21,16 @@
       "type": "string",
       "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
     },
+    "signing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "historyEnabled"],
+      "properties": {
+        "mode": {"enum": ["disabled", "local-development"]},
+        "historyEnabled": {"type": "boolean"}
+      },
+      "allOf": [{"if": {"properties": {"historyEnabled": {"const": true}}}, "then": {"properties": {"mode": {"const": "local-development"}}}}]
+    },
     "images": {
       "type": "object",
       "additionalProperties": false,

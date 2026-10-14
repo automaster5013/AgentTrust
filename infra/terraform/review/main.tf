@@ -38,7 +38,7 @@ resource "kubernetes_resource_quota_v1" "review" {
     hard = {
       "requests.cpu"           = "2"
       "requests.memory"        = "1Gi"
-      "limits.cpu"             = "6"
+      "limits.cpu"             = "7"
       "limits.memory"          = "4Gi"
       "pods"                   = "20"
       "services"               = "15"
@@ -64,6 +64,10 @@ resource "helm_release" "review" {
     existingSecret = var.existing_secret
     images         = var.images
     dependencies   = var.dependencies
+    signing = {
+      mode           = var.development_signing.enabled ? "local-development" : "disabled"
+      historyEnabled = var.development_signing.history_enabled
+    }
   })]
   depends_on = [kubernetes_resource_quota_v1.review]
   lifecycle { prevent_destroy = true }
