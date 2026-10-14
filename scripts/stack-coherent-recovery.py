@@ -113,7 +113,7 @@ def source_preflight():
 
 
 class Rehearsal:
-    def __init__(self, sources, exercise_rotation=False, exercise_load=False):
+    def __init__(self, sources, exercise_rotation=False, exercise_load=False, load_cycles=1):
         self.sources = sources
         self.id = str(uuid.uuid4())
         self.prefix = 'agenttrust-stack-coldrestore-' + self.id
@@ -125,6 +125,7 @@ class Rehearsal:
             run(['icacls',str(self.directory),'/inheritance:r','/grant:r',owner+':(OI)(CI)F','SYSTEM:(OI)(CI)F'])
         self.exercise_rotation=exercise_rotation
         self.exercise_load=exercise_load
+        self.load_cycles=load_cycles
         self.history_path=None
         self.key = self.directory/'development-key.bin'
         self.stopped, self.containers, self.volumes, self.private = [], [], [], []
@@ -140,6 +141,7 @@ class Rehearsal:
                        'temporaryPrivateDirectoryOwnerProtected': True,
                        'developmentKeyRotationRequested': exercise_rotation,
                        'syntheticRecoveryLoadRequested': exercise_load,
+                       'requestedSyntheticLoadCycles':load_cycles if exercise_load else 0,
                        'excludedFromRecovery': ['observability history', 'local model download cache',
                                                 'external infrastructure and KMS', 'HA and production RPO/RTO']}
 
@@ -322,7 +324,7 @@ class Rehearsal:
         path.write_bytes(data);path.chmod(0o444)
 
     def application_probe(self,kind,tools,script,credential,mounts,timeout):
-        if not re.fullmatch('[a-z-]{1,30}',kind) or script not in ('stack-coherent-recovery-probe.py','stack-key-rotation-probe.py','stack-recovery-load-probe.py'):
+        if not re.fullmatch('[a-z][a-z0-9-]{0,29}',kind) or script not in ('stack-coherent-recovery-probe.py','stack-key-rotation-probe.py','stack-recovery-load-probe.py'):
             raise ValueError('Fixture probe identity refused')
         paths=[pathlib.Path(credential),*[pathlib.Path(path) for path in mounts]]
         if any(path not in self.private or path.is_symlink() or path.resolve().parent!=self.directory.resolve() for path in paths):
@@ -387,7 +389,8 @@ class Rehearsal:
         path=self.directory/'load-probe-input.json'
         if path.exists():self.replace_owned_private(path,json.dumps(value).encode())
         else:private_file(path,json.dumps(value).encode());path.chmod(0o444);self.private.append(path)
-        result=self.application_probe('load-'+value['mode'],tools,'stack-recovery-load-probe.py',credential,{path:'/load-probe-input.json'},240)
+        kind='load-'+value['mode']+'-'+value['cohortId'].replace('-','')[:8]
+        result=self.application_probe(kind,tools,'stack-recovery-load-probe.py',credential,{path:'/load-probe-input.json'},240)
         proof=json.loads(result.stdout)
         self.report.setdefault('syntheticRecoveryLoadProof',{})[value['mode']]=proof;self.save()
         if result.returncode or not proof.get('completed') or not proof.get('ownSessionClosed'):
@@ -513,7 +516,22 @@ class Rehearsal:
         if self.exercise_rotation:
             self.key_rotation(config,probe_anchor,credential,tools)
         if self.exercise_load:
-            self.recovery_load(credential,tools)
+            fixture_db=self.prefix+'-stack-db'
+            run_count=int(sql('SELECT count(*) FROM stack_runs;',fixture_db))
+            result_count=int(sql('SELECT count(*) FROM stack_run_results;',fixture_db))
+            self.report['syntheticRecoveryLoadCycles']=[]
+            for cycle in range(1,self.load_cycles+1):
+                reserve();self.report['currentSyntheticLoadCycle']=cycle;self.save()
+                self.recovery_load(credential,tools)
+                proof=self.report['syntheticRecoveryLoadProof']['verify']
+                self.report['syntheticRecoveryLoadCycles'].append({'cycle':cycle,'completed':True,
+                    'simultaneouslyPendingEvaluations':20,'completionObservationSeconds':self.report['syntheticCompletionObservationSeconds'],
+                    'metadata':proof['metadata'],'metadataTargetPassed':proof['metadataTargetPassed']})
+                self.save()
+            if int(sql('SELECT count(*) FROM stack_runs;',fixture_db))!=run_count+20*self.load_cycles or int(sql('SELECT count(*) FROM stack_run_results;',fixture_db))!=result_count+20*self.load_cycles:
+                raise ValueError('Synthetic cohort totals or idempotent replay differ')
+            self.report.update(completedSyntheticLoadCycles=self.load_cycles,completedSyntheticLoadEvaluations=20*self.load_cycles,
+                               idempotentReplayDidNotCreateExtraRunsOrCompletions=True)
         if fingerprint() != before:
             raise ValueError('Original business rows changed during isolated fixture probe')
         for service, source in self.sources.items():
@@ -572,7 +590,10 @@ def main():
     parser.add_argument('--execute', action='store_true')
     parser.add_argument('--exercise-key-rotation',action='store_true')
     parser.add_argument('--exercise-load',action='store_true')
+    parser.add_argument('--load-cycles',type=int,default=1)
     args = parser.parse_args()
+    if not 1<=args.load_cycles<=120 or args.load_cycles!=1 and not args.exercise_load:
+        parser.error('Load cycles require --exercise-load and must be within 1..120')
     try:
         sources = source_preflight()
     except Exception as error:
@@ -583,7 +604,7 @@ def main():
                           'statefulVolumesVerified': len(STATEFUL), 'pendingEvaluations': 0,
                           'sourceServicesStopped': False, 'actualRecoveryPerformed': False}))
         return 0
-    drill = Rehearsal(sources,args.exercise_key_rotation,args.exercise_load)
+    drill = Rehearsal(sources,args.exercise_key_rotation,args.exercise_load,args.load_cycles)
     try:
         drill.execute()
     except Exception as error:
