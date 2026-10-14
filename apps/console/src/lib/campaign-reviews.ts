@@ -17,10 +17,10 @@ export function campaignReviews(value:unknown,user:Identity,campaignId:string):C
 }
 
 export type CampaignReviewPage={entries:CampaignReview[];nextCursor:string|null};
-function reviewCursor(token:string,user:Identity,campaignId:string):number{
+export function reviewCursor(token:string,user:Identity,campaignId:string,domain:'CRV'|'RRV'='CRV'):number{
  if(!/^[A-Za-z0-9_-]{79}$/.test(token))throw Error('INVALID_REVIEW_CURSOR');
  const raw=atob(token.replaceAll('-','+').replaceAll('_','/')),bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));
- if(bytes.length!==59||btoa(raw).replaceAll('+','-').replaceAll('/','_').replaceAll('=','')!==token||bytes[0]!==67||bytes[1]!==82||bytes[2]!==86)throw Error('INVALID_REVIEW_CURSOR');
+ if(bytes.length!==59||btoa(raw).replaceAll('+','-').replaceAll('/','_').replaceAll('=','')!==token||String.fromCharCode(...bytes.slice(0,3))!==domain)throw Error('INVALID_REVIEW_CURSOR');
  const uuidAt=(offset:number)=>{const hex=Array.from(bytes.slice(offset,offset+16),b=>b.toString(16).padStart(2,'0')).join('');return hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20)};
  const sequence=new DataView(bytes.buffer).getBigInt64(51);
  if(uuidAt(3)!==user.organizationId||uuidAt(19)!==user.projectId||uuidAt(35)!==campaignId||sequence<1n||sequence>BigInt(Number.MAX_SAFE_INTEGER))throw Error('INVALID_REVIEW_CURSOR');return Number(sequence);

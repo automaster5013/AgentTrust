@@ -103,6 +103,16 @@ public class RunService {
             return Map.of("accepted",true,"duplicate",false,"runId",id);
         });
     }
+    public Map<String,Object> reviewHistoryPage(DemoUser user,UUID id,String token){
+        RunReviewCursor boundary=token==null?null:RunReviewCursor.decode(token,user,id);
+        return scoped(user,()->{
+            if(jdbc.queryForList("SELECT id FROM stack_runs WHERE id=? AND organization_id=? AND project_id=?",id,user.organizationId(),user.projectId()).isEmpty())throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+            var values=jdbc.queryForList("SELECT id,actor_id,decision,reason,created_at,review_sequence,policy_version,policy_digest FROM stack_reviews WHERE run_id=? AND organization_id=? AND project_id=? AND review_sequence<? ORDER BY review_sequence DESC LIMIT 51",id,user.organizationId(),user.projectId(),boundary==null?Long.MAX_VALUE:boundary.sequence());
+            boolean more=values.size()>50;var entries=List.copyOf(values.subList(0,Math.min(50,values.size())));
+            var frame=new java.util.LinkedHashMap<String,Object>();frame.put("runId",id);frame.put("organizationId",user.organizationId());frame.put("projectId",user.projectId());frame.put("entries",entries);frame.put("limit",50);frame.put("deploymentAuthority",false);frame.put("ordering","review-sequence-desc");
+            frame.put("nextCursor",more?new RunReviewCursor(user.organizationId(),user.projectId(),id,((Number)entries.getLast().get("review_sequence")).longValue()).encode():null);return frame;
+        });
+    }
     public List<Map<String,Object>> reviews(DemoUser user,UUID id) {
         return scoped(user,()->{get(user,id);return jdbc.queryForList("SELECT id,actor_id,decision,reason,created_at,review_sequence,policy_version,policy_digest FROM stack_reviews WHERE run_id=? AND organization_id=? AND project_id=? ORDER BY review_sequence DESC LIMIT 50",id,user.organizationId(),user.projectId());});
     }

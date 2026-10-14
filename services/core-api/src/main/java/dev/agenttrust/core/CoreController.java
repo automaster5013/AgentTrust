@@ -27,6 +27,7 @@ public class CoreController {
     public record Review(@NotBlank @Pattern(regexp="approved|rejected") String decision,@NotBlank @Size(max=500) String reason) {}
     public record Cancel(@NotBlank @Size(max=200) String reason) {}
     @PostMapping("/runs/{id}/cancel") Map<String,Object> cancel(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id,@Valid @RequestBody Cancel body){return service.cancel(user,id,body.reason());}
+    @GetMapping({"/runs/{id}/reviews/page","/runs/{id}/reviews/page/{cursor}"}) Map<String,Object> reviewPage(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id,@PathVariable(required=false) String cursor){return service.reviewHistoryPage(user,id,cursor);}
     @GetMapping("/runs/{id}/reviews") List<Map<String,Object>> reviews(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id) {return service.reviews(user,id);}
     @PostMapping("/runs/{id}/reviews") Map<String,Object> review(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id,@Valid @RequestBody Review body) {return service.review(user,id,body.decision(),body.reason());}
     @GetMapping("/runs/{id}/gate") Evaluation.Gate gate(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id) {return service.gate(user,id);}

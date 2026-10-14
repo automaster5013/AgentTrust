@@ -77,3 +77,5 @@ The socket timeout limits inactivity; it is not a ten-second overall login deadl
 The identity-token decoder also uses the bounded, non-redirecting transport for its configured JWK endpoint. It permits RS256 and preserves Spring Security's default validators with `OidcIdTokenValidator` and default OIDC claim conversion. OAuth2 login continues to enforce nonce validation in the authentication provider. The factory bean is also used by Spring's authorized-client refresh listener.
 
 Real ephemeral RSA/JWK tests check a valid signature and reject wrong signatures, issuer, audience, expired tokens and key-endpoint redirects. These local tests do not establish production identity-provider availability or TLS readiness. The ten-second read bound measures socket inactivity, not total login duration.
+
+TLS 부정 검사 fixture는 실제 HTTPS handshake에서 신뢰되지 않은 인증서와 hostname 불일치를 모두 SSL 원인으로 거부하고, 신뢰한 localhost만 본문을 읽는 조건을 유지한다. 시험 HTTPS 서버를 4개 작업으로 처리하고 OIDC fixture의 읽기 제한은 지원하는 상한 10초를 사용한다. 동시 빌드에서 1초 fixture 제한이 TLS 원인 확인과 섞일 가능성을 줄이는 시험 보강이며 런타임 연결 3초·읽기 10초, 인증서·hostname 검증, 리디렉션 거부를 변경하지 않는다. 실제 무응답 본문의 socket 제한은 별도 HTTP 전송 검사로 확인한다.
