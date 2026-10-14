@@ -6,3 +6,6 @@
 d777ae16b46cec7fc274b8b722e62274e011086f:services/core-api/src/test/java/dev/agenttrust/core/SecurityConfigurationTest.java:generic-api-key:13
 # Authentication lifecycle variable names, with no literal or credential value.
 a63f934b4a0a790fedfdae413dc121173b060032:apps/web/app.js:generic-api-key:634
+# Exact negative-test form: JWT header alg=none, payload sid=fake, invalid signature a.
+# This intentionally unauthenticatable public logout input is not a credential.
+524623860b4a30cf4d04229b7dd70265c2b3ac8f:scripts/stack-public-identity-probe.py:generic-api-key:52
