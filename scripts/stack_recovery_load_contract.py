@@ -1,6 +1,8 @@
 """Bounded synthetic recovery-cohort and empirical latency contracts."""
 import math
 import uuid
+import datetime
+import re
 
 COHORT_SIZE=20
 CONCURRENCY=4
@@ -46,3 +48,35 @@ def latency(values):
     return {'samples':len(values),'p50Millis':ordered[math.ceil(len(values)*.50)-1],
             'p95Millis':ordered[math.ceil(len(values)*.95)-1],
             'maxMillis':ordered[-1],'samplesMillis':list(values)}
+
+
+def version_ids(rows):
+    if not isinstance(rows,list) or not 1<=len(rows)<=50:
+        raise ValueError('Invalid bounded version catalog')
+    ids=[]
+    for row in rows:
+        if not isinstance(row,dict) or set(row)!={'id','resource_key','version','content_sha256','created_at'}:
+            raise ValueError('Invalid version summary projection')
+        key=row['resource_key'];sha=row['content_sha256'];created=row['created_at']
+        if (not isinstance(key,str) or not re.fullmatch('[a-z][a-z0-9-]{2,63}',key)
+                or type(row['version']) is not int or not 1<=row['version']<=1000000
+                or not isinstance(sha,str) or not re.fullmatch('[a-f0-9]{64}',sha)
+                or not isinstance(created,str) or len(created)>50
+                or datetime.datetime.fromisoformat(created).tzinfo is None):
+            raise ValueError('Invalid version summary fields')
+        ids.append(identifier(row['id']))
+    if len(set(ids))!=len(ids):raise ValueError('Duplicate version summary')
+    return ids
+
+
+def catalog_baseline(rows,details,owner):
+    ids=version_ids(rows)
+    if not isinstance(details,dict) or set(details)!=set(ids):
+        raise ValueError('Incomplete scoped catalog detail baseline')
+    for row in rows:
+        detail=details[row['id']]
+        if (not isinstance(detail,dict) or detail.get('organization_id')!=owner['organizationId']
+                or detail.get('project_id')!=owner['projectId']
+                or any(detail.get(key)!=value for key,value in row.items())):
+            raise ValueError('Catalog detail scope or immutable summary mismatch')
+    return [dict(row) for row in rows]

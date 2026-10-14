@@ -28,6 +28,12 @@ at most 500ms; an over-target result fails this rehearsal rather than being
 silently accepted. Both source and exact-registry CI run this check and upload
 only its safe summary.
 
+The version-list endpoint intentionally returns only summary fields, without
+tenant columns. Before timing it, the probe reads every listed version's scoped
+detail and binds its identity, content hash and summary fields to the owned
+organization/project. Timed list responses must equal that verified baseline;
+the probe does not invent tenant fields absent from the actual API contract.
+
 The latency phase is separate from queue recovery. It measures a particular
 synthetic fixture on the current host, not an agreed production workload,
 customer concurrency, inference latency, sustained throughput, HA, or a commercial

@@ -4,7 +4,7 @@ import json
 import pathlib
 import time
 from stack_recovery_load_contract import (COHORT_SIZE,CONCURRENCY,SAMPLES_PER_ROUTE,
-                                          P95_TARGET_MILLIS,admission_key,cohort,identifier,latency)
+                                          P95_TARGET_MILLIS,admission_key,cohort,identifier,latency,version_ids,catalog_baseline)
 from stack_recovery_transport import fixture_opener
 from stack_test_client import StackClient,FixedRedirects
 
@@ -44,6 +44,11 @@ def main():
                 replay=client.request('runs','POST',body,{'Idempotency-Key':admission_key(value['cohortId'],row['index'])})
                 require(replay['id']==row['runId'])
             report['checks'].append('all twenty recovered Python completions pass OPA and original idempotency-key replay retains exactly the same run IDs')
+            report['metadataStage']='scoped-version-catalog-baseline'
+            rows=client.request('versions/agents')
+            details={key:client.request('versions/agents/'+key) for key in version_ids(rows)}
+            catalog=catalog_baseline(rows,details,owner)
+            report['verifiedCatalogVersionDetails']=len(catalog)
             # Respect the real project quota; no Redis mutations or quota overrides.
             time.sleep(60);time.sleep(2)
             report['naturalQuotaWindowBeforeMetadata']=True
@@ -55,10 +60,12 @@ def main():
                 elif label=='run-detail':
                     require(response['id']==value['records'][0]['runId'] and response['organization_id']==owner['organizationId'] and response['project_id']==owner['projectId'])
                 else:
-                    require(isinstance(response,list) and all(row['organization_id']==owner['organizationId'] and row['project_id']==owner['projectId'] for row in response))
+                    require(response==catalog)
                 return elapsed
             metrics=[]
+            report['metadata']=metrics
             for label,path in routes:
+                report['metadataStage']=label
                 for _ in range(4):checked(label,path)
                 with concurrent.futures.ThreadPoolExecutor(max_workers=CONCURRENCY) as pool:
                     values=list(pool.map(lambda _:checked(label,path),range(SAMPLES_PER_ROUTE)))

@@ -1,6 +1,6 @@
 import copy
 import unittest
-from stack_recovery_load_contract import admission_key,cohort,latency
+from stack_recovery_load_contract import admission_key,cohort,latency,version_ids,catalog_baseline
 
 
 class RecoveryLoadContractTests(unittest.TestCase):
@@ -40,6 +40,20 @@ class RecoveryLoadContractTests(unittest.TestCase):
     def test_missing_nonfinite_negative_or_coerced_samples_refused(self):
         for bad in (list(range(39)),[0]*39+[float('nan')],[0]*39+[float('inf')],[0]*39+[-1],[0]*39+[True],[0]*39+['1']):
             with self.assertRaises(ValueError):latency(bad)
+
+    def test_actual_scope_free_summary_projection_is_bound_to_every_scoped_detail(self):
+        row={'id':self.id,'resource_key':'fixture-agent','version':1,'content_sha256':'a'*64,'created_at':'2026-10-15T00:00:00.123456Z'}
+        owner={'organizationId':'own-org','projectId':'own-project'}
+        detail={**row,'organization_id':'own-org','project_id':'own-project','definition':{}}
+        self.assertEqual(version_ids([row]),[self.id])
+        self.assertEqual(catalog_baseline([row],{self.id:detail},owner),[row])
+        for details in ({},{self.id:{**detail,'organization_id':'foreign'}},{self.id:{**detail,'content_sha256':'b'*64}}):
+            with self.assertRaises(ValueError):catalog_baseline([row],details,owner)
+
+    def test_catalog_ids_cannot_inject_paths_and_summary_must_be_complete_bounded_and_unique(self):
+        row={'id':self.id,'resource_key':'fixture-agent','version':1,'content_sha256':'a'*64,'created_at':'2026-10-15T00:00:00Z'}
+        for rows in ([],[row,row],[{**row,'id':'../../other'}],[{**row,'version':True}],[{**row,'organization_id':'invented'}],[{**row,'created_at':'2026-10-15T00:00:00'}]):
+            with self.assertRaises(ValueError):version_ids(rows)
 
 
 if __name__=='__main__':unittest.main()
