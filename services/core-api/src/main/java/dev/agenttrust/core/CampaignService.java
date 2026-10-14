@@ -83,9 +83,13 @@ public class CampaignService {
     }
     public Map<String,Object> reviewHistory(DemoUser user,UUID id){return runs.scoped(user,()->{admission(user,id);return Map.of("campaignId",id,"organizationId",user.organizationId(),"projectId",user.projectId(),"entries",reviews(user,id),"limit",50,"deploymentAuthority",false);});}
     public Map<String,Object> review(DemoUser user,UUID id,String decision,String reason){
+        return review(user,id,decision,reason,null);
+    }
+    public Map<String,Object> review(DemoUser user,UUID id,String decision,String reason,Long expectedReviewSequence){
         if(!user.role().equals("admin"))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         if(decision==null||!List.of("approved","rejected").contains(decision)||reason==null||reason.isBlank()||reason.length()>500)throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         return runs.scoped(user,()->{jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"campaign-review/"+id);var value=get(user,id);
+            if(expectedReviewSequence!=null)ReviewPrecondition.require(expectedReviewSequence,reviews(user,id));
             if(!value.get("decision").equals("pass"))throw new ResponseStatusException(HttpStatus.CONFLICT);
             if(decision.equals("approved")&&!activeLifecycle(versionLifecycle(user,id)))throw new ResponseStatusException(HttpStatus.CONFLICT,"Campaign version retired");
             UUID review=UUID.randomUUID();jdbc.update("INSERT INTO stack_campaign_reviews(id,campaign_id,organization_id,project_id,actor_id,decision,reason,policy_version,policy_digest) VALUES(?,?,?,?,?,?,?,?,?)",review,id,user.organizationId(),user.projectId(),user.actorId(),decision,reason.strip(),policy.version(),policy.digest());runs.audit(user,"campaign.review."+decision,id);return Map.of("id",review,"decision",decision);

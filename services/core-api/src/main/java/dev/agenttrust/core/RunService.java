@@ -138,9 +138,13 @@ public class RunService {
         });
     }
     public Map<String,Object> review(DemoUser user,UUID id,String decision,String reason) {
+        return review(user,id,decision,reason,null);
+    }
+    public Map<String,Object> review(DemoUser user,UUID id,String decision,String reason,Long expectedReviewSequence) {
         if(!user.role().equals("admin"))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         return scoped(user,() -> {
             jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"review/"+id);var run=get(user,id);
+            if(expectedReviewSequence!=null)ReviewPrecondition.require(expectedReviewSequence,reviews(user,id));
             if(!run.get("decision").equals("pass"))throw new ResponseStatusException(HttpStatus.CONFLICT);
             UUID review=UUID.randomUUID();jdbc.update("INSERT INTO stack_reviews(id,run_id,organization_id,project_id,actor_id,decision,reason,policy_version,policy_digest) VALUES(?,?,?,?,?,?,?,?,?)",review,id,user.organizationId(),user.projectId(),user.actorId(),decision,reason.strip(),policy.version(),policy.digest());
             audit(user,"review."+decision,id);return Map.of("id",review,"decision",decision);

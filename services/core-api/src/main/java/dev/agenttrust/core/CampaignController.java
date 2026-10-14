@@ -12,7 +12,7 @@ public class CampaignController {
     private final CampaignService campaigns;
     public CampaignController(CampaignService campaigns){this.campaigns=campaigns;}
     public record Create(UUID agentVersionId,UUID datasetVersionId,Boolean requiresApproval,UUID baselineCampaignId,Integer evidenceMaxAgeSeconds) {}
-    public record Review(String decision,String reason) {}
+    public record Review(String decision,String reason,com.fasterxml.jackson.databind.JsonNode expectedReviewSequence) {}
     public record Cancel(String reason) {}
     @GetMapping List<Map<String,Object>> list(@AuthenticationPrincipal DemoUser user){return campaigns.list(user);}
     @PostMapping Map<String,Object> create(@AuthenticationPrincipal DemoUser user,@RequestHeader("Idempotency-Key") String key,@RequestBody Create body){return campaigns.create(user,key,body.agentVersionId(),body.datasetVersionId(),body.requiresApproval(),body.baselineCampaignId(),body.evidenceMaxAgeSeconds());}
@@ -20,7 +20,7 @@ public class CampaignController {
     @GetMapping("/{id}/gate") Evaluation.Gate gate(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id){return campaigns.gate(user,id);}
     @GetMapping("/{id}/release-requirements") Map<String,Object> requirements(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id){return campaigns.releaseRequirements(user,id);}
     @GetMapping("/{id}/version-lifecycle") Map<String,Object> lifecycle(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id){return campaigns.versionLifecycle(user,id);}
-    @PostMapping("/{id}/reviews") Map<String,Object> review(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id,@RequestBody Review body){return campaigns.review(user,id,body.decision(),body.reason());}
+    @PostMapping("/{id}/reviews") Map<String,Object> review(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id,@RequestBody Review body){return campaigns.review(user,id,body.decision(),body.reason(),ReviewPrecondition.expected(body.expectedReviewSequence()));}
     @GetMapping({"/{id}/reviews/page","/{id}/reviews/page/{cursor}"}) Map<String,Object> reviewPage(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id,@PathVariable(required=false) String cursor){return campaigns.reviewHistoryPage(user,id,cursor);}
     @GetMapping("/{id}/reviews") Map<String,Object> reviews(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id){return campaigns.reviewHistory(user,id);}
     @PostMapping("/{id}/cancel") Map<String,Object> cancel(@AuthenticationPrincipal DemoUser user,@PathVariable UUID id,@RequestBody Cancel body){return campaigns.cancel(user,id,body.reason());}
