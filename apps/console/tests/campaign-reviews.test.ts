@@ -5,7 +5,7 @@ const entry={id,actor_id:id,decision:'approved',reason:'fixture',review_sequence
 const frame=()=>({campaignId:id,organizationId:id,projectId:id,limit:50,deploymentAuthority:false,entries:[{...entry}]});
 test('review history binds scope, order and metadata without current deployment authority',()=>{assert.equal(campaignReviews(frame(),user,id)[0].sequence,2);assert.deepEqual(campaignReviews({...frame(),entries:[]},user,id),[]);assert.equal(proxyPath(['campaigns',id,'reviews'],'GET'),'/api/campaigns/'+id+'/reviews');assert.throws(()=>proxyPath(['campaigns',id,'reviews'],'DELETE'))});
 test('cross-scope, duplicated, reversed, excessive and malformed review frames fail closed',()=>{
- for(const v of [{...frame(),organizationId:other},{...frame(),deploymentAuthority:true},{...frame(),entries:[entry,entry]},{...frame(),entries:[entry,{...entry,id:other,review_sequence:3}]},{...frame(),entries:Array(51).fill(entry)},{...frame(),entries:[{...entry,policy_digest:'bad'}]},{...frame(),entries:[{...entry,created_at:'invalid'}]}])assert.throws(()=>campaignReviews(v,user,id));
+ for(const v of [{...frame(),organizationId:other},{...frame(),deploymentAuthority:true},{...frame(),entries:[entry,entry]},{...frame(),entries:[entry,{...entry,id:other,review_sequence:3}]},{...frame(),entries:Array(51).fill(entry)},...[['approved'],[['approved']],null,{},'unknown'].map(decision=>({...frame(),entries:[{...entry,decision}]})),{...frame(),entries:[{...entry,policy_digest:'bad'}]},{...frame(),entries:[{...entry,created_at:'invalid'}]}])assert.throws(()=>campaignReviews(v,user,id));
 });
 
 test('review timestamps preserve UTC precision and reject normalized or ambiguous dates',()=>{
