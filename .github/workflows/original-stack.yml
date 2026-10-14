@@ -91,6 +91,7 @@ jobs:
           python3 scripts/stack-campaign-review-history-smoke.py
           python3 scripts/stack-run-review-history-smoke.py
           python3 scripts/stack-evaluation-request-resolution-smoke.py
+          python3 scripts/stack-campaign-request-resolution-smoke.py
           python3 scripts/stack-review-precondition-smoke.py --allow-synthetic-writes
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-baseline-gate-smoke.py
@@ -220,6 +221,7 @@ jobs:
             .local/stack-campaign-review-history-*.json
             .local/stack-run-review-history-*.json
             .local/stack-evaluation-request-resolution-*.json
+            .local/stack-campaign-request-resolution-*.json
             .local/stack-review-precondition-*.json
             .local/stack-baseline-gate-*.json
             .local/stack-baseline-unresolved-*.json
@@ -342,6 +344,7 @@ jobs:
           python3 scripts/stack-campaign-review-history-smoke.py
           python3 scripts/stack-run-review-history-smoke.py
           python3 scripts/stack-evaluation-request-resolution-smoke.py
+          python3 scripts/stack-campaign-request-resolution-smoke.py
           python3 scripts/stack-review-precondition-smoke.py --allow-synthetic-writes
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-baseline-gate-smoke.py
@@ -415,6 +418,7 @@ jobs:
             .local/stack-campaign-review-history-*.json
             .local/stack-run-review-history-*.json
             .local/stack-evaluation-request-resolution-*.json
+            .local/stack-campaign-request-resolution-*.json
             .local/stack-review-precondition-*.json
             .local/stack-baseline-gate-*.json
             .local/stack-baseline-unresolved-*.json

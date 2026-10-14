@@ -17,6 +17,15 @@ public class CampaignService {
     private final RunService runs;private final VersionRegistry versions;private final JdbcTemplate jdbc;private final ObjectMapper mapper;private final PolicyClient policy;private final VersionLifecycle lifecycle;
     public CampaignService(RunService runs,VersionRegistry versions,JdbcTemplate jdbc,ObjectMapper mapper,PolicyClient policy,VersionLifecycle lifecycle){this.runs=runs;this.versions=versions;this.jdbc=jdbc;this.mapper=mapper;this.policy=policy;this.lifecycle=lifecycle;}
     public List<Map<String,Object>> list(DemoUser user){return runs.scoped(user,()->jdbc.queryForList("SELECT id,agent_version_id,dataset_version_id,requires_approval,created_at FROM stack_campaigns WHERE organization_id=? AND project_id=? ORDER BY created_at DESC,id DESC LIMIT 50",user.organizationId(),user.projectId()));}
+    public Map<String,Object> resolveRequest(DemoUser user,String key){
+        RunRequestKey.validate(key);
+        return runs.scoped(user,()->{
+            var rows=jdbc.queryForList("SELECT id FROM stack_campaigns WHERE organization_id=? AND project_id=? AND actor_id=? AND idempotency_key=? LIMIT 2",user.organizationId(),user.projectId(),user.actorId(),key);
+            if(rows.isEmpty())throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+            if(rows.size()!=1)throw new IllegalStateException("Campaign request unavailable");
+            return Map.of("requestKey",key,"organizationId",user.organizationId(),"projectId",user.projectId(),"actorId",user.actorId(),"campaignId",rows.getFirst().get("id"),"deploymentAuthority",false);
+        });
+    }
     public Map<String,Object> create(DemoUser user,String key,UUID agentId,UUID datasetId,Boolean approval){
         return create(user,key,agentId,datasetId,approval,null,null);
     }
