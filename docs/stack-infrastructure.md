@@ -77,3 +77,22 @@ propagation and invalid-history refusal. Run them through
 `python scripts/stack-infrastructure-check.py`, which generates that fixture;
 it does not read kubeconfig, tfvars, real state or secret values, and never applies
 resources. A passing plan does not prove a cluster has sufficient node capacity.
+
+### Independent revision validation
+
+Original-stack and infrastructure CI now group by workflow, ref and source SHA.
+Distinct revisions can validate concurrently on isolated GitHub-hosted runners;
+an existing run is not cancelled. Original-stack publication uses only SHA tags
+and records immutable digests, and every artifact name includes the source SHA.
+The legacy workflow's mutable-main promotion policy is unchanged. These are
+validation/publication jobs, not shared-environment deployments.
+
+The infrastructure checker verifies those isolation assumptions together with the
+complete source-security → integration → images → image-security dependency
+chain and main-only publication conditions. It rejects synthetic shared groups,
+mutable image tags, shared artifact names and cancellation of another revision.
+No test, image scan, signature check or runtime verification is skipped. This
+removes branch-wide validation waiting while preserving per-revision evidence;
+available hosted-runner capacity can still cause queuing.
+
+Reference: [GitHub workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).

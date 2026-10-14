@@ -5,7 +5,8 @@ on:
   pull_request:
   workflow_dispatch:
 concurrency:
-  group: original-stack-${{ github.ref }}
+  # Hosted runners and SHA-scoped image/artifact names isolate independent revisions.
+  group: original-stack-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
 permissions:
   contents: read

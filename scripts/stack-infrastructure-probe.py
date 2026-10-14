@@ -15,7 +15,35 @@ def memory_bytes(value):
  for suffix,factor in [('Gi',1073741824),('Mi',1048576),('Ki',1024)]:
   if text.endswith(suffix):return int(decimal.Decimal(text[:-len(suffix)])*factor)
  raise ValueError('Unsupported rendered memory quantity')
+def ci_isolation(original,infrastructure):
+ for workflow,prefix in [(original,'original-stack'),(infrastructure,'stack-infrastructure')]:
+  assert workflow['concurrency']=={'group':prefix+'-${{ github.ref }}-${{ github.sha }}','cancel-in-progress':False}
+  assert all(job['runs-on']=='ubuntu-latest' for job in workflow['jobs'].values())
+  uploads=[step['with']['name'] for job in workflow['jobs'].values() for step in job['steps'] if str(step.get('uses','')).startswith('actions/upload-artifact@')]
+  assert uploads and all(name.endswith('-${{ github.sha }}') for name in uploads)
+ jobs=original['jobs'];assert set(jobs)=={'security-source','integration','images','security-images'}
+ for name,parent in [('integration','security-source'),('images','integration'),('security-images','images')]:
+  value=jobs[name]['needs'];assert set(value if isinstance(value,list) else [value])=={parent}
+ for name in ['images','security-images']:assert jobs[name]['if']=="github.event_name != 'pull_request' && github.ref == 'refs/heads/main'"
+ lines=[line.strip() for job in jobs.values() for step in job['steps'] for line in step.get('run','').splitlines()]
+ assert [line for line in lines if line.startswith('docker push ')]==['docker push "$image"']
+ assert [line for line in lines if line.startswith('image=')]==['image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/agenttrust-$service:$GITHUB_SHA"']
 try:
+ original=yaml.safe_load((source/'workflows/original-stack.yml').read_text(encoding='utf-8'));infrastructure=yaml.safe_load((source/'workflows/stack-infrastructure.yml').read_text(encoding='utf-8'));ci_isolation(original,infrastructure)
+ for kind in ['shared-concurrency','mutable-tag','shared-artifact','cancel-other-revision']:
+  first,second=copy.deepcopy(original),copy.deepcopy(infrastructure)
+  if kind=='shared-concurrency':first['concurrency']['group']='original-stack-${{ github.ref }}'
+  elif kind=='mutable-tag':
+   step=next(s for s in first['jobs']['images']['steps'] if s.get('name')=='Build, publish and record immutable image references');step['run']=step['run'].replace('agenttrust-$service:$GITHUB_SHA','agenttrust-$service:main')
+  elif kind=='shared-artifact':
+   step=next(s for s in first['jobs']['integration']['steps'] if str(s.get('uses','')).startswith('actions/upload-artifact@'));step['with']['name']='shared-diagnostics'
+  else:second['concurrency']['cancel-in-progress']=True
+  refused=False
+  try:ci_isolation(first,second)
+  except AssertionError:refused=True
+  assert refused
+ report['checks'].append('parallel revision isolation binds hosted runners, SHA-only publications/artifacts and the complete security/integration DAG; four unsafe variants refused')
+ report['parallelRevisionIsolationVerified']=True;report['unsafeCiVariantsRefused']=4
  (output/'fixture-values.json').write_text(json.dumps(values),encoding='utf-8')
  run(['helm','lint','--strict','-f','/out/fixture-values.json','/src/charts/agenttrust-review'],'helm-lint');report['checks'].append('Helm strict lint')
  rendered=run(['helm','template','agenttrust-review','/src/charts/agenttrust-review','--namespace','agenttrust-review','--kube-version','1.34.0','-f','/out/fixture-values.json'],'helm-render');(output/'rendered.yaml').write_text(rendered,encoding='utf-8');documents=list(yaml.safe_load_all(rendered));assert all(isinstance(doc,dict) for doc in documents)
