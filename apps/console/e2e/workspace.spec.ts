@@ -13,6 +13,16 @@ async function existingSyntheticEvaluation(page:Page,passOnly=false){
 async function prepareSyntheticEvaluationForm(page:Page,record:{scenario:string;provider:string;requires_approval:boolean}){
  await page.getByLabel('합성 시나리오',{exact:true}).selectOption(record.scenario);await page.getByLabel('실행 공급자',{exact:true}).selectOption(record.provider);await page.getByLabel('관리자 승인 필요',{exact:true}).setChecked(record.requires_approval);
 }
+if(process.env.STACK_E2E_READ_ONLY==='true')test('local read-only guard blocks a business mutation before backend dispatch',async({page})=>{
+ await login(page,'demo-admin');const result=await page.evaluate(async()=>{try{await fetch('/backend/runs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario:'forbidden-guard-probe',requiresApproval:false})});return 'unexpected-network-response'}catch{return 'browser-network-blocked'}});expect(result).toBe('browser-network-blocked');expect(test.info().annotations.some(a=>a.type==='phase'&&a.description==='read-only network guard refused unintended business mutation')).toBe(true);phase('actual read-only browser guard blocks POST before dispatch; probe also omitsCSRF and uses invalid scenario as independent backend refusal protection; no business write');
+});
+
+test('viewer verifies existing archived bytes and clears proof without creating an evaluation',async({page})=>{
+ await login(page,'demo-viewer');const rows=await (await page.request.get('/backend/runs')).json() as {id:string;state:string}[];let id='',proof:{contentSha256:string;storageVersion:string}|null=null;
+ for(const row of rows.filter(row=>row.state!=='queued')){const response=await page.request.get('/backend/runs/'+row.id+'/evidence');if(response.status()===200){id=row.id;proof=await response.json();break}expect(response.status()).toBe(409)}expect(id).not.toBe('');expect(proof).not.toBeNull();
+ await page.locator('.runs button').filter({hasText:id.slice(0,8)}).click();await page.getByRole('button',{name:'근거 해시·버전 확인',exact:true}).click();await expect(page.getByText('SHA-256 '+proof!.contentSha256,{exact:true})).toBeVisible();await expect(page.getByText('저장 버전 '+proof!.storageVersion,{exact:true})).toBeVisible();const other=rows.find(row=>row.id!==id)!;await page.locator('.runs button').filter({hasText:other.id.slice(0,8)}).click();await expect(page.locator('.evidence > .mono')).toHaveText('실행 '+other.id);await expect(page.getByText('SHA-256 '+proof!.contentSha256,{exact:true})).toHaveCount(0);await expect(page.getByRole('button',{name:'평가 실행',exact:true})).toBeDisabled();phase('existing immutable archive read and selection clearing verified as viewer; no evaluation creation and no business write');
+});
+
 test('editor preserves uncertain evaluation input and explicitly resubmits the same admission key',async({page})=>{
  await login(page,'demo-editor');const {record}=await existingSyntheticEvaluation(page);await prepareSyntheticEvaluationForm(page,record);let posts=0,key='',body:unknown=null;
  const path='**/backend/runs';await page.route(path,async route=>{if(route.request().method()!=='POST')return route.continue();posts++;const currentKey=route.request().headers()['idempotency-key'],currentBody=route.request().postDataJSON();if(posts===1){key=currentKey;body=currentBody;return route.abort('failed')}expect(currentKey).toBe(key);expect(currentBody).toEqual(body);return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(record)})});
@@ -254,7 +264,7 @@ test('viewer downloads bounded scoped audit JSON and refuses changed bytes befor
 });
 function phase(description:string){test.info().annotations.push({type:'phase',description})}
 async function login(page:Page,name:string){
- await page.route('**/*',route=>{const url=new URL(route.request().url());if(['http://127.0.0.1:4320','http://127.0.0.1:4322'].includes(url.origin))return route.continue();return route.abort()});
+ await page.route('**/*',route=>{const url=new URL(route.request().url());if(process.env.STACK_E2E_READ_ONLY==='true'&&url.origin==='http://127.0.0.1:4320'&&url.pathname.startsWith('/backend/')&&route.request().method()!=='GET'&&!['/backend/login','/backend/logout'].includes(url.pathname)){phase('read-only network guard refused unintended business mutation');return route.abort('blockedbyclient')}if(['http://127.0.0.1:4320','http://127.0.0.1:4322'].includes(url.origin))return route.continue();return route.abort()});
  await page.goto('/');const info=await (await page.request.get('/backend/auth-info')).json();
  const user=users.find(u=>u.username===name)!;
  // Reporter never records invocation arguments, browser traces, cookies or credentials.
