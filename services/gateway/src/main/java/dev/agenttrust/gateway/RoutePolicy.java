@@ -5,6 +5,7 @@ import org.springframework.http.HttpMethod;
 public final class RoutePolicy {
  private RoutePolicy(){}
  public static boolean allowed(String path,HttpMethod method){
+  if(path.equals(BackChannelForm.PATH))return method==HttpMethod.POST;
   if(path.contains("%")||path.contains(".."))return false;
   if(method==HttpMethod.GET)return path.matches("/api/(campaign-history(/dataset/[a-f0-9-]{36})?(/page/[A-Za-z0-9_-]{107})?|audit-search/(all|[a-z][a-z0-9.-]{0,59})/(all|[a-f0-9-]{36})(/[A-Za-z0-9_-]{124})?|audit-export|audit(/[A-Za-z0-9_-]{80})?|run-history(/[A-Za-z0-9_-]{84})?|provider-usage|evaluation-readiness|version-history/(agents|datasets)(/[A-Za-z0-9_-]{84})?|auth-info|gate-trust(/keys/[a-f0-9]{64})?|csrf|me|runs|(run|campaign)-requests/[A-Za-z0-9_-]{8,100}|runs/[a-f0-9-]{36}(/reviews(/page(/[A-Za-z0-9_-]{79})?)?|/(gate|evidence|similar))?|versions/(agents|datasets)(/[a-f0-9-]{36}(/lifecycle)?)?|campaigns|campaigns/[a-f0-9-]{36}(/gate-check/[a-f0-9]{64}|/gate|/release-requirements|/version-lifecycle|/evidence|/reviews(/page(/[A-Za-z0-9_-]{79})?)?|/receipts(/[a-f0-9-]{36}(/bundle)?)?|/comparison/[a-f0-9-]{36})?)")||path.equals("/oauth2/authorization/keycloak")||path.equals("/login/oauth2/code/keycloak");
   return method==HttpMethod.POST&&(path.matches("/api/(login|logout|runs|runs/[a-f0-9-]{36}/(reviews|cancel)|versions/(agents|datasets)(/[a-f0-9-]{36}/lifecycle/retirement)?|campaigns|campaigns/[a-f0-9-]{36}/(reviews|cancel|receipts))"));

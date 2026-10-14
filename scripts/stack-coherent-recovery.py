@@ -324,12 +324,12 @@ class Rehearsal:
         path.write_bytes(data);path.chmod(0o444)
 
     def application_probe(self,kind,tools,script,credential,mounts,timeout):
-        if not re.fullmatch('[a-z][a-z0-9-]{0,29}',kind) or script not in ('stack-coherent-recovery-probe.py','stack-key-rotation-probe.py','stack-recovery-load-probe.py'):
+        if not re.fullmatch('[a-z][a-z0-9-]{0,29}',kind) or script not in ('stack-coherent-recovery-probe.py','stack-key-rotation-probe.py','stack-recovery-load-probe.py','stack-public-identity-probe.py'):
             raise ValueError('Fixture probe identity refused')
         paths=[pathlib.Path(credential),*[pathlib.Path(path) for path in mounts]]
         if any(path not in self.private or path.is_symlink() or path.resolve().parent!=self.directory.resolve() for path in paths):
             raise ValueError('Fixture probe private mount ownership refused')
-        if any(destination not in ('/probe-anchor.json','/rotation-probe-input.json','/load-probe-input.json') for destination in mounts.values()):
+        if any(destination not in ('/probe-anchor.json','/rotation-probe-input.json','/load-probe-input.json','/identity-probe-input.json') for destination in mounts.values()):
             raise ValueError('Fixture probe mount destination refused')
         name=self.prefix+'-probe-'+kind
         self.containers.append(name)

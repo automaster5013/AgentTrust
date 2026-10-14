@@ -77,6 +77,20 @@ def catalog_baseline(rows,details,owner):
         detail=details[row['id']]
         if (not isinstance(detail,dict) or detail.get('organization_id')!=owner['organizationId']
                 or detail.get('project_id')!=owner['projectId']
-                or any(detail.get(key)!=value for key,value in row.items())):
+                or any(detail.get(key)!=value for key,value in row.items() if key!='created_at')
+                or not same_catalog_timestamp(row['created_at'],detail.get('created_at'))):
             raise ValueError('Catalog detail scope or immutable summary mismatch')
     return [dict(row) for row in rows]
+
+
+def same_catalog_timestamp(summary,detail):
+    # JDBC list timestamps serialize at milliseconds; immutable detail uses Instant
+    # and retains microseconds. Bind the detail to that exact millisecond bucket,
+    # never round into a neighbouring bucket or discard precision when both have it.
+    try:
+        if not isinstance(detail,str) or len(detail)>50:return False
+        left=datetime.datetime.fromisoformat(summary);right=datetime.datetime.fromisoformat(detail)
+        if left.tzinfo is None or right.tzinfo is None:return False
+        delta=right-left
+        return delta==datetime.timedelta(0) or left.microsecond%1000==0 and datetime.timedelta(0)<=delta<datetime.timedelta(milliseconds=1)
+    except (TypeError,ValueError):return False

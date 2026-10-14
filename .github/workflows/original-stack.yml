@@ -211,7 +211,9 @@ jobs:
       - name: Restore encrypted object-store snapshot and verify pinned versions and retention
         run: python3 scripts/stack-object-backup-smoke.py
       - name: Rehearse coherent encrypted business-critical recovery on a portless isolated network
-        run: python3 scripts/stack-coherent-recovery.py --execute --exercise-key-rotation --exercise-load
+        run: |
+          python3 scripts/stack-coherent-recovery.py --execute --exercise-key-rotation --exercise-load
+          python3 scripts/stack-public-identity-recovery.py --execute
       - name: Preserve safe synthetic fault diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -413,6 +415,7 @@ jobs:
           python3 scripts/stack-database-backup-smoke.py
           python3 scripts/stack-object-backup-smoke.py
           python3 scripts/stack-coherent-recovery.py --execute --exercise-key-rotation --exercise-load
+          python3 scripts/stack-public-identity-recovery.py --execute
           python3 scripts/stack-image-smoke.py
           python3 scripts/stack-delivery-manifest.py
       - name: Preserve safe registry runtime diagnostics

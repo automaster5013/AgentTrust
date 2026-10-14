@@ -55,5 +55,13 @@ class RecoveryLoadContractTests(unittest.TestCase):
         for rows in ([],[row,row],[{**row,'id':'../../other'}],[{**row,'version':True}],[{**row,'organization_id':'invented'}],[{**row,'created_at':'2026-10-15T00:00:00'}]):
             with self.assertRaises(ValueError):version_ids(rows)
 
+    def test_actual_jdbc_millisecond_projection_binds_to_only_its_instant_detail_bucket(self):
+        from stack_recovery_load_contract import same_catalog_timestamp
+        self.assertTrue(same_catalog_timestamp('2026-10-12T06:54:30.241+00:00','2026-10-12T06:54:30.241382Z'))
+        self.assertTrue(same_catalog_timestamp('2026-10-12T06:54:30.241382Z','2026-10-12T06:54:30.241382+00:00'))
+        for bad in ('2026-10-12T06:54:30.240999Z','2026-10-12T06:54:30.242Z','2026-10-12T06:54:30.241382',None):
+            self.assertFalse(same_catalog_timestamp('2026-10-12T06:54:30.241Z',bad))
+        self.assertFalse(same_catalog_timestamp('2026-10-12T06:54:30.241382Z','2026-10-12T06:54:30.241383Z'))
+
 
 if __name__=='__main__':unittest.main()
