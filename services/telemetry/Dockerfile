@@ -2,7 +2,7 @@ FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900
 ADD --checksum=sha256:7c74640d726f23689d8853e0d5a55707ad8b524417ca7416c036c4ecb9ddb01f https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/cmd%2Fbuilder%2Fv0.162.0/ocb_0.162.0_linux_amd64 /usr/local/bin/ocb
 RUN chmod 755 /usr/local/bin/ocb
 WORKDIR /build
-ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOMAXPROCS=2 GOMEMLIMIT=768MiB GOFLAGS=-p=2
+ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOMAXPROCS=2 GOMEMLIMIT=768MiB GOFLAGS=-p=2 GODEBUG=http2client=0
 COPY builder.yaml /build/builder.yaml
 RUN ocb --config=/build/builder.yaml --skip-compilation
 WORKDIR /build/collector

@@ -7,7 +7,7 @@ FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900
 ADD --checksum=sha256:9ae68d49dc4ba61da41b5944c3e612e7973f6e6afd74ebafe585e7ed177e35bb https://codeload.github.com/open-policy-agent/opa/tar.gz/2a109e54103370d2ef288782ef3cb4c8a37902b2 /source.tar.gz
 RUN mkdir /source && tar -xzf /source.tar.gz --strip-components=1 -C /source
 WORKDIR /source
-ENV CGO_ENABLED=0 GOTOOLCHAIN=local
+ENV CGO_ENABLED=0 GOTOOLCHAIN=local GODEBUG=http2client=0
 RUN go mod edit -require=golang.org/x/net@v0.60.0 && go mod tidy
 RUN go build -mod=mod -trimpath -tags=opa_no_wasm -ldflags='-s -w -X github.com/open-policy-agent/opa/version.Version=1.21.1' -o /opa .
 FROM scratch AS test

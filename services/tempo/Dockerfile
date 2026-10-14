@@ -2,7 +2,7 @@ FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900
 ADD --checksum=sha256:a5489d155031677121f8e715791012bc96f1ecacf5b4bcaaee6eb6a902560156 https://codeload.github.com/grafana/tempo/tar.gz/77fc4563d1135d0ca2656709c7384c278a9c67b0 /source.tar.gz
 RUN mkdir /source && tar -xzf /source.tar.gz --strip-components=1 -C /source
 WORKDIR /source
-ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOMAXPROCS=2 GOMEMLIMIT=768MiB GOFLAGS='-p=2 -mod=mod'
+ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOMAXPROCS=2 GOMEMLIMIT=768MiB GOFLAGS='-p=2 -mod=mod' GODEBUG=http2client=0
 RUN go get golang.org/x/net@v0.60.0
 RUN go build -trimpath -ldflags='-s -w -X main.Version=3.1.0 -X main.Revision=77fc4563d1135d0ca2656709c7384c278a9c67b0 -X main.Branch=agenttrust-security-rebuild' -o /tempo ./cmd/tempo
 COPY health.go /health.go

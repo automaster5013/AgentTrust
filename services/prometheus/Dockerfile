@@ -16,7 +16,7 @@ RUN mkdir /source && tar -xzf /source.tar.gz --strip-components=1 -C /source
 COPY --from=ui /source/web/ui/static /source/web/ui/static
 COPY --from=ui /source/web/ui/embed.go /source/web/ui/embed.go
 WORKDIR /source
-ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOMAXPROCS=2 GOMEMLIMIT=768MiB GOFLAGS='-p=2 -mod=mod' GOWORK=off
+ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOMAXPROCS=2 GOMEMLIMIT=768MiB GOFLAGS='-p=2 -mod=mod' GOWORK=off GODEBUG=http2client=0
 RUN go get golang.org/x/net@v0.60.0
 RUN go build -trimpath -tags=netgo,builtinassets -ldflags='-s -w -X github.com/prometheus/common/version.Version=3.15.0 -X github.com/prometheus/common/version.Revision=5241a27fe3c6983549fccc32f6e65917408c63cd -X github.com/prometheus/common/version.Branch=agenttrust-security-rebuild' -o /prometheus ./cmd/prometheus \
     && go build -trimpath -tags=netgo,builtinassets -ldflags='-s -w -X github.com/prometheus/common/version.Version=3.15.0 -X github.com/prometheus/common/version.Revision=5241a27fe3c6983549fccc32f6e65917408c63cd -X github.com/prometheus/common/version.Branch=agenttrust-security-rebuild' -o /promtool ./cmd/promtool

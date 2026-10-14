@@ -2,7 +2,7 @@ FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900
 ADD --checksum=sha256:44c1433b8c5e9638708e62644aa43a746f991206acef5889eaec620a895813b8 https://codeload.github.com/grafana/loki/tar.gz/09e6ce2ff1bdc19763a10265b870c86f51c98655 /source.tar.gz
 RUN mkdir /source && tar -xzf /source.tar.gz --strip-components=1 -C /source
 WORKDIR /source
-ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOMAXPROCS=2 GOMEMLIMIT=768MiB GOFLAGS='-p=2 -mod=mod'
+ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOMAXPROCS=2 GOMEMLIMIT=768MiB GOFLAGS='-p=2 -mod=mod' GODEBUG=http2client=0
 RUN go get golang.org/x/net@v0.60.0
 RUN go build -trimpath -tags=netgo -ldflags='-s -w -X github.com/grafana/loki/v3/pkg/util/build.Version=3.7.8 -X github.com/grafana/loki/v3/pkg/util/build.Revision=09e6ce2ff1bdc19763a10265b870c86f51c98655 -X github.com/grafana/loki/v3/pkg/util/build.Branch=agenttrust-security-rebuild' -o /loki ./cmd/loki
 COPY health.go /health.go
