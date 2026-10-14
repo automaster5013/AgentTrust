@@ -20,6 +20,12 @@ preserved: reading a receipt or bundle that no longer verifies returns 503.
 Revoking the active key requires replacing the active pair first; listing the
 same key as both active and historical is an invalid configuration.
 
+Revocation here is enforced by the online service. An offline verifier using a
+previously pinned public key cannot learn a later revocation from old bundle
+bytes. Its signature may remain mathematically valid; it supplies neither fresh
+trust status nor current deployment permission. Production acceptance still
+requires a defined trust freshness and revocation-distribution policy.
+
 `GET /api/gate-trust/keys/{64-lowercase-hex-key-id}` is authenticated and subject
 to the gateway's protected-route quota. It returns the same five public fields
 for an active or trusted retired key. Unknown/revoked IDs return 404. No public

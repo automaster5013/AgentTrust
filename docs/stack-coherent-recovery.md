@@ -75,3 +75,8 @@ deployment authorization. Those remain release acceptance items. Process/host
 termination during rehearsal can require inspecting the last safe summary and
 explicitly recovering original containers or cleaning owned fixtures; automatic
 cleanup after arbitrary host loss is not promised.
+
+Optional [development key rotation](stack-signing-key-history.md) and
+[twenty-evaluation recovery/metadata latency](stack-recovery-load.md) phases use
+the same disposable stack. Their flags do not claim success until the actual
+per-revision summary records the corresponding checks and cleanup as passed.

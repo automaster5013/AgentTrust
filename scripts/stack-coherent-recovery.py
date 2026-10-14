@@ -24,6 +24,7 @@ from stack_business_fingerprint import fingerprint, sql
 from stack_coherent_archive import (COMPRESSED_LIMIT, TOTAL_LIMIT, SERVICES,
                                     STATEFUL, archive_fingerprints,
                                     validate_manifest, verify_component)
+from stack_recovery_load_contract import cohort as validate_cohort
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 QUIESCE = ('stack-console', 'stack-gateway', 'stack-ai-worker', 'stack-core-api',
@@ -112,7 +113,7 @@ def source_preflight():
 
 
 class Rehearsal:
-    def __init__(self, sources, exercise_rotation=False):
+    def __init__(self, sources, exercise_rotation=False, exercise_load=False):
         self.sources = sources
         self.id = str(uuid.uuid4())
         self.prefix = 'agenttrust-stack-coldrestore-' + self.id
@@ -123,6 +124,7 @@ class Rehearsal:
             owner=run(['whoami']).stdout.decode().strip()
             run(['icacls',str(self.directory),'/inheritance:r','/grant:r',owner+':(OI)(CI)F','SYSTEM:(OI)(CI)F'])
         self.exercise_rotation=exercise_rotation
+        self.exercise_load=exercise_load
         self.history_path=None
         self.key = self.directory/'development-key.bin'
         self.stopped, self.containers, self.volumes, self.private = [], [], [], []
@@ -137,6 +139,7 @@ class Rehearsal:
                        'keyManagement': 'temporary-local-development-key',
                        'temporaryPrivateDirectoryOwnerProtected': True,
                        'developmentKeyRotationRequested': exercise_rotation,
+                       'syntheticRecoveryLoadRequested': exercise_load,
                        'excludedFromRecovery': ['observability history', 'local model download cache',
                                                 'external infrastructure and KMS', 'HA and production RPO/RTO']}
 
@@ -187,6 +190,9 @@ class Rehearsal:
 
     def wait(self, name, service, seconds=180):
         until = time.monotonic() + seconds
+        self.report['readinessService']=service
+        self.report['readinessTargetKind']='fixture' if name.startswith(self.prefix) else 'original-source'
+        self.save()
         health = self.sources[service]['Config'].get('Healthcheck', {}).get('Test')
         if not health or health[0] not in ('CMD', 'CMD-SHELL'):
             raise ValueError('Explicit source health contract unavailable')
@@ -195,8 +201,12 @@ class Rehearsal:
             if not state['Running']:
                 raise ValueError('Recovered service stopped before readiness')
             arguments = health[1:] if health[0] == 'CMD' else ['sh', '-c', health[1]]
-            if run(['docker', 'exec', name]+arguments, timeout=8, check=False).returncode == 0:
-                return
+            try:
+                if run(['docker', 'exec', name]+arguments, timeout=8, check=False).returncode == 0:
+                    return
+            except subprocess.TimeoutExpired:
+                self.report['transientReadinessProbeTimeouts']=self.report.get('transientReadinessProbeTimeouts',0)+1
+                self.save()
             time.sleep(1)
         raise TimeoutError('Recovered service readiness unavailable')
 
@@ -311,6 +321,26 @@ class Rehearsal:
         # Preserve the bind-mounted file inode while changing only owned fixture bytes.
         path.write_bytes(data);path.chmod(0o444)
 
+    def application_probe(self,kind,tools,script,credential,mounts,timeout):
+        if not re.fullmatch('[a-z-]{1,30}',kind) or script not in ('stack-coherent-recovery-probe.py','stack-key-rotation-probe.py','stack-recovery-load-probe.py'):
+            raise ValueError('Fixture probe identity refused')
+        paths=[pathlib.Path(credential),*[pathlib.Path(path) for path in mounts]]
+        if any(path not in self.private or path.is_symlink() or path.resolve().parent!=self.directory.resolve() for path in paths):
+            raise ValueError('Fixture probe private mount ownership refused')
+        if any(destination not in ('/probe-anchor.json','/rotation-probe-input.json','/load-probe-input.json') for destination in mounts.values()):
+            raise ValueError('Fixture probe mount destination refused')
+        name=self.prefix+'-probe-'+kind
+        self.containers.append(name)
+        args=['docker','run','--rm','--name',name,'--label','agenttrust.fixture='+self.id,
+              '--label','com.docker.compose.project=agenttrust','--network',self.prefix,
+              '--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true',
+              '--tmpfs','/tmp:size=32m,mode=1777','--memory','256m','--cpus','1','--pids-limit','64',
+              '--mount','type=bind,source='+str(ROOT/'scripts')+',target=/scripts,readonly',
+              '--mount','type=bind,source='+str(credential)+',target=/credentials.json,readonly']
+        for path,destination in mounts.items():
+            args+=['--mount','type=bind,source='+str(path)+',target='+destination+',readonly']
+        return run(args+[tools,'python','/scripts/'+script],timeout=timeout,check=False)
+
     def key_rotation(self,config,old_anchor,credential,tools):
         self.stage('isolated-development-key-rotation')
         generated=self.directory/'key-pair.json'
@@ -344,19 +374,55 @@ class Rehearsal:
             source=self.directory/'rotation-probe-input.json'
             if source.exists():self.replace_owned_private(source,json.dumps(arguments).encode())
             else:private_file(source,json.dumps(arguments).encode());source.chmod(0o444);self.private.append(source)
-            result=run(['docker','run','--rm','--network',self.prefix,'--read-only','--cap-drop','ALL',
-                        '--security-opt','no-new-privileges:true','--tmpfs','/tmp:size=32m,mode=1777',
-                        '--memory','256m','--cpus','1','--pids-limit','32',
-                        '--mount','type=bind,source='+str(ROOT/'scripts')+',target=/scripts,readonly',
-                        '--mount','type=bind,source='+credential+',target=/credentials.json,readonly',
-                        '--mount','type=bind,source='+str(source)+',target=/rotation-probe-input.json,readonly',
-                        tools,'python','/scripts/stack-key-rotation-probe.py'],timeout=120,check=False)
+            result=self.application_probe('rotation-'+mode,tools,'stack-key-rotation-probe.py',credential,{source:'/rotation-probe-input.json'},120)
             value=json.loads(result.stdout);proof[mode]=value
             self.report['developmentKeyRotationProof']=proof;self.save()
             if result.returncode or not value.get('completed') or not value.get('ownSessionsClosed'):
                 raise ValueError('Actual development key rotation unverified')
         self.report['developmentKeyRotationVerified']=True
         self.check('only disposable signing bytes rotate: old receipts verify under retired public key, revocation refuses them, and fresh signatures/receipts use the new key')
+
+    def load_probe(self,value,credential,tools):
+        validate_cohort(value)
+        path=self.directory/'load-probe-input.json'
+        if path.exists():self.replace_owned_private(path,json.dumps(value).encode())
+        else:private_file(path,json.dumps(value).encode());path.chmod(0o444);self.private.append(path)
+        result=self.application_probe('load-'+value['mode'],tools,'stack-recovery-load-probe.py',credential,{path:'/load-probe-input.json'},240)
+        proof=json.loads(result.stdout)
+        self.report.setdefault('syntheticRecoveryLoadProof',{})[value['mode']]=proof;self.save()
+        if result.returncode or not proof.get('completed') or not proof.get('ownSessionClosed'):
+            raise ValueError('Synthetic recovery load unverified')
+        return proof
+
+    def recovery_load(self,credential,tools):
+        self.stage('isolated-twenty-pending-evaluation-recovery-and-metadata-latency')
+        worker=self.prefix+'-stack-ai-worker'
+        if inspect(worker)['Config']['Labels'].get('agenttrust.fixture')!=self.id:
+            raise ValueError('Fixture worker stop ownership refused')
+        value={'schemaVersion':1,'cohortId':str(uuid.uuid4()),'mode':'admit','records':[]}
+        run(['docker','stop','--time','15',worker],timeout=30)
+        try:
+            admitted=self.load_probe(value,credential,tools)
+            verify={**value,'mode':'verify','records':admitted['records']};validate_cohort(verify)
+            ids=','.join("'"+row['runId']+"'" for row in verify['records'])
+            fixture_db=self.prefix+'-stack-db'
+            pending="SELECT count(*) FROM stack_runs r LEFT JOIN stack_run_results c ON c.run_id=r.id WHERE r.id IN ("+ids+") AND c.run_id IS NULL;"
+            if sql(pending,fixture_db)!='20':raise ValueError('Twenty simultaneously pending evaluations unverified')
+            self.report['maximumSimultaneouslyPendingSyntheticEvaluations']=20
+            self.save()
+        finally:
+            run(['docker','start',worker]);self.wait(worker,'stack-ai-worker')
+        started=time.monotonic();until=started+45
+        complete="SELECT count(*) FROM stack_run_results WHERE run_id IN ("+ids+");"
+        while sql(complete,fixture_db)!='20':
+            if time.monotonic()>=until:raise TimeoutError('Synthetic recovery completion deadline exceeded')
+            time.sleep(.5)
+        self.report['syntheticCompletionObservationSeconds']=round(time.monotonic()-started,3)
+        proof=self.load_probe(verify,credential,tools)
+        if sql(complete,fixture_db)!='20':raise ValueError('Idempotent replay changed completion count')
+        self.report['syntheticRecoveryLoadVerified']=True
+        self.report['metadataP95TargetPassed']=proof['metadataTargetPassed']
+        self.check('twenty simultaneously queued fixture evaluations recover once, idempotent replay preserves their IDs, and 160 scoped metadata responses meet the measured 500ms p95 target on four routes')
 
     def execute(self):
         self.stage('source-baseline')
@@ -438,13 +504,7 @@ class Rehearsal:
         anchor = self.directory/'probe-anchor.json'
         private_file(anchor, json.dumps(probe_anchor).encode());anchor.chmod(0o444);self.private.append(anchor)
         tools = json.loads(run(['docker', 'image', 'inspect', 'agenttrust-security:local']).stdout)[0]['Id']
-        result = run(['docker', 'run', '--rm', '--network', self.prefix, '--read-only', '--cap-drop', 'ALL',
-                      '--security-opt', 'no-new-privileges:true', '--tmpfs', '/tmp:size=32m,mode=1777',
-                      '--memory', '256m', '--cpus', '1', '--pids-limit', '32',
-                      '--mount', 'type=bind,source='+str(ROOT/'scripts')+',target=/scripts,readonly',
-                      '--mount', 'type=bind,source='+credential+',target=/credentials.json,readonly',
-                      '--mount', 'type=bind,source='+str(anchor)+',target=/probe-anchor.json,readonly',
-                      tools, 'python', '/scripts/stack-coherent-recovery-probe.py'], timeout=180, check=False)
+        result=self.application_probe('restored-application',tools,'stack-coherent-recovery-probe.py',credential,{anchor:'/probe-anchor.json'},180)
         proof = json.loads(result.stdout)
         self.report['restoredApplicationProof'] = proof
         if result.returncode or not proof.get('completed') or not proof.get('ownSessionsClosed') or not proof.get('paidProviderCallsPerformed') is False:
@@ -452,6 +512,8 @@ class Rehearsal:
         self.check('restored Keycloak PKCE identities, tenant/role boundaries, archived bytes, signing identity and fresh Python/NATS evaluation verified')
         if self.exercise_rotation:
             self.key_rotation(config,probe_anchor,credential,tools)
+        if self.exercise_load:
+            self.recovery_load(credential,tools)
         if fingerprint() != before:
             raise ValueError('Original business rows changed during isolated fixture probe')
         for service, source in self.sources.items():
@@ -509,6 +571,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--execute', action='store_true')
     parser.add_argument('--exercise-key-rotation',action='store_true')
+    parser.add_argument('--exercise-load',action='store_true')
     args = parser.parse_args()
     try:
         sources = source_preflight()
@@ -520,7 +583,7 @@ def main():
                           'statefulVolumesVerified': len(STATEFUL), 'pendingEvaluations': 0,
                           'sourceServicesStopped': False, 'actualRecoveryPerformed': False}))
         return 0
-    drill = Rehearsal(sources,args.exercise_key_rotation)
+    drill = Rehearsal(sources,args.exercise_key_rotation,args.exercise_load)
     try:
         drill.execute()
     except Exception as error:
