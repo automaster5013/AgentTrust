@@ -16,6 +16,8 @@ def memory_bytes(value):
   if text.endswith(suffix):return int(decimal.Decimal(text[:-len(suffix)])*factor)
  raise ValueError('Unsupported rendered memory quantity')
 def ci_isolation(original,infrastructure):
+ events=infrastructure.get('on',infrastructure.get(True))
+ assert all('.github/workflows/original-stack.yml' in events[event]['paths'] for event in ['push','pull_request'])
  for workflow,prefix in [(original,'original-stack'),(infrastructure,'stack-infrastructure')]:
   assert workflow['concurrency']=={'group':prefix+'-${{ github.ref }}-${{ github.sha }}','cancel-in-progress':False}
   assert all(job['runs-on']=='ubuntu-latest' for job in workflow['jobs'].values())
@@ -43,7 +45,7 @@ try:
   except AssertionError:refused=True
   assert refused
  report['checks'].append('parallel revision isolation binds hosted runners, SHA-only publications/artifacts and the complete security/integration DAG; four unsafe variants refused')
- report['parallelRevisionIsolationVerified']=True;report['unsafeCiVariantsRefused']=4
+ report['parallelRevisionIsolationVerified']=True;report['unsafeCiVariantsRefused']=4;report['publisherChangesTriggerIsolationCheckVerified']=True
  (output/'fixture-values.json').write_text(json.dumps(values),encoding='utf-8')
  run(['helm','lint','--strict','-f','/out/fixture-values.json','/src/charts/agenttrust-review'],'helm-lint');report['checks'].append('Helm strict lint')
  rendered=run(['helm','template','agenttrust-review','/src/charts/agenttrust-review','--namespace','agenttrust-review','--kube-version','1.34.0','-f','/out/fixture-values.json'],'helm-render');(output/'rendered.yaml').write_text(rendered,encoding='utf-8');documents=list(yaml.safe_load_all(rendered));assert all(isinstance(doc,dict) for doc in documents)

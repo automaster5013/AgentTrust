@@ -2,9 +2,9 @@ name: Original stack infrastructure validation
 on:
   push:
     branches: [main]
-    paths: ['charts/**', 'infra/terraform/**', 'tools/infrastructure/**', 'scripts/stack-infrastructure-*.py', '.github/workflows/stack-infrastructure.yml']
+    paths: ['charts/**', 'infra/terraform/**', 'tools/infrastructure/**', 'scripts/stack-infrastructure-*.py', '.github/workflows/stack-infrastructure.yml', '.github/workflows/original-stack.yml']
   pull_request:
-    paths: ['charts/**', 'infra/terraform/**', 'tools/infrastructure/**', 'scripts/stack-infrastructure-*.py', '.github/workflows/stack-infrastructure.yml']
+    paths: ['charts/**', 'infra/terraform/**', 'tools/infrastructure/**', 'scripts/stack-infrastructure-*.py', '.github/workflows/stack-infrastructure.yml', '.github/workflows/original-stack.yml']
   workflow_dispatch:
 permissions: {contents: read}
 concurrency:
