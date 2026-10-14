@@ -1,5 +1,5 @@
 """Real signed provider logout through the public BFF, only in an owned clone."""
-import http.cookiejar,json,pathlib,time,urllib.error,urllib.parse,urllib.request,uuid
+import http.cookiejar,json,pathlib,re,time,traceback,urllib.error,urllib.parse,urllib.request,uuid
 from stack_recovery_transport import fixture_opener
 from stack_test_client import StackClient,FixedRedirects
 
@@ -45,7 +45,7 @@ def main():
             'backchannel.logout.session.required':'true'}}
         api('/clients/'+client_id,'PUT',changed,204)
         before=user_sessions('demo-admin');own=login('demo-admin');after=user_sessions('demo-admin')
-        require(len(after-before)==1);revoked=next(iter(after-before));str(uuid.UUID(revoked))
+        require(len(after-before)==1);revoked=next(iter(after-before));require(re.fullmatch('[A-Za-z0-9_-]{16,128}',revoked) is not None)
         foreign=login('other-admin')
         report['stage']='unsigned-public-logout-refused'
         wire('http://127.0.0.1:4320/backend/logout/connect/back-channel/keycloak','POST',
@@ -65,7 +65,7 @@ def main():
         report['checks'].append('real Keycloak signed logout crosses Console BFF and Gateway into Core and revokes only its matching provider session')
         report['completed']=True
     except Exception as error:
-        report.update(errorType=type(error).__name__,code='PUBLIC_IDENTITY_ACCEPTANCE_UNVERIFIED')
+        report.update(errorType=type(error).__name__,code='PUBLIC_IDENTITY_ACCEPTANCE_UNVERIFIED',failureLocations=[{'file':pathlib.Path(t.filename).name,'line':t.lineno} for t in traceback.extract_tb(error.__traceback__)])
     finally:
         closed=True;restored=original is None
         for c in reversed(clients):

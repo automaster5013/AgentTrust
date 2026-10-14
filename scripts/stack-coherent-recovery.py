@@ -343,6 +343,10 @@ class Rehearsal:
             args+=['--mount','type=bind,source='+str(path)+',target='+destination+',readonly']
         return run(args+[tools,'python','/scripts/'+script],timeout=timeout,check=False)
 
+    def recovered_application_extension(self,config,credential,tools):
+        """Optional fixed acceptance phase; base recovery adds no identity writes."""
+        return None
+
     def key_rotation(self,config,old_anchor,credential,tools):
         self.stage('isolated-development-key-rotation')
         generated=self.directory/'key-pair.json'
@@ -515,6 +519,7 @@ class Rehearsal:
         if result.returncode or not proof.get('completed') or not proof.get('ownSessionsClosed') or not proof.get('paidProviderCallsPerformed') is False:
             raise ValueError('Restored application recovery probe unavailable')
         self.check('restored Keycloak PKCE identities, tenant/role boundaries, archived bytes, signing identity and fresh Python/NATS evaluation verified')
+        self.recovered_application_extension(config,credential,tools)
         if self.exercise_rotation:
             self.key_rotation(config,probe_anchor,credential,tools)
         if self.exercise_load:
@@ -524,6 +529,13 @@ class Rehearsal:
             self.report['syntheticRecoveryLoadCycles']=[]
             for cycle in range(1,self.load_cycles+1):
                 reserve();self.report['currentSyntheticLoadCycle']=cycle;self.save()
+                if cycle>1:
+                    # Previous metadata uses 176 real project reads. Let that
+                    # window expire before the next cohort's scoped detail reads;
+                    # never delete quota keys or weaken the application limits.
+                    self.stage('natural-project-quota-window-between-cohorts')
+                    time.sleep(60);time.sleep(2)
+                    self.report['naturalQuotaWindowBetweenCohorts']=True;self.save()
                 self.recovery_load(credential,tools)
                 proof=self.report['syntheticRecoveryLoadProof']['verify']
                 self.report['syntheticRecoveryLoadCycles'].append({'cycle':cycle,'completed':True,

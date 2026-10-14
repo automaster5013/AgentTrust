@@ -50,6 +50,9 @@ Each cycle uses a new cohort ID, the same twenty-pending/recovery/idempotency
 checks, its own natural quota wait and all 160 measured HTTP samples. The safe
 summary preserves every completed cycle's raw samples and aggregate run/result
 counts, and disk reserve is checked before each cycle. CI defaults to one cycle.
+Between cycles the runner also lets the previous metadata quota window expire
+before admitting the next cohort. This preserves the real limits across the whole
+run; a 120-cycle run includes at least four hours of these natural waits.
 Longer runs remain synthetic host observations, not customer or production SLOs.
 
 Application probe containers have unique fixture names/labels and are registered
