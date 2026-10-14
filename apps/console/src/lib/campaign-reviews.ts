@@ -15,3 +15,22 @@ export function campaignReviews(value:unknown,user:Identity,campaignId:string):C
   ids.add(id);previous=r.review_sequence as number;return {id,actorId,sequence:previous,decision:r.decision as 'approved'|'rejected',reason:r.reason,policyVersion:r.policy_version,policyDigest:r.policy_digest,createdAt:timestamp(r.created_at)};
  });
 }
+
+export type CampaignReviewPage={entries:CampaignReview[];nextCursor:string|null};
+function reviewCursor(token:string,user:Identity,campaignId:string):number{
+ if(!/^[A-Za-z0-9_-]{79}$/.test(token))throw Error('INVALID_REVIEW_CURSOR');
+ const raw=atob(token.replaceAll('-','+').replaceAll('_','/')),bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));
+ if(bytes.length!==59||btoa(raw).replaceAll('+','-').replaceAll('/','_').replaceAll('=','')!==token||bytes[0]!==67||bytes[1]!==82||bytes[2]!==86)throw Error('INVALID_REVIEW_CURSOR');
+ const uuidAt=(offset:number)=>{const hex=Array.from(bytes.slice(offset,offset+16),b=>b.toString(16).padStart(2,'0')).join('');return hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20)};
+ const sequence=new DataView(bytes.buffer).getBigInt64(51);
+ if(uuidAt(3)!==user.organizationId||uuidAt(19)!==user.projectId||uuidAt(35)!==campaignId||sequence<1n||sequence>BigInt(Number.MAX_SAFE_INTEGER))throw Error('INVALID_REVIEW_CURSOR');return Number(sequence);
+}
+export function campaignReviewPage(value:unknown,user:Identity,campaignId:string,requestedCursor:string|null=null):CampaignReviewPage{
+ const page=object(value);
+ if(Object.keys(page).sort().join(',')!=='campaignId,deploymentAuthority,entries,limit,nextCursor,ordering,organizationId,projectId'||page.ordering!=='review-sequence-desc')throw Error('INVALID_REVIEW_PAGE');
+ const {nextCursor,ordering,...frame}=page;
+ const entries=campaignReviews(frame,user,campaignId),boundary=requestedCursor===null?null:reviewCursor(requestedCursor,user,campaignId);
+ if(boundary!==null&&entries.some(row=>row.sequence>=boundary))throw Error('INVALID_REVIEW_BOUNDARY');
+ if(nextCursor!==null&&(typeof nextCursor!=='string'||entries.length!==50||reviewCursor(nextCursor,user,campaignId)!==entries.at(-1)!.sequence))throw Error('INVALID_REVIEW_CURSOR');
+ return {entries,nextCursor:nextCursor as string|null};
+}
