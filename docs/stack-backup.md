@@ -1,5 +1,7 @@
 # 개발 PostgreSQL 암호화 복원 훈련
 
+DB와 MinIO의 개별 훈련에 더해 [일관된 업무 핵심 스택 복구 훈련](stack-coherent-recovery.md)을 지원한다. 이 훈련은 PostgreSQL/Keycloak·MinIO·NATS·Redis·설정/개발 서명 키를 같은 정지 구간에서 보존하고, 격리된 복원본의 실제 로그인·과거 근거/서명·새 평가와 승인을 검사한다. 개별 훈련과 마찬가지로 운영 KMS·원격 백업·HA·상용 RPO/RTO의 완료를 뜻하지 않는다.
+
 `python scripts/stack-database-backup-smoke.py`는 새 `stack-db`의 스냅샷을 암호화한 뒤 별도 일회성 PostgreSQL 컨테이너에 복원한다. 기존 DB나 볼륨에 복원하지 않는다. 실행 중인 원래 서비스·LogiTrack은 대상이 아니다.
 
 먼저 Compose 프로젝트와 서비스 정체성, 실행 상태와 미완료 평가를 검사한다. admission의 `queued` 상태는 불변이므로 별도 completion 행과 결합해 실제 미완료를 판단한다. 새 Core/워커만 잠시 정지하고 모든 public 테이블의 행 수와 SHA-256을 DB 안에서 계산한다. 행 원문은 출력하지 않는다. 테이블당 10만 행·16 MiB, 전체 측정 64 MiB, dump 32 MiB 및 디스크 여유 한도를 적용한다.

@@ -1,5 +1,7 @@
 # 원래 스택의 보안 검사
 
+단일 관측성 이미지 검사는 고정 digest의 공식 `grafana/grafana:13.x.y@sha256:...` 후보도 허용한다. 공식 Grafana 후보의 export 상한은 3 GiB, 기존 자체 빌드 후보는 1 GiB다. 이미지 크기만큼의 export 여유와 Windows 22 GiB/Linux 4 GiB 잔여 공간을 생성 전에 확인하며, 태그만 있는 공식 이미지·다른 저장소·다른 서비스로의 참조 치환은 거절한다. 후보 검사는 실행 중인 Grafana나 기존 볼륨을 바꾸지 않는다.
+
 `tools/security/Dockerfile`은 Semgrep 1.180.0 이미지 digest와 Gitleaks 8.30.1, Trivy 0.75.0, Syft 1.54.1, Cosign 3.1.3 공식 배포 파일의 SHA-256을 고정한다. 설치만으로 보호 완료를 주장하지 않는다.
 
 ## 소스와 Git 이력

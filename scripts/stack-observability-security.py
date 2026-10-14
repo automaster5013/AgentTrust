@@ -1,5 +1,6 @@
 """Scan one pinned observation image without credentials or a Docker socket in scanners."""
 import argparse,datetime,hashlib,json,os,pathlib,re,shutil,subprocess,uuid,importlib.util
+from stack_observation_policy import official_reference,archive_preflight
 _scratch_spec=importlib.util.spec_from_file_location('scan_scratch',pathlib.Path(__file__).with_name('stack-scan-scratch.py'))
 _scratch_module=importlib.util.module_from_spec(_scratch_spec);_scratch_spec.loader.exec_module(_scratch_module)
 
@@ -7,10 +8,11 @@ parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--name',choices=['telemetry','tempo','loki','prometheus','grafana'],required=True)
 parser.add_argument('--reference',required=True)
 args=parser.parse_args()
-if not re.fullmatch(r'agenttrust-'+args.name+r':local|ghcr\.io/automaster5013/agenttrust-'+args.name+r'@sha256:[a-f0-9]{64}',args.reference):
+try:official_reference(args.name,args.reference)
+except ValueError:
     raise SystemExit('Unrecognized observation image reference')
 root=pathlib.Path(__file__).resolve().parent.parent
-minimum_free_gib=20 if os.name=='nt' else 4
+minimum_free_gib=22 if os.name=='nt' else 4
 if shutil.disk_usage(root).free<minimum_free_gib*1073741824:raise SystemExit('Insufficient disk headroom')
 directory=root/'.local'/('stack-observation-security-'+str(uuid.uuid4()));directory.mkdir(parents=True)
 inputs=directory/'inputs';inputs.mkdir();output=directory/'reports';output.mkdir()
@@ -38,9 +40,11 @@ try:
     image=json.loads(identity.stdout)[0];image_id=image['Id']
     if not re.fullmatch('sha256:[a-f0-9]{64}',image_id):raise ValueError('Invalid image identity')
     report['imageId']=image_id
+    bounds=archive_preflight(args.name,args.reference,image.get('Size'),shutil.disk_usage(root).free,os.name=='nt')
+    report.update(bounds)
     stage='archive';archive=scratch.reserve(args.name+'.tar')
     saved=run(['docker','image','save','-o',str(archive),image_id])
-    if saved.returncode or not 0<archive.stat().st_size<=1073741824:raise ValueError('Image export unavailable or too large')
+    if saved.returncode or not 0<archive.stat().st_size<=bounds['maximumArchiveBytes']:raise ValueError('Image export unavailable or too large')
     archive.chmod(0o644)
     with archive.open('rb') as stream:report['archiveSha256']=hashlib.file_digest(stream,'sha256').hexdigest()
     stage='sbom';sbom=scanner(['syft','docker-archive:/in/'+args.name+'.tar','-o','cyclonedx-json=/out/'+args.name+'.cdx.json','--quiet'],'none')

@@ -27,9 +27,13 @@ jobs:
           python3 scripts/stack-scan-lifecycle-test.py
           python3 scripts/stack-scan-work-test.py
           python3 scripts/stack-browser-quota-guard-test.py
+          python3 scripts/stack-coherent-archive-test.py
+          python3 scripts/stack-recovery-transport-test.py
+          python3 scripts/stack-observation-policy-test.py
           docker build -t agenttrust-security:local tools/security
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-backup-crypt-test.py
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --memory 128m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-backup-tar-test.py
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --memory 128m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-coherent-probe-test.py
       - name: Verify rules and scan tracked source and full Git history
         run: python3 scripts/stack-security-source.py
       - name: Preserve redacted security reports
@@ -204,6 +208,8 @@ jobs:
           python3 scripts/stack-database-backup-smoke.py
       - name: Restore encrypted object-store snapshot and verify pinned versions and retention
         run: python3 scripts/stack-object-backup-smoke.py
+      - name: Rehearse coherent encrypted business-critical recovery on a portless isolated network
+        run: python3 scripts/stack-coherent-recovery.py --execute
       - name: Preserve safe synthetic fault diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -255,6 +261,7 @@ jobs:
             .local/stack-database-init-smoke-*.json
             .local/stack-database-backup-*/summary.json
             .local/stack-object-backup-*/summary.json
+            .local/stack-coherent-recovery-*/summary.json
             .local/stack-provider-smoke-*.json
             .local/stack-provider-integrity-*/summary.json
             .local/stack-evaluation-readiness-*.json
@@ -403,6 +410,7 @@ jobs:
           docker build -t agenttrust-security:local tools/security
           python3 scripts/stack-database-backup-smoke.py
           python3 scripts/stack-object-backup-smoke.py
+          python3 scripts/stack-coherent-recovery.py --execute
           python3 scripts/stack-image-smoke.py
           python3 scripts/stack-delivery-manifest.py
       - name: Preserve safe registry runtime diagnostics
@@ -449,6 +457,7 @@ jobs:
             .local/stack-database-init-smoke-*.json
             .local/stack-database-backup-*/summary.json
             .local/stack-object-backup-*/summary.json
+            .local/stack-coherent-recovery-*/summary.json
             .local/stack-provider-smoke-*.json
             .local/stack-provider-integrity-*/summary.json
             .local/stack-evaluation-readiness-*.json
