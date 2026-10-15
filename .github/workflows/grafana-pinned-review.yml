@@ -1,0 +1,52 @@
+name: Pinned official Grafana whole image review
+on:
+  push:
+    branches: [codex/official-grafana-review-20261015-205717]
+permissions:
+  contents: read
+concurrency:
+  group: grafana-whole-image-review-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  review:
+    if: github.ref == 'refs/heads/codex/official-grafana-review-20261015-205717'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      GRAFANA_REFERENCE: grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Build pinned scanner tools and pull the unchanged official candidate
+        run: |
+          docker build -t agenttrust-security:local tools/security
+          docker pull "$GRAFANA_REFERENCE"
+      - name: Generate whole image SBOM and refuse every HIGH or CRITICAL finding
+        run: python3 scripts/stack-observability-security.py --name grafana --reference "$GRAFANA_REFERENCE"
+      - name: Record public image and fresh scanner database provenance
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json,os,pathlib,shutil
+          root=pathlib.Path('.');out=root/'.local/grafana-whole-image-review';out.mkdir(parents=True,exist_ok=True)
+          metadata=root/'.local/stack-observation-security-cache/db/metadata.json'
+          value={'reviewSourceRevision':os.environ['GITHUB_SHA'],'unchangedApplicationSourceBase':'95c998691492014b479342d6a89f5b681745f1b5','officialImageReference':os.environ['GRAFANA_REFERENCE'],'freshIsolatedCiRunner':True,'scannerDatabaseMetadataAvailable':metadata.is_file(),'productionDeploymentPerformed':False,'mainDevelopmentRuntimeChanged':False,'mainWorktreeChanged':False,'ignoredVulnerabilityFindings':False,'unsignedPluginsModified':False}
+          if metadata.is_file():
+              body=json.loads(metadata.read_text());value['databaseMetadata']={k:body[k] for k in ['Version','UpdatedAt','NextUpdate','DownloadedAt'] if k in body}
+          (out/'provenance.json').write_text(json.dumps(value,indent=2)+'\n')
+          PY
+      - name: Preserve public SBOM vulnerability and scanner provenance reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: official-grafana-whole-image-review-${{ github.sha }}
+          include-hidden-files: true
+          path: |
+            .local/stack-observation-security-*/summary.json
+            .local/stack-observation-security-*/reports/grafana.cdx.json
+            .local/stack-observation-security-*/reports/grafana.trivy.json
+            .local/grafana-whole-image-review/provenance.json
+          if-no-files-found: error
+          retention-days: 7
