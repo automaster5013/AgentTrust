@@ -135,6 +135,13 @@ initial and repeated migration, owner-secret contamination, mixed process flags,
 actual superuser elevation and owner-role membership, followed by recovery of the
 restricted role. It removes only its labelled fixture resources and generated
 credentials; source services and original data volumes are not changed.
+The fixture waits for PostgreSQL over TCP loopback before starting the JDBC
+migration. A Unix-socket readiness response can come from the entrypoint's
+temporary initialization server, which does not yet accept TCP. A delayed-init
+fixture reproduced that premature migration failure; the same delay with the TCP
+check permits the complete migration and privileged-role rejection checks. Safe
+failure reports include a fixed phase name and process exit code, without raw
+database output or credential values.
 Future schema changes still require a controlled migration, compatible rollout,
 backup and rollback policy on the chosen target; this does not establish HA or an
 operational deployment.

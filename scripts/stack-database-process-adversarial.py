@@ -5,7 +5,7 @@ credentials remain private and are removed only after owned resources clean up.
 """
 import datetime,json,os,pathlib,re,secrets,subprocess,time,uuid
 root=pathlib.Path(__file__).resolve().parent.parent;identifier=str(uuid.uuid4());prefix='agenttrust-stack-migration-fixture-'+identifier;directory=root/'.local'/('stack-database-process-fixture-'+identifier);directory.mkdir();report_path=directory/'summary.json';assert not report_path.exists()
-containers=[];network=False;files=[];report={'completed':False,'fixtureId':identifier,'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'sourceServicesModified':False,'originalVolumesMounted':False,'hostPortsPublished':False,'rawSecretsPrinted':False,'checks':[]}
+containers=[];network=False;files=[];report={'completed':False,'fixtureId':identifier,'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'sourceServicesModified':False,'originalVolumesMounted':False,'hostPortsPublished':False,'rawSecretsPrinted':False,'phase':'fixture-preflight','checks':[]}
 def run(args,data=None,timeout=60):return subprocess.run(args,cwd=root,input=data,capture_output=True,timeout=timeout)
 def ok(args,data=None,timeout=60):
  result=run(args,data,timeout);assert result.returncode==0;return result.stdout
@@ -28,16 +28,22 @@ try:
  migration=envfile('migration.env',{'STACK_DATABASE_URL':url,'STACK_MIGRATION_USER':'agenttrust_stack','STACK_MIGRATION_PASSWORD':owner_password,'REDGATE_DISABLE_TELEMETRY':'true'})
  api_values={'STACK_DATABASE_URL':url,'STACK_DATABASE_USER':'agenttrust_stack_api','STACK_DATABASE_PASSWORD':api_password};api=envfile('api.env',api_values)
  bad=envfile('bad-api.env',dict(api_values,STACK_MIGRATION_PASSWORD=owner_password))
+ report['phase']='create-private-network'
  ok(['docker','network','create','--internal','--label','agenttrust.fixture='+identifier,prefix]);network=True
  name=prefix+'-db';containers.append(name)
  ok(['docker','run','-d','--name',name,'--label','agenttrust.fixture='+identifier,'--network',prefix,'--network-alias','stack-db','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--memory','512m','--cpus','1','--pids-limit','128','--tmpfs','/tmp:size=32m,mode=1777','--tmpfs','/var/run/postgresql:size=16m,uid=70,gid=70,mode=3775','--tmpfs','/var/lib/postgresql/data:size=192m,uid=70,gid=70,mode=0700','--env-file',str(db),dbimage])
- until=time.monotonic()+90
- while run(['docker','exec',name,'pg_isready','-U','agenttrust_stack','-d','agenttrust_stack']).returncode:
+ report['phase']='wait-for-postgres-tcp';until=time.monotonic()+90
+ # The entrypoint's temporary initialization server accepts Unix sockets before
+ # the final server accepts TCP. JDBC requires the latter, even on a fresh DB.
+ while run(['docker','exec',name,'pg_isready','-h','127.0.0.1','-U','agenttrust_stack','-d','agenttrust_stack']).returncode:
   assert time.monotonic()<until;time.sleep(1)
+ report['databaseReadinessTransport']='tcp-loopback';report['phase']='create-restricted-role'
  sql("CREATE ROLE agenttrust_stack_api LOGIN PASSWORD '"+api_password+"'; GRANT CONNECT ON DATABASE agenttrust_stack TO agenttrust_stack_api;")
  def process(kind,environment,args,expected):
+  report['phase']=kind
   name=prefix+'-'+kind;containers.append(name)
   result=run(['docker','run','--name',name,'--label','agenttrust.fixture='+identifier,'--network',prefix,'--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--memory','512m','--cpus','1','--pids-limit','64','--tmpfs','/tmp:size=64m,mode=1777','--env-file',str(environment),image,*args],timeout=180)
+  report['lastProcessExitCode']=result.returncode
   assert result.returncode==expected and owner_password.encode() not in result.stdout+result.stderr and api_password.encode() not in result.stdout+result.stderr
   state=own(name);assert state['State']['Status']=='exited' and not state['State']['OOMKilled'] and not state['HostConfig']['PortBindings']
   if expected==0:
@@ -59,7 +65,7 @@ try:
  sql('REVOKE agenttrust_stack FROM agenttrust_stack_api;')
  assert process('restricted-again',api,['--check-database-role'],0)['restrictedApiRoleVerified']
  report['checks'].append('actual database superuser flag and inherited owner-role membership are refused; restoring restricted grants recovers readiness')
- report.update(completed=True,migrationResourcesVerified=expected,sourceDatabaseImageId=dbimage,isolatedPostgresStateInTmpfs=True)
+ report.update(completed=True,phase='completed',migrationResourcesVerified=expected,sourceDatabaseImageId=dbimage,isolatedPostgresStateInTmpfs=True)
 except Exception as error:report.update(errorType=type(error).__name__,code='MIGRATION_BOUNDARY_FIXTURE_UNVERIFIED')
 finally:
  cleaned=True
