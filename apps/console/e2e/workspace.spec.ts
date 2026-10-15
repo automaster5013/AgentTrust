@@ -353,6 +353,21 @@ test('viewer downloads bounded scoped audit JSON and refuses changed bytes befor
  let unexpected=false;const note=()=>{unexpected=true};page.on('download',note);try{await page.route('**/backend/audit-export',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...frame,contentJson:frame.contentJson+' '})}));await region.getByRole('button',{name:'감사 기록 JSON 다운로드',exact:true}).click();await expect(region.getByRole('status',{name:'감사 기록 조회와 내보내기 상태',exact:true})).toContainText('감사 내보내기를 검증하지 못했습니다.');expect(unexpected).toBe(false);phase('changed export bytes refused before emitting a second download')}finally{page.off('download',note);await page.unroute('**/backend/audit-export')}
  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
+
+test('viewer completes a delayed real identity provider callback before authenticated controls are checked',async({page})=>{
+ let triggered=false,continued=false;
+ await login(page,'demo-viewer',async()=>{
+  await page.route(url=>url.origin==='http://127.0.0.1:4322'&&url.pathname.startsWith('/realms/agenttrust/login-actions/'),async route=>{
+   if(route.request().method()!=='POST')return route.continue();
+   const response=await route.fetch({maxRedirects:0});expect([302,303]).toContain(response.status());
+   const target=new URL(response.headers()['location'],response.url());expect(target.origin).toBe('http://127.0.0.1:4320');expect(target.pathname).toBe('/backend/login/oauth2/code/keycloak');
+   triggered=true;await new Promise(resolve=>setTimeout(resolve,6000));await route.fulfill({response});continued=true;
+  });
+ });
+ expect(triggered&&continued).toBe(true);const me=await page.request.get('/backend/me');expect(me.status()).toBe(200);expect((await me.json()).role).toBe('viewer');
+ phase('actual provider redirect held six seconds; original UI visibility bound unchanged; authenticated home and scoped viewer verified after callback; no business write');
+});
+
 function phase(description:string){test.info().annotations.push({type:'phase',description})}
 async function login(page:Page,name:string,beforeNavigation?:()=>Promise<unknown>){
  await page.route('**/*',route=>{const url=new URL(route.request().url());if(process.env.STACK_E2E_READ_ONLY==='true'&&url.origin==='http://127.0.0.1:4320'&&url.pathname.startsWith('/backend/')&&route.request().method()!=='GET'&&!['/backend/login','/backend/logout'].includes(url.pathname)){phase('read-only network guard refused unintended business mutation');return route.abort('blockedbyclient')}if(['http://127.0.0.1:4320','http://127.0.0.1:4322'].includes(url.origin))return route.continue();return route.abort()});
@@ -360,7 +375,7 @@ async function login(page:Page,name:string,beforeNavigation?:()=>Promise<unknown
  const initial=await page.goto('/');phase('workspace initial navigation HTTP '+initial!.status());const providerInfo=await page.request.get('/backend/auth-info');phase('authentication provider metadata HTTP '+providerInfo.status());expect(providerInfo.status()).toBe(200);const info=await providerInfo.json();
  const user=users.find(u=>u.username===name)!;
  // Reporter never records invocation arguments, browser traces, cookies or credentials.
- if(info.identityProvider==='keycloak'){await page.getByRole('button',{name:'Keycloak으로 로그인',exact:true}).click();await expect(page.locator('#username')).toBeVisible();await page.evaluate(value=>{document.querySelector<HTMLInputElement>('#username')!.value=value.username;document.querySelector<HTMLInputElement>('#password')!.value=value.password;document.querySelector<HTMLFormElement>('#kc-form-login')!.requestSubmit(document.querySelector<HTMLButtonElement>('#kc-login')!)},{username:user.username,password:user.password});phase('Keycloak authorization code login')}
+ if(info.identityProvider==='keycloak'){await page.getByRole('button',{name:'Keycloak으로 로그인',exact:true}).click();await expect(page.locator('#username')).toBeVisible();await page.evaluate(value=>{document.querySelector<HTMLInputElement>('#username')!.value=value.username;document.querySelector<HTMLInputElement>('#password')!.value=value.password;document.querySelector<HTMLFormElement>('#kc-form-login')!.requestSubmit(document.querySelector<HTMLButtonElement>('#kc-login')!)},{username:user.username,password:user.password});await page.waitForURL('http://127.0.0.1:4320/');phase('Keycloak authorization code login')}
  else {await expect(page.getByRole('button',{name:'로그인',exact:true})).toBeEnabled();await page.evaluate(value=>{const account=document.querySelector<HTMLInputElement>('input[name="username"]')!,password=document.querySelector<HTMLInputElement>('input[name="password"]')!;account.value=value.username;password.value=value.password;account.form!.requestSubmit()}, {username:user.username,password:user.password})}
  await expect(page.getByRole('button',{name:'로그아웃',exact:true})).toBeVisible();phase('authenticated application controls visible');await expect(page.getByText('조직 '+user.organizationId.slice(0,8),{exact:true})).toBeVisible();phase('expected workspace scope visible');
 }

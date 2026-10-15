@@ -29,6 +29,7 @@ jobs:
           python3 scripts/stack-scan-work-test.py
           python3 scripts/stack-browser-quota-guard-test.py
           python3 scripts/stack-workspace-onboarding-test.py
+          python3 scripts/stack-workspace-dispatch-load-test.py
           python3 scripts/stack-coherent-archive-test.py
           python3 scripts/stack-recovery-transport-test.py
           python3 scripts/stack-observation-policy-test.py
@@ -82,6 +83,7 @@ jobs:
           python3 scripts/stack-identity-profile.py
           python3 scripts/stack-identity-smoke.py
           python3 scripts/stack-workspace-onboarding-smoke.py --allow-owned-evaluations
+          python3 scripts/stack-workspace-dispatch-load.py --allow-owned-evaluations
           python3 scripts/stack-database-process-smoke.py
           python3 scripts/stack-database-process-adversarial.py
           python3 scripts/stack-http-smoke.py
@@ -213,6 +215,7 @@ jobs:
       - name: Restore authenticated database snapshot into an isolated disposable fixture
         run: |
           docker build -t agenttrust-security:local tools/security
+          python3 scripts/stack-backup-transport-privacy-test.py
           python3 scripts/stack-database-backup-smoke.py
       - name: Restore encrypted object-store snapshot and verify pinned versions and retention
         run: python3 scripts/stack-object-backup-smoke.py
@@ -271,6 +274,7 @@ jobs:
             .local/stack-database-init-smoke-*.json
             .local/stack-database-process-*.json
             .local/stack-database-process-fixture-*/summary.json
+            .local/stack-backup-transport-privacy-*.json
             .local/stack-database-backup-*/summary.json
             .local/stack-object-backup-*/summary.json
             .local/stack-coherent-recovery-*/summary.json
@@ -284,6 +288,7 @@ jobs:
             .local/stack-oidc-image-config-*.json
             .local/stack-browser-*.json
             .local/stack-workspace-onboarding-*.json
+            .local/stack-workspace-dispatch-load-*.json
           if-no-files-found: ignore
           retention-days: 7
       - name: Stop isolated runner services
@@ -359,6 +364,7 @@ jobs:
           python3 scripts/stack-identity-profile.py
           python3 scripts/stack-identity-smoke.py
           python3 scripts/stack-workspace-onboarding-smoke.py --allow-owned-evaluations
+          python3 scripts/stack-workspace-dispatch-load.py --allow-owned-evaluations
           python3 scripts/stack-database-process-smoke.py
           python3 scripts/stack-database-process-adversarial.py
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
@@ -436,6 +442,7 @@ jobs:
             STACK_E2E_QUOTA_GUARD=true STACK_E2E_LOCAL_MODEL=true npx playwright test --grep 'local model provider evidence|reference dataset'
           )
           docker build -t agenttrust-security:local tools/security
+          python3 scripts/stack-backup-transport-privacy-test.py
           python3 scripts/stack-database-backup-smoke.py
           python3 scripts/stack-object-backup-smoke.py
           python3 scripts/stack-coherent-retained-recovery.py --execute --exercise-key-rotation --exercise-load
@@ -451,6 +458,7 @@ jobs:
           path: |
             .local/stack-browser-*.json
             .local/stack-workspace-onboarding-*.json
+            .local/stack-workspace-dispatch-load-*.json
             .local/stack-gateway-smoke-*.json
             .local/stack-http-smoke-*.json
             .local/stack-campaign-smoke-*.json
@@ -488,6 +496,7 @@ jobs:
             .local/stack-database-init-smoke-*.json
             .local/stack-database-process-*.json
             .local/stack-database-process-fixture-*/summary.json
+            .local/stack-backup-transport-privacy-*.json
             .local/stack-database-backup-*/summary.json
             .local/stack-object-backup-*/summary.json
             .local/stack-coherent-recovery-*/summary.json

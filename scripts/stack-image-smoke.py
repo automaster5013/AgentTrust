@@ -28,7 +28,7 @@ try:
  assert run(['docker','exec','agenttrust-stack-quality-verifier-1','node','--version']).stdout.startswith('v24.')
  assert run(['docker','exec','agenttrust-stack-quality-verifier-1','node','-p',"JSON.parse(require('fs').readFileSync('/app/node_modules/promptfoo/package.json','utf8')).version"]).stdout.strip()=='0.124.1'
  assert re.search(r'^Version:\s+1\.21\.1$',run(['docker','exec','agenttrust-stack-opa-1','/opa','version']).stdout,re.M)
- assert 'Keycloak 26.8.0' in run(['docker','exec','agenttrust-stack-identity-1','/opt/keycloak/bin/kc.sh','--version']).stdout
+ assert 'Keycloak 26.8.1' in run(['docker','exec','agenttrust-stack-identity-1','/opt/keycloak/bin/kc.sh','--version']).stdout
  assert 'RELEASE.2025-10-15T17-29-55Z' in run(['docker','exec','agenttrust-stack-object-store-1','minio','--version']).stdout
  provision=json.loads(run(['docker','inspect','agenttrust-stack-object-init-1']).stdout)[0];assert provision['State']['ExitCode']==0 and provision['State']['Status']=='exited' and provision['Image']==json.loads(run(['docker','image','inspect',references['object-store']]).stdout)[0]['Id']
  migration=json.loads(run(['docker','inspect','agenttrust-stack-migrate-1']).stdout)[0]
@@ -50,7 +50,7 @@ try:
  redis=json.loads(run(['docker','inspect','agenttrust-stack-redis-1']).stdout)[0];assert redis['Config']['Image']=='redis:8.2-alpine@sha256:b51665e66f00759be7c3152ad5ac3c66fb2f619c13ef62dea7cc1f9914524635';assert 'v=8.2.' in run(['docker','exec','agenttrust-stack-redis-1','redis-server','--version']).stdout
  stage='identity-metadata'
  with urllib.request.urlopen('http://127.0.0.1:4321/api/auth-info',timeout=10) as response:assert json.loads(response.read(4097))['identityProvider']=='keycloak'
- result={'revision':revision,'images':verified,'actualRuntimes':{'core-api':'Java 21','ai-worker':'Python 3.14','console':'Node.js 24','opa':'OPA 1.21.1','identity':'Keycloak 26.8.0','gateway':'Java 21 / Spring WebFlux','cache':'Redis 8.2','object-store':'MinIO RELEASE.2025-10-15T17-29-55Z','database':'PostgreSQL 17 / pgvector 0.8.7','local-model':'Ollama 0.40.2 CPU / patched Go 1.27.2','messaging':'NATS JetStream 2.12.15 / patched Go 1.27.2'},'identityProvider':'keycloak','runtimeImageIdentityVerified':True,'serverDeployed':False}
+ result={'revision':revision,'images':verified,'actualRuntimes':{'core-api':'Java 21','ai-worker':'Python 3.14','console':'Node.js 24','opa':'OPA 1.21.1','identity':'Keycloak 26.8.1','gateway':'Java 21 / Spring WebFlux','cache':'Redis 8.2','object-store':'MinIO RELEASE.2025-10-15T17-29-55Z','database':'PostgreSQL 17 / pgvector 0.8.7','local-model':'Ollama 0.40.2 CPU / patched Go 1.27.2','messaging':'NATS JetStream 2.12.15 / patched Go 1.27.2'},'identityProvider':'keycloak','runtimeImageIdentityVerified':True,'serverDeployed':False}
  result['actualRuntimes'].update({'tempo':'Tempo 3.1.0 / patched Go 1.27.2','loki':'Loki 3.7.8 / patched Go 1.27.2','prometheus':'Prometheus and promtool 3.15.0 / patched Go 1.27.2','quality-verifier':'Node.js 24 / Promptfoo 0.124.1'})
  result['actualRuntimes']['telemetry']='OpenTelemetry Collector 0.162.0 / patched Go 1.27.2'
  directory=root/'stack-delivery';directory.mkdir(exist_ok=True);(directory/'runtime-identity.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')

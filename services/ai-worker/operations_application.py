@@ -50,11 +50,37 @@ async def queue_ready(connection, fixed_ready, reference_ready):
     except Exception:
         return False
 
+class QueueReadinessProbe:
+    """Coalesce concurrent broker reads without caching a completed observation."""
+    def __init__(self):
+        self.task = None
+        self.connection = None
+
+    async def observe(self, connection, fixed_ready, reference_ready):
+        if not fixed_ready or not reference_ready or connection is None or not connection.is_connected:
+            return False
+        task = self.task
+        if task is None or task.done() or self.connection is not connection:
+            task = asyncio.create_task(queue_ready(connection, fixed_ready, reference_ready))
+            self.task, self.connection = task, connection
+        try:
+            # An individual disconnected HTTP reader must not cancel a probe
+            # that other readers are still awaiting. queue_ready bounds it to 1s.
+            available = await asyncio.shield(task)
+            return available and connection.is_connected
+        finally:
+            if task.done() and self.task is task:
+                self.task = self.connection = None
+
+readiness_probe = QueueReadinessProbe()
+
 app.router.lifespan_context = lifespan
 
 @app.get('/ready')
 async def ready():
-    available = await queue_ready(inspection['connection'], worker_state['ready'], reference_state['ready'])
+    connection = inspection['connection']
+    available = await readiness_probe.observe(connection, worker_state['ready'], reference_state['ready'])
+    available = available and worker_state['ready'] is True and reference_state['ready'] is True and inspection['connection'] is connection
     return JSONResponse({'contract': 'agenttrust-worker-readiness-v1', 'ready': available,
         'fixedConsumerReady': worker_state['ready'] is True,
         'referenceConsumerReady': reference_state['ready'] is True,

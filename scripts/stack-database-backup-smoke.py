@@ -1,6 +1,7 @@
 """Restore an encrypted development snapshot into an owned, networkless PostgreSQL fixture."""
 import datetime,hashlib,json,os,pathlib,re,secrets,shutil,subprocess,time,uuid
 from stack_compose import stack_compose
+from stack_backup_tools import crypt as private_crypt
 
 root=pathlib.Path(__file__).resolve().parent.parent
 identifier=str(uuid.uuid4());name='agenttrust-stack-restore-fixture-'+identifier
@@ -42,16 +43,7 @@ def fingerprints(target):
     return result
 
 def crypt(operation,data):
-    tools=json.loads(run(['docker','image','inspect','agenttrust-security:local']).stdout)[0]['Id']
-    command=['docker','run','--rm','-i','--network','none','--read-only','--cap-drop','ALL',
-             '--security-opt','no-new-privileges:true','--tmpfs','/tmp:size=16m,mode=1777',
-             '--memory','384m','--cpus','2','--pids-limit','32',
-             '--mount','type=bind,source='+str(root/'scripts/stack-backup-crypt.py')+',target=/crypt.py,readonly',
-             '--mount','type=bind,source='+str(keyfile)+',target=/key.bin,readonly']
-    if os.name!='nt':
-        if os.getuid()==0:raise ValueError('Nonroot host required')
-        command+=['--user',str(os.getuid())+':'+str(os.getgid())]
-    return run(command+[tools,'python','/crypt.py',operation,'--key-file','/key.bin'],input=data).stdout
+    return private_crypt(root,keyfile,operation,data)
 
 try:
     if shutil.disk_usage(root).free<(20 if os.name=='nt' else 4)*1073741824:raise ValueError('Insufficient disk headroom')

@@ -26,6 +26,8 @@ def sample():
 class Provider:
     def __init__(self):
         self.users, self.roles, self.calls = {}, {}, []
+        self.management_id = str(uuid.uuid4())
+        self.inherited_management = False
         self.available = {name: {'id': str(uuid.uuid4()), 'name': name, 'composite': False,
                                  'clientRole': False} for name in ['admin', 'editor', 'viewer']}
         self.fail_create = self.fail_enable = self.fail_disable = False
@@ -34,6 +36,12 @@ class Provider:
 
     def read(self, path):
         self.calls.append(('GET', path))
+        if path == '/clients?clientId=realm-management':
+            return [{'id': self.management_id, 'clientId': 'realm-management'}]
+        if '/role-mappings/clients/' in path:
+            return [{'name': 'realm-admin', 'clientRole': True}] if self.inherited_management else []
+        if path.endswith('/sessions'):
+            return []
         if path.startswith('/users?'):
             name = path.split('username=')[1].split('&')[0]
             return [copy.deepcopy(v) for v in self.users.values() if v['username'] == name]
@@ -332,6 +340,131 @@ class SuspensionTests(unittest.TestCase):
         with self.assertRaises(OnboardingRefused):
             cohort_from_journal(b'{"completed":true,"completed":true}')
 
+
+
+from stack_workspace_reconciliation import journal_for_review, inspect_journal
+
+class ReconciliationTests(unittest.TestCase):
+ def completed(self):
+  api=Provider();manifest=sample();state=Provisioner(api,lambda _:None).execute(manifest)
+  return api,manifest,state
+ def test_completed_cohort_inspects_without_configuration_writes_or_secret_output(self):
+  api,m,s=self.completed();api.calls=[];before=copy.deepcopy(api.users)
+  result=inspect_journal(api,journal_for_review(json.dumps(s).encode(),m))
+  self.assertTrue(result['completed']);self.assertFalse(result['manualReconciliationRequired']);self.assertEqual(result['knownActorsChecked'],2)
+  self.assertTrue(all(method=='GET' for method,_ in api.calls));self.assertEqual(api.users,before)
+  for row in s['members']:self.assertNotIn(row['password'],json.dumps(result))
+ def test_unknown_create_candidate_is_only_observed_never_adopted_replayed_or_accepted(self):
+  api=Provider();api.unknown_create=True;m=sample();states=[]
+  with self.assertRaises(TimeoutError):Provisioner(api,states.append).execute(m)
+  state=states[-1];before=copy.deepcopy(api.users);api.calls=[]
+  result=inspect_journal(api,journal_for_review(json.dumps(state).encode(),m))
+  self.assertTrue(result['completed'] and result['manualReconciliationRequired']);self.assertFalse(result['originalProvisioningCompleted']);self.assertEqual(result['unknownCreateCandidatesFound'],1)
+  self.assertFalse(result['unknownActorsAdopted'] or result['unknownRequestsReplayed']);self.assertEqual(api.users,before);self.assertTrue(all(method=='GET' for method,_ in api.calls))
+ def test_absent_unknown_name_does_not_prove_create_rollback(self):
+  api=Provider();api.fail_create=True;m=sample();states=[]
+  with self.assertRaises(OSError):Provisioner(api,states.append).execute(m)
+  result=inspect_journal(api,journal_for_review(json.dumps(states[-1]).encode(),m))
+  self.assertEqual(result['unknownCreatesNotFoundByExactName'],1);self.assertTrue(result['manualReconciliationRequired']);self.assertFalse(result['originalProvisioningCompleted'])
+ def test_changed_known_scope_and_role_require_manual_review_without_mutation(self):
+  for mode in ['scope','role','name']:
+   api,m,s=self.completed();identifier=s['members'][0]['actorId']
+   if mode=='scope':api.users[identifier]['attributes']['agenttrust_project']=[str(uuid.uuid4())]
+   elif mode=='role':api.roles[identifier]=['viewer']
+   else:api.users[identifier]['username']='reassigned-name'
+   before=copy.deepcopy(api.users);api.calls=[]
+   result=inspect_journal(api,journal_for_review(json.dumps(s).encode(),m))
+   self.assertTrue(result['manualReconciliationRequired']);self.assertEqual(result['knownActorsWithChangedScopeOrRole'],1);self.assertEqual(api.users,before);self.assertTrue(all(method=='GET' for method,_ in api.calls))
+ def test_malformed_duplicate_mismatched_and_unknown_actor_journals_refused(self):
+  _,m,s=self.completed()
+  for change in ['manifest','members','actor','stage','secret','type']:
+   b=copy.deepcopy(s)
+   if change=='manifest':b['manifestSha256']='a'*64
+   elif change=='members':b['members'].reverse()
+   elif change=='actor':b['members'][0]['actorId']=None
+   elif change=='stage':b['stage']='arbitrary'
+   elif change=='secret':b['members'][0]['password']='invalid'
+   else:b['createResponseUncertain']=1
+   with self.subTest(change=change),self.assertRaises(OnboardingRefused):journal_for_review(json.dumps(b).encode(),m)
+  with self.assertRaises(OnboardingRefused):journal_for_review(b'{"schemaVersion":1,"schemaVersion":1}',m)
+ def test_ambiguous_unknown_search_refused_without_mutation(self):
+  api=Provider();api.unknown_create=True;m=sample();states=[]
+  with self.assertRaises(TimeoutError):Provisioner(api,states.append).execute(m)
+  cohort=journal_for_review(json.dumps(states[-1]).encode(),m);original=api.read
+  def ambiguous(path):
+   if path.startswith('/users?'):return [{'username':cohort['members'][0]['username']}]*2
+   return original(path)
+  api.read=ambiguous
+  with self.assertRaises(OnboardingRefused):inspect_journal(api,cohort)
+ def test_inherited_client_administration_prevents_all_activation(self):
+  api=Provider();api.inherited_management=True;states=[]
+  with self.assertRaises(OnboardingRefused):Provisioner(api,states.append).execute(sample())
+  self.assertTrue(api.users);self.assertFalse(any(u['enabled'] for u in api.users.values()))
+  self.assertFalse(states[-1]['completed']);self.assertEqual(api.calls.count(('POST','/users')),1)
+ def test_inherited_administration_blocks_suspension_before_any_account_mutation(self):
+  api,m,s=self.completed();api.inherited_management=True;before=copy.deepcopy(api.users)
+  from stack_workspace_suspension import cohort_from_journal,suspend
+  with self.assertRaises(OnboardingRefused):suspend(api,cohort_from_journal(json.dumps(s).encode()),lambda _:None)
+  self.assertEqual(api.users,before)
+
+class ReconciliationCliTests(unittest.TestCase):
+    def exercise(self, changed_manifest=False):
+        import contextlib
+        import io
+        spec = importlib.util.spec_from_file_location('reconciliation_cli', pathlib.Path(__file__).with_name('stack-workspace-reconcile.py'))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.ROOT = CLI.ROOT
+        api, manifest = Provider(), sample()
+        state = Provisioner(api, lambda _: None).execute(manifest)
+        with tempfile.TemporaryDirectory(prefix='reconciliation-cli-', dir=CLI.ROOT / '.local') as outer:
+            directory = pathlib.Path(outer) / 'owned'
+            CLI.private_directory(directory)
+            CLI.private_checkpoint(directory, state)
+            journal = directory / 'journal.json'
+            before = journal.read_bytes()
+            if changed_manifest:
+                manifest['projectId'] = str(uuid.uuid4())
+            path = directory / 'manifest.json'
+            path.write_text(json.dumps(manifest), encoding='utf-8')
+            output = io.StringIO()
+            with patch.object(module, 'LocalWorkspaceIdentity') as provider, patch('sys.argv', ['reconcile', '--manifest', str(path), '--journal', str(journal)]), contextlib.redirect_stdout(output):
+                code = module.main()
+            provider.assert_not_called()
+            self.assertEqual(journal.read_bytes(), before)
+            text = output.getvalue()
+            for row in state['members']:
+                self.assertNotIn(row['password'], text)
+            return code, json.loads(text)
+
+    def test_default_review_reads_protected_journal_without_provider_contact_or_secret_output(self):
+        code, result = self.exercise()
+        self.assertEqual(code, 0)
+        self.assertTrue(result['completed'])
+        self.assertFalse(result['providerContactPerformed'])
+        self.assertFalse(result['originalJournalModified'])
+
+    def test_original_manifest_mismatch_refused_before_provider_contact(self):
+        code, result = self.exercise(True)
+        self.assertEqual(code, 1)
+        self.assertFalse(result['completed'])
+        self.assertEqual(result['code'], 'WORKSPACE_JOURNAL_MANIFEST_MISMATCH')
+
+class ContainedIncompleteReconciliationTests(unittest.TestCase):
+    def test_contained_known_users_still_require_operator_decision_after_failed_provisioning(self):
+        api, manifest, states = Provider(), sample(), []
+        api.fail_enable = True
+        with self.assertRaises(TimeoutError):
+            Provisioner(api, states.append).execute(manifest)
+        self.assertFalse(any(user['enabled'] for user in api.users.values()))
+        before = copy.deepcopy(api.users)
+        result = inspect_journal(api, journal_for_review(json.dumps(states[-1]).encode(), manifest))
+        self.assertTrue(result['completed'])
+        self.assertTrue(result['manualReconciliationRequired'])
+        self.assertFalse(result['originalProvisioningCompleted'])
+        self.assertFalse(result['providerObservationIsAtomic'])
+        self.assertEqual(result['knownActorsDisabled'], 2)
+        self.assertEqual(api.users, before)
 
 if __name__ == '__main__':
     unittest.main()

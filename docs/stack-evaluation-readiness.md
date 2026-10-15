@@ -19,3 +19,46 @@ Local evidence on 2026-10-11: Python 89 tests, Java 75 tests, Gateway 20 tests a
 CI sequencing correction: the preceding `01a50c6` integration run failed its post-restart HTTP fixture with `429 RATE_LIMITED` after browser tests. An authenticated, digest-verified diagnostic artifact established the cause. The workflow now allows the actual 60-second project quota to expire before that fixture, without changing quota limits or deleting Redis entries. This fixes fixture isolation; the newest full CI must still complete before claiming delivery verification.
 
 Extended actual runtime verification at source revision `15fce601ebdfba5fdf3c886a9a73f3fc27d9e221` passed nine checks. The explicit `--worker-interruption --nats-interruption --policy-interruption` mode stopped and restored each owned transition service separately with no outstanding evaluation. Only the affected dependency became unavailable; independently validated readiness recovered afterward. All 15 business tables were unchanged, owned sessions closed, and all 20 AgentTrust containers returned healthy. [Full source and registry-image CI](https://github.com/automaster5013/AgentTrust/actions/runs/38147084755) passed. These results supersede the earlier pending status above; they do not establish production readiness.
+
+## Shared role boundary and concurrent observations
+
+Startup and scoped database readiness use the same restricted-role predicate.
+Besides direct role attributes, it rejects database/public-schema CREATE,
+all membership in other roles (including predefined server-program/all-table
+write roles), and direct ownership of public relations. Noninherited membership
+still fails: disabling inheritance does not remove the ability to assume a role. Catalog relations and functions are explicitly qualified
+with `pg_catalog`; a caller's temporary `pg_roles` cannot hide privilege drift.
+The scoped variant also requires the current organization/project settings.
+The database observation must successfully read the bounded V17 pending-workspace
+capability; a missing capability or unsuitable function owner is unavailable.
+Its namespace values are discarded and never returned by readiness.
+
+The disposable PostgreSQL boundary fixture exercises database/schema CREATE,
+inherited role administration, noninherited relation ownership, predefined
+server-program/all-table write roles and temporary catalog shadowing. It changes only its own tmpfs database and verifies actual
+compiled API-process rejection and recovery after each restored grant. Earlier
+baseline controls demonstrated four privilege states accepted by startup and seven
+database-readiness predicate false positives. The original development database's
+grants are never changed by these adversarial controls.
+
+Concurrent Python `/ready` callers may share one in-flight consumer inspection
+for the same connection. Completed results are never cached: a later observation
+starts new live broker reads. One disconnected HTTP reader cannot cancel a probe
+other readers await; the existing one-second inspection deadline remains.
+Dead evaluator flags or a disconnected socket fail immediately, and the HTTP
+contract rechecks evaluator flags and the current inspection connection after the
+shared await. Connection replacement cannot reuse an old connection's result.
+This reduces repeated control-plane reads without claiming throughput, latency
+or a production SLA from unit checks. The real application build, exact published
+images and a changed-runtime observation remain separate acceptance requirements.
+
+
+Backup stream privacy is accepted separately from dependency readiness. Shared
+crypto and physical-volume transport helpers disable Docker log storage for
+attached data streams. A disposable canary test observes actual log drivers for
+encryption/decryption and compressed/uncompressed volume archives, then deliberately
+enables JSON logging only for a public synthetic canary to verify that this
+regression would persist plaintext. No original keys, database bytes or source
+service interruptions are used by that control. Source and registry recovery
+jobs run it before handling their snapshot data. Application service logging
+retains its existing behavior; private backup streams are not application logs.

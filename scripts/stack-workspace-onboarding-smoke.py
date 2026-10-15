@@ -80,6 +80,36 @@ def main():
                 report['uncertainCreationObserved'] = report.get('uncertainCreationObserved', False) or journal['createResponseUncertain']
             require(result.returncode == 0 and safe['completed'], 'WORKSPACE_PROBE_PROVISIONING_UNVERIFIED')
             credentials.extend(owned[-len(manifest['members']):])
+            before_journal = hashlib.sha256((directory / 'journal.json').read_bytes()).hexdigest()
+            with IdentityAdmin(ROOT) as admin:
+                before_inspection = account_fingerprints(admin)
+            reviewed = subprocess.run([sys.executable, 'scripts/stack-workspace-reconcile.py',
+                '--manifest', str(path), '--journal', str(directory / 'journal.json')],
+                cwd=ROOT, capture_output=True, text=True, timeout=30)
+            review = json.loads(reviewed.stdout)
+            require(reviewed.returncode == 0 and review['completed']
+                    and review['providerContactPerformed'] is False)
+            inspected = subprocess.run([sys.executable, 'scripts/stack-workspace-reconcile.py',
+                '--manifest', str(path), '--journal', str(directory / 'journal.json'), '--inspect-local'],
+                cwd=ROOT, capture_output=True, text=True, timeout=120)
+            inspection = json.loads(inspected.stdout)
+            detail = inspection.get('inspection', {})
+            require(inspected.returncode == 0 and inspection['completed'] and detail['completed']
+                    and detail['knownActorsChecked'] == len(manifest['members'])
+                    and detail['knownActorsEnabled'] == len(manifest['members'])
+                    and detail['knownActorsDisabled'] == 0
+                    and detail['knownActorsWithChangedScopeOrRole'] == 0
+                    and detail['unknownCreateCandidatesFound'] == 0
+                    and detail['manualReconciliationRequired'] is False
+                    and detail['providerWritesPerformed'] is False
+                    and inspection['operatorAuthenticationSessionClosed'])
+            require(hashlib.sha256((directory / 'journal.json').read_bytes()).hexdigest() == before_journal)
+            with IdentityAdmin(ROOT) as admin:
+                require(account_fingerprints(admin) == before_inspection)
+            report['journalReconciliationCohortsVerified'] = report.get('journalReconciliationCohortsVerified', 0) + 1
+
+        require(report.get('journalReconciliationCohortsVerified') == 3)
+        report['journalReconciliationReadOnlyVerified'] = True
         report['checks'].append('default CLI plan has no provider contact; five non-seeded identities provisioned in three workspace scopes')
         by_name = {}
         report['stage']='verify-new-identity-and-role'
@@ -154,6 +184,18 @@ def main():
             denied.request('me', expected=401)
         else:
             require(False, 'SUSPENDED_WORKSPACE_LOGIN_ACCEPTED')
+        inspected = subprocess.run([sys.executable, 'scripts/stack-workspace-reconcile.py',
+            '--manifest', str(fixture / 'manifest-0.json'), '--journal', str(journals[0] / 'journal.json'),
+            '--inspect-local'], cwd=ROOT, capture_output=True, text=True, timeout=120)
+        inspection = json.loads(inspected.stdout)
+        detail = inspection.get('inspection', {})
+        require(inspected.returncode == 0 and inspection['completed'] and detail['completed']
+                and detail['knownActorsChecked'] == 3 and detail['knownActorsDisabled'] == 3
+                and detail['knownActorsEnabled'] == 0 and detail['providerSessionsObserved'] == 0
+                and detail['manualReconciliationRequired'] is False
+                and detail['providerWritesPerformed'] is False
+                and inspection['operatorAuthenticationSessionClosed'])
+        report['journalReconciliationDisabledCohortVerified'] = True
         report['applicationSessionRevocationVerified'] = True
         report['suspendedAccountCannotLogin'] = True
         report['foreignWorkspaceSessionsPreserved'] = True

@@ -17,6 +17,7 @@ public class CoreApplication {
             DatabaseApiRoleCheck.verify(settings);
             if(mode==DatabaseProcessBoundary.Mode.CHECK_API_ROLE){System.out.println("{\"completed\":true,\"restrictedApiRoleVerified\":true,\"apiServerStarted\":false}");return;}
             System.setProperty("spring.flyway.enabled","false");
+        }catch(DatabaseApiRoleCheck.RolePolicyRefused error){System.err.println("DATABASE_PROCESS_BOUNDARY_REFUSED:API_ROLE_POLICY");System.exit(1);return;
         }catch(Exception error){System.err.println("DATABASE_PROCESS_BOUNDARY_REFUSED");System.exit(1);return;}
         SpringApplication.run(CoreApplication.class, args);
     }

@@ -18,7 +18,7 @@ def crypt(root,keyfile,operation,data):
     if keyfile.is_symlink() or keyfile.resolve().parent.parent!=(root/'.local').resolve() or keyfile.stat().st_size!=32:
         raise ValueError('Unexpected private fixture key')
     tools=json.loads(run(root,['docker','image','inspect','agenttrust-security:local']).stdout)[0]['Id']
-    command=['docker','run','--rm','-i','--network','none','--read-only','--cap-drop','ALL',
+    command=['docker','run','--rm','--log-driver','none','-i','--network','none','--read-only','--cap-drop','ALL',
              '--security-opt','no-new-privileges:true','--tmpfs','/tmp:size=16m,mode=1777',
              '--memory','384m','--cpus','2','--pids-limit','32',
              '--mount','type=bind,source='+str(root/'scripts/stack-backup-crypt.py')+',target=/crypt.py,readonly',
@@ -32,6 +32,17 @@ def crypt(root,keyfile,operation,data):
             raise BackupAuthenticationError('Backup authentication refused')
         raise RuntimeError('RESTORE_DRILL_CRYPTOGRAPHY_FAILED')
     return result.stdout
+
+def volume_stream(root,target,args,user='10001:10001',data=None,write=False,initialize=False,memory='192m'):
+    if memory not in ('128m','192m'):
+        raise ValueError('Private volume transport budget refused')
+    command=['docker','run','--rm','--log-driver','none','-i','--network','none','--read-only',
+             '--cap-drop','ALL','--security-opt','no-new-privileges:true','--memory',memory,
+             '--cpus','2','--pids-limit','32','--user','0:0' if initialize else user,
+             '--mount','type=volume,source='+target+',target=/data'+('' if write else ',readonly')]
+    if initialize:command+=['--cap-add','CHOWN']
+    return run(root,command+[ALPINE]+args,input=data,timeout=120).stdout
+
 
 def minio_tar_fingerprints(raw):
     if not 0<len(raw)<=TAR_LIMIT:raise ValueError('Archive exceeds drill bound')

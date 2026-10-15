@@ -2,7 +2,7 @@
 import datetime,hashlib,json,os,pathlib,secrets,shutil,time,uuid
 from stack_compose import stack_compose
 from stack_test_client import StackClient
-from stack_backup_tools import ALPINE,TAR_LIMIT,crypt,minio_tar_fingerprints,run
+from stack_backup_tools import ALPINE,TAR_LIMIT,crypt,minio_tar_fingerprints,run,volume_stream
 
 root=pathlib.Path(__file__).resolve().parent.parent;identifier=str(uuid.uuid4())
 name='agenttrust-stack-object-restore-'+identifier;directory=root/'.local'/('stack-object-backup-'+identifier)
@@ -25,12 +25,7 @@ def secrets_mounts(names):
     return result
 
 def volume_command(target,args,input=None,write=False,root_chown=False):
-    base=['docker','run','--rm','-i','--network','none','--read-only','--cap-drop','ALL',
-          '--security-opt','no-new-privileges:true','--memory','128m','--cpus','2','--pids-limit','32',
-          '--user','0:0' if root_chown else '10001:10001',
-          '--mount','type=volume,source='+target+',target=/data'+('' if write else ',readonly')]
-    if root_chown:base+=['--cap-add','CHOWN']
-    return command(base+[ALPINE]+args,input=input).stdout
+    return volume_stream(root,target,args,data=input,write=write,initialize=root_chown,memory='128m')
 
 def archive(target):
     size=volume_command(target,['du','-sk','/data']).decode().split()[0]

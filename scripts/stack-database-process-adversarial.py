@@ -5,6 +5,7 @@ credentials remain private and are removed only after owned resources clean up.
 """
 import argparse,datetime,json,os,pathlib,re,secrets,subprocess,time,uuid
 from stack_pending_workspace_probe import verify as verify_pending_scopes
+from stack_database_role_probe import verify as verify_role_drift
 from stack_backup_custody import windows_owner_only
 parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--candidate-image');args=parser.parse_args()
 root=pathlib.Path(__file__).resolve().parent.parent;identifier=str(uuid.uuid4());prefix='agenttrust-stack-migration-fixture-'+identifier;directory=root/'.local'/('stack-database-process-fixture-'+identifier);directory.mkdir();report_path=directory/'summary.json';assert not report_path.exists()
@@ -55,6 +56,7 @@ try:
   if expected==0:
    frame=json.loads(result.stdout);assert frame['completed'] and frame['apiServerStarted'] is False;return frame
   assert b'DATABASE_PROCESS_BOUNDARY_REFUSED' in result.stderr
+  return {'rejected':True,'apiRolePolicyRefused':b'DATABASE_PROCESS_BOUNDARY_REFUSED:API_ROLE_POLICY' in result.stderr}
  first=process('initial-migrate',migration,['--migrate-only'],0);expected=len(list((root/'services/core-api/src/main/resources/db/migration').glob('V*.sql')));assert first['migrationsExecuted']==expected
  assert sql('SELECT count(*) FROM flyway_schema_history WHERE success;').decode().strip()==str(expected)
  report['checks'].append('fresh isolated database migrates all '+str(expected)+' unchanged migration resources using separate owner process; no API server starts')
@@ -71,6 +73,8 @@ try:
  sql('REVOKE agenttrust_stack FROM agenttrust_stack_api;')
  assert process('restricted-again',api,['--check-database-role'],0)['restrictedApiRoleVerified']
  report['checks'].append('actual database superuser flag and inherited owner-role membership are refused; restoring restricted grants recovers readiness')
+ report['sharedStartupReadinessRoleDrift']=verify_role_drift(sql,process,api,root)
+ report['checks'].append('database and schema CREATE grants, inherited role administration noninherited public relation ownership and predefined dangerous role membership and temporary catalog shadowing are refused by shared startup/readiness predicate; actual API process rejects and recovers after each isolated grant restoration')
  report['boundedPendingWorkspaceDiscovery']=verify_pending_scopes(sql)
  report['checks'].append('ten admitted namespaces page8+2 across unsigned UUID boundary; completed work excluded, direct RLS preserved, PUBLIC access and API alteration refused')
  report.update(completed=True,phase='completed',migrationResourcesVerified=expected,sourceDatabaseImageId=dbimage,isolatedPostgresStateInTmpfs=True)

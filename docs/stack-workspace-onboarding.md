@@ -82,10 +82,10 @@ confirms the other project and organization remain authenticated.
 The first local read-only-business smoke passed on 2026-10-15. Unit controls cover
 malformed manifests, duplicate fields, account collisions, privilege/scope
 substitution, lost create responses, failed activation/containment and journal
-failures. Twenty unit/transport/custody controls pass locally, including exact
+failures. Thirty-one unit/transport/custody/reconciliation controls cover the implementation, including exact
 journal custody and suspension scope, role, unknown-logout and remaining-session
-refusal. CI and exact registry acceptance for this change remain pending until
-the matching revision completes. Dynamic application project selection,
+refusal. Every release must independently pass matching source and exact registry acceptance;
+local unit checks alone are insufficient. Dynamic application project selection,
 browser membership management, production tenant registry, enterprise IdP lifecycle and
 customer invitations remain separate release requirements.
 
@@ -117,8 +117,70 @@ PostgreSQL fixture checks ten pending namespaces in pages8+2 across the UUID sig
 boundary, exclusion of completed work, direct table RLS, refusal of PUBLIC
 execution and API alteration, and resistance to a caller's temporary shadow
 table. See [PostgreSQL's security-definer guidance](https://www.postgresql.org/docs/current/sql-createfunction.html#SQL-CREATEFUNCTION-SECURITY).
-Full source and registry evaluation acceptance for this change remains pending
-until its matching CI completes. No new business table is introduced; V17 adds
+Full source and exact registry evaluation acceptance must match the release revision. No new business table is introduced; V17 adds
 the function and its migration-history entry.
 
 Protocol reference: [Keycloak Admin REST API](https://www.keycloak.org/docs-api/latest/rest-api/index.html).
+
+## Read-only journal reconciliation
+
+`python scripts/stack-workspace-reconcile.py --manifest .local/<original-manifest>.json --journal .local/workspace-onboarding-<UUID>/journal.json`
+reviews an owner-protected provisioning journal and its exact original full
+manifest without contacting the identity provider. The manifest hash, ordered
+attempted members, organization/project and known actor identifiers must agree.
+It accepts incomplete provisioning records for review; it never replays a create,
+password, activation or logout request. It does not edit the original journal.
+
+Adding `--inspect-local` uses only account/configuration/session reads against the
+fixed development Keycloak, plus its own operator authentication and logout. It
+reports aggregate enabled/disabled, changed scope/role and session counts.
+Completion means inspection finished, not that provisioning recovered. Every
+incomplete provisioning record still requires an operator decision, even if all
+known users are disabled. Reads are not an atomic provider snapshot and do not
+independently verify every application session's revocation.
+
+If a create response was lost, an exact bounded username lookup may find a
+candidate. That candidate is always unproven ownership: it is never adopted,
+enabled, disabled, deleted or written back to the journal. No matching username
+does not establish rollback; a rename or delayed provider action may still need
+investigation. Ambiguous matches are refused. This command is an inspection tool,
+not an authorization to resume or repair uncertain operations automatically.
+
+Provisioning, suspension and known-actor reconciliation inspect effective roles
+for Keycloak's `realm-management` client, including inherited composites. Checking
+only direct client mappings is insufficient when a default/composite realm role
+grants administration. Provisioning rejects such a cohort before activation;
+suspension refuses a changed privilege boundary before any account mutation.
+Reconciliation flags a known actor with that unexpected privilege for manual
+review. Ordinary account-client roles are not confused with realm administration.
+Owned transport controls demonstrate the previous direct-mapping gap; the actual
+four existing development accounts have no effective realm-management roles.
+These controls do not certify a future enterprise IdP configuration.
+
+## Multi-workspace delivery acceptance
+
+`python scripts/stack-workspace-dispatch-load.py` prints an offline plan and
+contacts no provider or Docker service. Its write option
+`--allow-owned-evaluations` requires a disposable GitHub CI job and the loopback
+local-review identity profile. Source and exact registry acceptance run it there.
+It creates ten owned administrator identities across two organizations and ten
+fresh projects, with organization UUIDs spanning the unsigned ordering boundary.
+
+The fixture stops only its known transition worker and admits fifty synthetic
+evaluations, five per workspace. Before restarting that same container and image,
+it requires the actual durable broker to hold fifty distinct published messages.
+All ten namespaces remain pending during this check, exercising discovery beyond
+the eight-namespace page and forty-admission cycle budget. After restoration it
+requires fifty actual Python synthetic completions, blocked unreviewed gates,
+other-project/organization 404s and acknowledgement of the broker work. Completed
+business rows stay in the disposable acceptance database. It uses no model or
+paid provider and establishes no production load or customer SLA.
+
+Only known created identity ids are cleaned up. The entire cleanup cohort is
+checked against the original account set and exact name/scope before any delete;
+all original identities and role mappings must match afterward. Generated
+password journals remain owner-protected and are excluded from CI artifacts.
+The uploaded report contains bounded counts and flags. Seven failure/boundary
+controls cover the offline plan, disposable-CI guard, namespace/broker bounds and
+cleanup ownership. Full fifty-evaluation acceptance must pass independently in
+both source and exact published-image environments for the release revision.

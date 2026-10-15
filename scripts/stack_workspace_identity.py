@@ -64,9 +64,10 @@ class LocalWorkspaceIdentity:
         return self
 
     def read(self, path):
-        require(path in ('/clients?clientId=agenttrust-console', '/users/profile')
+        require(path in ('/clients?clientId=agenttrust-console', '/clients?clientId=realm-management', '/users/profile')
                 or re.fullmatch(r'/users\?username=[a-z][a-z0-9-]{2,40}&exact=true&max=2', path) is not None
-                or re.fullmatch(r'/users/[a-f0-9-]{36}(?:/sessions|/role-mappings(?:/realm/(?:available|composite))?)?', path) is not None)
+                or re.fullmatch(r'/users/[a-f0-9-]{36}(?:/sessions|/role-mappings(?:/realm/(?:available|composite))?)?', path) is not None
+                or re.fullmatch(r'/users/[a-f0-9-]{36}/role-mappings/clients/[a-f0-9-]{36}/composite', path) is not None)
         raw, _ = self.wire('/admin/realms/agenttrust' + path)
         return json.loads(raw)
 

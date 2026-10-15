@@ -2,7 +2,7 @@
 import copy
 import json
 import re
-from stack_workspace_onboarding import ROLES, canonical_uuid, parse_manifest, require
+from stack_workspace_onboarding import ROLES, canonical_uuid, parse_manifest, require, effective_realm_management_roles
 
 
 def cohort_from_journal(raw):
@@ -56,6 +56,8 @@ def verified_member(api, cohort, member):
             'WORKSPACE_SUSPENSION_ROLE_UNVERIFIED')
     mappings = api.read('/users/' + member['actorId'] + '/role-mappings')
     require(isinstance(mappings, dict) and not mappings.get('clientMappings'))
+    require(not effective_realm_management_roles(api, member['actorId']),
+            'WORKSPACE_INHERITED_ADMINISTRATION_REFUSED')
     return user
 
 

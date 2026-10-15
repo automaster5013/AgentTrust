@@ -19,7 +19,7 @@ import shutil
 import subprocess
 import time
 import uuid
-from stack_backup_tools import ALPINE, crypt
+from stack_backup_tools import ALPINE, crypt, volume_stream
 from stack_business_fingerprint import fingerprint, sql
 from stack_coherent_archive import (COMPRESSED_LIMIT, TOTAL_LIMIT, SERVICES,
                                     STATEFUL, archive_fingerprints,
@@ -175,14 +175,7 @@ class Rehearsal:
     def volume_command(self, volume, user, args, data=None, write=False, initialize=False):
         if write:
             self.own_volume(volume)
-        command = ['docker', 'run', '--rm', '-i', '--network', 'none', '--read-only',
-                   '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true',
-                   '--memory', '192m', '--cpus', '2', '--pids-limit', '32',
-                   '--user', '0:0' if initialize else user,
-                   '--mount', 'type=volume,source='+volume+',target=/data'+('' if write else ',readonly')]
-        if initialize:
-            command += ['--cap-add', 'CHOWN']
-        return run(command+[ALPINE]+args, data=data, timeout=120).stdout
+        return volume_stream(ROOT,volume,args,user=user,data=data,write=write,initialize=initialize)
 
     def snapshot_volume(self, service):
         source = self.sources[service]

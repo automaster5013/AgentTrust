@@ -67,6 +67,19 @@ def manifest_digest(manifest):
     return hashlib.sha256(json.dumps(manifest, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
+def effective_realm_management_roles(api, identifier):
+    canonical_uuid(identifier)
+    clients = api.read('/clients?clientId=realm-management')
+    require(isinstance(clients, list) and len(clients) == 1
+            and isinstance(clients[0], dict) and clients[0].get('clientId') == 'realm-management',
+            'WORKSPACE_MANAGEMENT_CLIENT_UNVERIFIED')
+    client = canonical_uuid(clients[0].get('id'))
+    roles = api.read('/users/' + identifier + '/role-mappings/clients/' + client + '/composite')
+    require(isinstance(roles, list) and len(roles) <= 100 and all(isinstance(row, dict) for row in roles),
+            'WORKSPACE_MANAGEMENT_ROLES_UNVERIFIED')
+    return roles
+
+
 class Provisioner:
     """Transport must return the authenticated create Location id, never a search substitute.
 
@@ -102,6 +115,8 @@ class Provisioner:
         require(isinstance(rows, list) and len(rows) <= 100)
         recognized = [row.get('name') for row in rows if isinstance(row, dict) and row.get('name') in ROLES]
         require(recognized == [role], 'WORKSPACE_IDENTITY_ROLE_UNVERIFIED')
+        require(not effective_realm_management_roles(self.api, identifier),
+                'WORKSPACE_INHERITED_ADMINISTRATION_REFUSED')
         # Workspace identities must never gain realm/client administration access.
         mappings = self.api.read('/users/' + identifier + '/role-mappings')
         require(isinstance(mappings, dict) and not mappings.get('clientMappings'),

@@ -26,14 +26,7 @@ public class EvaluationReadiness {
  public record Observation(String contract,UUID organizationId,UUID projectId,Instant checkedAt,
   boolean ready,List<Dependency> dependencies,boolean productionReady,boolean deploymentAuthority){}
  boolean databaseAvailable(DemoUser user){
-  try{boolean role=Boolean.TRUE.equals(runs.scoped(user,()->jdbc.queryForObject("""
-   SELECT current_user='agenttrust_stack_api' AND NOT rolsuper AND NOT rolbypassrls
-    AND NOT rolcreaterole AND NOT rolcreatedb AND NOT rolreplication
-    AND NOT pg_has_role(current_user,'agenttrust_stack','member')
-    AND current_setting('agenttrust.organization_id')=?
-    AND current_setting('agenttrust.project_id')=?
-   FROM pg_roles WHERE rolname=current_user
-   """,Boolean.class,user.organizationId().toString(),user.projectId().toString())));
+  try{boolean role=Boolean.TRUE.equals(runs.scoped(user,()->jdbc.queryForObject(DatabaseApiRoleCheck.SCOPED_ROLE_QUERY,Boolean.class,user.organizationId().toString(),user.projectId().toString())));
    if(!role)return false;
    pendingScopes.after(null);
    return true;
