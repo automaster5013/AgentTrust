@@ -3,24 +3,30 @@
 Never restarts source services or mounts original volumes. Generated fixture
 credentials remain private and are removed only after owned resources clean up.
 """
-import datetime,json,os,pathlib,re,secrets,subprocess,time,uuid
+import argparse,datetime,json,os,pathlib,re,secrets,subprocess,time,uuid
+from stack_pending_workspace_probe import verify as verify_pending_scopes
+from stack_backup_custody import windows_owner_only
+parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--candidate-image');args=parser.parse_args()
 root=pathlib.Path(__file__).resolve().parent.parent;identifier=str(uuid.uuid4());prefix='agenttrust-stack-migration-fixture-'+identifier;directory=root/'.local'/('stack-database-process-fixture-'+identifier);directory.mkdir();report_path=directory/'summary.json';assert not report_path.exists()
 containers=[];network=False;files=[];report={'completed':False,'fixtureId':identifier,'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'sourceServicesModified':False,'originalVolumesMounted':False,'hostPortsPublished':False,'rawSecretsPrinted':False,'phase':'fixture-preflight','checks':[]}
 def run(args,data=None,timeout=60):return subprocess.run(args,cwd=root,input=data,capture_output=True,timeout=timeout)
 def ok(args,data=None,timeout=60):
  result=run(args,data,timeout);assert result.returncode==0;return result.stdout
 def envfile(name,values):
- path=directory/name;path.open('xb').write(('\n'.join(k+'='+v for k,v in values.items())+'\n').encode());files.append(path)
- if os.name!='nt':path.chmod(0o600)
+ path=directory/name;path.touch(exist_ok=False);files.append(path)
+ if os.name=='nt':
+  ok(['icacls',str(path),'/reset']);ok(['icacls',str(path),'/inheritance:r','/grant:r',owner+':F','SYSTEM:F']);windows_owner_only((directory,path))
+ else:path.chmod(0o600)
+ path.write_bytes(('\n'.join(k+'='+v for k,v in values.items())+'\n').encode())
  return path
 def own(name):
  value=json.loads(ok(['docker','inspect',name]))[0];assert value['Config']['Labels'].get('agenttrust.fixture')==identifier;return value
 def sql(text):return ok(['docker','exec','-i',prefix+'-db','psql','-U','agenttrust_stack','-d','agenttrust_stack','-At','-v','ON_ERROR_STOP=1'],text.encode())
 try:
  if os.name=='nt':
-  owner=ok(['whoami']).decode().strip();ok(['icacls',str(directory),'/inheritance:r','/grant:r',owner+':(OI)(CI)F','SYSTEM:(OI)(CI)F'])
+  owner=ok(['whoami']).decode().strip();ok(['icacls',str(directory),'/reset']);ok(['icacls',str(directory),'/inheritance:r','/grant:r',owner+':(OI)(CI)F','SYSTEM:(OI)(CI)F']);windows_owner_only((directory,))
  else:directory.chmod(0o700)
- core=json.loads(ok(['docker','inspect','agenttrust-stack-core-api-1']))[0];assert core['Config']['Labels'].get('com.docker.compose.project')=='agenttrust' and core['Config']['Labels'].get('com.docker.compose.service')=='stack-core-api' and core['State']['Health']['Status']=='healthy';image=core['Image'];report['candidateImageId']=image;report['revision']=ok(['git','rev-parse','HEAD']).decode().strip()
+ core=json.loads(ok(['docker','inspect','agenttrust-stack-core-api-1']))[0];assert core['Config']['Labels'].get('com.docker.compose.project')=='agenttrust' and core['Config']['Labels'].get('com.docker.compose.service')=='stack-core-api' and core['State']['Health']['Status']=='healthy';image=args.candidate_image or core['Image'];assert re.fullmatch('sha256:[a-f0-9]{64}',image);assert ok(['docker','image','inspect','--format','{{.Id}}',image]).decode().strip()==image;report['candidateImageId']=image;report['revision']=ok(['git','rev-parse','HEAD']).decode().strip();report['candidateOverrideUsed']=args.candidate_image is not None;report['sourceClean']=not ok(['git','status','--porcelain']).strip()
  database=json.loads(ok(['docker','inspect','agenttrust-stack-db-1']))[0];assert database['Config']['Labels']['com.docker.compose.service']=='stack-db';dbimage=database['Image']
  owner_password,api_password=secrets.token_hex(24),secrets.token_hex(24)
  db=envfile('database.env',{'POSTGRES_DB':'agenttrust_stack','POSTGRES_USER':'agenttrust_stack','POSTGRES_PASSWORD':owner_password})
@@ -65,6 +71,8 @@ try:
  sql('REVOKE agenttrust_stack FROM agenttrust_stack_api;')
  assert process('restricted-again',api,['--check-database-role'],0)['restrictedApiRoleVerified']
  report['checks'].append('actual database superuser flag and inherited owner-role membership are refused; restoring restricted grants recovers readiness')
+ report['boundedPendingWorkspaceDiscovery']=verify_pending_scopes(sql)
+ report['checks'].append('ten admitted namespaces page8+2 across unsigned UUID boundary; completed work excluded, direct RLS preserved, PUBLIC access and API alteration refused')
  report.update(completed=True,phase='completed',migrationResourcesVerified=expected,sourceDatabaseImageId=dbimage,isolatedPostgresStateInTmpfs=True)
 except Exception as error:report.update(errorType=type(error).__name__,code='MIGRATION_BOUNDARY_FIXTURE_UNVERIFIED')
 finally:

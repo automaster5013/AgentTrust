@@ -7,6 +7,7 @@ import secrets
 import subprocess
 import sys
 import time
+import traceback
 import urllib.error
 import uuid
 from stack_identity_admin import IdentityAdmin
@@ -38,6 +39,7 @@ def main():
     fixture.mkdir(mode=0o700)
     original = None
     try:
+        report['stage']='preserve-original-identity'
         with IdentityAdmin(ROOT) as admin:
             original = account_fingerprints(admin)
         org, project, second_project, foreign_org, foreign_project = [str(uuid.uuid4()) for _ in range(5)]
@@ -49,7 +51,14 @@ def main():
              'members': [{'username': prefix + '-project', 'role': 'admin'}]},
             {'schemaVersion': 1, 'organizationId': foreign_org, 'projectId': foreign_project,
              'members': [{'username': prefix + '-foreign', 'role': 'admin'}]}]
+        configured = json.loads((ROOT / '.local/stack/demo-credentials.json').read_text(encoding='utf-8'))
+        seeded = {(row['organizationId'], row['projectId']) for row in configured}
+        require(all((manifest['organizationId'], manifest['projectId']) not in seeded for manifest in manifests))
+        report['nonSeededWorkspaceScopesVerified'] = True
+        report['fixtureOrganizations'] = 2
+        report['fixtureProjects'] = 3
         credentials = []
+        report['stage']='provision-owned-cohorts'
         for index, manifest in enumerate(manifests):
             path = fixture / ('manifest-' + str(index) + '.json')
             path.open('x', encoding='utf-8').write(json.dumps(manifest))
@@ -73,6 +82,7 @@ def main():
             credentials.extend(owned[-len(manifest['members']):])
         report['checks'].append('default CLI plan has no provider contact; five non-seeded identities provisioned in three workspace scopes')
         by_name = {}
+        report['stage']='verify-new-identity-and-role'
         for row in credentials:
             client = StackClient('http://127.0.0.1:4320', credentials, {}, clients)
             client.login(row['username'])
@@ -84,17 +94,22 @@ def main():
                        headers={'Idempotency-Key': str(uuid.uuid4())}, expected=403)
         report['checks'].append('new viewer cannot create evaluations; refusal creates no business record')
         if args.allow_owned_evaluations:
+            report['stage']='admit-new-workspace-evaluation'
             created = editor.request('runs', 'POST', {'scenario': 'pass', 'requiresApproval': True},
                                      headers={'Idempotency-Key': str(uuid.uuid4())})
             identifier = created['id']
+            report['stage']='await-new-workspace-worker-completion'
             deadline = time.monotonic() + 35
             while True:
                 record = administrator.request('runs/' + identifier)
+                report['lastObservedRunState']=record.get('state') if record.get('state') in ['queued','succeeded','failed'] else 'invalid'
+                report['lastObservedRunDecision']=record.get('decision') if record.get('decision') in ['pass','block','inconclusive'] else 'invalid'
                 if record['state'] != 'queued':
                     break
-                require(time.monotonic() < deadline)
+                require(time.monotonic() < deadline, 'WORKSPACE_DISPATCH_TIMEOUT')
                 time.sleep(.5)
             require(record['state'] == 'succeeded' and record['decision'] == 'pass')
+            report['stage']='verify-new-workspace-review-and-cross-scope-boundaries'
             require(viewer.request('runs/' + identifier)['id'] == identifier)
             editor.request('runs/' + identifier + '/reviews', 'POST',
                            {'decision': 'approved', 'reason': 'Owned workspace role refusal', 'expectedReviewSequence': 0}, expected=403)
@@ -111,6 +126,7 @@ def main():
             report['checks'].append('new editor actual Python evaluation, viewer read, admin-only rejection and blocked gate work; same-organization other-project and foreign-organization access return404')
         # Retain active application sessions while the operator suspends exactly
         # the first cohort, so provider emptiness alone cannot pass this check.
+        report['stage']='suspend-owned-cohort'
         suspended = subprocess.run([sys.executable, 'scripts/stack-workspace-onboarding.py',
             '--suspend-journal', str(journals[0] / 'journal.json'), '--execute'],
             cwd=ROOT, capture_output=True, text=True, timeout=180)
@@ -145,10 +161,12 @@ def main():
         for client in reversed(clients):
             client.logout()
         report['checks'].append('all owned application and provider sessions closed')
-        report['completed'] = True
+        report.update(completed=True,stage='completed')
     except Exception as error:
         report.update(completed=False, errorType=type(error).__name__,
-                      code=getattr(error, 'code', 'WORKSPACE_ONBOARDING_PROBE_UNVERIFIED'))
+                      code=getattr(error, 'code', 'WORKSPACE_ONBOARDING_PROBE_UNVERIFIED'),
+                      failureLocations=[{'file':pathlib.Path(t.filename).name,'line':t.lineno}
+                                        for t in traceback.extract_tb(error.__traceback__)])
     finally:
         closed = True
         for client in reversed(clients):

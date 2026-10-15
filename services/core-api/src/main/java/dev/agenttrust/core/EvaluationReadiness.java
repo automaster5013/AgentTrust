@@ -15,25 +15,32 @@ import org.springframework.stereotype.Service;
 public class EvaluationReadiness {
  private final RunService runs; private final JdbcTemplate jdbc;
  private final PolicyClient policy; private final ObjectMapper mapper;
+ private final PendingWorkspaceScopes pendingScopes;
  private final OkHttpClient client=new OkHttpClient.Builder()
   .connectionPool(new ConnectionPool(2,4,java.util.concurrent.TimeUnit.SECONDS))
   .connectTimeout(Duration.ofSeconds(1)).readTimeout(Duration.ofSeconds(1))
   .callTimeout(Duration.ofSeconds(2)).followRedirects(false).followSslRedirects(false)
   .retryOnConnectionFailure(false).build();
- public EvaluationReadiness(RunService runs,JdbcTemplate jdbc,PolicyClient policy,ObjectMapper mapper){this.runs=runs;this.jdbc=jdbc;this.policy=policy;this.mapper=mapper;}
+ public EvaluationReadiness(RunService runs,JdbcTemplate jdbc,PolicyClient policy,ObjectMapper mapper,PendingWorkspaceScopes pendingScopes){this.runs=runs;this.jdbc=jdbc;this.policy=policy;this.mapper=mapper;this.pendingScopes=pendingScopes;}
  public record Dependency(String name,boolean available){}
  public record Observation(String contract,UUID organizationId,UUID projectId,Instant checkedAt,
   boolean ready,List<Dependency> dependencies,boolean productionReady,boolean deploymentAuthority){}
- public Observation read(DemoUser user){
-  boolean database=false,worker=false,opa=false;
-  try{database=Boolean.TRUE.equals(runs.scoped(user,()->jdbc.queryForObject("""
+ boolean databaseAvailable(DemoUser user){
+  try{boolean role=Boolean.TRUE.equals(runs.scoped(user,()->jdbc.queryForObject("""
    SELECT current_user='agenttrust_stack_api' AND NOT rolsuper AND NOT rolbypassrls
     AND NOT rolcreaterole AND NOT rolcreatedb AND NOT rolreplication
     AND NOT pg_has_role(current_user,'agenttrust_stack','member')
     AND current_setting('agenttrust.organization_id')=?
     AND current_setting('agenttrust.project_id')=?
    FROM pg_roles WHERE rolname=current_user
-   """,Boolean.class,user.organizationId().toString(),user.projectId().toString())));}catch(Exception ignored){}
+   """,Boolean.class,user.organizationId().toString(),user.projectId().toString())));
+   if(!role)return false;
+   pendingScopes.after(null);
+   return true;
+  }catch(Exception ignored){return false;}
+ }
+ public Observation read(DemoUser user){
+  boolean database=databaseAvailable(user),worker=false,opa=false;
   try{var request=new Request.Builder().url("http://stack-ai-worker:8000/ready").get().build();
    try(var response=client.newCall(request).execute()){
     if(response.code()==200&&response.body()!=null){

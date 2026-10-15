@@ -9,35 +9,36 @@ import jakarta.annotation.PreDestroy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 
-/** Dispatches durable DB admissions for configured local scopes; never reads other scopes. */
+/** Discovers only admitted namespaces, then reads each payload under its original RLS scope. */
 @Component
 public class QueuePublisher {
-    private final RunService runs; private final ObjectMapper mapper; private final List<DemoUser> scopes;
+    private final RunService runs; private final ObjectMapper mapper; private final PendingWorkspaceScopes scopes;
+    private PendingWorkspaceScopes.Scope cursor;
     private final String token; private Connection connection;
-    public QueuePublisher(RunService runs, ObjectMapper mapper, @Value("${agenttrust.demo-credentials-file}") String file) throws Exception {
-        this.runs=runs;this.mapper=mapper;token=Files.readString(Path.of("/run/secrets/stack-nats-token"));
+    @Autowired public QueuePublisher(RunService runs, ObjectMapper mapper,PendingWorkspaceScopes scopes) throws Exception {
+        this(runs,mapper,scopes,Files.readString(Path.of("/run/secrets/stack-nats-token")));
+    }
+    QueuePublisher(RunService runs,ObjectMapper mapper,PendingWorkspaceScopes scopes,String token){
+        this.runs=runs;this.mapper=mapper;this.scopes=scopes;this.token=token;
         if(!token.matches("[a-f0-9]{64}"))throw new IllegalStateException("Queue configuration unavailable");
-        var known=new HashSet<String>();var values=new ArrayList<DemoUser>();
-        for(var row:mapper.readTree(Files.readString(Path.of(file)))) {
-            UUID org=UUID.fromString(row.path("organizationId").asText()),project=UUID.fromString(row.path("projectId").asText());
-            if(known.add(org+"/"+project))values.add(new DemoUser("queue-dispatcher","unused",org,project,UUID.fromString(row.path("actorId").asText()),"admin"));
-        }
-        scopes=List.copyOf(values);
     }
     @Scheduled(fixedDelay=2000,initialDelay=2000)
     void dispatch() {
-        for(var scope:scopes) {
+        java.util.List<PendingWorkspaceScopes.Scope> page;
+        try{page=scopes.after(cursor);}catch(Exception unavailable){return;}
+        if(page.isEmpty()){cursor=null;return;}
+        int handled=0;
+        for(var namespace:page) {
+            var scope=new DemoUser("queue-dispatcher","unused",namespace.organizationId(),namespace.projectId(),new UUID(0,0),"viewer");
             try {
                 for(var run:runs.pending(scope)) {
+                    if(handled>=40)break;
+                    handled++;
                     UUID id=(UUID)run.get("id");
                     if((Boolean)run.get("expired")) {runs.complete(scope,id,(String)run.get("scenario"),WorkerClient.unavailable());continue;}
                     if(connection==null || connection.getStatus()==Connection.Status.CLOSED) connection=Nats.connect(new Options.Builder().server("nats://stack-nats:4222").token(token.toCharArray()).connectionTimeout(Duration.ofSeconds(2)).maxReconnects(-1).build());
@@ -49,7 +50,10 @@ public class QueuePublisher {
                 if(error instanceof InterruptedException)Thread.currentThread().interrupt();
                 // Persistent admission remains queued and is retried next cycle. No payload or credential logging.
             }
+            cursor=namespace;
+            if(handled>=40)return;
         }
+        if(page.size()<PendingWorkspaceScopes.PAGE_LIMIT)cursor=null;
     }
     @PreDestroy void close() throws Exception {if(connection!=null)connection.close();}
 }

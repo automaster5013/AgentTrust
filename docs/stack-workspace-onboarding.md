@@ -89,4 +89,36 @@ the matching revision completes. Dynamic application project selection,
 browser membership management, production tenant registry, enterprise IdP lifecycle and
 customer invitations remain separate release requirements.
 
+The original dispatcher enumerated the two namespaces in the synthetic credential
+file. The first disposable CI attempt demonstrated that a newly provisioned editor
+could admit an evaluation that remained queued. V17 adds
+`public.stack_pending_workspaces(uuid,uuid)` for bounded discovery of namespaces
+with already-admitted pending work. The dispatcher reads eight namespace pairs
+per keyset page, verifies PostgreSQL UUID ordering, rotates its cursor, and handles
+at most 40 admissions per scheduled cycle. A restart derives pending namespaces
+from durable admissions again; adding a namespace requires no credential-file edit
+or application restart. Payloads, versions and results are read through their
+original organization/project RLS scope. Worker callbacks retain their original
+run/scenario/provider/version binding checks.
+
+This is an intentional privileged metadata capability: the migration owner owns
+a SECURITY DEFINER SQL function that returns only organization/project UUIDs.
+Its relations are schema-qualified, its search path fixes pg_catalog followed by
+pg_temp, PUBLIC execution is revoked and only the API role receives execution.
+The function sets row_security off so an owner whose queries would be filtered
+gets an error. This setting grants no RLS bypass. The evaluated database readiness
+requires both the restricted API role and a successful bounded discovery read;
+a missing capability or unsuitable owner is reported unavailable. The configured
+development migration owner can read both source tables; the chosen production
+role/policy arrangement still requires target-specific acceptance.
+The JDBC statement has a two-second timeout. The API receives no table-owner
+membership, BYPASSRLS privilege or owner credential. An isolated disposable
+PostgreSQL fixture checks ten pending namespaces in pages8+2 across the UUID sign
+boundary, exclusion of completed work, direct table RLS, refusal of PUBLIC
+execution and API alteration, and resistance to a caller's temporary shadow
+table. See [PostgreSQL's security-definer guidance](https://www.postgresql.org/docs/current/sql-createfunction.html#SQL-CREATEFUNCTION-SECURITY).
+Full source and registry evaluation acceptance for this change remains pending
+until its matching CI completes. No new business table is introduced; V17 adds
+the function and its migration-history entry.
+
 Protocol reference: [Keycloak Admin REST API](https://www.keycloak.org/docs-api/latest/rest-api/index.html).
