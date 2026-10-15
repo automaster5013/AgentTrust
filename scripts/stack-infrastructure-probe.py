@@ -56,6 +56,18 @@ try:
   assert all(not ('PASSWORD' in entry['name'] and 'value' in entry) for entry in container.get('env',[]))
  by_name={doc['spec']['template']['spec']['containers'][0]['name']:doc['spec']['template']['spec']['containers'][0] for doc in deployments}
  console=by_name['console'];core=by_name['core-api']
+ core_pod=next(doc['spec']['template']['spec'] for doc in deployments if doc['metadata']['name']=='stack-core-api')
+ assert core_pod['shareProcessNamespace'] is False and len(core_pod['initContainers'])==1
+ migration=core_pod['initContainers'][0];assert migration['name']=='schema-migrate' and migration['image']==core['image'] and migration['args']==['--migrate-only']
+ assert migration['securityContext']=={'allowPrivilegeEscalation':False,'readOnlyRootFilesystem':True,'capabilities':{'drop':['ALL']}}
+ migration_env={e['name']:e for e in migration['env']};assert set(migration_env)=={'STACK_DATABASE_URL','STACK_MIGRATION_USER','STACK_MIGRATION_PASSWORD','REDGATE_DISABLE_TELEMETRY'} and migration_env['REDGATE_DISABLE_TELEMETRY']['value']=='true'
+ assert migration_env['STACK_MIGRATION_PASSWORD']['valueFrom']['secretKeyRef']=={'name':values['existingSecret'],'key':'database-migration-password'}
+ assert migration_env['STACK_DATABASE_URL']['value']==next(e['value'] for e in core['env'] if e['name']=='STACK_DATABASE_URL')
+ assert all(not e['name'].startswith('STACK_MIGRATION_') for e in core['env']) and migration['volumeMounts']==[{'name':'temporary','mountPath':'/tmp'}]
+ for category in ['requests','limits']:
+  assert cpu_milli(migration['resources'][category]['cpu'])<=cpu_milli(core['resources'][category]['cpu']) and memory_bytes(migration['resources'][category]['memory'])<=memory_bytes(core['resources'][category]['memory'])
+ report['checks'].append('migration credentials confined to same-digest bounded init process; API receives only restricted role and Pod admission budget still covers initialization')
+ report['migrationProcessIsolationVerified']=True
  for container,prefix in [(console,'NEXT_PUBLIC_STACK_'),(core,'AGENTTRUST_OIDC_'),(by_name['gateway'],'AGENTTRUST_OIDC_')]:
   environment={entry['name']:entry.get('value') for entry in container['env']}
   expected={'PROFILE':'local-review','APPLICATION_ORIGIN':'http://127.0.0.1:4320','PUBLIC_ISSUER':'http://127.0.0.1:4322/realms/agenttrust'}

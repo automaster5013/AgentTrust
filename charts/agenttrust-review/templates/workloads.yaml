@@ -36,6 +36,7 @@ spec:
     spec:
       serviceAccountName: agenttrust-review
       automountServiceAccountToken: false
+      shareProcessNamespace: false
       terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true
@@ -43,6 +44,27 @@ spec:
         runAsGroup: {{ $def.uid }}
         fsGroup: {{ $def.uid }}
         seccompProfile: {type: RuntimeDefault}
+{{- if eq $name "core-api" }}
+      initContainers:
+        - name: schema-migrate
+          image: {{ $image | quote }}
+          imagePullPolicy: IfNotPresent
+          args: [--migrate-only]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          env:
+            - {name: STACK_DATABASE_URL, value: "jdbc:postgresql://stack-db:5432/agenttrust_stack?connectTimeout=2&socketTimeout=5&tcpKeepAlive=true"}
+            - {name: STACK_MIGRATION_USER, value: agenttrust_stack}
+            - {name: STACK_MIGRATION_PASSWORD, valueFrom: {secretKeyRef: {name: {{ $.Values.existingSecret }}, key: database-migration-password}}}
+            - {name: REDGATE_DISABLE_TELEMETRY, value: "true"}
+          volumeMounts:
+            - {name: temporary, mountPath: /tmp}
+{{- end }}
       containers:
         - name: {{ $name }}
           image: {{ $image | quote }}
@@ -60,8 +82,6 @@ spec:
             - {name: STACK_DATABASE_URL, value: "jdbc:postgresql://stack-db:5432/agenttrust_stack?connectTimeout=2&socketTimeout=5&tcpKeepAlive=true"}
             - {name: STACK_DATABASE_USER, value: agenttrust_stack_api}
             - {name: STACK_DATABASE_PASSWORD, valueFrom: {secretKeyRef: {name: {{ $.Values.existingSecret }}, key: database-api-password}}}
-            - {name: STACK_MIGRATION_USER, value: agenttrust_stack}
-            - {name: STACK_MIGRATION_PASSWORD, valueFrom: {secretKeyRef: {name: {{ $.Values.existingSecret }}, key: database-migration-password}}}
             - {name: STACK_DEMO_CREDENTIALS_FILE, value: /run/secrets/stack-demo-credentials}
             - {name: AGENTTRUST_OIDC_PROFILE, value: "local-review"}
             - {name: AGENTTRUST_OIDC_APPLICATION_ORIGIN, value: "http://127.0.0.1:4320"}

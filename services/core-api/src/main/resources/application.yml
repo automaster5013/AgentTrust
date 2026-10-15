@@ -15,17 +15,14 @@ spring:
     name: agenttrust-core-api
   datasource:
     url: ${STACK_DATABASE_URL}
-    username: ${STACK_DATABASE_USER:agenttrust_stack}
+    username: ${STACK_DATABASE_USER:agenttrust_stack_api}
     password: ${STACK_DATABASE_PASSWORD}
     hikari:
       maximum-pool-size: 8
       connection-timeout: 3000
       validation-timeout: 1000
   flyway:
-    enabled: true
-    url: ${STACK_DATABASE_URL}
-    user: ${STACK_MIGRATION_USER}
-    password: ${STACK_MIGRATION_PASSWORD}
+    enabled: false
   http:
     converters:
       preferred-json-mapper: jackson2

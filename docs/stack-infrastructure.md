@@ -15,7 +15,7 @@ Helm 4.3.0, Terraform 1.16.5, Kubeconform 0.8.0 공식 파일의 SHA-256을 검�
 
 `infra/terraform/review`는 기존 명시적 kubeconfig/context를 사용해 검토 namespace·restricted Pod Security·자원 quota와 이 Helm release를 관리한다. cloud 서버나 Kubernetes 클러스터를 생성하지 않는다. Terraform provider 3.3.0의 lockfile checksum을 보존한다. `install_application=false` 기본값은 namespace/quota 준비 단계다. 별도로 의존 서비스를 확인하고 application namespace에 운영자 소유 비밀을 주입한 뒤 `install_application=true`로 앱 단계를 계획한다. 자동 apply 작업은 없다. namespace/release의 의도하지 않은 삭제를 방지하도록 `prevent_destroy`를 구성했다.
 
-비밀 이름 기본값은 `agenttrust-stack-config`이며 Helm/Terraform은 값 자체를 만들거나 보관하지 않는다. Core만 `database-api-password`, `database-migration-password` env reference를 사용한다. 파일 비밀 키는 다음과 같다.
+비밀 이름 기본값은 `agenttrust-stack-config`이며 Helm/Terraform은 값 자체를 만들거나 보관하지 않는다. 오래 실행되는 Core는 `database-api-password`만 받는다. 같은 이미지의 `schema-migrate` init container만 `database-migration-password`를 받아 먼저 종료한다. 파일 비밀 키는 다음과 같다.
 
 | 워크로드 | 필요한 파일 키 |
 |---|---|
@@ -96,3 +96,51 @@ removes branch-wide validation waiting while preserving per-revision evidence;
 available hosted-runner capacity can still cause queuing.
 
 Reference: [GitHub workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+
+### Separate migration and API credentials
+
+The same Core image supports the single-purpose `--migrate-only` command. It
+runs the existing, unchanged Flyway resources and exits without starting Spring's
+HTTP application. Compose's `stack-migrate` is a bounded, non-root, portless
+one-shot process; Core depends on its successful completion. Registry overrides
+bind both processes to the same authenticated Core digest. The stopped migration
+container is retained; the usual twenty source services remain the running set.
+
+The review chart uses an init container with that same image and command. Only
+that init container receives the migration credential. It mounts temporary memory
+and no application signing, OIDC or messaging secrets. Pod process namespaces are
+not shared. Its CPU and memory requests/limits do not exceed the Core container's,
+so the existing Pod admission budget and seven-core namespace quota still cover
+initialization. Rendering continues to validate 36 resources in each of the three
+signing profiles, 108 in total. This is manifest validation, not cluster execution.
+
+The API disables automatic Flyway startup, rejects migration credentials and
+alternate Spring datasource/Flyway/JSON/external-config overrides, and connects
+only as `agenttrust_stack_api`. Before opening HTTP, it verifies the real database
+role is not a superuser, RLS bypasser, database/role creator or replication role,
+cannot create the database/public schema and has no privileged owner membership.
+`--check-database-role` performs that read-only check and exits without serving.
+Migration failures produce a fixed refusal marker rather than SQL or credential
+details. The short-lived migration logger has a separate configuration; API
+logging is unchanged. Flyway usage telemetry is disabled for migration processes.
+
+`python scripts/stack-database-process-smoke.py` checks the actual API PID1
+environment without recording its values, verifies distinct owner/API credentials,
+and requires the same-image migration process to have exited successfully without
+host ports. Source and registry CI preserve its safe JSON report. Private settings
+and all sixteen existing SQL migration files are unchanged by this separation.
+Future schema changes still require a controlled migration, compatible rollout,
+backup and rollback policy on the chosen target; this does not establish HA or an
+operational deployment.
+
+API datasource configuration uses the explicit `STACK_DATABASE_*` contract.
+Do not inject general Spring JSON/config locations, datasource overrides or
+migration variables into the API container. Migration and API passwords must be
+different. In Kubernetes the existing Secret contains both keys, but the migration
+key is referenced only by the completed init container; the Core secret-file
+projection does not include it. Operator RBAC, target dependencies and external
+backup/key custody remain separate deployment requirements.
+
+The programmatic migration uses the existing Flyway dependency and its
+[Java API](https://documentation.red-gate.com/flyway/reference/usage/api-java);
+no new migration engine or external service is introduced.

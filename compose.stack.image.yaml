@@ -1,4 +1,6 @@
 services:
+  stack-migrate:
+    image: ${STACK_CORE_IMAGE:?Provide verified core image digest}
   stack-core-api:
     image: ${STACK_CORE_IMAGE:?Provide verified core image digest}
   stack-ai-worker:

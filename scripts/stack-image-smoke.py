@@ -31,6 +31,9 @@ try:
  assert 'Keycloak 26.8.0' in run(['docker','exec','agenttrust-stack-identity-1','/opt/keycloak/bin/kc.sh','--version']).stdout
  assert 'RELEASE.2025-10-15T17-29-55Z' in run(['docker','exec','agenttrust-stack-object-store-1','minio','--version']).stdout
  provision=json.loads(run(['docker','inspect','agenttrust-stack-object-init-1']).stdout)[0];assert provision['State']['ExitCode']==0 and provision['State']['Status']=='exited' and provision['Image']==json.loads(run(['docker','image','inspect',references['object-store']]).stdout)[0]['Id']
+ migration=json.loads(run(['docker','inspect','agenttrust-stack-migrate-1']).stdout)[0]
+ assert migration['State']['Status']=='exited' and migration['State']['ExitCode']==0 and migration['Config']['Cmd']==['--migrate-only'] and migration['Image']==json.loads(run(['docker','image','inspect',references['core-api']]).stdout)[0]['Id']
+ assert not migration['HostConfig']['PortBindings'] and migration['HostConfig']['ReadonlyRootfs']
  stage='telemetry-version'
  assert '0.162.0' in run(['docker','exec','agenttrust-stack-otel-1','/otelcol','--version']).stdout
  stage='observation-storage-versions'

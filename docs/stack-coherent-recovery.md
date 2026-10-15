@@ -134,3 +134,12 @@ separation of keys and backups, and broad key permissions. This development
 acceptance does not establish an operational backup, external key custody, KMS,
 offsite retention, full-system recovery, HA or agreed RPO/RTO. An encrypted
 snapshot and its key on one developer machine do not satisfy those release gates.
+
+The stopped Compose migration task is not an additional running recovery service.
+A cold database snapshot already contains the migrated schema. The eleven-service
+restore starts Core with only its restricted database credentials and performs its
+startup role check; it does not rerun owner migrations inside the API. Encrypted
+database configuration still contains the database's own bootstrap credential.
+The migration image is the already recorded Core image. Schema upgrades after a
+restore require the separate migration process and the operator's controlled
+upgrade procedure.

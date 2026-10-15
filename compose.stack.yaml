@@ -20,6 +20,27 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+  stack-migrate:
+    image: agenttrust-core-api:local
+    command: [--migrate-only]
+    environment:
+      STACK_DATABASE_URL: jdbc:postgresql://stack-db:5432/agenttrust_stack?connectTimeout=2&socketTimeout=5&tcpKeepAlive=true
+      STACK_MIGRATION_USER: agenttrust_stack
+      STACK_MIGRATION_PASSWORD: ${STACK_DATABASE_PASSWORD:?Prepare separate stack settings}
+      REDGATE_DISABLE_TELEMETRY: 'true'
+    networks: [stack-backend]
+    depends_on:
+      stack-db:
+        condition: service_healthy
+    read_only: true
+    tmpfs: ['/tmp:size=128m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 64
+    restart: 'no'
+    healthcheck: {disable: true}
   stack-core-api:
     build: services/core-api
     image: agenttrust-core-api:local
@@ -27,13 +48,13 @@ services:
       STACK_DATABASE_URL: jdbc:postgresql://stack-db:5432/agenttrust_stack?connectTimeout=2&socketTimeout=5&tcpKeepAlive=true
       STACK_DATABASE_USER: agenttrust_stack_api
       STACK_DATABASE_PASSWORD: ${STACK_API_PASSWORD:?Prepare restricted stack role}
-      STACK_MIGRATION_USER: agenttrust_stack
-      STACK_MIGRATION_PASSWORD: ${STACK_DATABASE_PASSWORD:?Prepare separate stack settings}
       STACK_DEMO_CREDENTIALS_FILE: /run/secrets/stack-demo-credentials
     secrets: [stack-demo-credentials, stack-worker-token, stack-nats-token, stack-opa-token]
     ports: [127.0.0.1:4321:8080]
     networks: [stack-backend, stack-host-access]
     depends_on:
+      stack-migrate:
+        condition: service_completed_successfully
       stack-db:
         condition: service_healthy
       stack-ai-worker:
