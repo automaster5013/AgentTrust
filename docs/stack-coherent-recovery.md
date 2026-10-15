@@ -80,3 +80,49 @@ Optional [development key rotation](stack-signing-key-history.md) and
 [twenty-evaluation recovery/metadata latency](stack-recovery-load.md) phases use
 the same disposable stack. Their flags do not claim success until the actual
 per-revision summary records the corresponding checks and cleanup as passed.
+# Retained development keys and independent verification
+
+The default drill still generates and deletes its temporary encryption key. Its
+retained ciphertext cannot be recovered after that key is deleted. An operator
+may instead pass `--retained-key-file` to `stack-coherent-recovery.py --execute`.
+That file must already contain exactly 32 bytes in a separate direct subdirectory
+of `C:/AgentTrust/.local` (or this checkout's `.local` on Linux). The tool never
+creates, copies, changes or deletes an operator-provided key file. It checks the
+key before snapshotting and verifies its bytes remain unchanged after cleanup.
+
+On Windows, both the file and its parent must allow access only to the current
+user and SYSTEM. The check reads native DACLs and changes no permissions or shell
+execution policies. On Linux, both must belong to the current user; the file must
+have no group/other permissions and the parent must likewise be private. Broad,
+linked, missing or incorrectly sized key files are refused before stopping any
+service. The backup directory and key directory must differ. Operators must keep
+the key separately from the encrypted snapshot under an agreed custody policy.
+
+Record the snapshot UUID, source revision and `encryptedManifestSha256` from the
+drill in a separate trusted record. A fresh process can then run:
+
+```powershell
+python scripts/stack-coherent-snapshot-verify.py --snapshot <snapshot-directory> --retained-key-file <key-file> --expected-snapshot-id <uuid> --expected-revision <40-character-revision> --expected-manifest-sha256 <64-character-digest>
+```
+
+The verifier authenticates the encrypted manifest and all six encrypted
+components, validates all five bounded archives without extracting them, binds
+the recorded eleven image IDs to the configuration, and checks ciphertext and key
+bytes remain unchanged. Plaintext stays in process memory. Seven short-lived,
+network-disabled cryptography containers may run; the verifier creates no
+restored application containers or volumes and stops no source services.
+
+`stack-coherent-retained-recovery.py --execute` is the separate acceptance wrapper.
+It creates only its own protected fixture keys, runs the actual eleven-service
+recovery using the retained-key interface, launches the verifier in a new process,
+and requires a different validly protected key to fail cryptographic decryption.
+It verifies the provided fixture keys survived both tools before deleting only
+those generated fixture keys. CI runs this wrapper for source and exact registry
+images, preserving safe positive and intentional-negative JSON diagnostics.
+
+The local contracts cover wrong keys, modified ciphertext even with a recomputed
+outer digest, substituted snapshot/revision/configuration, duplicate JSON fields,
+separation of keys and backups, and broad key permissions. This development
+acceptance does not establish an operational backup, external key custody, KMS,
+offsite retention, full-system recovery, HA or agreed RPO/RTO. An encrypted
+snapshot and its key on one developer machine do not satisfy those release gates.

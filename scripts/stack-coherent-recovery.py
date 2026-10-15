@@ -25,6 +25,7 @@ from stack_coherent_archive import (COMPRESSED_LIMIT, TOTAL_LIMIT, SERVICES,
                                     STATEFUL, archive_fingerprints,
                                     validate_manifest, verify_component)
 from stack_recovery_load_contract import cohort as validate_cohort
+from stack_backup_custody import retained_key, key_unchanged
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 QUIESCE = ('stack-console', 'stack-gateway', 'stack-ai-worker', 'stack-core-api',
@@ -113,21 +114,27 @@ def source_preflight():
 
 
 class Rehearsal:
-    def __init__(self, sources, exercise_rotation=False, exercise_load=False, load_cycles=1):
+    def __init__(self, sources, exercise_rotation=False, exercise_load=False, load_cycles=1, retained_key_file=None):
+        self.retained_key = retained_key(ROOT, retained_key_file) if retained_key_file else None
         self.sources = sources
         self.id = str(uuid.uuid4())
         self.prefix = 'agenttrust-stack-coldrestore-' + self.id
         self.directory = ROOT/'.local'/('stack-coherent-recovery-' + self.id)
         self.directory.mkdir()
-        self.directory.chmod(0o700)
         if os.name=='nt':
             owner=run(['whoami']).stdout.decode().strip()
             run(['icacls',str(self.directory),'/inheritance:r','/grant:r',owner+':(OI)(CI)F','SYSTEM:(OI)(CI)F'])
+        else:
+            self.directory.chmod(0o700)
         self.exercise_rotation=exercise_rotation
         self.exercise_load=exercise_load
         self.load_cycles=load_cycles
         self.history_path=None
         self.key = self.directory/'development-key.bin'
+        if self.retained_key:
+            self.key = self.retained_key[0]
+            if self.key.parent == self.directory:
+                raise ValueError('Backup and retained key must use separate directories')
         self.stopped, self.containers, self.volumes, self.private = [], [], [], []
         self.network = False
         self.report = {'completed': False, 'fixtureId': self.id,
@@ -137,7 +144,8 @@ class Rehearsal:
                        'businessCriticalDevelopmentRecoveryVerified': False,
                        'legacyServicesChanged': False, 'existingVolumeRestoredOver': False,
                        'fixtureHostPortsPublished': False, 'rawSecretsPrinted': False,
-                       'keyManagement': 'temporary-local-development-key',
+                       'keyManagement': 'operator-retained-local-development-key' if self.retained_key else 'temporary-local-development-key',
+                       'operatorKeyModifiedOrDeleted': False,
                        'temporaryPrivateDirectoryOwnerProtected': True,
                        'developmentKeyRotationRequested': exercise_rotation,
                        'syntheticRecoveryLoadRequested': exercise_load,
@@ -452,7 +460,11 @@ class Rehearsal:
                         'publicKeySpkiBase64': base64.b64encode(public_key).decode('ascii'),
                         'keyId': hashlib.sha256(public_key).hexdigest()}
         self.report['separatelyAnchoredSigningKeyId'] = probe_anchor['keyId']
-        private_file(self.key, secrets.token_bytes(32));self.private.append(self.key)
+        if self.retained_key:
+            if not key_unchanged(*self.retained_key):
+                raise ValueError('Operator backup key changed before snapshot')
+        else:
+            private_file(self.key, secrets.token_bytes(32));self.private.append(self.key)
         self.stage('quiesce-original-transition-services')
         for service in QUIESCE:
             self.stopped.append(service)
@@ -479,7 +491,10 @@ class Rehearsal:
                     'components': {s: digest(raw) for s, raw in encrypted.items()},
                     'quiescence': {'allWritersStopped': True, 'allStatefulServicesStopped': True, 'pendingEvaluations': 0}}
         manifest_raw = json.dumps(manifest, separators=(',', ':')).encode()
-        private_file(self.directory/'manifest.aesgcm', crypt(ROOT, self.key, 'encrypt', manifest_raw))
+        manifest_ciphertext = crypt(ROOT, self.key, 'encrypt', manifest_raw)
+        private_file(self.directory/'manifest.aesgcm', manifest_ciphertext)
+        self.report['encryptedManifestSha256'] = hashlib.sha256(manifest_ciphertext).hexdigest()
+        self.save()
         # Release the original installation before decrypting or starting fixture workloads.
         self.stage('restore-same-source-containers')
         self.restore_source()
@@ -592,6 +607,12 @@ class Rehearsal:
                     path.chmod(0o600);path.unlink()
             except Exception:
                 cleaned = False
+        if self.retained_key:
+            unchanged = key_unchanged(*self.retained_key)
+            self.report['operatorRetainedKeyBytesUnchanged'] = unchanged
+            self.report['operatorKeyModifiedOrDeleted'] = not unchanged
+            if not unchanged:
+                cleaned = False
         self.report.update(sourceServicesRestored=restored, ownFixtureAndTemporarySecretsCleaned=cleaned,
                            finishedAt=datetime.datetime.now(datetime.timezone.utc).isoformat())
         if not restored or not cleaned:
@@ -605,10 +626,13 @@ def main():
     parser.add_argument('--exercise-key-rotation',action='store_true')
     parser.add_argument('--exercise-load',action='store_true')
     parser.add_argument('--load-cycles',type=int,default=1)
+    parser.add_argument('--retained-key-file', help='Existing owner-protected 32-byte development key in a separate .local subdirectory; never created, copied or deleted')
     args = parser.parse_args()
     if not 1<=args.load_cycles<=120 or args.load_cycles!=1 and not args.exercise_load:
         parser.error('Load cycles require --exercise-load and must be within 1..120')
     try:
+        if args.retained_key_file:
+            retained_key(ROOT, args.retained_key_file)
         sources = source_preflight()
     except Exception as error:
         print(json.dumps({'completed': False, 'stage': 'read-only-preflight', 'errorType': type(error).__name__, 'sourceServicesStopped': False}))
@@ -618,7 +642,11 @@ def main():
                           'statefulVolumesVerified': len(STATEFUL), 'pendingEvaluations': 0,
                           'sourceServicesStopped': False, 'actualRecoveryPerformed': False}))
         return 0
-    drill = Rehearsal(sources,args.exercise_key_rotation,args.exercise_load,args.load_cycles)
+    try:
+        drill = Rehearsal(sources,args.exercise_key_rotation,args.exercise_load,args.load_cycles,args.retained_key_file)
+    except Exception as error:
+        print(json.dumps({'completed':False,'stage':'key-custody-preflight','errorType':type(error).__name__,'sourceServicesStopped':False}))
+        return 1
     try:
         drill.execute()
     except Exception as error:
