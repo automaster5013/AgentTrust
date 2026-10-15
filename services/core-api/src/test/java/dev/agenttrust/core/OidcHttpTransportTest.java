@@ -57,9 +57,9 @@ class OidcHttpTransportTest {
             var client=OidcHttpTransport.tokens(Duration.ofMillis(200));
             var error=assertThrows(OAuth2AuthorizationException.class,()->client.getTokenResponse(request));
             assertEquals(0,partialBodyFlushed.getCount(),"Server must send a partial successful body before refusal");
-            Throwable cause=error;boolean socketReadTimedOut=false;
-            while(cause!=null){socketReadTimedOut|=cause instanceof java.net.SocketTimeoutException;cause=cause.getCause();}
-            assertTrue(socketReadTimedOut,"Refusal must come from the configured socket read timeout, not malformed EOF or unrelated setup time");
+            Throwable cause=error;boolean bodyDeadlineExpired=false;
+            while(cause!=null){bodyDeadlineExpired|=cause instanceof java.io.InterruptedIOException;cause=cause.getCause();}
+            assertTrue(bodyDeadlineExpired,"Refusal must come from a configured body deadline, not malformed EOF or unrelated setup time");
             assertEquals(1,releaseBody.getCount(),"Server body remains deliberately stalled when the client times out");
         } finally {releaseBody.countDown();server.stop(0);}
     }
