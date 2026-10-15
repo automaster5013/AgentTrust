@@ -357,15 +357,18 @@ function phase(description:string){test.info().annotations.push({type:'phase',de
 async function login(page:Page,name:string,beforeNavigation?:()=>Promise<unknown>){
  await page.route('**/*',route=>{const url=new URL(route.request().url());if(process.env.STACK_E2E_READ_ONLY==='true'&&url.origin==='http://127.0.0.1:4320'&&url.pathname.startsWith('/backend/')&&route.request().method()!=='GET'&&!['/backend/login','/backend/logout'].includes(url.pathname)){phase('read-only network guard refused unintended business mutation');return route.abort('blockedbyclient')}if(['http://127.0.0.1:4320','http://127.0.0.1:4322'].includes(url.origin))return route.continue();return route.abort()});
  if(beforeNavigation)await beforeNavigation();
- await page.goto('/');const info=await (await page.request.get('/backend/auth-info')).json();
+ const initial=await page.goto('/');phase('workspace initial navigation HTTP '+initial!.status());const providerInfo=await page.request.get('/backend/auth-info');phase('authentication provider metadata HTTP '+providerInfo.status());expect(providerInfo.status()).toBe(200);const info=await providerInfo.json();
  const user=users.find(u=>u.username===name)!;
  // Reporter never records invocation arguments, browser traces, cookies or credentials.
  if(info.identityProvider==='keycloak'){await page.getByRole('button',{name:'Keycloak으로 로그인',exact:true}).click();await expect(page.locator('#username')).toBeVisible();await page.evaluate(value=>{document.querySelector<HTMLInputElement>('#username')!.value=value.username;document.querySelector<HTMLInputElement>('#password')!.value=value.password;document.querySelector<HTMLFormElement>('#kc-form-login')!.requestSubmit(document.querySelector<HTMLButtonElement>('#kc-login')!)},{username:user.username,password:user.password});phase('Keycloak authorization code login')}
  else {await expect(page.getByRole('button',{name:'로그인',exact:true})).toBeEnabled();await page.evaluate(value=>{const account=document.querySelector<HTMLInputElement>('input[name="username"]')!,password=document.querySelector<HTMLInputElement>('input[name="password"]')!;account.value=value.username;password.value=value.password;account.form!.requestSubmit()}, {username:user.username,password:user.password})}
- await expect(page.getByRole('button',{name:'로그아웃',exact:true})).toBeVisible();await expect(page.getByText('조직 '+user.organizationId.slice(0,8),{exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'로그아웃',exact:true})).toBeVisible();phase('authenticated application controls visible');await expect(page.getByText('조직 '+user.organizationId.slice(0,8),{exact:true})).toBeVisible();phase('expected workspace scope visible');
 }
 test.beforeEach(async({page},info)=>{
  page.on('response',response=>{if(response.status()===429&&new URL(response.url()).origin==='http://127.0.0.1:4320'&&new URL(response.url()).pathname.startsWith('/backend/'))phase('actual gateway HTTP 429 observed; no quota bypass or automatic business write retry')});
+ // Only fixed route classes and numeric HTTP status leave the browser. No URL,
+ // query, account, request body, cookies, token or response text is recorded.
+ page.on('response',response=>{const url=new URL(response.url());if(url.origin!=='http://127.0.0.1:4320')return;const kind=url.pathname==='/backend/me'?'identity bootstrap':url.pathname==='/backend/login/oauth2/code/keycloak'?'OIDC callback':url.pathname==='/backend/campaigns'&&response.request().method()==='POST'?'campaign admission':null;if(kind)phase(kind+' HTTP '+response.status())});
  if(process.env.STACK_E2E_QUOTA_GUARD==='true'){
   const started=Date.now();info.setTimeout(125000);
   const budget=JSON.parse(execFileSync(process.platform==='win32'?'python':'python3',[resolve(process.cwd(),'../../scripts/stack-browser-quota-guard.py')],{encoding:'utf-8',timeout:75000,maxBuffer:16384}));
@@ -439,8 +442,8 @@ test('administrator creates an immutable baseline campaign and approves the actu
  await region.getByLabel('캠페인 데이터셋 버전',{exact:true}).selectOption(baseline.dataset_version_id);
  await region.getByLabel('릴리스에 고정할 비교 기준',{exact:true}).selectOption(reference.baselineCampaignId);
  await region.getByLabel('양쪽 근거 유효 기간',{exact:true}).fill('3600');
- const admitted=page.waitForResponse(response=>response.url().endsWith('/backend/campaigns')&&response.request().method()==='POST'&&response.status()===200);
- await region.getByRole('button',{name:'캠페인 실행',exact:true}).click();const candidate=await (await admitted).json();
+ const admitted=page.waitForResponse(response=>response.url().endsWith('/backend/campaigns')&&response.request().method()==='POST');
+ await region.getByRole('button',{name:'캠페인 실행',exact:true}).click();const admission=await admitted;expect(admission.status()).toBe(200);const candidate=await admission.json();
  await expect(region.getByText('캠페인 '+candidate.id,{exact:true})).toBeVisible();
  await expect(region.getByRole('button',{name:'캠페인 검토 저장',exact:true})).toBeVisible();
  await region.getByLabel('캠페인 검토 사유',{exact:true}).fill('Own browser synthetic baseline approval');

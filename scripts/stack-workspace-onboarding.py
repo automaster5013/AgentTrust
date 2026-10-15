@@ -11,6 +11,7 @@ from stack_backup_custody import windows_owner_only
 from stack_identity_scope_contract import verify
 from stack_workspace_identity import LocalWorkspaceIdentity
 from stack_workspace_onboarding import Provisioner, manifest_digest, parse_manifest, require
+from stack_workspace_suspension import cohort_from_journal, suspend
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -53,21 +54,32 @@ def private_checkpoint(directory, state):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--manifest', required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument('--manifest')
+    source.add_argument('--suspend-journal', help='Suspend only the exact identities in a completed private provisioning journal.')
     parser.add_argument('--execute', action='store_true')
     args = parser.parse_args()
     report = {'completed': False, 'executed': False, 'localDevelopmentOnly': True,
               'productionIdentityConfigured': False, 'rawCredentialsPrinted': False,
               'existingUsersModified': False}
     try:
-        path = pathlib.Path(args.manifest)
+        path = pathlib.Path(args.manifest or args.suspend_journal)
         if not path.is_absolute():
             path = ROOT / path
         require(not path.is_symlink() and not path.parent.is_symlink())
         path = path.resolve(strict=True)
         require(path.is_relative_to(ROOT / '.local') and path.is_file() and path.stat().st_size <= 32768)
-        manifest = parse_manifest(path.read_bytes())
-        report.update(manifestSha256=manifest_digest(manifest), memberCount=len(manifest['members']))
+        if args.suspend_journal:
+            if os.name == 'nt':
+                windows_owner_only((path, path.parent))
+            else:
+                for item in (path, path.parent):
+                    require(item.stat().st_uid == os.getuid() and item.stat().st_mode & 0o077 == 0)
+            cohort = cohort_from_journal(path.read_bytes())
+            report.update(operation='suspend', manifestSha256=cohort['manifestSha256'], memberCount=len(cohort['members']))
+        else:
+            manifest = parse_manifest(path.read_bytes())
+            report.update(operation='provision', manifestSha256=manifest_digest(manifest), memberCount=len(manifest['members']))
         if not args.execute:
             report.update(completed=True, stage='manifest-reviewed-no-provider-contact')
         else:
@@ -79,9 +91,16 @@ def main():
                 require(isinstance(clients, list) and len(clients) == 1)
                 verify(clients[0], api.read('/users/profile'))
                 report['executed'] = True
-                state = Provisioner(api, lambda s: private_checkpoint(directory, s)).execute(manifest)
-                report.update(completed=state['completed'], stage=state['stage'],
-                              createdUsers=len(state['members']), allCreatedUsersVerified=True)
+                if args.suspend_journal:
+                    state = suspend(api, cohort, lambda s: private_checkpoint(directory, s))
+                    report.update(completed=state['completed'], stage=state['stage'],
+                                  disabledUsers=state['verifiedDisabledMembers'],
+                                  providerSessionRevocationVerified=state['providerSessionRevocationVerified'],
+                                  applicationSessionRevocationVerifiedHere=False)
+                else:
+                    state = Provisioner(api, lambda s: private_checkpoint(directory, s)).execute(manifest)
+                    report.update(completed=state['completed'], stage=state['stage'],
+                                  createdUsers=len(state['members']), allCreatedUsersVerified=True)
             report['operatorSessionClosed'] = True
     except Exception as error:
         report.update(completed=False, errorType=type(error).__name__,

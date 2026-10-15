@@ -62,12 +62,31 @@ viewer read, administrator rejection, blocked gate and cross-project/organizatio
 against both its source and exact published-image environments. Evaluation and
 audit rows are retained inside that disposable CI database after identity cleanup.
 
+`python scripts/stack-workspace-onboarding.py --suspend-journal .local/workspace-onboarding-<UUID>/journal.json`
+reviews a completed provisioning journal without contacting the provider. With
+`--execute`, it verifies the file's owner-only custody, original manifest hash and
+every actor/name/organization/project/role before disabling any member. It disables
+only that exact cohort and explicitly asks Keycloak to terminate each member's
+provider sessions. Reassigned identities, changed roles, malformed/partial journals
+and uncertain creates are refused. The original provisioning journal is retained;
+a separate private operation journal records partial failure or completion.
+This command never deletes accounts or automatically retries unknown logout
+requests. A provider timeout may leave a partially suspended cohort and requires
+operator reconciliation. Completion means all cohort accounts are disabled and
+their provider session lists are empty; the CLI cannot independently prove
+revocation at every relying application. The acceptance smoke separately keeps
+three Core sessions open, runs this command, verifies real signed back-channel
+logout makes all three return401, refuses a fresh disabled-account login and
+confirms the other project and organization remain authenticated.
+
 The first local read-only-business smoke passed on 2026-10-15. Unit controls cover
 malformed manifests, duplicate fields, account collisions, privilege/scope
 substitution, lost create responses, failed activation/containment and journal
-failures. CI and exact registry acceptance for this change remain pending until
+failures. Twenty unit/transport/custody controls pass locally, including exact
+journal custody and suspension scope, role, unknown-logout and remaining-session
+refusal. CI and exact registry acceptance for this change remain pending until
 the matching revision completes. Dynamic application project selection,
-membership management/revocation, production tenant registry, IdP lifecycle and
+browser membership management, production tenant registry, enterprise IdP lifecycle and
 customer invitations remain separate release requirements.
 
 Protocol reference: [Keycloak Admin REST API](https://www.keycloak.org/docs-api/latest/rest-api/index.html).

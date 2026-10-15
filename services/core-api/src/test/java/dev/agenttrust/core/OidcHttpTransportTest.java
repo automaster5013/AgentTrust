@@ -6,6 +6,8 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -48,12 +50,18 @@ class OidcHttpTransportTest {
     }
     @Test @Timeout(10) void stalledTokenBodyIsBoundedAfterSuccessfulResponseHeaders() throws Exception {
         var server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
-        server.createContext("/token",exchange->{exchange.getResponseHeaders().set("Content-Type","application/json");exchange.sendResponseHeaders(200,0);try(var out=exchange.getResponseBody()){out.write('{');out.flush();try{Thread.sleep(1500);}catch(InterruptedException e){Thread.currentThread().interrupt();}}catch(java.io.IOException ignored){}});server.start();
+        var partialBodyFlushed=new CountDownLatch(1);var releaseBody=new CountDownLatch(1);
+        server.createContext("/token",exchange->{exchange.getResponseHeaders().set("Content-Type","application/json");exchange.sendResponseHeaders(200,0);try(var out=exchange.getResponseBody()){out.write('{');out.flush();partialBodyFlushed.countDown();try{releaseBody.await(5,TimeUnit.SECONDS);}catch(InterruptedException e){Thread.currentThread().interrupt();}}catch(java.io.IOException ignored){}});server.start();
         try {
-            var request=grant(registration("http://127.0.0.1:"+server.getAddress().getPort()));long started=System.nanoTime();
-            assertThrows(OAuth2AuthorizationException.class,()->OidcHttpTransport.tokens(Duration.ofMillis(200)).getTokenResponse(request));
-            assertTrue(Duration.ofNanos(System.nanoTime()-started).compareTo(Duration.ofSeconds(1))<0);
-        } finally {server.stop(0);}
+            var request=grant(registration("http://127.0.0.1:"+server.getAddress().getPort()));
+            var client=OidcHttpTransport.tokens(Duration.ofMillis(200));
+            var error=assertThrows(OAuth2AuthorizationException.class,()->client.getTokenResponse(request));
+            assertEquals(0,partialBodyFlushed.getCount(),"Server must send a partial successful body before refusal");
+            Throwable cause=error;boolean socketReadTimedOut=false;
+            while(cause!=null){socketReadTimedOut|=cause instanceof java.net.SocketTimeoutException;cause=cause.getCause();}
+            assertTrue(socketReadTimedOut,"Refusal must come from the configured socket read timeout, not malformed EOF or unrelated setup time");
+            assertEquals(1,releaseBody.getCount(),"Server body remains deliberately stalled when the client times out");
+        } finally {releaseBody.countDown();server.stop(0);}
     }
     @Test void unlimitedOrExcessiveReadTimeoutIsRefused() {
         for(var timeout:new Duration[]{Duration.ZERO,Duration.ofNanos(1),Duration.ofSeconds(-1),Duration.ofSeconds(11)})assertThrows(IllegalArgumentException.class,()->OidcHttpTransport.factory(timeout));

@@ -109,9 +109,42 @@ def main():
                 other.request('runs/' + identifier, expected=404)
                 require(other.request('runs') == [])
             report['checks'].append('new editor actual Python evaluation, viewer read, admin-only rejection and blocked gate work; same-organization other-project and foreign-organization access return404')
+        # Retain active application sessions while the operator suspends exactly
+        # the first cohort, so provider emptiness alone cannot pass this check.
+        suspended = subprocess.run([sys.executable, 'scripts/stack-workspace-onboarding.py',
+            '--suspend-journal', str(journals[0] / 'journal.json'), '--execute'],
+            cwd=ROOT, capture_output=True, text=True, timeout=180)
+        suspension = json.loads(suspended.stdout)
+        require(suspended.returncode == 0 and suspension['completed']
+                and suspension['disabledUsers'] == 3 and suspension['providerSessionRevocationVerified']
+                and suspension['applicationSessionRevocationVerifiedHere'] is False,
+                'WORKSPACE_SUSPENSION_UNVERIFIED')
+        for client in [administrator, editor, viewer]:
+            deadline = time.monotonic() + 15
+            while True:
+                try:
+                    client.request('me', expected=401)
+                    client.logged = False
+                    break
+                except AssertionError:
+                    require(time.monotonic() < deadline)
+                    time.sleep(.25)
+        for name in [prefix + '-project', prefix + '-foreign']:
+            by_name[name].request('me')
+        denied = StackClient('http://127.0.0.1:4320', credentials, {}, clients)
+        try:
+            denied.login(prefix + '-viewer')
+        except AssertionError:
+            denied.request('me', expected=401)
+        else:
+            require(False, 'SUSPENDED_WORKSPACE_LOGIN_ACCEPTED')
+        report['applicationSessionRevocationVerified'] = True
+        report['suspendedAccountCannotLogin'] = True
+        report['foreignWorkspaceSessionsPreserved'] = True
+        report['checks'].append('operator suspension disables exactly its cohort; real signed logout revokes three existing Core sessions and future login fails while other workspaces remain authenticated')
         for client in reversed(clients):
             client.logout()
-        report['checks'].append('all five new application and provider sessions closed')
+        report['checks'].append('all owned application and provider sessions closed')
         report['completed'] = True
     except Exception as error:
         report.update(completed=False, errorType=type(error).__name__,

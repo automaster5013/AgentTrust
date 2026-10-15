@@ -66,7 +66,7 @@ class LocalWorkspaceIdentity:
     def read(self, path):
         require(path in ('/clients?clientId=agenttrust-console', '/users/profile')
                 or re.fullmatch(r'/users\?username=[a-z][a-z0-9-]{2,40}&exact=true&max=2', path) is not None
-                or re.fullmatch(r'/users/[a-f0-9-]{36}(?:/role-mappings(?:/realm/(?:available|composite))?)?', path) is not None)
+                or re.fullmatch(r'/users/[a-f0-9-]{36}(?:/sessions|/role-mappings(?:/realm/(?:available|composite))?)?', path) is not None)
         raw, _ = self.wire('/admin/realms/agenttrust' + path)
         return json.loads(raw)
 
@@ -86,6 +86,15 @@ class LocalWorkspaceIdentity:
         require(match is not None and match[1] in self.created)
         require((method == 'PUT' and match[2] is None) or (method == 'POST' and match[2] is not None))
         self.wire('/admin/realms/agenttrust' + path, method, json.dumps(value).encode(), expected=204)
+
+    def suspend_user(self, identifier, verified_user):
+        canonical_uuid(identifier)
+        require(isinstance(verified_user, dict) and verified_user.get('id') == identifier)
+        # Caller verifies the journal's exact actor/name/scope/role before every
+        # mutation. Existing attributes stay unchanged; only enabled becomes false.
+        self.wire('/admin/realms/agenttrust/users/' + identifier, 'PUT',
+                  json.dumps({**verified_user, 'enabled': False}).encode(), expected=204)
+        self.wire('/admin/realms/agenttrust/users/' + identifier + '/logout', 'POST', b'', expected=204)
 
     def __exit__(self, *args):
         try:

@@ -10,6 +10,7 @@ import uuid
 from unittest.mock import patch
 from stack_workspace_onboarding import OnboardingRefused, Provisioner, parse_manifest
 from stack_workspace_identity import LocalWorkspaceIdentity
+from stack_workspace_suspension import cohort_from_journal, suspend
 
 SPEC = importlib.util.spec_from_file_location('onboarding_cli', pathlib.Path(__file__).with_name('stack-workspace-onboarding.py'))
 CLI = importlib.util.module_from_spec(SPEC)
@@ -241,6 +242,95 @@ class TransportAndCustodyTests(unittest.TestCase):
         self.assertEqual(len(api.users), 1)
         self.assertFalse(next(iter(api.users.values()))['enabled'])
         self.assertTrue(states[-1]['allKnownUsersDisabledAfterFailure'])
+
+
+class SuspensionProvider(Provider):
+    def __init__(self):
+        super().__init__()
+        self.suspensions = []
+        self.fail_logout = self.keep_sessions = False
+
+    def read(self, path):
+        if path.endswith('/sessions'):
+            return [{'id': 'synthetic-session'}] if self.keep_sessions else []
+        return super().read(path)
+
+    def suspend_user(self, identifier, user):
+        self.suspensions.append(identifier)
+        self.users[identifier] = {**copy.deepcopy(user), 'enabled': False}
+        if self.fail_logout:
+            raise TimeoutError('provider logout response unknown')
+
+
+class SuspensionTests(unittest.TestCase):
+    def prepared(self):
+        api, states = SuspensionProvider(), []
+        state = Provisioner(api, states.append).execute(sample())
+        cohort = cohort_from_journal(json.dumps(state).encode())
+        return api, state, cohort
+
+    def test_completed_exact_journal_suspends_every_member_without_deleting_accounts(self):
+        api, _, cohort = self.prepared()
+        states = []
+        result = suspend(api, cohort, states.append)
+        self.assertTrue(result['completed'])
+        self.assertEqual(result['verifiedDisabledMembers'], 2)
+        self.assertTrue(result['providerSessionRevocationVerified'])
+        self.assertFalse(result['applicationSessionRevocationVerifiedHere'])
+        self.assertFalse(result['accountsDeleted'])
+        self.assertEqual(len(api.users), 2)
+        self.assertFalse(any(u['enabled'] for u in api.users.values()))
+        self.assertNotIn('password', json.dumps(result))
+
+    def test_changed_scope_or_role_refuses_entire_cohort_before_any_disable(self):
+        for change in ['project', 'organization', 'role', 'username']:
+            api, _, cohort = self.prepared()
+            identifier = cohort['members'][1]['actorId']
+            if change == 'role':
+                api.roles[identifier] = ['admin']
+            elif change == 'username':
+                api.users[identifier]['username'] = 'changed-identity'
+            else:
+                api.users[identifier]['attributes']['agenttrust_' + change] = [str(uuid.uuid4())]
+            with self.subTest(change=change), self.assertRaises(OnboardingRefused):
+                suspend(api, cohort, lambda _: None)
+            self.assertEqual(api.suspensions, [])
+            self.assertTrue(all(u['enabled'] for u in api.users.values()))
+
+    def test_unknown_logout_is_not_retried_or_counted_as_completed(self):
+        api, _, cohort = self.prepared()
+        api.fail_logout = True
+        states = []
+        with self.assertRaises(TimeoutError):
+            suspend(api, cohort, states.append)
+        self.assertEqual(len(api.suspensions), 1)
+        self.assertFalse(states[-1]['completed'])
+        self.assertEqual(states[-1]['verifiedDisabledMembers'], 0)
+        self.assertFalse(states[-1]['providerSessionRevocationVerified'])
+
+    def test_remaining_provider_sessions_prevent_completion(self):
+        api, _, cohort = self.prepared()
+        api.keep_sessions = True
+        states = []
+        with self.assertRaises(OnboardingRefused):
+            suspend(api, cohort, states.append)
+        self.assertFalse(states[-1]['completed'])
+        self.assertFalse(states[-1]['providerSessionRevocationVerified'])
+
+    def test_partial_unknown_duplicate_or_substituted_journal_refused(self):
+        _, original, _ = self.prepared()
+        changes = [lambda s: s.update(completed=False), lambda s: s.update(createResponseUncertain=True),
+                   lambda s: s.update(schemaVersion=True), lambda s: s.update(manifestSha256='0' * 64),
+                   lambda s: s['members'][1].update(actorId=s['members'][0]['actorId']),
+                   lambda s: s['members'][1].update(username='demo-viewer'),
+                   lambda s: s.update(extraField='unexpected')]
+        for change in changes:
+            state = copy.deepcopy(original)
+            change(state)
+            with self.subTest(change=change), self.assertRaises(OnboardingRefused):
+                cohort_from_journal(json.dumps(state).encode())
+        with self.assertRaises(OnboardingRefused):
+            cohort_from_journal(b'{"completed":true,"completed":true}')
 
 
 if __name__ == '__main__':
