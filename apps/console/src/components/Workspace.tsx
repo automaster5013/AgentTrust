@@ -30,7 +30,7 @@ export default function Workspace(){
   try{
    const u=identity(await json('me'));if(expected&&(u.actorId!==expected.actorId||u.organizationId!==expected.organizationId||u.projectId!==expected.projectId))throw Error('INVALID_REFRESH_SCOPE');
    if(!scope.current.current(generation))return;
-   verifiedIdentity=true;setUser(u);setRecords([]);setListState('loading');
+   verifiedIdentity=true;setLoading(false);setUser(u);setRecords([]);setListState('loading');
    const rows=runs(await json('runs'));if(scope.current.current(generation)){setRecords(rows);setListState('ready')}
   }catch(error){
    if(scope.current.current(generation)){
