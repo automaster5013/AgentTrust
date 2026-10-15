@@ -6,6 +6,9 @@ COPY src src
 COPY HealthProbe.java .
 RUN mvn -B -ntp verify && javac HealthProbe.java
 FROM eclipse-temurin:21-jre@sha256:cff19e6215689161eb6162c11b86b0c60ddf802164f2eaf48d570f8fb79a36c5
+RUN apt-get update \
+ && apt-get install --yes --no-install-recommends --only-upgrade curl=8.18.0-1ubuntu2.8 libcurl4t64=8.18.0-1ubuntu2.8 \
+ && rm -rf /var/lib/apt/lists/*
 RUN rm -f /usr/bin/pebble
 WORKDIR /app
 ADD --chmod=644 --checksum=sha256:f787eb6c7f3d18e69a431e108a15278d25ee37f83d68b678f621e063f3988f82 https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v2.32.0/opentelemetry-javaagent.jar /app/opentelemetry-javaagent.jar

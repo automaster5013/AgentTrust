@@ -2,6 +2,9 @@ FROM quay.io/keycloak/keycloak:26.8.0@sha256:b0f60d489d51c5d113390bdf5461d4c06e6
 ENV KC_DB=postgres KC_HEALTH_ENABLED=true KC_METRICS_ENABLED=true
 RUN /opt/keycloak/bin/kc.sh build
 FROM eclipse-temurin:21-jre@sha256:cff19e6215689161eb6162c11b86b0c60ddf802164f2eaf48d570f8fb79a36c5
+RUN apt-get update \
+ && apt-get install --yes --no-install-recommends --only-upgrade curl=8.18.0-1ubuntu2.8 libcurl4t64=8.18.0-1ubuntu2.8 \
+ && rm -rf /var/lib/apt/lists/*
 RUN rm -f /usr/bin/pebble
 COPY --from=build --chown=1000:1000 /opt/keycloak/ /opt/keycloak/
 WORKDIR /opt/keycloak
