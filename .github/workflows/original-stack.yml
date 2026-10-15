@@ -393,6 +393,12 @@ jobs:
           python3 scripts/stack-object-smoke.py
           python3 scripts/stack-vector-smoke.py
           python3 scripts/stack-gateway-smoke.py
+          (
+            cd apps/console
+            npm ci --ignore-scripts
+            npx playwright install --with-deps chromium
+            STACK_E2E_QUOTA_GUARD=true npx playwright test
+          )
           python3 scripts/stack-provider-setup.py
           python3 scripts/stack-provider-start.py
           python3 scripts/stack-provider-integrity-smoke.py
@@ -421,6 +427,10 @@ jobs:
           python3 scripts/stack-quality-verifier-smoke.py
           python3 scripts/stack-queue-trace-smoke.py
           python3 scripts/stack-observability-outage-smoke.py
+          (
+            cd apps/console
+            STACK_E2E_QUOTA_GUARD=true STACK_E2E_LOCAL_MODEL=true npx playwright test --grep 'local model provider evidence|reference dataset'
+          )
           docker build -t agenttrust-security:local tools/security
           python3 scripts/stack-database-backup-smoke.py
           python3 scripts/stack-object-backup-smoke.py
@@ -435,6 +445,7 @@ jobs:
           name: original-stack-registry-diagnostics-${{ github.sha }}
           include-hidden-files: true
           path: |
+            .local/stack-browser-*.json
             .local/stack-gateway-smoke-*.json
             .local/stack-http-smoke-*.json
             .local/stack-campaign-smoke-*.json

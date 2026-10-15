@@ -1,5 +1,22 @@
 # GitHub CI와 이미지 전달
 
+## Immutable registry-image browser acceptance
+
+The `images` job now runs the complete synthetic browser suite against the
+already-running digest-pinned registry images, before enabling the local model.
+It then runs the two local-model browser scenarios after the pinned Ollama
+provider is ready. Browser dependencies are installed on the disposable runner;
+the application images are not rebuilt for these tests. The registry diagnostic
+artifact includes the same sanitized browser JSON format as the source job,
+without credentials, screenshots, traces or videos.
+
+Acceptance requires both source and registry artifacts for the same revision:
+currently 45 synthetic browser tests and two local-model tests in each. A source
+pass alone does not establish registry browser acceptance. The workflow change
+configures this gate; its first passing execution must still be verified from
+authenticated artifacts. Test writes stay in the runner's synthetic fixture,
+paid providers remain disabled, and no production server is deployed.
+
 대상 저장소: https://github.com/automaster5013/AgentTrust . 사용자가 지정한 범위는 소스 업로드, CI, Docker 이미지 빌드·보관과 수동 배포 준비이며 현재 연결할 서버는 없다.
 
 ## 처음 배포 준비를 확인하는 순서
