@@ -129,6 +129,12 @@ environment without recording its values, verifies distinct owner/API credential
 and requires the same-image migration process to have exited successfully without
 host ports. Source and registry CI preserve its safe JSON report. Private settings
 and all sixteen existing SQL migration files are unchanged by this separation.
+`stack-database-process-adversarial.py` also uses the actual running Core image on
+a fresh, portless PostgreSQL instance backed only by temporary memory. It checks
+initial and repeated migration, owner-secret contamination, mixed process flags,
+actual superuser elevation and owner-role membership, followed by recovery of the
+restricted role. It removes only its labelled fixture resources and generated
+credentials; source services and original data volumes are not changed.
 Future schema changes still require a controlled migration, compatible rollout,
 backup and rollback policy on the chosen target; this does not establish HA or an
 operational deployment.

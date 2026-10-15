@@ -81,6 +81,7 @@ jobs:
           python3 scripts/stack-identity-profile.py
           python3 scripts/stack-identity-smoke.py
           python3 scripts/stack-database-process-smoke.py
+          python3 scripts/stack-database-process-adversarial.py
           python3 scripts/stack-http-smoke.py
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
           python3 scripts/stack-database-smoke.py
@@ -267,6 +268,7 @@ jobs:
             .local/stack-observability-outage-*.json
             .local/stack-database-init-smoke-*.json
             .local/stack-database-process-*.json
+            .local/stack-database-process-fixture-*/summary.json
             .local/stack-database-backup-*/summary.json
             .local/stack-object-backup-*/summary.json
             .local/stack-coherent-recovery-*/summary.json
@@ -354,6 +356,7 @@ jobs:
           python3 scripts/stack-identity-profile.py
           python3 scripts/stack-identity-smoke.py
           python3 scripts/stack-database-process-smoke.py
+          python3 scripts/stack-database-process-adversarial.py
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
           python3 scripts/stack-database-smoke.py
           python3 scripts/stack-database-init-smoke.py
@@ -468,6 +471,7 @@ jobs:
             .local/stack-vector-smoke-*.json
             .local/stack-database-init-smoke-*.json
             .local/stack-database-process-*.json
+            .local/stack-database-process-fixture-*/summary.json
             .local/stack-database-backup-*/summary.json
             .local/stack-object-backup-*/summary.json
             .local/stack-coherent-recovery-*/summary.json
