@@ -20,6 +20,20 @@ async function existingRecoverableCampaign(page:Page){
  throw Error('Existing recoverable synthetic campaign unavailable');
 }
 
+test('authenticated viewer preserves identity during evaluation list failure and retries only the read',async({page})=>{
+ let mode='unavailable',writes=0;const list='**/backend/runs';
+ page.on('request',request=>{const path=new URL(request.url()).pathname;if(path.startsWith('/backend/')&&request.method()==='POST'&&!['/backend/login','/backend/logout'].includes(path))writes++});
+ try{
+  await login(page,'demo-viewer',()=>page.route(list,route=>mode==='actual'?route.continue():route.fulfill({status:mode==='expired'?401:503,contentType:'application/json',body:JSON.stringify({code:mode==='expired'?'AUTHENTICATION_REQUIRED':'SERVICE_UNAVAILABLE'})})));
+  const failure=page.getByRole('status',{name:'최근 평가 조회 상태',exact:true});await expect(failure).toContainText('평가 목록을 확인하지 못했습니다.');
+  await expect(page.getByRole('button',{name:'Keycloak으로 로그인',exact:true})).toHaveCount(0);await expect(page.getByText('저장된 평가가 없습니다.',{exact:true})).toHaveCount(0);
+  mode='actual';await page.getByRole('button',{name:'최근 평가 다시 조회',exact:true}).click();await expect(failure).toHaveCount(0);await expect(page.getByRole('list',{name:'최근 평가 목록',exact:true})).toBeVisible();
+  phase('actual Keycloak identity survives an intercepted list 503; explicit read retry restores existing evaluations without login or business writes');
+  mode='expired';await page.getByRole('button',{name:'최근 평가 다시 조회',exact:true}).click();await expect(page.getByRole('button',{name:'Keycloak으로 로그인',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'로그아웃',exact:true})).toHaveCount(0);await expect(page.getByRole('list',{name:'최근 평가 목록',exact:true})).toHaveCount(0);expect(writes).toBe(0);
+  phase('an intercepted list 401 clears identity, records and protected workspace instead of retaining authenticated UI');
+ }finally{await page.unroute(list)}
+});
+
 test('viewer resolves receipt-specific historical signing trust and rejects substituted or unavailable public keys without writes',async({page})=>{
  await login(page,'demo-viewer');
  const rows=await (await page.request.get('/backend/campaigns')).json() as {id:string}[];let campaignId='',receiptId='';
@@ -338,8 +352,9 @@ test('viewer downloads bounded scoped audit JSON and refuses changed bytes befor
  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 function phase(description:string){test.info().annotations.push({type:'phase',description})}
-async function login(page:Page,name:string){
+async function login(page:Page,name:string,beforeNavigation?:()=>Promise<unknown>){
  await page.route('**/*',route=>{const url=new URL(route.request().url());if(process.env.STACK_E2E_READ_ONLY==='true'&&url.origin==='http://127.0.0.1:4320'&&url.pathname.startsWith('/backend/')&&route.request().method()!=='GET'&&!['/backend/login','/backend/logout'].includes(url.pathname)){phase('read-only network guard refused unintended business mutation');return route.abort('blockedbyclient')}if(['http://127.0.0.1:4320','http://127.0.0.1:4322'].includes(url.origin))return route.continue();return route.abort()});
+ if(beforeNavigation)await beforeNavigation();
  await page.goto('/');const info=await (await page.request.get('/backend/auth-info')).json();
  const user=users.find(u=>u.username===name)!;
  // Reporter never records invocation arguments, browser traces, cookies or credentials.
