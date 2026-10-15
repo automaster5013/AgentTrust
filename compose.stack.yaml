@@ -16,7 +16,7 @@ services:
     pids_limit: 256
     networks: [stack-backend]
     healthcheck:
-      test: [CMD-SHELL, pg_isready -U agenttrust_stack -d agenttrust_stack]
+      test: [CMD-SHELL, pg_isready -h 127.0.0.1 -U agenttrust_stack -d agenttrust_stack]
       interval: 3s
       timeout: 3s
       retries: 20
