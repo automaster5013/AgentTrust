@@ -39,6 +39,7 @@ def main():
     if key_directory.exists() or output.exists():
         raise ValueError('Fixture ownership collision')
     keys = []
+    source_execution_started, source_restoration_safe = False, True
     report = {'completed': False, 'fixtureId': identifier,
               'startedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(),
               'operatorProvidedKeysUsed': False, 'originalKeysModifiedOrDeleted': False,
@@ -67,10 +68,12 @@ def main():
             request.append('--exercise-load')
         # The child owns source restoration in finally; do not kill it at an
         # arbitrary wrapper timeout while it may be restoring source services.
+        source_execution_started, source_restoration_safe = True, False
         result = command(request, None)
         recovery = json.loads(result.stdout)
+        source_restoration_safe = recovery.get('sourceServicesRestored') is True or recovery.get('sourceServicesStopped') is False
         report['recoveryProof'] = recovery.get('reportPath')
-        if result.returncode or not recovery.get('completed') or not recovery.get('operatorRetainedKeyBytesUnchanged') or not recovery.get('ownFixtureAndTemporarySecretsCleaned'):
+        if result.returncode or not source_restoration_safe or not recovery.get('completed') or not recovery.get('operatorRetainedKeyBytesUnchanged') or not recovery.get('ownFixtureAndTemporarySecretsCleaned'):
             raise ValueError('Retained-key coherent recovery unverified')
         directory = pathlib.Path(recovery['reportPath']).resolve().parent
         if directory.parent != (ROOT / '.local').resolve():
@@ -110,8 +113,13 @@ def main():
     except Exception as error:
         report.update(completed=False, code='RETAINED_CUSTODY_REHEARSAL_UNVERIFIED', errorType=type(error).__name__)
     finally:
-        cleaned = True
-        for path in keys:
+        retain_for_recovery = source_execution_started and not source_restoration_safe
+        cleaned = not retain_for_recovery
+        report['ownedFixtureKeysRetainedForRecovery'] = retain_for_recovery
+        report['sourceRecoveryAttentionRequired'] = retain_for_recovery
+        if retain_for_recovery:
+            report['retainedFixtureKeyDirectory'] = str(key_directory)
+        for path in ([] if retain_for_recovery else keys):
             try:
                 if key_directory.resolve().parent != (ROOT / '.local').resolve() or key_directory.is_symlink() or path.is_symlink() or path.resolve().parent != key_directory.resolve() or path.name not in ('retained-development-key.bin', 'wrong-development-key.bin'):
                     raise ValueError('Fixture key cleanup ownership refused')
@@ -121,7 +129,7 @@ def main():
             except Exception:
                 cleaned = False
         try:
-            if key_directory.exists():
+            if key_directory.exists() and not retain_for_recovery:
                 if key_directory.resolve().parent != (ROOT / '.local').resolve() or key_directory.is_symlink():
                     raise ValueError('Fixture key directory cleanup ownership refused')
                 key_directory.rmdir()

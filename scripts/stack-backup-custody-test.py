@@ -29,6 +29,7 @@ def module(name, file):
 
 verifier = module('snapshot_verifier_contract', 'stack-coherent-snapshot-verify.py')
 envelope = module('snapshot_envelope_contract', 'stack-backup-crypt.py')
+wrapper = module('retained_recovery_wrapper_contract', 'stack-coherent-retained-recovery.py')
 
 
 class SnapshotCustodyTests(unittest.TestCase):
@@ -185,6 +186,51 @@ class SnapshotCustodyTests(unittest.TestCase):
         with patch.object(backup_tools, 'run', side_effect=[inspection, accepted]), patch.object(backup_tools.os, 'getuid', return_value=1001, create=True):
             self.assertEqual(backup_tools.crypt(self.root, self.key, 'decrypt', b'encrypted-manifest'), b'authenticated-bytes')
         self.assertEqual(self.key.read_bytes(), self.secret)
+
+    def wrapper_failure(self, child_stdout, *, refuse_custody=False):
+        def request(args, timeout=120):
+            if args[0] == 'whoami':
+                return types.SimpleNamespace(returncode=0, stdout='contract-owner', stderr='')
+            if args[0] == 'icacls':
+                return types.SimpleNamespace(returncode=0, stdout='', stderr='')
+            return types.SimpleNamespace(returncode=1, stdout=child_stdout, stderr='')
+        def custody(root, path):
+            if refuse_custody:
+                raise ValueError('Refused fixture custody')
+            return path, hashlib.sha256(path.read_bytes()).digest()
+        with patch.object(wrapper, 'ROOT', self.root), patch.object(wrapper, 'command', side_effect=request) as calls, patch.object(wrapper, 'retained_key', side_effect=custody), patch('sys.argv', ['retained-recovery', '--execute']), patch('sys.stdout', new_callable=io.StringIO):
+            self.assertEqual(wrapper.main(), 1)
+        reports = list((self.root / '.local').glob('stack-coherent-retained-custody-*.json'))
+        self.assertEqual(len(reports), 1)
+        return json.loads(reports[0].read_text()), calls
+
+    def test_unrestored_source_keeps_only_generated_fixture_keys_for_recovery(self):
+        report, _ = self.wrapper_failure(json.dumps({'completed': False, 'sourceServicesRestored': False}))
+        self.assertTrue(report['ownedFixtureKeysRetainedForRecovery'])
+        self.assertTrue(report['sourceRecoveryAttentionRequired'])
+        self.assertFalse(report['ownedFixtureKeysDeletedAfterAssertions'])
+        directory = pathlib.Path(report['retainedFixtureKeyDirectory'])
+        self.assertEqual(directory.parent, self.root / '.local')
+        self.assertEqual(len(list(directory.iterdir())), 2)
+        self.assertEqual(self.key.read_bytes(), self.secret)
+
+    def test_unreadable_child_result_cannot_trigger_key_deletion(self):
+        report, _ = self.wrapper_failure('not-json')
+        self.assertTrue(report['ownedFixtureKeysRetainedForRecovery'])
+        self.assertFalse(report['ownedFixtureKeysDeletedAfterAssertions'])
+
+    def test_failed_fixture_after_confirmed_source_restore_cleans_generated_keys(self):
+        report, _ = self.wrapper_failure(json.dumps({'completed': False, 'sourceServicesRestored': True}))
+        self.assertFalse(report['sourceRecoveryAttentionRequired'])
+        self.assertTrue(report['ownedFixtureKeysDeletedAfterAssertions'])
+        self.assertEqual(list((self.root / '.local').glob('retained-key-fixture-*')), [])
+        self.assertEqual(self.key.read_bytes(), self.secret)
+
+    def test_custody_failure_before_source_execution_never_runs_recovery(self):
+        report, calls = self.wrapper_failure('', refuse_custody=True)
+        self.assertTrue(report['ownedFixtureKeysDeletedAfterAssertions'])
+        self.assertFalse(report['sourceRecoveryAttentionRequired'])
+        self.assertFalse(any('scripts/stack-coherent-recovery.py' in call.args[0] for call in calls.call_args_list))
 
 
 if __name__ == '__main__':

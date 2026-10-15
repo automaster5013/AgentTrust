@@ -123,6 +123,10 @@ images, preserving safe positive and intentional-negative JSON diagnostics.
 The negative control requires the crypto helper's specific AES-GCM authentication
 error. An unavailable Docker engine or another helper failure cannot count as a
 successfully rejected wrong key.
+If the source restoration fails or the child result cannot establish that it
+restored the source, the wrapper retains its generated keys in the protected
+fixture directory and reports that source recovery needs attention. It does not
+delete recovery material under an unknown source state.
 
 The local contracts cover wrong keys, modified ciphertext even with a recomputed
 outer digest, substituted snapshot/revision/configuration, duplicate JSON fields,
