@@ -95,3 +95,13 @@ problem: the OIDC callback and identity read succeeded, but an intercepted list
 logins without injection passed. This establishes a separate reproducible
 failure mode; it does not prove the cause of the earlier isolated login failure.
 The browser regression covers list 503, explicit recovery and subsequent 401.
+
+The corrected development Console image passed that regression and the existing
+historical-signing-trust browser check with the read-only network guard enabled.
+All 130 Console unit tests and TypeScript checking also passed. These checks do
+not establish production identity acceptance. The local browser runner initially
+failed before navigation because its Python-launched Node process could not find
+the installed Chromium executable; the bundled workspace Python runner passed.
+The reporter now records a fixed failure category without raw messages, URLs,
+cookies, traces or credentials, so launch failures can be distinguished from UI
+assertions. The original isolated login assertion remains unexplained.
