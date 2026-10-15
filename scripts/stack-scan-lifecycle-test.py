@@ -1,5 +1,5 @@
 """Mocked scanner lifecycle fixtures; these are not vulnerability scan evidence."""
-import contextlib,importlib.util,io,json,pathlib,runpy,shutil,subprocess,tempfile,unittest
+import contextlib,importlib.util,io,json,os,pathlib,runpy,shutil,subprocess,tempfile,unittest
 from unittest.mock import patch
 
 ROOT=pathlib.Path(__file__).resolve().parent.parent
@@ -35,19 +35,25 @@ class Lifecycle(unittest.TestCase):
             raise AssertionError('Unexpected fixture subprocess')
         argv=[str(root/'scripts'/script)]
         if script=='stack-observability-security.py':argv+=['--name','grafana','--reference','agenttrust-grafana:local']
-        with patch('subprocess.run',side_effect=command),patch('shutil.disk_usage',return_value=shutil._ntuple_diskusage(200*1073741824,0,200*1073741824)),patch('sys.argv',argv),contextlib.redirect_stdout(io.StringIO()):
+        free_bytes=(28535545856 if os.name=='nt' else 8*1073741824) if failure=='capacity' else 200*1073741824
+        with patch('subprocess.run',side_effect=command),patch('shutil.disk_usage',return_value=shutil._ntuple_diskusage(200*1073741824,0,free_bytes)),patch('sys.argv',argv),contextlib.redirect_stdout(io.StringIO()):
             try:runpy.run_path(str(root/'scripts'/script),run_name='__main__')
             except SystemExit as exit_status:self.assertEqual(1 if failure else 0,exit_status.code)
         summary=next((root/'.local').glob('*/summary.json'));report=json.loads(summary.read_text())
         self.assertEqual(not failure,report['completed'])
         self.assertTrue(report['temporaryArchivesRemoved'])
         self.assertEqual([],list((root/'.local').rglob('*.tar')))
-        self.assertTrue(list((summary.parent/'reports').glob('*.json')) or failure=='export')
+        if failure=='capacity':
+            self.assertFalse(report['exportPreflightPassed'])
+            self.assertEqual('image-and-disk-preflight',report['currentStage'])
+            self.assertEqual({},report['images'])
+        else:self.assertTrue(list((summary.parent/'reports').glob('*.json')) or failure=='export')
 
     def test_full_delivery_success_preserves_reports_without_archives(self):self.fixture('stack-security-images.py')
     def test_full_delivery_findings_fail_and_still_remove_archives(self):self.fixture('stack-security-images.py','findings')
     def test_full_delivery_scan_failure_removes_current_archive(self):self.fixture('stack-security-images.py','scan')
     def test_full_delivery_partial_export_is_removed(self):self.fixture('stack-security-images.py','export')
+    def test_full_delivery_database_refresh_headroom_refused_before_export(self):self.fixture('stack-security-images.py','capacity')
     def test_observation_success_preserves_reports_without_archives(self):self.fixture('stack-observability-security.py')
     def test_observation_findings_fail_and_still_remove_archives(self):self.fixture('stack-observability-security.py','findings')
     def test_observation_partial_export_is_removed(self):self.fixture('stack-observability-security.py','export')

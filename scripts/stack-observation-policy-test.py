@@ -1,14 +1,15 @@
 import unittest
-from stack_observation_policy import GIB, archive_preflight, official_reference
+from stack_observation_policy import GIB, SCANNER_WORKSPACE_BYTES, archive_preflight, official_reference
 
 
 class ObservationPolicyTests(unittest.TestCase):
     def test_only_exact_pinned_official_grafana_reference_has_larger_bound(self):
         reference = 'grafana/grafana:13.2.4@sha256:'+'a'*64
         self.assertTrue(official_reference('grafana', reference))
-        result = archive_preflight('grafana', reference, 2*GIB, 24*GIB, True)
+        result = archive_preflight('grafana', reference, 2*GIB, 33*GIB, True)
         self.assertEqual(result['minimumReserveBytes'], 22*GIB)
         self.assertEqual(result['maximumArchiveBytes'], 3*GIB)
+        self.assertEqual(result['scannerWorkspaceBytes'], 8*GIB)
 
     def test_mutable_foreign_repository_wrong_component_and_malformed_digest_refused(self):
         for name, reference in [('grafana', 'grafana/grafana:13.2.4'), ('grafana', 'other/grafana:13.2.4@sha256:'+'a'*64),
@@ -19,8 +20,13 @@ class ObservationPolicyTests(unittest.TestCase):
     def test_byte_below_reserve_refused_before_export(self):
         for windows, reserve in [(True, 22*GIB), (False, 4*GIB)]:
             with self.subTest(windows=windows), self.assertRaises(ValueError):
-                archive_preflight('loki', 'agenttrust-loki:local', GIB, reserve+GIB-1, windows)
-            self.assertEqual(archive_preflight('loki', 'agenttrust-loki:local', GIB, reserve+GIB, windows)['minimumReserveBytes'], reserve)
+                archive_preflight('loki', 'agenttrust-loki:local', GIB, reserve+GIB+SCANNER_WORKSPACE_BYTES-1, windows)
+            self.assertEqual(archive_preflight('loki', 'agenttrust-loki:local', GIB, reserve+GIB+SCANNER_WORKSPACE_BYTES, windows)['minimumReserveBytes'], reserve)
+
+    def test_archive_only_headroom_cannot_start_a_database_refresh(self):
+        for windows, free_bytes in [(True, 28535545856), (False, 8*GIB)]:
+            with self.subTest(windows=windows), self.assertRaises(ValueError):
+                archive_preflight('grafana', 'grafana/grafana:13.2.4@sha256:'+'a'*64, 1938187840, free_bytes, windows)
 
     def test_local_and_registry_candidates_keep_one_gib_bound(self):
         for reference in ('agenttrust-grafana:local', 'ghcr.io/automaster5013/agenttrust-grafana@sha256:'+'a'*64):

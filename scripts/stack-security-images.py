@@ -1,5 +1,6 @@
 """Create Syft SBOMs and Trivy reports for exact exported image IDs, without a Docker socket."""
 import datetime,hashlib,json,os,pathlib,re,shutil,subprocess,uuid,traceback,importlib.util
+from stack_observation_policy import scanner_disk_budget
 _scratch_spec=importlib.util.spec_from_file_location('scan_scratch',pathlib.Path(__file__).with_name('stack-scan-scratch.py'))
 _scratch_module=importlib.util.module_from_spec(_scratch_spec);_scratch_spec.loader.exec_module(_scratch_module)
 root=pathlib.Path(__file__).resolve().parent.parent
@@ -22,15 +23,14 @@ try:
   reference=os.environ[env] if registry else 'agenttrust-'+name+':local';image=json.loads(run(['docker','image','inspect',reference]).stdout)[0]
   if not re.fullmatch('sha256:[a-f0-9]{64}',image['Id']) or type(image.get('Size')) is not int or not 0<image['Size']<=2*1073741824:raise ValueError('Image outside bounded export contract')
   identities[name]=(reference,image['Id'],image['Size']+67108864);archive_estimate+=image['Size']+67108864
- reserve=(22 if os.name=='nt' else 4)*1073741824
  peak_estimate=max(value[2] for value in identities.values())
- required=reserve+peak_estimate;available=shutil.disk_usage(root).free
- report.update(archiveEstimateBytes=archive_estimate,peakArchiveEstimateBytes=peak_estimate,requiredFreeBytes=required,availableFreeBytes=available,imagesInspected=len(identities),exportPreflightPassed=available>=required)
+ budget=scanner_disk_budget(peak_estimate,os.name=='nt');required=budget['requiredFreeBytes'];available=shutil.disk_usage(root).free
+ report.update(**budget,archiveEstimateBytes=archive_estimate,peakArchiveEstimateBytes=peak_estimate,availableFreeBytes=available,imagesInspected=len(identities),exportPreflightPassed=available>=required)
  if available<required:raise ValueError('Insufficient disk headroom before image export')
  for name in names:
   reference,image_id,estimate=identities[name]
   report['currentImage']=name;report['currentStage']='bounded-image-export'
-  if shutil.disk_usage(root).free<reserve+estimate:raise ValueError('Disk headroom changed during image export')
+  if shutil.disk_usage(root).free<scanner_disk_budget(estimate,os.name=='nt')['requiredFreeBytes']:raise ValueError('Disk headroom changed during image export')
   archive=scratch.reserve(name+'.tar');run(['docker','image','save','-o',str(archive),image_id]);archive.chmod(0o644);report['exportedArchiveMode']=oct(archive.stat().st_mode & 0o777)
   with archive.open('rb') as stream:checksum=hashlib.file_digest(stream,'sha256').hexdigest()
   if not 0<archive.stat().st_size<=estimate:raise ValueError('Image archive exceeds bounded estimate')
