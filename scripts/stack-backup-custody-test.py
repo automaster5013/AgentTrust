@@ -9,11 +9,13 @@ import pathlib
 import subprocess
 import tarfile
 import tempfile
+import types
 import unittest
 import uuid
 from unittest.mock import Mock, patch
 from stack_backup_custody import retained_key, key_unchanged
 from stack_coherent_archive import SERVICES, STATEFUL
+import stack_backup_tools as backup_tools
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -161,6 +163,28 @@ class SnapshotCustodyTests(unittest.TestCase):
             self.key.chmod(0o644)
         with self.assertRaises(ValueError):
             retained_key(self.root, self.key)
+
+    def test_only_specific_invalid_tag_is_a_crypto_authentication_rejection(self):
+        inspection = types.SimpleNamespace(stdout=json.dumps([{'Id': 'sha256:' + 'd' * 64}]).encode())
+        refused = types.SimpleNamespace(returncode=1, stderr=b'BACKUP_STREAM_REFUSED InvalidTag\n', stdout=b'')
+        with patch.object(backup_tools, 'run', side_effect=[inspection, refused]), patch.object(backup_tools.os, 'getuid', return_value=1001, create=True):
+            with self.assertRaises(backup_tools.BackupAuthenticationError):
+                backup_tools.crypt(self.root, self.key, 'decrypt', b'encrypted-manifest')
+
+    def test_engine_outage_and_other_helper_errors_cannot_pass_wrong_key_control(self):
+        inspection = types.SimpleNamespace(stdout=json.dumps([{'Id': 'sha256:' + 'd' * 64}]).encode())
+        for code, stderr in ((125, b'Docker unavailable'), (1, b'BACKUP_STREAM_REFUSED ValueError\n'), (125, b'BACKUP_STREAM_REFUSED InvalidTag\n')):
+            refused = types.SimpleNamespace(returncode=code, stderr=stderr, stdout=b'')
+            with self.subTest(code=code, stderr=stderr), patch.object(backup_tools, 'run', side_effect=[inspection, refused]), patch.object(backup_tools.os, 'getuid', return_value=1001, create=True):
+                with self.assertRaises(RuntimeError):
+                    backup_tools.crypt(self.root, self.key, 'decrypt', b'encrypted-manifest')
+
+    def test_successful_crypto_stream_keeps_exact_bytes_and_original_key(self):
+        inspection = types.SimpleNamespace(stdout=json.dumps([{'Id': 'sha256:' + 'd' * 64}]).encode())
+        accepted = types.SimpleNamespace(returncode=0, stderr=b'', stdout=b'authenticated-bytes')
+        with patch.object(backup_tools, 'run', side_effect=[inspection, accepted]), patch.object(backup_tools.os, 'getuid', return_value=1001, create=True):
+            self.assertEqual(backup_tools.crypt(self.root, self.key, 'decrypt', b'encrypted-manifest'), b'authenticated-bytes')
+        self.assertEqual(self.key.read_bytes(), self.secret)
 
 
 if __name__ == '__main__':

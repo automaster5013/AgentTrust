@@ -99,10 +99,11 @@ service. The backup directory and key directory must differ. Operators must keep
 the key separately from the encrypted snapshot under an agreed custody policy.
 
 Record the snapshot UUID, source revision and `encryptedManifestSha256` from the
-drill in a separate trusted record. A fresh process can then run:
+drill in a separate trusted record. Replace the capitalized placeholders in this
+fresh-process command with those recorded values:
 
 ```powershell
-python scripts/stack-coherent-snapshot-verify.py --snapshot <snapshot-directory> --retained-key-file <key-file> --expected-snapshot-id <uuid> --expected-revision <40-character-revision> --expected-manifest-sha256 <64-character-digest>
+python scripts/stack-coherent-snapshot-verify.py --snapshot '.local/stack-coherent-recovery-SNAPSHOT_UUID' --retained-key-file '.local/operator-backup-keys/snapshot.bin' --expected-snapshot-id 'SNAPSHOT_UUID' --expected-revision 'SOURCE_SHA' --expected-manifest-sha256 'MANIFEST_SHA256'
 ```
 
 The verifier authenticates the encrypted manifest and all six encrypted
@@ -119,6 +120,9 @@ and requires a different validly protected key to fail cryptographic decryption.
 It verifies the provided fixture keys survived both tools before deleting only
 those generated fixture keys. CI runs this wrapper for source and exact registry
 images, preserving safe positive and intentional-negative JSON diagnostics.
+The negative control requires the crypto helper's specific AES-GCM authentication
+error. An unavailable Docker engine or another helper failure cannot count as a
+successfully rejected wrong key.
 
 The local contracts cover wrong keys, modified ciphertext even with a recomputed
 outer digest, substituted snapshot/revision/configuration, duplicate JSON fields,

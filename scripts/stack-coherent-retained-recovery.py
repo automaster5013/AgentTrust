@@ -97,12 +97,13 @@ def main():
         if result.returncode != 1 or frame.get('completed') is not False:
             raise ValueError('Wrong-key negative control unverified')
         negative = json.loads(pathlib.Path(frame['reportPath']).read_text(encoding='utf-8'))
-        if negative.get('errorType') != 'RuntimeError':
+        if negative.get('errorType') != 'BackupAuthenticationError':
             raise ValueError('Wrong key was not refused by the cryptographic stream helper')
         if before != {p.name: hashlib.sha256(p.read_bytes()).digest() for p in directory.glob('*.aesgcm')} or not all(key_unchanged(*item) for item in (key, wrong_key)):
             raise ValueError('Snapshot or provided fixture key changed')
         report.update(completed=True, coherentRecoveryVerified=True, freshProcessSnapshotVerified=True,
-                      wrongKeyCryptographicallyRejected=True, snapshotCiphertextUnchanged=True,
+                      wrongKeyCryptographicallyRejected=True, wrongKeyAuthenticationErrorVerified=True,
+                      snapshotCiphertextUnchanged=True,
                       providedKeyBytesPreservedByRecoveryAndVerifier=True,
                       sourceBusinessRowsUnchanged=recovery['sourceBusinessRowsUnchanged'],
                       sourceContainerIdsAndImagesUnchanged=recovery['sourceContainerIdsAndImagesUnchanged'])

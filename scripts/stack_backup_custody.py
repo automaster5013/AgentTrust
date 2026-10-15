@@ -14,7 +14,7 @@ def windows_owner_only(items):
     advapi.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
     advapi.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, pointer, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
     advapi.ConvertStringSidToSidW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(pointer)]
-    advapi.GetNamedSecurityInfoW.argtypes = [wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD, pointer, pointer, ctypes.POINTER(pointer), pointer, ctypes.POINTER(pointer)]
+    advapi.GetNamedSecurityInfoW.argtypes = [wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD, ctypes.POINTER(pointer), pointer, ctypes.POINTER(pointer), pointer, ctypes.POINTER(pointer)]
     advapi.GetNamedSecurityInfoW.restype = wintypes.DWORD
     advapi.GetAce.argtypes = [pointer, wintypes.DWORD, ctypes.POINTER(pointer)]
     advapi.EqualSid.argtypes = [pointer, pointer]
@@ -37,10 +37,12 @@ def windows_owner_only(items):
         if not advapi.ConvertStringSidToSidW('S-1-5-18', ctypes.byref(system)):
             raise ValueError('Backup key system identity refused')
         for item in items:
-            descriptor, dacl = pointer(), pointer()
+            descriptor, dacl, file_owner = pointer(), pointer(), pointer()
             try:
-                if advapi.GetNamedSecurityInfoW(str(item), 1, 4, None, None, ctypes.byref(dacl), None, ctypes.byref(descriptor)) or not dacl:
+                if advapi.GetNamedSecurityInfoW(str(item), 1, 5, ctypes.byref(file_owner), None, ctypes.byref(dacl), None, ctypes.byref(descriptor)) or not dacl or not file_owner:
                     raise ValueError('Backup key ACL inspection refused')
+                if not advapi.EqualSid(file_owner, owner) and not advapi.EqualSid(file_owner, system):
+                    raise ValueError('Backup key owner identity refused')
                 # ACL header: BYTE revision, BYTE reserved, WORD size, WORD AceCount.
                 count = ctypes.c_ushort.from_address(dacl.value + 4).value
                 owner_allowed = False

@@ -4,6 +4,9 @@ import hashlib,io,json,os,pathlib,subprocess,tarfile
 ALPINE='alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6'
 TAR_LIMIT=32*1024*1024
 
+class BackupAuthenticationError(ValueError):
+    """The bounded crypto helper specifically rejected an AES-GCM tag."""
+
 def run(root,arguments,input=None,timeout=60,check=True):
     result=subprocess.run(arguments,cwd=root,input=input,capture_output=True,timeout=timeout)
     if check and result.returncode:raise RuntimeError('RESTORE_DRILL_COMMAND_FAILED')
@@ -23,7 +26,12 @@ def crypt(root,keyfile,operation,data):
     if os.name!='nt':
         if os.getuid()==0:raise ValueError('Nonroot host required')
         command+=['--user',str(os.getuid())+':'+str(os.getgid())]
-    return run(root,command+[tools,'python','/crypt.py',operation,'--key-file','/key.bin'],input=data).stdout
+    result=run(root,command+[tools,'python','/crypt.py',operation,'--key-file','/key.bin'],input=data,check=False)
+    if result.returncode:
+        if result.returncode==1 and result.stderr.strip()==b'BACKUP_STREAM_REFUSED InvalidTag':
+            raise BackupAuthenticationError('Backup authentication refused')
+        raise RuntimeError('RESTORE_DRILL_CRYPTOGRAPHY_FAILED')
+    return result.stdout
 
 def minio_tar_fingerprints(raw):
     if not 0<len(raw)<=TAR_LIMIT:raise ValueError('Archive exceeds drill bound')
