@@ -28,6 +28,7 @@ jobs:
           python3 scripts/stack-scan-lifecycle-test.py
           python3 scripts/stack-scan-work-test.py
           python3 scripts/stack-browser-quota-guard-test.py
+          python3 scripts/stack-workspace-onboarding-test.py
           python3 scripts/stack-coherent-archive-test.py
           python3 scripts/stack-recovery-transport-test.py
           python3 scripts/stack-observation-policy-test.py
@@ -80,6 +81,7 @@ jobs:
           docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console stack-otel stack-tempo stack-loki stack-prometheus stack-grafana
           python3 scripts/stack-identity-profile.py
           python3 scripts/stack-identity-smoke.py
+          python3 scripts/stack-workspace-onboarding-smoke.py --allow-owned-evaluations
           python3 scripts/stack-database-process-smoke.py
           python3 scripts/stack-database-process-adversarial.py
           python3 scripts/stack-http-smoke.py
@@ -281,6 +283,7 @@ jobs:
             .local/stack-oidc-endpoint-proxy-*/summary.json
             .local/stack-oidc-image-config-*.json
             .local/stack-browser-*.json
+            .local/stack-workspace-onboarding-*.json
           if-no-files-found: ignore
           retention-days: 7
       - name: Stop isolated runner services
@@ -355,6 +358,7 @@ jobs:
           docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml -f compose.stack.image.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console stack-otel stack-tempo stack-loki stack-prometheus stack-grafana
           python3 scripts/stack-identity-profile.py
           python3 scripts/stack-identity-smoke.py
+          python3 scripts/stack-workspace-onboarding-smoke.py --allow-owned-evaluations
           python3 scripts/stack-database-process-smoke.py
           python3 scripts/stack-database-process-adversarial.py
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
@@ -446,6 +450,7 @@ jobs:
           include-hidden-files: true
           path: |
             .local/stack-browser-*.json
+            .local/stack-workspace-onboarding-*.json
             .local/stack-gateway-smoke-*.json
             .local/stack-http-smoke-*.json
             .local/stack-campaign-smoke-*.json
