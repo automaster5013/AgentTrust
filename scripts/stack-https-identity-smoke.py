@@ -254,10 +254,10 @@ def main():
         mounts = [*bind(account_file, '/run/secrets/stack-demo-credentials'), *bind(secret_file, '/run/secrets/stack-oidc-client-secret'), *bind(truststore, '/fixture.jks')]
         for path, target in extra_tokens:
             mounts.extend(bind(path, target))
-        start('core', images['core'], ['--network-alias', 'tls-core', '--env-file', str(core_env), '--entrypoint', 'java', *mounts],
+        start('core', images['core'], ['--network-alias', 'stack-core-api', '--env-file', str(core_env), '--entrypoint', 'java', *mounts],
             ['-Djavax.net.ssl.trustStore=/fixture.jks', '-Djavax.net.ssl.trustStorePassword=fixture-public-ca',
              '-XX:MaxRAMPercentage=65', '-jar', '/app/core-api.jar'], memory='768m')
-        start('console', images['console'], ['--network-alias', 'tls-console', '-e', 'CORE_API_URL=http://tls-core:8080'], memory='384m')
+        start('console', images['console'], ['--network-alias', 'tls-console', '-e', 'CORE_API_URL=http://stack-core-api:8080'], memory='384m')
         report['phase'] = 'start-fixed-tls-edge'
         start('edge', images['edge'], ['--network-alias', 'tls-edge', '--network-alias', 'console.example.com',
             '--network-alias', 'identity.example.com', '--user', '1000:1000', '--sysctl', 'net.ipv4.ip_unprivileged_port_start=0',

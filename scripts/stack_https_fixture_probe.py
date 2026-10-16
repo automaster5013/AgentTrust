@@ -14,6 +14,7 @@ import urllib.parse
 import urllib.request
 from stack_https_identity_client import CONSOLE, IDENTITY, ISSUER, HttpsIdentityClient, require
 from stack_https_fixture_claim_controls import verify_claim_controls
+from stack_https_fixture_diagnostics import FixtureHttpRefused
 
 
 def main():
@@ -25,9 +26,15 @@ def main():
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context))
 
     def get(url):
-        with opener.open(url, timeout=10) as response:
+        try:
+            response = opener.open(url, timeout=10)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
             raw = response.read(65537)
-            require(response.status == 200 and len(raw) <= 65536)
+            if response.status != 200:
+                raise FixtureHttpRefused(response.status, 200, 'other-fixed-fixture-path')
+            require(len(raw) <= 65536)
             return json.loads(raw)
 
     until = time.monotonic() + 30
@@ -36,7 +43,8 @@ def main():
             require(get(CONSOLE + '/backend/auth-info')['identityProvider'] == 'keycloak')
             break
         except (OSError, ValueError):
-            require(time.monotonic() < until)
+            if time.monotonic() >= until:
+                raise
             time.sleep(1)
     counts_before = get(CONSOLE + '/fixture/observations')
     for tls_context, hostname in [(ssl.create_default_context(), 'identity.example.com'), (context, 'tls-edge')]:
