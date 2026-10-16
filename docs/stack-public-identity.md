@@ -72,6 +72,13 @@ IDs, evidence checksum, all sixteen digest signatures and all sixteen SBOM
 attestations. Missing profile evidence, a schema downgrade or a changed dependency
 must fail verification. Historical schemas retain their original image sets.
 
+The additional offline CI control bootstraps the public Sigstore trust root from
+Cosign's embedded TUF root in a separate process. A network-disabled, read-only
+consumer then verifies all 32 image/SBOM signatures. It changes one byte of the
+HTTPS image certificate in a tmpfs copy, recomputes that copy's checksum map and
+requires cryptographic rejection. Original bundle bytes must remain unchanged.
+No registry credentials or signing tokens are mounted into these consumers.
+
 These are release gates, not a claim that a particular commit has passed them.
 The synthetic profile does not configure a customer domain, public DNS, production
 CA or real enterprise IdP. Those target-specific acceptance checks and actual

@@ -25,6 +25,7 @@ jobs:
           python3 scripts/stack-quality-profiles.py --check
           python3 scripts/stack-delivery-verifier-test.py
           python3 scripts/stack-https-release-profile-test.py
+          python3 scripts/stack-delivery-offline-test.py
           python3 scripts/stack-scan-scratch-test.py
           python3 scripts/stack-scan-lifecycle-test.py
           python3 scripts/stack-scan-work-test.py
@@ -618,6 +619,8 @@ jobs:
         run: |
           CHECKSUMS_SHA256=$(sha256sum stack-security-delivery/checksums.json | cut -d ' ' -f 1)
           python3 scripts/stack-delivery-verify.py --bundle stack-security-delivery --expected-revision "$GITHUB_SHA" --expected-checksums-sha256 "$CHECKSUMS_SHA256" --repository "$GITHUB_REPOSITORY" --docker-tools
+      - name: Verify offline signatures and refuse a tampered HTTPS certificate
+        run: python3 scripts/stack-delivery-offline-smoke.py --execute
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: original-stack-security-delivery-${{ github.sha }}
@@ -632,6 +635,7 @@ jobs:
           include-hidden-files: true
           path: |
             .local/stack-security-images-*/summary.json
+            .local/stack-delivery-offline-*/summary.json
             .local/stack-security-images-*/reports/*.cdx.json
             .local/stack-security-images-*/reports/*.trivy.json
             .local/stack-security-images-*/reports/*.trivy.log
