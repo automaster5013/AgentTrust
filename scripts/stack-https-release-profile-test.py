@@ -5,10 +5,11 @@ import json
 import unittest
 from stack_https_fixture_diagnostics import BROWSER_SUCCESS
 from stack_https_release_profile import from_fixture, validate
+from stack_https_fixture_pilot import TRUE_FLAGS, FALSE_FLAGS
 
 REVISION = '1' * 40
 REFERENCES = {name: 'ghcr.io/automaster5013/agenttrust-' + name + '@sha256:' + '2' * 64
-    for name in ('core-api', 'database', 'identity', 'console-https')}
+    for name in ('core-api', 'database', 'identity', 'console-https', 'ai-worker', 'messaging', 'opa')}
 IMAGE_IDS = {name: 'sha256:' + '3' * 64 for name in REFERENCES}
 
 
@@ -16,6 +17,7 @@ def fixture():
     value = {key: True for key in ('completed', 'browserRequested', 'actualTlsLoginVerified',
         'chromiumRenderingVerified', 'actualSyntheticEnterpriseBrowserVerified', 'syntheticEnterpriseBrokerVerified',
         'enterpriseProviderIsSeparateSyntheticProcess', 'seededWitnessesNotActualEvaluations',
+        'enterprisePilotRequested', 'actualFederatedEvaluationPilotVerified',
         'httpsConsoleSourceRevisionLabelVerified', 'httpsConsoleRegistryImageIdentityVerified',
         'httpsConsoleActualNode24Verified', 'freshPrimaryAndExternalUserAttributesExactlyPreserved',
         'providerUserAttributeChecksAreReadOnlyAndFixtureOnly', 'sourceRuntimeUnchanged', 'sourceBusinessTablesUnchanged',
@@ -26,7 +28,10 @@ def fixture():
     value.update(sourceRevision=REVISION, httpsConsoleRegistryReference=REFERENCES['console-https'],
         migrationsExecuted=17, cDriveFreeBytes=32 * 1024 ** 3,
         imageIds={'core': IMAGE_IDS['core-api'], 'database': IMAGE_IDS['database'],
-                  'identity': IMAGE_IDS['identity'], 'console': IMAGE_IDS['console-https']},
+                  'identity': IMAGE_IDS['identity'], 'console': IMAGE_IDS['console-https'],
+                  'worker': IMAGE_IDS['ai-worker'], 'messaging': IMAGE_IDS['messaging'], 'policy': IMAGE_IDS['opa']},
+        enterprisePilotEvidence={**{k:True for k in TRUE_FLAGS}, **{k:False for k in FALSE_FLAGS},
+            'actualFederatedLogins':4, 'actualPythonEvaluations':4},
         browserEvidence=dict(BROWSER_SUCCESS), browserPostState={'completed': True,
             'allPrimaryAndExternalProviderSessionsClosed': True,
             'nativeAdminVisibleProfilesRolesAndLinksMatchBeforeBrowser': True,
@@ -66,7 +71,11 @@ class HttpsProfileContract(unittest.TestCase):
             lambda v: v.update(freshPrimaryAndExternalUserAttributesExactlyPreserved=False),
             lambda v: v.update(productionDeploymentPerformed=True),
             lambda v: v.update(cDriveFreeBytes=1024),
-            lambda v: v.update(enterpriseProviderIsSeparateSyntheticProcess=False)]
+            lambda v: v.update(enterpriseProviderIsSeparateSyntheticProcess=False),
+            lambda v: v.update(actualFederatedEvaluationPilotVerified=False),
+            lambda v: v['enterprisePilotEvidence'].update(actualPythonEvaluations=True),
+            lambda v: v['enterprisePilotEvidence'].update(nonpassApprovalRefused=False),
+            lambda v: v['imageIds'].update(worker='sha256:' + '5' * 64)]
         for mutate in mutations:
             value = fixture(); mutate(value)
             with self.subTest(kind='substituted-profile-evidence'), self.assertRaises(ValueError):

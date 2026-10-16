@@ -123,7 +123,7 @@ jobs:
       - name: Verify actual TLS OIDC login in a fresh portless fixture
         run: |
           docker build -t agenttrust-security:local tools/security
-          python3 scripts/stack-https-identity-smoke.py --execute --with-browser
+          python3 scripts/stack-https-identity-smoke.py --execute --with-browser --with-enterprise-pilot
       - name: Verify durable evaluation recovery and execution deadline
         run: |
           python3 scripts/stack-recovery-smoke.py --mode worker-restart
@@ -405,7 +405,7 @@ jobs:
           docker tag "$STACK_HTTPS_CONSOLE_IMAGE" agenttrust-stack-console:oidc-endpoint-https-candidate
           docker build -t agenttrust-security:local tools/security
           docker pull node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
-          python3 scripts/stack-https-identity-smoke.py --execute --with-browser
+          python3 scripts/stack-https-identity-smoke.py --execute --with-browser --with-enterprise-pilot
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-smoke.py
           python3 scripts/stack-campaign-review-history-smoke.py

@@ -18,6 +18,7 @@ import time
 import uuid
 from stack_https_fixture_diagnostics import public_probe_failure, public_browser_result
 from stack_https_fixture_enterprise import build as enterprise_configuration
+from stack_https_fixture_pilot import validate_result as validate_pilot_result
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 NODE = 'node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1'
@@ -45,12 +46,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--execute', action='store_true')
     parser.add_argument('--with-browser', action='store_true')
+    parser.add_argument('--with-enterprise-pilot', action='store_true')
     args = parser.parse_args()
     if not args.execute:
         print(json.dumps(plan()))
         return 0
     # Refuse before Docker queries, private input creation or any network call.
     execution_guard(os.environ)
+    require(not args.with_enterprise_pilot or args.with_browser)
     require(shutil.disk_usage(ROOT).free >= 22 * 1024 ** 3)
     if args.with_browser:
         require(shutil.which('node') is not None and shutil.which('certutil') is not None)
@@ -73,7 +76,8 @@ def main():
         'originalCredentialsRead': False, 'productionDeploymentPerformed': False,
         'paidProviderCallsPerformed': False, 'privateInputsPrinted': False,
         'actualTlsLoginVerified': False, 'chromiumRenderingVerified': False,
-        'externalEnterpriseIdpVerified': False, 'browserRequested': args.with_browser}
+        'externalEnterpriseIdpVerified': False, 'browserRequested': args.with_browser,
+        'enterprisePilotRequested': args.with_enterprise_pilot, 'actualFederatedEvaluationPilotVerified': False}
 
     def run(command, data=None, timeout=60, environment=None):
         return subprocess.run(command, cwd=ROOT, input=data, capture_output=True, timeout=timeout, env=environment)
@@ -133,7 +137,7 @@ def main():
         process = run([*arguments, *extra, image, *command], timeout=timeout)
         if process.returncode:
             report['failedProcessExitCode'] = process.returncode
-            if kind in ('probe', 'browser-state'):
+            if kind in ('probe', 'browser-state', 'pilot'):
                 try:
                     report['protocolFailure'] = public_probe_failure(process.stdout)
                 except Exception:
@@ -182,6 +186,9 @@ def main():
         before_business = fingerprint()
         images = {kind: source_image(service) for kind, service in
                   [('core', 'stack-core-api'), ('database', 'stack-db'), ('identity', 'stack-identity')]}
+        if args.with_enterprise_pilot:
+            images.update({kind: source_image(service) for kind, service in
+                [('worker', 'stack-ai-worker'), ('messaging', 'stack-nats'), ('policy', 'stack-opa')]})
         images['console'] = ok(['docker', 'image', 'inspect', '--format', '{{.Id}}', CONSOLE]).decode().strip()
         labels = json.loads(ok(['docker', 'image', 'inspect', '--format', '{{json .Config.Labels}}', CONSOLE]))
         require(all(labels.get('dev.agenttrust.oidc.' + k) == v for k, v in {
@@ -295,7 +302,7 @@ def main():
             actor = next(a for a in accounts if a['organizationId'] == organizations[index] and a['role'] == 'admin')
             sql("INSERT INTO public.stack_runs(id,organization_id,project_id,actor_id,idempotency_key,request_hash,scenario,requires_approval,state,decision,result,provider) VALUES ('" + witnesses[index] + "','" + organizations[index] + "','" + projects[index] + "','" + actor['actorId'] + "','synthetic-tls-scope-witness-" + str(index) + "','" + '0' * 64 + "','pass',true,'succeeded','pass','{}'::jsonb,'synthetic');")
         def witness_hash():
-            return sql("BEGIN READ ONLY;SELECT count(*)::text||'|'||encode(sha256(convert_to(string_agg(to_jsonb(t)::text,E'\\n' ORDER BY id),'UTF8')),'hex') FROM public.stack_runs t;ROLLBACK;").decode().splitlines()[-2]
+            return sql("BEGIN READ ONLY;SELECT count(*)::text||'|'||encode(sha256(convert_to(string_agg(to_jsonb(t)::text,E'\\n' ORDER BY id),'UTF8')),'hex') FROM public.stack_runs t WHERE id IN ('" + "','".join(witnesses) + "');ROLLBACK;").decode().splitlines()[-2]
         witness_before = witness_hash()
         report['phase'] = 'start-actual-keycloak'
         start('identity', images['identity'], ['--network-alias', 'tls-identity', '--env-file', str(identity_env),
@@ -367,6 +374,39 @@ def main():
                 report['browserFailure'] = browser_result
                 raise RuntimeError('SYNTHETIC_HTTPS_BROWSER_UNVERIFIED')
             report['browserEvidence'] = browser_result
+        if args.with_enterprise_pilot:
+            report['phase'] = 'start-owned-evaluation-and-policy-processes'
+            tokens = {target.rsplit('/', 1)[1]: path for path, target in extra_tokens}
+            nats_value = tokens['stack-nats-token'].read_text()
+            opa_value = tokens['stack-opa-token'].read_text()
+            nats_config = private_file('pilot-nats.conf', 'port: 4222\nhttp: 8222\nmax_payload: 4096\n'
+                'authorization { token: "' + nats_value + '" }\n'
+                'jetstream { store_dir: "/tmp/jetstream", max_memory_store: 16MB, max_file_store: 32MB }\n', True)
+            opa_auth = private_file('pilot-opa-auth.json', json.dumps({'stack_auth': {'token': opa_value}}), True)
+            start('nats', images['messaging'], ['--network-alias', 'stack-nats',
+                *bind(nats_config, '/run/secrets/stack-nats-config')], ['-c', '/run/secrets/stack-nats-config'], memory='128m')
+            start('opa', images['policy'], ['--network-alias', 'stack-opa',
+                *bind(opa_auth, '/run/secrets/stack-opa-auth.json')], memory='128m')
+            until = time.monotonic() + 45
+            while run(['docker', 'exec', prefix + '-nats', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8222/healthz']).returncode:
+                require(time.monotonic() < until); time.sleep(1)
+            start('worker', images['worker'], ['--network-alias', 'stack-ai-worker',
+                *bind(tokens['stack-worker-token'], '/run/secrets/stack-worker-token'),
+                *bind(tokens['stack-nats-token'], '/run/secrets/stack-nats-token')], memory='256m')
+            until = time.monotonic() + 60
+            while run(['docker', 'exec', prefix + '-worker', 'python', '-c',
+                    'import urllib.request;urllib.request.urlopen("http://127.0.0.1:8000/ready",timeout=2)']).returncode:
+                require(time.monotonic() < until); time.sleep(1)
+            report['phase'] = 'actual-federated-evaluation-approval-and-revocation'
+            pilot = json.loads(start('pilot', images['tools'], [*script_bind,
+                *bind(account_file, '/fixture/accounts.json'),
+                *bind(enterprise_config_file, '/fixture/enterprise-configuration.json'),
+                *bind(certificate_dir / 'ca.crt', '/fixture/certificates/ca.crt')],
+                ['python', '/scripts/stack_https_fixture_pilot.py'], False, '256m', 300))
+            validate_pilot_result(pilot)
+            report.update(enterprisePilotEvidence=pilot, actualFederatedEvaluationPilotVerified=True)
+            require(sql('BEGIN READ ONLY;SELECT count(*) FROM public.stack_runs;ROLLBACK;').decode().splitlines()[-2] == '6')
+        if args.with_browser:
             report['phase'] = 'verify-post-browser-provider-state'
             browser_state = json.loads(start('browser-state', images['tools'], [*script_bind,
                 *bind(account_file, '/fixture/accounts.json'), *bind(administrator_file, '/fixture/administrator.json'),

@@ -53,6 +53,15 @@ be refused. The fixture checks roles, tenant separation, session termination and
 unchanged native identities and attributes. Its seeded read witnesses are not an
 end-to-end customer evaluation and approval pilot.
 
+The separate `--with-enterprise-pilot` gate starts fresh tmpfs NATS, Python worker
+and OPA processes on that fixture's internal network. Four federated sessions
+submit actual synthetic pass, block, missing-evidence and error evaluations.
+Only a passing evaluation can receive administrator approval; editor/viewer
+reviews and foreign reads/reviews must fail. Administrator revocation must block
+the gate again. All created evaluations belong only to the disposable database;
+no deployment, paid inference or customer pilot is performed. The schema 7
+profile projection also binds these three process image IDs to the signed bundle.
+
 The `console-https` image embeds the fixed `https-review` origins at build time.
 The main release workflow publishes it alongside the existing fifteen images,
 executes its exact registry digest in the temporary browser fixture, scans its

@@ -3,6 +3,7 @@ import hashlib
 import json
 import re
 from stack_https_fixture_diagnostics import public_browser_result
+from stack_https_fixture_pilot import validate_result as validate_pilot_result
 
 ORIGIN = 'https://console.example.com'
 ISSUER = 'https://identity.example.com/realms/agenttrust'
@@ -10,8 +11,9 @@ EVIDENCE_FILE = 'https-profile-runtime.json'
 TRUE_FIELDS = ('unlinkedAccountRefused', 'certificateVerificationEnabled',
     'untrustedCaWrongHostnameAndOutsideNavigationRefused', 'nativeIdentityAndAttributesPreserved',
     'allApplicationAndProviderSessionsClosed', 'sourceServicesAndBusinessPreserved',
-    'ownedFixtureResourcesRemoved', 'actualSyntheticEnterpriseOnly')
+    'ownedFixtureResourcesRemoved', 'actualSyntheticEnterpriseOnly', 'actualFederatedEvaluationApprovalPilotVerified')
 FALSE_FIELDS = ('productionDeploymentPerformed', 'productionEnterpriseIdpVerified', 'privateInputsIncluded')
+DEPENDENCIES = ('core-api', 'database', 'identity', 'ai-worker', 'messaging', 'opa')
 
 
 def require(value):
@@ -37,9 +39,9 @@ def validate(record, revision, references, image_ids):
     require(image_id(record['imageId']) == image_id(image_ids['console-https']))
     require(isinstance(record['fixtureSummarySha256'], str) and re.fullmatch('[a-f0-9]{64}', record['fixtureSummarySha256']))
     require(isinstance(record['runtimeDependencies'], dict)
-        and set(record['runtimeDependencies']) == {'core-api', 'database', 'identity'})
+        and set(record['runtimeDependencies']) == set(DEPENDENCIES))
     require(all(image_id(record['runtimeDependencies'][name]) == image_id(image_ids[name])
-        for name in ('core-api', 'database', 'identity')))
+        for name in DEPENDENCIES))
     require(all(type(record[key]) is int and record[key] == 4 for key in ('nativeBrowserLogins', 'federatedBrowserLogins')))
     require(all(record[key] is True for key in TRUE_FIELDS) and all(record[key] is False for key in FALSE_FIELDS))
     return record
@@ -58,6 +60,7 @@ def from_fixture(raw, revision, references, image_ids):
     require(all(value[key] is True for key in ('completed', 'browserRequested', 'actualTlsLoginVerified',
         'chromiumRenderingVerified', 'actualSyntheticEnterpriseBrowserVerified', 'syntheticEnterpriseBrokerVerified',
         'enterpriseProviderIsSeparateSyntheticProcess', 'seededWitnessesNotActualEvaluations',
+        'enterprisePilotRequested', 'actualFederatedEvaluationPilotVerified',
         'httpsConsoleSourceRevisionLabelVerified', 'httpsConsoleRegistryImageIdentityVerified',
         'httpsConsoleActualNode24Verified',
         'freshPrimaryAndExternalUserAttributesExactlyPreserved', 'providerUserAttributeChecksAreReadOnlyAndFixtureOnly',
@@ -80,8 +83,10 @@ def from_fixture(raw, revision, references, image_ids):
     require(protocol['syntheticEnterpriseInstallation']['defaultUserProfilePolicyUnchanged'] is True)
     require(protocol['adverseIdentityClaimControls']['actualSignedNilOrganizationAndProjectRefused'] is True
         and protocol['adverseIdentityClaimControls']['actualConflictingUserInfoOrganizationRefused'] is True)
+    validate_pilot_result(value['enterprisePilotEvidence'])
     dependencies = {name: value['imageIds'][key] for name, key in (
-        ('core-api', 'core'), ('database', 'database'), ('identity', 'identity'))}
+        ('core-api', 'core'), ('database', 'database'), ('identity', 'identity'),
+        ('ai-worker', 'worker'), ('messaging', 'messaging'), ('opa', 'policy'))}
     record = {'schemaVersion': 1, 'profile': 'https-review', 'applicationOrigin': ORIGIN, 'publicIssuer': ISSUER,
         'revision': revision, 'reference': references['console-https'], 'imageId': value['imageIds']['console'],
         'fixtureSummarySha256': hashlib.sha256(raw).hexdigest(), 'runtimeDependencies': dependencies,

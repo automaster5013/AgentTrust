@@ -43,7 +43,7 @@ def fixture(label,telemetry=False,observations=False,prometheus=False,quality=Fa
         ids={name:'sha256:'+'2'*64 for name in names}
         evidence={'schemaVersion':1,'profile':'https-review','applicationOrigin':profile.ORIGIN,'publicIssuer':profile.ISSUER,
             'revision':revision,'reference':images['console-https'],'imageId':ids['console-https'],
-            'fixtureSummarySha256':'3'*64,'runtimeDependencies':{name:ids[name] for name in ('core-api','database','identity')},
+            'fixtureSummarySha256':'3'*64,'runtimeDependencies':{name:ids[name] for name in profile.DEPENDENCIES},
             'nativeBrowserLogins':4,'federatedBrowserLogins':4,
             **{key:True for key in profile.TRUE_FIELDS},**{key:False for key in profile.FALSE_FIELDS}}
         values[profile.EVIDENCE_FILE]=raw(evidence)
