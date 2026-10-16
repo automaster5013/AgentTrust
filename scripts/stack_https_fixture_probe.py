@@ -12,6 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from stack_https_identity_client import CONSOLE, IDENTITY, ISSUER, HttpsIdentityClient, require
+from stack_https_fixture_claim_controls import verify_claim_controls
 
 
 def main():
@@ -78,16 +79,20 @@ def main():
         malformed.wire(CONSOLE + '/backend/login/oauth2/code/keycloak?code=invalid-code&state=invalid-state', expected=401)
         malformed.api('me', expected=401)
         checks.append('unsolicited real HTTPS callback cannot create authenticated identity')
+        claim_controls = verify_claim_controls(ca_file, accounts, clients)
+        require(claim_controls['completed'])
+        checks.append('actual signed nil scopes and contradictory UserInfo fail login and restored mappings recover')
     finally:
         for client in clients:
             client.logout()
-    require(all(not client.logged for client in clients))
+    require(all(not client.logged and not client.provider_session_owned for client in clients))
     checks.append('all three application and actual provider sessions log out over HTTPS')
     counts = get(CONSOLE + '/fixture/observations')
     require(counts['token'] >= 3 and counts['userinfo'] >= 3 and counts['jwks'] >= 1
             and counts['authorization'] >= 3 and counts['callback'] >= 3 and counts['providerLogout'] >= 3)
     print(json.dumps({'completed': True, 'checks': checks, 'actualTlsProtocolLoginVerified': True,
         'actualKeycloakTokenJwkUserinfoRequestsObserved': True, 'publicEndpointRequestCounts': counts,
+        'adverseIdentityClaimControls': claim_controls,
         'tenantWitnessesAreSeededNotEvaluated': True, 'paidProviderCallsPerformed': False,
         'chromiumRenderingVerified': False, 'externalEnterpriseIdpVerified': False,
         'productionDeploymentPerformed': False, 'privateInputsPrinted': False}))

@@ -136,3 +136,24 @@ This adds protocol-level acceptance; it is not Chromium rendering, an external
 enterprise IdP connection, DNS ownership, a production certificate, HA or an SLA.
 The initial certificate controls passed locally; complete fixture acceptance is
 pending its own exact-revision CI execution and must not be inferred from them.
+
+Workspace authority is bound to the already validated ID Token's canonical,
+non-nil organization/project/subject UUIDs, username and application role array.
+An aggregated `OidcUser` map must not fill a missing signed workspace claim from
+UserInfo. Optional UserInfo may omit custom fields, but any supplied workspace
+field must agree; role ordering alone is immaterial. Its subject must match the
+ID Token. This custom workspace consistency rule supplements the standard OIDC
+subject, signature, issuer, audience and nonce checks rather than replacing them.
+See [Spring's aggregated claim contract](https://docs.spring.io/spring-security/reference/api/java/org/springframework/security/oauth2/core/oidc/user/OidcUser.html)
+and [the OIDC UserInfo response requirements](https://www.openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse).
+
+A private diagnostic using the installed application's actual Spring libraries
+accepted eight nil/missing-signed/conflicting claim cases at domain mapping;
+the candidate rejected all eight and retained two valid principals. This is
+post-validation domain-mapping evidence, not a reproduced signature bypass.
+The CI HTTPS fixture additionally changes only its own realm's mappers to issue
+real signed nil organization/project claims and contradictory UserInfo. It
+requires login refusal, unrelated existing session preservation, exact mapper
+restoration and successful subsequent normal login. The original development
+realm is not contacted. These new actual-login controls remain pending their
+own CI result; compilation and domain-mapping checks do not certify them.

@@ -155,6 +155,8 @@ def main():
             'actorId': str(uuid.uuid4()), 'ownedRunId': witnesses[index]} for name, role, index in
             [('demo-admin', 'admin', 0), ('demo-editor', 'editor', 0), ('demo-viewer', 'viewer', 0), ('other-admin', 'admin', 1)]]
         account_file = private_file('accounts.json', json.dumps(accounts), True)
+        administrator_password = secrets.token_hex(32)
+        administrator_file = private_file('administrator.json', json.dumps({'password': administrator_password}), True)
         secret_file = private_file('client-secret', client_secret, True)
         mappers = [{'name': field, 'protocol': 'openid-connect', 'protocolMapper': 'oidc-usermodel-attribute-mapper',
             'config': {'user.attribute': field, 'claim.name': field, 'jsonType.label': 'String',
@@ -187,7 +189,8 @@ def main():
             'AGENTTRUST_OIDC_PUBLIC_ISSUER': 'https://identity.example.com/realms/agenttrust',
             'SERVER_SERVLET_SESSION_COOKIE_SECURE': 'true', 'SERVER_SERVLET_SESSION_COOKIE_SAME_SITE': 'lax'})
         identity_env = envfile('identity.env', {'KC_DB_URL': 'jdbc:postgresql://stack-db:5432/agenttrust_stack_identity',
-            'KC_DB_USERNAME': 'agenttrust_stack_identity', 'KC_DB_PASSWORD': identity_password, 'KC_LOG_LEVEL': 'warn'})
+            'KC_DB_USERNAME': 'agenttrust_stack_identity', 'KC_DB_PASSWORD': identity_password, 'KC_LOG_LEVEL': 'warn',
+            'KC_BOOTSTRAP_ADMIN_USERNAME': 'fixture-admin', 'KC_BOOTSTRAP_ADMIN_PASSWORD': administrator_password})
         extra_tokens = [(private_file(name, secrets.token_hex(32), True), '/run/secrets/stack-' + name)
                         for name in ('worker-token', 'nats-token', 'opa-token')]
         report['phase'] = 'create-owned-internal-network'
@@ -262,6 +265,7 @@ def main():
             time.sleep(2)
         report['phase'] = 'actual-tls-oidc-pkce-cookie-scope-and-logout'
         result = json.loads(start('probe', images['tools'], [*script_bind, *bind(account_file, '/fixture/accounts.json'),
+            *bind(administrator_file, '/fixture/administrator.json'),
             *bind(certificate_dir / 'ca.crt', '/fixture/certificates/ca.crt')],
             ['python', '/scripts/stack_https_fixture_probe.py'], False, '256m', 180))
         require(result['completed'] and result['actualTlsProtocolLoginVerified'] and result['actualKeycloakTokenJwkUserinfoRequestsObserved'])

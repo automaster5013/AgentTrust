@@ -99,6 +99,7 @@ class HttpsIdentityClient:
             urllib.request.HTTPSHandler(context=context))
         self.account = account
         self.logged = False
+        self.provider_session_owned = False
         self.token = None
         self.authorization_verified = False
 
@@ -136,7 +137,7 @@ class HttpsIdentityClient:
         self.token = self.api('csrf')['token']
         require(isinstance(self.token, str) and 1 <= len(self.token) <= 2048)
 
-    def login(self):
+    def login(self, expect_identity_refusal=False):
         require(not self.logged)
         raw, url, _ = self.wire(CONSOLE + '/backend/oauth2/authorization/keycloak')
         target = endpoint(url)
@@ -159,8 +160,18 @@ class HttpsIdentityClient:
         body = urllib.parse.urlencode({**form.fields, 'username': self.account['username'],
             'password': self.account['password'], 'credentialId': ''}).encode()
         require(len(body) <= 32768)
-        _, final, headers = self.wire(form.action, 'POST', body,
-            'application/x-www-form-urlencoded')
+        # An uncertain POST may already have created an IdP session. The caller
+        # must close that private context even when application login is refused.
+        self.provider_session_owned = True
+        raw, final, headers = self.wire(form.action, 'POST', body,
+            'application/x-www-form-urlencoded', expected=401 if expect_identity_refusal else 200)
+        if expect_identity_refusal:
+            target = endpoint(final)
+            require(target.netloc == 'console.example.com'
+                    and target.path == '/backend/login/oauth2/code/keycloak'
+                    and json.loads(raw).get('code') == 'OIDC_AUTHENTICATION_FAILED')
+            self.api('me', expected=401)
+            return {'authenticationRefused': True, 'protectedIdentityUnavailable': True}
         require(final == CONSOLE + '/')
         # The callback's Set-Cookie can precede the final home response; the
         # standard cookie jar independently retains Secure/HttpOnly attributes.
@@ -178,16 +189,18 @@ class HttpsIdentityClient:
         return me
 
     def logout(self):
-        if not self.logged:
-            return
-        self.csrf()
-        raw, _, headers = self.wire(CONSOLE + '/backend/logout', 'POST', b'{}', 'application/json')
-        secure_session_cookie(headers)
-        value = json.loads(raw)
-        self.api('me', expected=401)
         url = ISSUER + '/protocol/openid-connect/logout?' + urllib.parse.urlencode({
             'client_id': 'agenttrust-console', 'post_logout_redirect_uri': CONSOLE + '/'})
-        require(value.get('logoutUrl') == url)
+        if self.logged:
+            self.csrf()
+            raw, _, headers = self.wire(CONSOLE + '/backend/logout', 'POST', b'{}', 'application/json')
+            secure_session_cookie(headers)
+            value = json.loads(raw)
+            self.api('me', expected=401)
+            require(value.get('logoutUrl') == url)
+            self.logged = False
+        if not self.provider_session_owned:
+            return
         raw, final, _ = self.wire(url)
         if final != CONSOLE + '/':
             form = IdentityForm(logout=True)
@@ -199,4 +212,4 @@ class HttpsIdentityClient:
             _, final, _ = self.wire(action, 'POST', urllib.parse.urlencode(form.fields).encode(),
                 'application/x-www-form-urlencoded')
         require(final == CONSOLE + '/')
-        self.logged = False
+        self.provider_session_owned = False
