@@ -17,6 +17,7 @@ class HttpsIdentityBoundaryTest(unittest.TestCase):
                 endpoint(value)
         self.assertEqual(endpoint('https://console.example.com/backend/me').path, '/backend/me')
         self.assertEqual(endpoint('https://identity.example.com/realms/agenttrust').hostname, 'identity.example.com')
+        self.assertEqual(endpoint('https://enterprise.example.net/realms/enterprise-synthetic').hostname, 'enterprise.example.net')
 
     def test_post_redirect_cannot_replay_credentials(self):
         handler = FixedHttpsRedirects()

@@ -32,7 +32,7 @@ def endpoint(url):
             and url.isascii() and not any(c in url for c in '\r\n\\'))
     parsed = urllib.parse.urlsplit(url)
     require(parsed.scheme == 'https' and parsed.netloc in
-            ('console.example.com', 'identity.example.com')
+            ('console.example.com', 'identity.example.com', 'enterprise.example.net')
             and not parsed.username and not parsed.password and not parsed.fragment)
     return parsed
 
@@ -50,18 +50,20 @@ class FixedHttpsRedirects(urllib.request.HTTPRedirectHandler):
 
 
 class IdentityForm(html.parser.HTMLParser):
-    def __init__(self, logout=False):
+    def __init__(self, logout=False, realm='agenttrust'):
         super().__init__(convert_charrefs=True)
         self.action = None
         self.fields = {}
         self.active = False
         self.logout = logout
+        require(realm in ('agenttrust', 'enterprise-synthetic'))
+        self.realm = realm
 
     def handle_starttag(self, tag, attrs):
         values = dict(attrs)
         wanted = (values.get('id') == 'kc-form-login' if not self.logout else
                   urllib.parse.urlsplit(values.get('action', '')).path ==
-                  '/realms/agenttrust/protocol/openid-connect/logout/logout-confirm')
+                  '/realms/' + self.realm + '/protocol/openid-connect/logout/logout-confirm')
         if tag == 'form' and wanted:
             require(self.action is None)
             self.action = values.get('action')

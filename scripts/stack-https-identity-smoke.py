@@ -17,6 +17,7 @@ import sys
 import time
 import uuid
 from stack_https_fixture_diagnostics import public_probe_failure
+from stack_https_fixture_enterprise import build as enterprise_configuration
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 NODE = 'node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1'
@@ -158,7 +159,7 @@ def main():
         images['tools'] = ok(['docker', 'image', 'inspect', '--format', '{{.Id}}', 'agenttrust-security:local']).decode().strip()
         images['edge'] = ok(['docker', 'image', 'inspect', '--format', '{{.Id}}', NODE]).decode().strip()
         report.update(sourceRevision=ok(['git', 'rev-parse', 'HEAD']).decode().strip(), imageIds=images)
-        owner_password, api_password, identity_password, client_secret = [secrets.token_hex(32) for _ in range(4)]
+        owner_password, api_password, identity_password, enterprise_password, client_secret = [secrets.token_hex(32) for _ in range(5)]
         organizations, projects, witnesses = [[str(uuid.uuid4()) for _ in range(2)] for _ in range(3)]
         accounts = [{'username': name, 'password': secrets.token_hex(24), 'role': role,
             'organizationId': organizations[index], 'projectId': projects[index],
@@ -166,7 +167,9 @@ def main():
             [('demo-admin', 'admin', 0), ('demo-editor', 'editor', 0), ('demo-viewer', 'viewer', 0), ('other-admin', 'admin', 1)]]
         account_file = private_file('accounts.json', json.dumps(accounts), True)
         administrator_password = secrets.token_hex(32)
-        administrator_file = private_file('administrator.json', json.dumps({'password': administrator_password}), True)
+        enterprise_administrator_password = secrets.token_hex(32)
+        administrator_file = private_file('administrator.json', json.dumps({'password': administrator_password,
+            'enterprisePassword': enterprise_administrator_password}), True)
         secret_file = private_file('client-secret', client_secret, True)
         mappers = [{'name': field, 'protocol': 'openid-connect', 'protocolMapper': 'oidc-usermodel-attribute-mapper',
             'config': {'user.attribute': field, 'claim.name': field, 'jsonType.label': 'String',
@@ -189,7 +192,13 @@ def main():
                 'email': a['username'] + '@agenttrust.invalid', 'requiredActions': [], 'realmRoles': [a['role']],
                 'attributes': {'agenttrust_organization': [a['organizationId']], 'agenttrust_project': [a['projectId']]},
                 'credentials': [{'type': 'password', 'value': a['password'], 'temporary': False}]} for a in accounts]}
+        target, external_realm, manifest = enterprise_configuration(realm, accounts)
+        # Keep built-in primary browser flows: install only the custom broker
+        # flow/provider/links through bounded own-realm admin REST after startup.
         realm_file = private_file('agenttrust-realm.json', json.dumps(realm), True)
+        enterprise_realm_file = private_file('enterprise-synthetic-realm.json', json.dumps(external_realm), True)
+        enterprise_config_file = private_file('enterprise-configuration.json',
+            json.dumps({'primary': target, 'external': external_realm, 'manifest': manifest}), True)
         db_env = envfile('database.env', {'POSTGRES_DB': 'agenttrust_stack', 'POSTGRES_USER': 'agenttrust_stack', 'POSTGRES_PASSWORD': owner_password})
         jdbc = 'jdbc:postgresql://stack-db:5432/agenttrust_stack?connectTimeout=2&socketTimeout=5&tcpKeepAlive=true'
         migrate_env = envfile('migration.env', {'STACK_DATABASE_URL': jdbc, 'STACK_MIGRATION_USER': 'agenttrust_stack', 'STACK_MIGRATION_PASSWORD': owner_password, 'REDGATE_DISABLE_TELEMETRY': 'true'})
@@ -200,7 +209,12 @@ def main():
             'SERVER_SERVLET_SESSION_COOKIE_SECURE': 'true', 'SERVER_SERVLET_SESSION_COOKIE_SAME_SITE': 'lax'})
         identity_env = envfile('identity.env', {'KC_DB_URL': 'jdbc:postgresql://stack-db:5432/agenttrust_stack_identity',
             'KC_DB_USERNAME': 'agenttrust_stack_identity', 'KC_DB_PASSWORD': identity_password, 'KC_LOG_LEVEL': 'warn',
-            'KC_BOOTSTRAP_ADMIN_USERNAME': 'fixture-admin', 'KC_BOOTSTRAP_ADMIN_PASSWORD': administrator_password})
+            'KC_BOOTSTRAP_ADMIN_USERNAME': 'fixture-admin', 'KC_BOOTSTRAP_ADMIN_PASSWORD': administrator_password,
+            'KC_TRUSTSTORE_PATHS': '/fixture/ca.crt', 'KC_TLS_HOSTNAME_VERIFIER': 'DEFAULT'})
+        enterprise_env = envfile('enterprise.env', {'KC_DB_URL': 'jdbc:postgresql://stack-db:5432/agenttrust_stack_enterprise',
+            'KC_DB_USERNAME': 'agenttrust_stack_enterprise', 'KC_DB_PASSWORD': enterprise_password, 'KC_LOG_LEVEL': 'warn',
+            'KC_BOOTSTRAP_ADMIN_USERNAME': 'fixture-admin', 'KC_BOOTSTRAP_ADMIN_PASSWORD': enterprise_administrator_password,
+            'KC_TRUSTSTORE_PATHS': '/fixture/ca.crt', 'KC_TLS_HOSTNAME_VERIFIER': 'DEFAULT'})
         extra_tokens = [(private_file(name, secrets.token_hex(32), True), '/run/secrets/stack-' + name)
                         for name in ('worker-token', 'nats-token', 'opa-token')]
         report['phase'] = 'create-owned-internal-network'
@@ -233,6 +247,7 @@ def main():
             require(time.monotonic() < until)
             time.sleep(1)
         sql("CREATE ROLE agenttrust_stack_api LOGIN PASSWORD '" + api_password + "'; GRANT CONNECT ON DATABASE agenttrust_stack TO agenttrust_stack_api; CREATE ROLE agenttrust_stack_identity LOGIN PASSWORD '" + identity_password + "'; CREATE DATABASE agenttrust_stack_identity OWNER agenttrust_stack_identity;")
+        sql("CREATE ROLE agenttrust_stack_enterprise LOGIN PASSWORD '" + enterprise_password + "'; CREATE DATABASE agenttrust_stack_enterprise OWNER agenttrust_stack_enterprise;")
         report['phase'] = 'actual-compiled-migration-process'
         migrated = json.loads(start('migrate', images['core'], ['--env-file', str(migrate_env)], ['--migrate-only'], False))
         require(migrated['completed'] and migrated['apiServerStarted'] is False)
@@ -247,8 +262,15 @@ def main():
         report['phase'] = 'start-actual-keycloak'
         start('identity', images['identity'], ['--network-alias', 'tls-identity', '--env-file', str(identity_env),
             *bind(realm_file, '/opt/keycloak/data/import/agenttrust-realm.json'),
+            *bind(certificate_dir / 'ca.crt', '/fixture/ca.crt'),
             '--tmpfs', '/opt/keycloak/data:size=64m,uid=1000,gid=1000,mode=0700'],
             ['start', '--optimized', '--http-enabled=true', '--hostname=https://identity.example.com',
+             '--proxy-headers=xforwarded', '--import-realm'], memory='768m')
+        start('enterprise', images['identity'], ['--network-alias', 'tls-enterprise', '--env-file', str(enterprise_env),
+            *bind(enterprise_realm_file, '/opt/keycloak/data/import/enterprise-synthetic-realm.json'),
+            *bind(certificate_dir / 'ca.crt', '/fixture/ca.crt'),
+            '--tmpfs', '/opt/keycloak/data:size=64m,uid=1000,gid=1000,mode=0700'],
+            ['start', '--optimized', '--http-enabled=true', '--hostname=https://enterprise.example.net',
              '--proxy-headers=xforwarded', '--import-realm'], memory='768m')
         report['phase'] = 'start-actual-https-profile-core-and-console'
         mounts = [*bind(account_file, '/run/secrets/stack-demo-credentials'), *bind(secret_file, '/run/secrets/stack-oidc-client-secret'), *bind(truststore, '/fixture.jks')]
@@ -260,8 +282,10 @@ def main():
         start('console', images['console'], ['--network-alias', 'tls-console', '-e', 'CORE_API_URL=http://stack-core-api:8080'], memory='384m')
         report['phase'] = 'start-fixed-tls-edge'
         start('edge', images['edge'], ['--network-alias', 'tls-edge', '--network-alias', 'console.example.com',
-            '--network-alias', 'identity.example.com', '--user', '1000:1000', '--sysctl', 'net.ipv4.ip_unprivileged_port_start=0',
+            '--network-alias', 'identity.example.com', '--network-alias', 'enterprise.example.net',
+            '--user', '1000:1000', '--sysctl', 'net.ipv4.ip_unprivileged_port_start=0',
             *bind(ROOT / 'scripts/stack_https_fixture_edge.mjs', '/edge.mjs'),
+            *bind(ROOT / 'scripts/stack_https_fixture_edge_policy.mjs', '/edge-policy.mjs'),
             *bind(certificate_dir / 'server.key', '/fixture/certificates/server.key'),
             *bind(certificate_dir / 'server.crt', '/fixture/certificates/server.crt')], ['node', '/edge.mjs'], memory='128m')
         report['phase'] = 'wait-for-real-fixture-readiness'
@@ -269,20 +293,24 @@ def main():
         while True:
             core_ready = run(['docker', 'exec', prefix + '-core', 'java', '-cp', '/app/health', 'HealthProbe']).returncode == 0
             identity_ready = run(['docker', 'exec', prefix + '-identity', 'bash', '-ec', 'exec 3<>/dev/tcp/127.0.0.1/9000; printf "GET /health/ready HTTP/1.0\r\n\r\n" >&3; read -r status <&3; case "$status" in *200*) exit 0;; *) exit 1;; esac']).returncode == 0
-            if core_ready and identity_ready:
+            enterprise_ready = run(['docker', 'exec', prefix + '-enterprise', 'bash', '-ec', 'exec 3<>/dev/tcp/127.0.0.1/9000; printf "GET /health/ready HTTP/1.0\r\n\r\n" >&3; read -r status <&3; case "$status" in *200*) exit 0;; *) exit 1;; esac']).returncode == 0
+            if core_ready and identity_ready and enterprise_ready:
                 break
             require(time.monotonic() < until)
             time.sleep(2)
         report['phase'] = 'actual-tls-oidc-pkce-cookie-scope-and-logout'
         result = json.loads(start('probe', images['tools'], [*script_bind, *bind(account_file, '/fixture/accounts.json'),
             *bind(administrator_file, '/fixture/administrator.json'),
+            *bind(enterprise_config_file, '/fixture/enterprise-configuration.json'),
             *bind(certificate_dir / 'ca.crt', '/fixture/certificates/ca.crt')],
-            ['python', '/scripts/stack_https_fixture_probe.py'], False, '256m', 180))
+            ['python', '/scripts/stack_https_fixture_probe.py'], False, '256m', 300))
         require(result['completed'] and result['actualTlsProtocolLoginVerified'] and result['actualKeycloakTokenJwkUserinfoRequestsObserved'])
         require(witness_before == witness_hash() and witness_before.startswith('2|'))
         report.update(completed=True, phase='completed', actualTlsLoginVerified=True,
             protocolEvidence=result, seededWitnessRowsUnchanged=True, seededWitnessesNotActualEvaluations=True,
-            tlsTrustAndHostnameVerificationEnabled=True, applicationOrHostTrustStoresModified=False)
+            tlsTrustAndHostnameVerificationEnabled=True, applicationOrHostTrustStoresModified=False,
+            syntheticEnterpriseBrokerVerified=result['actualSyntheticEnterpriseBrokerVerified'],
+            enterpriseProviderIsSeparateSyntheticProcess=True)
     except Exception as error:
         report.update(completed=False, errorType=type(error).__name__, code='SYNTHETIC_HTTPS_FIXTURE_UNVERIFIED')
     finally:

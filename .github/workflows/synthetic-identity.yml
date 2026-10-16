@@ -52,6 +52,8 @@ jobs:
           python3 scripts/stack-https-identity-client-test.py
           python3 scripts/stack-https-identity-smoke-test.py
           python3 scripts/stack-https-fixture-diagnostics-test.py
+          python3 scripts/stack-https-fixture-enterprise-test.py
+          node --test scripts/stack-https-fixture-edge-policy-test.mjs
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-https-fixture-certificates-test.py
       - name: Prepare disposable supporting services without rebuilding the full stack
         run: |

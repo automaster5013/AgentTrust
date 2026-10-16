@@ -32,7 +32,7 @@ def generate(directory):
         .not_valid_after(now + datetime.timedelta(hours=2))
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
         .add_extension(x509.SubjectAlternativeName([x509.DNSName('console.example.com'),
-            x509.DNSName('identity.example.com')]), critical=False)
+            x509.DNSName('identity.example.com'), x509.DNSName('enterprise.example.net')]), critical=False)
         .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
         .add_extension(x509.KeyUsage(digital_signature=True, content_commitment=False,
             key_encipherment=True, data_encipherment=False, key_agreement=False,
@@ -49,6 +49,6 @@ def generate(directory):
         with os.fdopen(descriptor, 'wb') as stream:
             stream.write(data)
     # The CA private key is deliberately never serialized or retained.
-    return {'generated': True, 'dnsNames': ['console.example.com', 'identity.example.com'],
+    return {'generated': True, 'dnsNames': ['console.example.com', 'identity.example.com', 'enterprise.example.net'],
         'leafLifetimeHours': 2, 'caPrivateKeyWritten': False, 'privateKeyBytesPrinted': False,
         'productionCertificateGenerated': False}

@@ -48,19 +48,19 @@ class ActualTlsFixtureTest(unittest.TestCase):
                 trusted = ssl.create_default_context(cafile=str(directory / 'ca.crt'))
                 self.assertTrue(trusted.check_hostname)
                 self.assertEqual(trusted.verify_mode, ssl.CERT_REQUIRED)
-                for hostname in ['console.example.com', 'identity.example.com']:
+                for hostname in ['console.example.com', 'identity.example.com', 'enterprise.example.net']:
                     with socket.create_connection(address, timeout=2) as raw:
                         with trusted.wrap_socket(raw, server_hostname=hostname) as connection:
                             connection.sendall(b'x')
                             self.assertEqual(connection.recv(1), b'y')
-                self.assertEqual(len(requests), 2)
+                self.assertEqual(len(requests), 3)
                 for context, hostname in [(ssl.create_default_context(), 'console.example.com'),
                         (trusted, 'wrong.example.com'), (trusted, '127.0.0.1')]:
                     with self.subTest(kind='actual-tls-certificate-refusal'):
                         with socket.create_connection(address, timeout=2) as raw:
                             with self.assertRaises(ssl.SSLCertVerificationError):
                                 context.wrap_socket(raw, server_hostname=hostname)
-                self.assertEqual(len(requests), 2, 'Rejected TLS clients must not reach the canary handler')
+                self.assertEqual(len(requests), 3, 'Rejected TLS clients must not reach the canary handler')
             finally:
                 stop.set()
                 listener.close()

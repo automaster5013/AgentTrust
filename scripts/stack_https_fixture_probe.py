@@ -15,6 +15,7 @@ import urllib.request
 from stack_https_identity_client import CONSOLE, IDENTITY, ISSUER, HttpsIdentityClient, require
 from stack_https_fixture_claim_controls import verify_claim_controls
 from stack_https_fixture_diagnostics import FixtureHttpRefused
+from stack_https_fixture_broker_controls import configure_enterprise, verify_broker_controls
 
 
 def main():
@@ -65,6 +66,8 @@ def main():
         require(discovery[field] == ISSUER + '/protocol/openid-connect/' + suffix)
     checks = ['actual untrusted chain and wrong hostname refused before HTTP',
               'actual TLS discovery advertises only the pinned HTTPS issuer and endpoints']
+    enterprise_target, installation = configure_enterprise()
+    require(installation['completed'])
     clients = []
     protocol_error = None
     try:
@@ -109,12 +112,21 @@ def main():
             raise cleanup_error
     require(all(not client.logged and not client.provider_session_owned for client in clients))
     checks.append('all three application and actual provider sessions log out over HTTPS')
+    broker_controls = verify_broker_controls(ca_file, accounts, enterprise_target)
+    require(broker_controls['completed'] and broker_controls['actualSyntheticEnterpriseBrokerVerified'])
+    checks.append('separate synthetic enterprise provider preserves all native roles and refuses unlinked accounts')
     counts = get(CONSOLE + '/fixture/observations')
     require(counts['token'] >= 3 and counts['userinfo'] >= 3 and counts['jwks'] >= 1
             and counts['authorization'] >= 3 and counts['callback'] >= 3 and counts['providerLogout'] >= 3)
+    require(counts['enterpriseAuthorization'] >= 5 and counts['enterpriseToken'] >= 5
+            and counts['enterpriseUserinfo'] >= 5 and counts['enterpriseJwks'] >= 1
+            and counts['brokerCallback'] >= 5 and counts['enterpriseLogout'] >= 5)
     print(json.dumps({'completed': True, 'checks': checks, 'actualTlsProtocolLoginVerified': True,
         'actualKeycloakTokenJwkUserinfoRequestsObserved': True, 'publicEndpointRequestCounts': counts,
         'adverseIdentityClaimControls': claim_controls,
+        'syntheticEnterpriseInstallation': installation,
+        'syntheticEnterpriseBrokerControls': broker_controls,
+        'actualSyntheticEnterpriseBrokerVerified': True,
         'tenantWitnessesAreSeededNotEvaluated': True, 'paidProviderCallsPerformed': False,
         'chromiumRenderingVerified': False, 'externalEnterpriseIdpVerified': False,
         'productionDeploymentPerformed': False, 'privateInputsPrinted': False}))

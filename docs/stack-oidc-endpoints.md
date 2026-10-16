@@ -134,8 +134,11 @@ resources stop. Only the bounded `summary.json` is uploaded. Source service
 identities and business fingerprints must match before and after the fixture.
 This adds protocol-level acceptance; it is not Chromium rendering, an external
 enterprise IdP connection, DNS ownership, a production certificate, HA or an SLA.
-The initial certificate controls passed locally; complete fixture acceptance is
-pending its own exact-revision CI execution and must not be inferred from them.
+The basic protocol fixture passed at revision `af644ec` in
+[its exact-revision focused CI](https://github.com/automaster5013/AgentTrust/actions/runs/38836351107).
+The authenticated artifact verified all nine checks, seven actual token/UserInfo
+requests, unchanged source data/services and owned-resource cleanup. This covers
+the basic two-origin protocol; later federation changes require new acceptance.
 
 Workspace authority is bound to the already validated ID Token's canonical,
 non-nil organization/project/subject UUIDs, username and application role array.
@@ -155,8 +158,9 @@ The CI HTTPS fixture additionally changes only its own realm's mappers to issue
 real signed nil organization/project claims and contradictory UserInfo. It
 requires login refusal, unrelated existing session preservation, exact mapper
 restoration and successful subsequent normal login. The original development
-realm is not contacted. These new actual-login controls remain pending their
-own CI result; compilation and domain-mapping checks do not certify them.
+realm is not contacted. The same basic CI verified all three actual adverse
+logins, preserved other sessions, restored the effective mapper configuration,
+and completed a subsequent normal login.
 
 The first complete fixture reached migrated PostgreSQL, ready Keycloak and Java,
 then failed its protocol probe. Its authenticated summary confirmed cleanup and
@@ -165,6 +169,15 @@ login. Probe failures now retain only a fixed code, exception class and bounded
 source-file/line locations. Frames containing messages, tokens or unexpected
 fields are refused rather than uploaded.
 
+Diagnosis found a fixture-only internal API alias outside the BFF's fixed
+allowlist, an unnecessary expectation that server-side logout always emits a
+cookie, and Keycloak's effective mapper readback adding its introspection flag.
+The fixture uses the existing contracted API alias, requires protected identity
+401 after logout, validates every emitted cookie, and pins the derived flag for
+exact comparison. First protocol failures survive cleanup errors. The BFF
+allowlist, TLS verification and application identity checks were not weakened.
+See [Keycloak's effective mapper defaults](https://github.com/keycloak/keycloak/blob/26.8.1/services/src/main/java/org/keycloak/protocol/oidc/mappers/AbstractOIDCProtocolMapper.java).
+
 `synthetic-identity.yml` builds the current Java application and HTTPS Console
 against immutable supporting services from the independently verified `95c9986`
 bundle. This focused lane shortens identity-fixture diagnosis without replacing
@@ -172,3 +185,33 @@ the complete source, registry-runtime, security/signature and infrastructure
 release checks. Its supporting-service overlay is test-only and is not a current
 production image manifest. Full acceptance still requires the matching revision
 of every release check; the focused lane itself publishes no application image.
+
+## Separate synthetic enterprise broker
+
+The extended fixture adds a separate Keycloak process and database at
+`https://enterprise.example.net/realms/enterprise-synthetic`. Its temporary CA is
+trusted only by the owned fixture processes; hostname checks remain enabled.
+The application issuer remains `https://identity.example.com/realms/agenttrust`.
+No original provider, global trust store or production enterprise account is used.
+
+Only four explicit external subject links may authenticate existing primary
+accounts. A required deny-only first-broker flow refuses every unlinked subject,
+including an external user whose email matches the native administrator. The
+fixture installs this flow after ordinary realm import and verifies all built-in
+flows, native attributes and roles remain unchanged. No external scope/role
+mapper is installed. Every linked external identity advertises administrator
+and foreign-organization claims; the four actual logins must retain the native
+administrator/editor/viewer roles, original scopes and foreign-record refusals.
+
+Primary and external SSO sessions must be observed before logout and both gone
+after actual frontchannel broker logout, before any fallback cleanup. The unknown
+external account must have an actual external SSO session while creating neither
+a primary account nor primary SSO. Final account/link snapshots and all session
+counts must match the intended boundary. Administrative tokens and credentials
+remain private; artifacts contain only bounded public results. The fixed TLS
+edge also rejects literal/encoded/doubly encoded realm traversal paths.
+
+The federation contract and adverse path tests pass offline. Actual extended
+broker acceptance and Chromium verification are pending their exact-revision CI;
+the earlier basic HTTPS result does not certify these additions. A synthetic
+enterprise provider does not validate an undecided customer's real IdP.
