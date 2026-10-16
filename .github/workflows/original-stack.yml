@@ -32,6 +32,7 @@ jobs:
           python3 scripts/stack-workspace-dispatch-load-test.py
           python3 scripts/stack-https-identity-client-test.py
           python3 scripts/stack-https-identity-smoke-test.py
+          python3 scripts/stack-https-fixture-diagnostics-test.py
           python3 scripts/stack-coherent-archive-test.py
           python3 scripts/stack-recovery-transport-test.py
           python3 scripts/stack-observation-policy-test.py

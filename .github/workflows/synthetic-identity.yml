@@ -1,0 +1,79 @@
+name: Synthetic HTTPS identity acceptance
+on:
+  push:
+    branches: [main, 'codex/synthetic-https-*']
+  workflow_dispatch:
+concurrency:
+  group: synthetic-identity-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+  packages: read
+jobs:
+  identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      COMPOSE_PARALLEL_LIMIT: '2'
+      STACK_DATABASE_IMAGE: ghcr.io/automaster5013/agenttrust-database@sha256:891155221825027ce94aebf77def34debaa9c808fe2fa67c89f8afd09677f5c8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Authenticate only the ephemeral runner registry client
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          umask 077
+          export DOCKER_CONFIG="$RUNNER_TEMP/synthetic-identity-docker-config"
+          mkdir "$DOCKER_CONFIG"
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG" >> "$GITHUB_ENV"
+      - name: Fetch the immutable supporting-service baseline
+        run: |
+          python3 - <<'PY'
+          import pathlib, subprocess, re
+          text = pathlib.Path('tests/fixtures/compose.synthetic-identity-baseline.yaml').read_text()
+          refs = re.findall(r'^    image: (ghcr\.io/automaster5013/agenttrust-[a-z-]+@sha256:[a-f0-9]{64})$', text, re.M)
+          assert len(refs) == len(set(refs)) == 6
+          for ref in refs:
+              subprocess.run(['docker', 'pull', ref], check=True)
+          PY
+          docker pull node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
+      - name: Build actual current Core and HTTPS Console with their tests
+        run: |
+          docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" -t agenttrust-core-api:local services/core-api
+          docker build --build-arg NEXT_PUBLIC_STACK_OIDC_PROFILE=https-review --build-arg NEXT_PUBLIC_STACK_APPLICATION_ORIGIN=https://console.example.com --build-arg NEXT_PUBLIC_STACK_PUBLIC_ISSUER=https://identity.example.com/realms/agenttrust --label "org.opencontainers.image.revision=$GITHUB_SHA" -t agenttrust-stack-console:oidc-endpoint-https-candidate apps/console
+          docker build -t agenttrust-security:local tools/security
+      - name: Verify source security and fixture refusal controls
+        run: |
+          python3 scripts/stack-security-source.py
+          python3 scripts/stack-https-identity-client-test.py
+          python3 scripts/stack-https-identity-smoke-test.py
+          python3 scripts/stack-https-fixture-diagnostics-test.py
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-https-fixture-certificates-test.py
+      - name: Prepare disposable supporting services without rebuilding the full stack
+        run: |
+          python3 scripts/stack-setup.py
+          python3 scripts/stack-identity-setup.py
+          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f tests/fixtures/compose.synthetic-identity-baseline.yaml up -d --no-build --wait stack-core-api stack-identity
+          python3 scripts/stack-identity-profile.py
+      - name: Verify real TLS login and adverse identity claims
+        run: python3 scripts/stack-https-identity-smoke.py --execute
+      - name: Preserve only bounded public identity diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: synthetic-identity-diagnostics-${{ github.sha }}
+          include-hidden-files: true
+          path: |
+            .local/stack-https-identity-*/summary.json
+            .local/stack-security-source-*/summary.json
+            .local/stack-security-source-*/reports/semgrep.json
+            .local/stack-security-source-*/reports/gitleaks.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Stop only the disposable runner's supporting services
+        if: always()
+        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f tests/fixtures/compose.synthetic-identity-baseline.yaml down

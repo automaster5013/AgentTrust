@@ -8,6 +8,7 @@ import pathlib
 import socket
 import ssl
 import time
+import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -103,5 +104,8 @@ if __name__ == '__main__':
         main()
     except Exception as error:
         print(json.dumps({'completed': False, 'code': 'SYNTHETIC_HTTPS_PROTOCOL_UNVERIFIED',
-                          'errorType': type(error).__name__, 'privateInputsPrinted': False}))
+                          'errorType': type(error).__name__,
+                          'httpObservation': getattr(error, 'observation', None),
+                          'failureLocations': [{'file': pathlib.Path(frame.filename).name, 'line': frame.lineno}
+                            for frame in traceback.extract_tb(error.__traceback__)[-12:]]}))
         raise SystemExit(1)

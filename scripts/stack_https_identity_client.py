@@ -13,6 +13,7 @@ import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
+from stack_https_fixture_diagnostics import FixtureHttpRefused
 
 CONSOLE = 'https://console.example.com'
 IDENTITY = 'https://identity.example.com'
@@ -124,8 +125,16 @@ class HttpsIdentityClient:
             response = error
         with response:
             raw = response.read(LIMIT + 1)
-            require(response.status == expected and len(raw) <= LIMIT)
-            endpoint(response.url)
+            final = endpoint(response.url)
+            if response.status != expected:
+                kinds = {'/': 'console-home', '/backend/login/oauth2/code/keycloak': 'oidc-callback',
+                    '/backend/me': 'identity', '/backend/csrf': 'csrf', '/backend/logout': 'logout',
+                    '/backend/runs': 'run-list-or-write', '/realms/agenttrust/protocol/openid-connect/auth': 'idp-authorization',
+                    '/realms/agenttrust/protocol/openid-connect/logout': 'idp-logout'}
+                kind = kinds.get(final.path, 'idp-login' if final.path.startswith('/realms/agenttrust/login-actions/')
+                    else 'run-detail' if final.path.startswith('/backend/runs/') else 'other-fixed-fixture-path')
+                raise FixtureHttpRefused(response.status, expected, kind)
+            require(len(raw) <= LIMIT)
             return raw, response.url, response.headers
 
     def api(self, path, expected=200):

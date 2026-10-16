@@ -11,6 +11,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from stack_https_identity_client import HttpsIdentityClient, require
+from stack_https_fixture_diagnostics import FixtureHttpRefused
 
 
 class NoRedirects(urllib.request.HTTPRedirectHandler):
@@ -39,7 +40,11 @@ class FixtureAdmin:
             response = error
         with response:
             raw = response.read(1048577)
-            require(response.status == expected and len(raw) <= 1048576)
+            if response.status != expected:
+                kind = ('fixture-admin-auth' if path.startswith('/realms/master/') else
+                        'fixture-mapper' if '/protocol-mappers/models' in path else 'fixture-admin-config')
+                raise FixtureHttpRefused(response.status, expected, kind)
+            require(len(raw) <= 1048576)
             return json.loads(raw) if raw else None, response.headers.get('Location')
 
     def __enter__(self):

@@ -157,3 +157,18 @@ requires login refusal, unrelated existing session preservation, exact mapper
 restoration and successful subsequent normal login. The original development
 realm is not contacted. These new actual-login controls remain pending their
 own CI result; compilation and domain-mapping checks do not certify them.
+
+The first complete fixture reached migrated PostgreSQL, ready Keycloak and Java,
+then failed its protocol probe. Its authenticated summary confirmed cleanup and
+unchanged source services/business data; it did not establish successful HTTPS
+login. Probe failures now retain only a fixed code, exception class and bounded
+source-file/line locations. Frames containing messages, tokens or unexpected
+fields are refused rather than uploaded.
+
+`synthetic-identity.yml` builds the current Java application and HTTPS Console
+against immutable supporting services from the independently verified `95c9986`
+bundle. This focused lane shortens identity-fixture diagnosis without replacing
+the complete source, registry-runtime, security/signature and infrastructure
+release checks. Its supporting-service overlay is test-only and is not a current
+production image manifest. Full acceptance still requires the matching revision
+of every release check; the focused lane itself publishes no application image.

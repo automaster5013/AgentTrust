@@ -16,6 +16,7 @@ import subprocess
 import sys
 import time
 import uuid
+from stack_https_fixture_diagnostics import public_probe_failure
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 NODE = 'node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1'
@@ -125,7 +126,16 @@ def main():
             '--tmpfs', '/tmp:size=64m,mode=1777']
         if detached:
             arguments.append('-d')
-        output = ok([*arguments, *extra, image, *command], timeout=timeout)
+        process = run([*arguments, *extra, image, *command], timeout=timeout)
+        if process.returncode:
+            report['failedProcessExitCode'] = process.returncode
+            if kind == 'probe':
+                try:
+                    report['protocolFailure'] = public_probe_failure(process.stdout)
+                except Exception:
+                    report['protocolFailureFrameRefused'] = True
+            raise RuntimeError('SYNTHETIC_HTTPS_PROCESS_UNVERIFIED')
+        output = process.stdout
         state = own(name)
         require(state[1] == ('running' if detached else 'exited'))
         return output

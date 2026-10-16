@@ -1,0 +1,15 @@
+# Test-only supporting services from the independently verified 95c9986 bundle.
+# Core is built from the checked-out source. This is not a release image set.
+services:
+  stack-db:
+    image: ghcr.io/automaster5013/agenttrust-database@sha256:891155221825027ce94aebf77def34debaa9c808fe2fa67c89f8afd09677f5c8
+  stack-identity:
+    image: ghcr.io/automaster5013/agenttrust-identity@sha256:2b3dbcf262ad0c3133daf2b493c007f5a577fc8dec5bab4b99aacef3f768a68e
+  stack-ai-worker:
+    image: ghcr.io/automaster5013/agenttrust-ai-worker@sha256:472ae4fa1b65bc4acc24902c58687d981282fe9b4c8a4579c94dca57d75068c1
+  stack-nats:
+    image: ghcr.io/automaster5013/agenttrust-messaging@sha256:a665f8e7ed3176110f1f098560fb2cec7a767e3e0c0eff9913216da356849b4e
+  stack-opa:
+    image: ghcr.io/automaster5013/agenttrust-opa@sha256:4ec2cdf07584b8e3a5c62cdf7cb15b8e6a19729aa7ebb77812a44876959953b9
+  stack-quality-verifier:
+    image: ghcr.io/automaster5013/agenttrust-quality-verifier@sha256:92bbe0dda25b2b4ddbba2b49e53146fcd0a6b568b4fedb7dd358d2c896fc1a2b
