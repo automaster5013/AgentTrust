@@ -47,8 +47,11 @@ def install(admin, target, external, manifest):
     executions = BASE + 'authentication/flows/' + FLOW + '/executions'
     admin.wire(executions + '/execution', 'POST', {'provider': 'deny-access-authenticator'}, expected=201)
     rows, _ = admin.wire(executions)
-    require(len(rows) == 1 and rows[0]['providerId'] == 'deny-access-authenticator'
-        and rows[0].get('authenticationFlow') is False)
+    require(len(rows) == 1)
+    require(rows[0]['providerId'] == 'deny-access-authenticator')
+    # False-valued representation fields may be omitted. A fixed authenticator
+    # provider and no child flow are still required before enabling execution.
+    require(rows[0].get('authenticationFlow', False) is False and not rows[0].get('flowId'))
     execution = copy.deepcopy(rows[0]); execution['requirement'] = 'REQUIRED'
     admin.wire(executions, 'PUT', execution, expected=204)
     rows, _ = admin.wire(executions)
