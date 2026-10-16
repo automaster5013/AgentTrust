@@ -30,6 +30,8 @@ jobs:
           python3 scripts/stack-browser-quota-guard-test.py
           python3 scripts/stack-workspace-onboarding-test.py
           python3 scripts/stack-workspace-dispatch-load-test.py
+          python3 scripts/stack-https-identity-client-test.py
+          python3 scripts/stack-https-identity-smoke-test.py
           python3 scripts/stack-coherent-archive-test.py
           python3 scripts/stack-recovery-transport-test.py
           python3 scripts/stack-observation-policy-test.py
@@ -37,6 +39,7 @@ jobs:
           python3 scripts/stack-coherent-orchestration-test.py
           docker build -t agenttrust-security:local tools/security
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-backup-crypt-test.py
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-https-fixture-certificates-test.py
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --memory 128m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-backup-tar-test.py
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --memory 128m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-coherent-probe-test.py
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --tmpfs /.local:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-backup-custody-test.py
@@ -164,6 +167,10 @@ jobs:
           python3 scripts/stack-identity-scope-readiness.py
           python3 scripts/stack-oidc-discovery-smoke.py
           python3 scripts/stack-oidc-client-config-test.py
+      - name: Verify actual TLS OIDC login in a fresh portless fixture
+        run: |
+          docker build -t agenttrust-security:local tools/security
+          python3 scripts/stack-https-identity-smoke.py --execute
       - name: Verify real browser evaluation and approval controls
         working-directory: apps/console
         run: |
@@ -285,6 +292,7 @@ jobs:
             .local/stack-evaluation-readiness-*.json
             .local/stack-json-text-*.json
             .local/stack-oidc-endpoint-proxy-*/summary.json
+            .local/stack-https-identity-*/summary.json
             .local/stack-oidc-image-config-*.json
             .local/stack-browser-*.json
             .local/stack-workspace-onboarding-*.json

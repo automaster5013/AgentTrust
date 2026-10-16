@@ -107,3 +107,32 @@ the installed Chromium executable; the bundled workspace Python runner passed.
 The reporter now records a fixed failure category without raw messages, URLs,
 cookies, traces or credentials, so launch failures can be distinguished from UI
 assertions. The original isolated login assertion remains unexplained.
+
+## Portless synthetic HTTPS identity acceptance
+
+`python scripts/stack-https-identity-smoke.py` prints an offline plan without
+contacting Docker or an identity provider. Explicit `--execute` requires both
+GitHub CI markers and a nonroot Linux runner. It creates a fresh internal network,
+tmpfs PostgreSQL application and identity databases, a separately imported realm,
+fresh synthetic users/client secrets, and temporary Core/HTTPS-profile Console
+and TLS edge containers. No original database, identity, volume, host trust store
+or public port is used. A test-only public CA trust store is injected only into
+the temporary Java process; certificate and hostname verification remain enabled.
+
+The protocol client exercises the actual Keycloak authorization-code/PKCE S256
+flow through Next.js and Java, authenticated scope and role claims, Secure,
+HttpOnly, root-path, host-only SameSite=Lax session cookies, valid-CSRF viewer
+refusal, unsolicited-callback refusal, and application/provider logout. Two
+seeded records provide positive and foreign-organization read witnesses. They
+are explicitly seeded scope witnesses, not Python-completed evaluations. The
+TLS edge observes only fixed endpoint counts, never token, cookie, query or
+request-body values. Untrusted certificates and a mismatching hostname must
+raise actual certificate verification failures before an HTTP handler is reached.
+
+Short-lived fixture certificates and all private inputs are removed after owned
+resources stop. Only the bounded `summary.json` is uploaded. Source service
+identities and business fingerprints must match before and after the fixture.
+This adds protocol-level acceptance; it is not Chromium rendering, an external
+enterprise IdP connection, DNS ownership, a production certificate, HA or an SLA.
+The initial certificate controls passed locally; complete fixture acceptance is
+pending its own exact-revision CI execution and must not be inferred from them.
