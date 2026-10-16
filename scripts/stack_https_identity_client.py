@@ -75,9 +75,11 @@ class IdentityForm(html.parser.HTMLParser):
             self.active = False
 
 
-def secure_session_cookie(headers):
+def secure_session_cookie(headers, required=True):
     values = headers.get_all('Set-Cookie') or []
     selected = [v for v in values if v.startswith('AGENTTRUST_STACK_SESSION=')]
+    if not selected and not required:
+        return
     require(len(selected) == 1)
     attributes = [part.strip().split('=', 1)[0].lower() for part in selected[0].split(';')[1:]]
     require(len(attributes) == len(set(attributes)))
@@ -203,7 +205,10 @@ class HttpsIdentityClient:
         if self.logged:
             self.csrf()
             raw, _, headers = self.wire(CONSOLE + '/backend/logout', 'POST', b'{}', 'application/json')
-            secure_session_cookie(headers)
+            # Spring invalidates the server session without necessarily emitting
+            # a replacement cookie. Validate every cookie that is emitted and
+            # independently require the protected identity to become 401 below.
+            secure_session_cookie(headers, required=False)
             value = json.loads(raw)
             self.api('me', expected=401)
             require(value.get('logoutUrl') == url)

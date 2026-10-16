@@ -66,6 +66,7 @@ def main():
     checks = ['actual untrusted chain and wrong hostname refused before HTTP',
               'actual TLS discovery advertises only the pinned HTTPS issuer and endpoints']
     clients = []
+    protocol_error = None
     try:
         for name in ['demo-admin', 'demo-viewer', 'other-admin']:
             account = next(row for row in accounts if row['username'] == name)
@@ -91,9 +92,21 @@ def main():
         claim_controls = verify_claim_controls(ca_file, accounts, clients)
         require(claim_controls['completed'])
         checks.append('actual signed nil scopes and contradictory UserInfo fail login and restored mappings recover')
+    except Exception as error:
+        protocol_error = error
+        raise
     finally:
+        cleanup_error = None
         for client in clients:
-            client.logout()
+            try:
+                client.logout()
+            except Exception as error:
+                if cleanup_error is None:
+                    cleanup_error = error
+        # Never hide the original protocol failure behind a cleanup failure,
+        # and always try to close every independently owned browser context.
+        if protocol_error is None and cleanup_error is not None:
+            raise cleanup_error
     require(all(not client.logged and not client.provider_session_owned for client in clients))
     checks.append('all three application and actual provider sessions log out over HTTPS')
     counts = get(CONSOLE + '/fixture/observations')

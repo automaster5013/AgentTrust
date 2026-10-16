@@ -60,6 +60,12 @@ class HttpsIdentityBoundaryTest(unittest.TestCase):
         duplicate.add_header('Set-Cookie', base)
         with self.assertRaises(ValueError):
             secure_session_cookie(duplicate)
+        absent = email.message.Message()
+        with self.assertRaises(ValueError):
+            secure_session_cookie(absent)
+        secure_session_cookie(absent, required=False)
+        with self.assertRaises(ValueError):
+            secure_session_cookie(frame(base.replace('; Secure', '')), required=False)
 
     def test_login_form_does_not_accept_a_second_credential_target(self):
         form = IdentityForm()
