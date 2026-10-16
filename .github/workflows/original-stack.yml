@@ -93,6 +93,21 @@ jobs:
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
           python3 scripts/stack-database-smoke.py
           python3 scripts/stack-database-init-smoke.py
+      - name: Verify isolated HTTPS OIDC proxy configuration
+        run: |
+          docker build --build-arg NEXT_PUBLIC_STACK_OIDC_PROFILE=https-review --build-arg NEXT_PUBLIC_STACK_APPLICATION_ORIGIN=https://console.example.com --build-arg NEXT_PUBLIC_STACK_PUBLIC_ISSUER=https://identity.example.com/realms/agenttrust -t agenttrust-stack-console:oidc-endpoint-https-candidate apps/console
+          python3 scripts/stack-oidc-image-config-test.py
+          python3 scripts/stack-oidc-contract-smoke.py
+          python3 scripts/stack-oidc-endpoint-proxy-smoke.py
+          python3 scripts/stack-console-health-probe-smoke.py
+          python3 scripts/stack-oidc-client-contract-smoke.py
+          python3 scripts/stack-identity-scope-readiness.py
+          python3 scripts/stack-oidc-discovery-smoke.py
+          python3 scripts/stack-oidc-client-config-test.py
+      - name: Verify actual TLS OIDC login in a fresh portless fixture
+        run: |
+          docker build -t agenttrust-security:local tools/security
+          python3 scripts/stack-https-identity-smoke.py --execute
       - name: Verify durable evaluation recovery and execution deadline
         run: |
           python3 scripts/stack-recovery-smoke.py --mode worker-restart
@@ -156,21 +171,6 @@ jobs:
       - name: Audit fixed verifier dependency installation
         working-directory: tools/promptfoo
         run: npm audit --omit=optional --audit-level=high
-      - name: Verify isolated HTTPS OIDC proxy configuration
-        run: |
-          docker build --build-arg NEXT_PUBLIC_STACK_OIDC_PROFILE=https-review --build-arg NEXT_PUBLIC_STACK_APPLICATION_ORIGIN=https://console.example.com --build-arg NEXT_PUBLIC_STACK_PUBLIC_ISSUER=https://identity.example.com/realms/agenttrust -t agenttrust-stack-console:oidc-endpoint-https-candidate apps/console
-          python3 scripts/stack-oidc-image-config-test.py
-          python3 scripts/stack-oidc-contract-smoke.py
-          python3 scripts/stack-oidc-endpoint-proxy-smoke.py
-          python3 scripts/stack-console-health-probe-smoke.py
-          python3 scripts/stack-oidc-client-contract-smoke.py
-          python3 scripts/stack-identity-scope-readiness.py
-          python3 scripts/stack-oidc-discovery-smoke.py
-          python3 scripts/stack-oidc-client-config-test.py
-      - name: Verify actual TLS OIDC login in a fresh portless fixture
-        run: |
-          docker build -t agenttrust-security:local tools/security
-          python3 scripts/stack-https-identity-smoke.py --execute
       - name: Verify real browser evaluation and approval controls
         working-directory: apps/console
         run: |
