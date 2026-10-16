@@ -458,7 +458,14 @@ test('administrator creates an immutable baseline campaign and approves the actu
  await region.getByLabel('릴리스에 고정할 비교 기준',{exact:true}).selectOption(reference.baselineCampaignId);
  await region.getByLabel('양쪽 근거 유효 기간',{exact:true}).fill('3600');
  const admitted=page.waitForResponse(response=>response.url().endsWith('/backend/campaigns')&&response.request().method()==='POST');
- await region.getByRole('button',{name:'캠페인 실행',exact:true}).click();const admission=await admitted;expect(admission.status()).toBe(200);const candidate=await admission.json();
+ phase('baseline candidate admission click requested');
+ await region.getByRole('button',{name:'캠페인 실행',exact:true}).click();
+ phase('baseline candidate admission click completed');
+ const admission=await admitted;
+ phase('baseline candidate admission response HTTP '+admission.status());
+ expect(admission.status()).toBe(200);
+ const candidate=await admission.json();
+ phase('baseline candidate admission JSON decoded');
  await expect(region.getByText('캠페인 '+candidate.id,{exact:true})).toBeVisible();
  await expect(region.getByRole('button',{name:'캠페인 검토 저장',exact:true})).toBeVisible();
  await region.getByLabel('캠페인 검토 사유',{exact:true}).fill('Own browser synthetic baseline approval');
