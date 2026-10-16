@@ -294,6 +294,7 @@ def main():
             core_ready = run(['docker', 'exec', prefix + '-core', 'java', '-cp', '/app/health', 'HealthProbe']).returncode == 0
             identity_ready = run(['docker', 'exec', prefix + '-identity', 'bash', '-ec', 'exec 3<>/dev/tcp/127.0.0.1/9000; printf "GET /health/ready HTTP/1.0\r\n\r\n" >&3; read -r status <&3; case "$status" in *200*) exit 0;; *) exit 1;; esac']).returncode == 0
             enterprise_ready = run(['docker', 'exec', prefix + '-enterprise', 'bash', '-ec', 'exec 3<>/dev/tcp/127.0.0.1/9000; printf "GET /health/ready HTTP/1.0\r\n\r\n" >&3; read -r status <&3; case "$status" in *200*) exit 0;; *) exit 1;; esac']).returncode == 0
+            report['lastFixtureReadiness'] = {'core': core_ready, 'identity': identity_ready, 'enterprise': enterprise_ready}
             if core_ready and identity_ready and enterprise_ready:
                 break
             require(time.monotonic() < until)

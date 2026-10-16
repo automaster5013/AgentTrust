@@ -13,9 +13,15 @@ def install(admin, target, external, manifest):
     require(isinstance(users, list) and {u['id'] for u in users} == set(expected))
     before_users = {u['id']: copy.deepcopy(u) for u in users}
     before_roles = {}
+    before_attributes = {}
     for uid, user in before_users.items():
-        require(user['username'] == expected[uid]['username']
-            and user['attributes'] == expected[uid]['attributes'])
+        require(user['username'] == expected[uid]['username'])
+        # The default user-profile policy omits unmanaged scope attributes
+        # from ordinary user representations. Read them through the dedicated
+        # read-only endpoint without enabling user-editable attributes.
+        attributes, _ = admin.wire(BASE + 'users/' + uid + '/unmanagedAttributes')
+        require(attributes == expected[uid]['attributes'])
+        before_attributes[uid] = attributes
         links, _ = admin.wire(BASE + 'users/' + uid + '/federated-identity')
         require(links == [])
         roles, _ = admin.wire(BASE + 'users/' + uid + '/role-mappings/realm')
@@ -67,6 +73,8 @@ def install(admin, target, external, manifest):
     for uid, original in before_roles.items():
         roles, _ = admin.wire(BASE + 'users/' + uid + '/role-mappings/realm')
         require({v['id']: v for v in roles} == original)
+        attributes, _ = admin.wire(BASE + 'users/' + uid + '/unmanagedAttributes')
+        require(attributes == before_attributes[uid])
     flows, _ = admin.wire(BASE + 'authentication/flows')
     require(len(flows) == len(before_flows) + 1
         and {f['id']: f for f in flows if f['id'] in before_flows} == before_flows)

@@ -60,4 +60,3 @@ class FixtureAdmin:
                     {'client_id': 'admin-cli', 'refresh_token': self.refresh}, expected=204, form=True)
         finally:
             self.access = self.refresh = self.password = None
-

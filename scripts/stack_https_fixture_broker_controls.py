@@ -31,7 +31,8 @@ def verify_broker_controls(ca_file, accounts, target):
             for uid in primary_ids:
                 roles, _ = primary.wire(PRIMARY + 'users/' + uid + '/role-mappings/realm')
                 links, _ = primary.wire(PRIMARY + 'users/' + uid + '/federated-identity')
-                result[uid].update(roles={r['id']: r for r in roles}, links=links)
+                attributes, _ = primary.wire(PRIMARY + 'users/' + uid + '/unmanagedAttributes')
+                result[uid].update(roles={r['id']: r for r in roles}, links=links, unmanagedAttributes=attributes)
             return result
 
         def sessions(admin, base, uid):
