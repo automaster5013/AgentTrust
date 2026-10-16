@@ -124,7 +124,10 @@ def verify_claim_controls(ca_file, accounts, existing_clients):
             adverse = {'name': 'synthetic-fixture-conflicting-userinfo-org', 'protocol': 'openid-connect',
                 'protocolMapper': 'oidc-hardcoded-claim-mapper', 'config': {'claim.name': 'agenttrust_organization',
                     'claim.value': other['organizationId'], 'jsonType.label': 'String',
-                    'id.token.claim': 'false', 'access.token.claim': 'false', 'userinfo.token.claim': 'true'}}
+                    'id.token.claim': 'false', 'access.token.claim': 'false', 'userinfo.token.claim': 'true',
+                    # Keycloak's effective-model readback derives this default
+                    # from access.token.claim; pin it so equality stays exact.
+                    'introspection.token.claim': 'false'}}
             _, location = admin.wire(base, 'POST', adverse, expected=201)
             require(isinstance(location, str))
             parsed = urllib.parse.urlsplit(location)
