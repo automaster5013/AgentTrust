@@ -141,9 +141,37 @@ def main():
         require(state[1] == ('running' if detached else 'exited'))
         return output
 
-    def sql(query):
+    def sql(query, database='agenttrust_stack'):
+        require(database in ('agenttrust_stack', 'agenttrust_stack_identity', 'agenttrust_stack_enterprise'))
         return ok(['docker', 'exec', '-i', prefix + '-db', 'psql', '-U', 'agenttrust_stack',
-            '-d', 'agenttrust_stack', '-At', '-v', 'ON_ERROR_STOP=1'], query.encode())
+            '-d', database, '-At', '-v', 'ON_ERROR_STOP=1'], query.encode())
+
+    def identity_attributes(database, realm_name, users):
+        require((database, realm_name) in (('agenttrust_stack_identity', 'agenttrust'),
+            ('agenttrust_stack_enterprise', 'enterprise-synthetic')))
+        expected = []
+        for user in users:
+            require(str(uuid.UUID(user['id'])) == user['id'])
+            for name, values in user.get('attributes', {}).items():
+                require(name in ('agenttrust_organization', 'agenttrust_project')
+                    and isinstance(values, list) and len(values) == 1 and str(uuid.UUID(values[0])) == values[0])
+                expected.append("('" + user['id'] + "','" + name + "','" + values[0] + "')")
+        require(len(expected) == 8)
+        # Read only the new fixture database. Default profile policy may hide
+        # unmanaged scopes from admin representations; it is never relaxed.
+        query = ("BEGIN READ ONLY;SET LOCAL statement_timeout='2s';WITH observed AS ("
+            "SELECT a.user_id::text AS user_id,a.name::text AS name,a.value::text AS value "
+            "FROM public.user_attribute a JOIN public.user_entity u ON u.id=a.user_id "
+            "JOIN public.realm r ON r.id=u.realm_id WHERE r.name='" + realm_name + "'),"
+            "expected(user_id,name,value) AS (VALUES " + ','.join(expected) + "),difference AS ("
+            "(SELECT * FROM observed EXCEPT SELECT * FROM expected) UNION ALL "
+            "(SELECT * FROM expected EXCEPT SELECT * FROM observed)) "
+            "SELECT count(*)::text||'|'||encode(sha256(convert_to(coalesce(string_agg(to_jsonb(t)::text,"
+            "E'\\n' ORDER BY user_id,name,value),''),'UTF8')),'hex')||'|'||"
+            "(NOT EXISTS(SELECT 1 FROM difference))::text FROM observed t;ROLLBACK;")
+        value = sql(query, database).decode().splitlines()[-2]
+        require(re.fullmatch(r'8\|[a-f0-9]{64}\|true', value) is not None)
+        return value
 
     try:
         before = runtime()
@@ -299,6 +327,9 @@ def main():
                 break
             require(time.monotonic() < until)
             time.sleep(2)
+        report['phase'] = 'verify-fresh-provider-scope-storage'
+        primary_attributes_before = identity_attributes('agenttrust_stack_identity', 'agenttrust', realm['users'])
+        external_attributes_before = identity_attributes('agenttrust_stack_enterprise', 'enterprise-synthetic', external_realm['users'])
         report['phase'] = 'actual-tls-oidc-pkce-cookie-scope-and-logout'
         result = json.loads(start('probe', images['tools'], [*script_bind, *bind(account_file, '/fixture/accounts.json'),
             *bind(administrator_file, '/fixture/administrator.json'),
@@ -307,11 +338,15 @@ def main():
             ['python', '/scripts/stack_https_fixture_probe.py'], False, '256m', 300))
         require(result['completed'] and result['actualTlsProtocolLoginVerified'] and result['actualKeycloakTokenJwkUserinfoRequestsObserved'])
         require(witness_before == witness_hash() and witness_before.startswith('2|'))
+        require(identity_attributes('agenttrust_stack_identity', 'agenttrust', realm['users']) == primary_attributes_before
+            and identity_attributes('agenttrust_stack_enterprise', 'enterprise-synthetic', external_realm['users']) == external_attributes_before)
         report.update(completed=True, phase='completed', actualTlsLoginVerified=True,
             protocolEvidence=result, seededWitnessRowsUnchanged=True, seededWitnessesNotActualEvaluations=True,
             tlsTrustAndHostnameVerificationEnabled=True, applicationOrHostTrustStoresModified=False,
             syntheticEnterpriseBrokerVerified=result['actualSyntheticEnterpriseBrokerVerified'],
-            enterpriseProviderIsSeparateSyntheticProcess=True)
+            enterpriseProviderIsSeparateSyntheticProcess=True,
+            freshPrimaryAndExternalUserAttributesExactlyPreserved=True,
+            providerUserAttributeChecksAreReadOnlyAndFixtureOnly=True)
     except Exception as error:
         report.update(completed=False, errorType=type(error).__name__, code='SYNTHETIC_HTTPS_FIXTURE_UNVERIFIED')
     finally:

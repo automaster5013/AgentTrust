@@ -12,6 +12,8 @@ def install(admin, target, external, manifest):
     expected = {canonical(u['id']): u for u in target['users']}
     require(isinstance(users, list) and {u['id'] for u in users} == set(expected))
     before_users = {u['id']: copy.deepcopy(u) for u in users}
+    profile_before, _ = admin.wire(BASE + 'users/profile')
+    require(profile_before.get('unmanagedAttributePolicy', 'DISABLED') == 'DISABLED')
     before_roles = {}
     before_attributes = {}
     for uid, user in before_users.items():
@@ -20,7 +22,7 @@ def install(admin, target, external, manifest):
         # from ordinary user representations. Read them through the dedicated
         # read-only endpoint without enabling user-editable attributes.
         attributes, _ = admin.wire(BASE + 'users/' + uid + '/unmanagedAttributes')
-        require(attributes == expected[uid]['attributes'])
+        require(isinstance(attributes, dict))
         before_attributes[uid] = attributes
         links, _ = admin.wire(BASE + 'users/' + uid + '/federated-identity')
         require(links == [])
@@ -81,6 +83,10 @@ def install(admin, target, external, manifest):
     for alias, original in builtins.items():
         rows, _ = admin.wire(BASE + 'authentication/flows/' + alias.replace(' ', '%20') + '/executions')
         require(rows == original)
+    profile_after, _ = admin.wire(BASE + 'users/profile')
+    require(profile_after == profile_before)
     return {'completed': True, 'prelinkedAccounts': 4, 'builtinAuthenticationFlowsUnchanged': True,
-        'nativeAccountAttributesAndRolesUnchanged': True, 'unlinkedFirstLoginExecutionRequired': True,
+        'nativeAdminVisibleAccountRepresentationsAndRolesUnchanged': True,
+        'defaultUserProfilePolicyUnchanged': True, 'hiddenAttributesRequireIndependentFixtureDatabaseReadback': True,
+        'unlinkedFirstLoginExecutionRequired': True,
         'externalIdentityMappers': 0, 'actualBrokerFlowVerified': False, 'originalRealmContacted': False}

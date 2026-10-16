@@ -102,7 +102,7 @@ def verify_broker_controls(ca_file, accounts, target):
         'linkedActualLogins': 4, 'nativeAdministratorEditorViewerRolesPreserved': True,
         'untrustedExternalAdministratorAndForeignScopeNotImported': True,
         'unlinkedExternalLoginWithCollidingNativeEmailRefused': True,
-        'primaryUserCountUnchanged': 4, 'nativeAttributesRolesAndLinksUnchanged': True,
+        'primaryUserCountUnchanged': 4, 'nativeAdminVisibleProfilesRolesAndLinksUnchanged': True,
         'applicationPrimaryAndExternalSessionsClosed': True,
         'linkedExternalSessionsClosedByActualBrokerLogoutBeforeFallback': True,
         'productionEnterpriseIdpVerified': False, 'originalRealmContacted': False,
