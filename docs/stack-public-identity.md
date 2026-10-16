@@ -42,3 +42,28 @@ fixture and temporary secret copies. It is not proof of external HTTPS, a custom
 IdP, delivery retries, HA, operational backup or production readiness.
 
 Protocol reference: [OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0.html).
+
+## Synthetic HTTPS delivery profile
+
+The isolated HTTPS acceptance fixture uses a private, temporary CA and three fixed
+example hosts. Chromium verifies certificates and hostnames while exercising four
+native accounts and four prelinked accounts in a separate synthetic enterprise
+provider. A valid but unlinked external account with a colliding native email must
+be refused. The fixture checks roles, tenant separation, session termination and
+unchanged native identities and attributes. Its seeded read witnesses are not an
+end-to-end customer evaluation and approval pilot.
+
+The `console-https` image embeds the fixed `https-review` origins at build time.
+The main release workflow publishes it alongside the existing fifteen images,
+executes its exact registry digest in the temporary browser fixture, scans its
+whole image, and signs its digest and CycloneDX attestation. Schema 7 delivery
+bundles require all sixteen images and the bounded `https-profile-runtime.json`
+projection. The independent consumer verifies the profile's image and dependency
+IDs, evidence checksum, all sixteen digest signatures and all sixteen SBOM
+attestations. Missing profile evidence, a schema downgrade or a changed dependency
+must fail verification. Historical schemas retain their original image sets.
+
+These are release gates, not a claim that a particular commit has passed them.
+The synthetic profile does not configure a customer domain, public DNS, production
+CA or real enterprise IdP. Those target-specific acceptance checks and actual
+production deployment remain pending. No host trust store is modified.

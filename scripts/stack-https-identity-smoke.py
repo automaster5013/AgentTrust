@@ -191,7 +191,12 @@ def main():
         images['edge'] = ok(['docker', 'image', 'inspect', '--format', '{{.Id}}', NODE]).decode().strip()
         report.update(sourceRevision=ok(['git', 'rev-parse', 'HEAD']).decode().strip(), imageIds=images)
         require(labels.get('org.opencontainers.image.revision') == report['sourceRevision'])
-        report.update(httpsConsoleSourceRevisionLabelVerified=True, httpsConsoleImageSignatureVerified=False)
+        registry_console = os.environ.get('STACK_HTTPS_CONSOLE_IMAGE')
+        if registry_console:
+            require(re.fullmatch(r'ghcr\.io/automaster5013/agenttrust-console-https@sha256:[a-f0-9]{64}', registry_console))
+            require(ok(['docker', 'image', 'inspect', '--format', '{{.Id}}', registry_console]).decode().strip() == images['console'])
+        report.update(httpsConsoleSourceRevisionLabelVerified=True, httpsConsoleImageSignatureVerified=False,
+            httpsConsoleRegistryImageIdentityVerified=bool(registry_console), httpsConsoleRegistryReference=registry_console)
         owner_password, api_password, identity_password, enterprise_password, client_secret = [secrets.token_hex(32) for _ in range(5)]
         organizations, projects, witnesses = [[str(uuid.uuid4()) for _ in range(2)] for _ in range(3)]
         accounts = [{'username': name, 'password': secrets.token_hex(24), 'role': role,
@@ -313,6 +318,8 @@ def main():
             ['-Djavax.net.ssl.trustStore=/fixture.jks', '-Djavax.net.ssl.trustStorePassword=fixture-public-ca',
              '-XX:MaxRAMPercentage=65', '-jar', '/app/core-api.jar'], memory='768m')
         start('console', images['console'], ['--network-alias', 'tls-console', '-e', 'CORE_API_URL=http://stack-core-api:8080'], memory='384m')
+        require(ok(['docker', 'exec', prefix + '-console', 'node', '--version']).decode().strip().startswith('v24.'))
+        report['httpsConsoleActualNode24Verified'] = True
         report['phase'] = 'start-fixed-tls-edge'
         start('edge', images['edge'], ['--network-alias', 'tls-edge', '--network-alias', 'console.example.com',
             '--network-alias', 'identity.example.com', '--network-alias', 'enterprise.example.net',

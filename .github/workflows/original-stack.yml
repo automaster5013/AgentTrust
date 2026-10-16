@@ -24,6 +24,7 @@ jobs:
           python3 scripts/stack-execution-profiles.py --check
           python3 scripts/stack-quality-profiles.py --check
           python3 scripts/stack-delivery-verifier-test.py
+          python3 scripts/stack-https-release-profile-test.py
           python3 scripts/stack-scan-scratch-test.py
           python3 scripts/stack-scan-lifecycle-test.py
           python3 scripts/stack-scan-work-test.py
@@ -99,6 +100,7 @@ jobs:
       - name: Verify isolated HTTPS OIDC proxy configuration
         run: |
           docker build --build-arg NEXT_PUBLIC_STACK_OIDC_PROFILE=https-review --build-arg NEXT_PUBLIC_STACK_APPLICATION_ORIGIN=https://console.example.com --build-arg NEXT_PUBLIC_STACK_PUBLIC_ISSUER=https://identity.example.com/realms/agenttrust --label "org.opencontainers.image.revision=$GITHUB_SHA" -t agenttrust-stack-console:oidc-endpoint-https-candidate apps/console
+          docker tag agenttrust-stack-console:oidc-endpoint-https-candidate agenttrust-console-https:local
           python3 scripts/stack-oidc-image-config-test.py
           python3 scripts/stack-oidc-contract-smoke.py
           python3 scripts/stack-oidc-endpoint-proxy-smoke.py
@@ -335,13 +337,17 @@ jobs:
         shell: bash
         run: |
           mkdir -p stack-delivery
-          for spec in 'core-api:services/core-api' 'ai-worker:services/ai-worker' 'console:apps/console' 'opa:services/opa' 'identity:services/identity' 'gateway:services/gateway' 'object-store:services/object-store' 'database:services/database' 'local-model:services/local-model' 'messaging:services/messaging' 'telemetry:services/telemetry' 'tempo:services/tempo' 'loki:services/loki' 'prometheus:services/prometheus' 'quality-verifier:tools/promptfoo'; do
+          for spec in 'core-api:services/core-api' 'ai-worker:services/ai-worker' 'console:apps/console' 'console-https:apps/console' 'opa:services/opa' 'identity:services/identity' 'gateway:services/gateway' 'object-store:services/object-store' 'database:services/database' 'local-model:services/local-model' 'messaging:services/messaging' 'telemetry:services/telemetry' 'tempo:services/tempo' 'loki:services/loki' 'prometheus:services/prometheus' 'quality-verifier:tools/promptfoo'; do
             service=${spec%%:*}
             context=${spec#*:}
             image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/agenttrust-$service:$GITHUB_SHA"
             dockerfile="$context/Dockerfile"
             if [ "$service" = quality-verifier ]; then dockerfile="$context/quality.Dockerfile"; fi
+            if [ "$service" = console-https ]; then
+              docker build -f "$dockerfile" --build-arg NEXT_PUBLIC_STACK_OIDC_PROFILE=https-review --build-arg NEXT_PUBLIC_STACK_APPLICATION_ORIGIN=https://console.example.com --build-arg NEXT_PUBLIC_STACK_PUBLIC_ISSUER=https://identity.example.com/realms/agenttrust --label "org.opencontainers.image.revision=$GITHUB_SHA" --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" -t "$image" "$context"
+            else
             docker build -f "$dockerfile" --label "org.opencontainers.image.revision=$GITHUB_SHA" --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" -t "$image" "$context"
+            fi
             docker push "$image"
             docker pull "$image"
             docker image inspect "$image" --format '{{index .RepoDigests 0}}' > "stack-delivery/$service.txt"
@@ -361,6 +367,7 @@ jobs:
           echo "STACK_CORE_IMAGE=$(cat stack-delivery/core-api.txt)" >> "$GITHUB_ENV"
           echo "STACK_WORKER_IMAGE=$(cat stack-delivery/ai-worker.txt)" >> "$GITHUB_ENV"
           echo "STACK_CONSOLE_IMAGE=$(cat stack-delivery/console.txt)" >> "$GITHUB_ENV"
+          echo "STACK_HTTPS_CONSOLE_IMAGE=$(cat stack-delivery/console-https.txt)" >> "$GITHUB_ENV"
           echo "STACK_OPA_IMAGE=$(cat stack-delivery/opa.txt)" >> "$GITHUB_ENV"
           echo "STACK_IDENTITY_IMAGE=$(cat stack-delivery/identity.txt)" >> "$GITHUB_ENV"
           echo "STACK_GATEWAY_IMAGE=$(cat stack-delivery/gateway.txt)" >> "$GITHUB_ENV"
@@ -381,7 +388,7 @@ jobs:
           npm ci --ignore-scripts
           npx playwright install --with-deps chromium
           sudo apt-get install --no-install-recommends -y libnss3-tools
-      - name: Execute exact registry services and verify the derived HTTPS Console profile
+      - name: Execute exact registry images including the HTTPS Console profile
         run: |
           docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml -f compose.stack.image.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console stack-otel stack-tempo stack-loki stack-prometheus stack-grafana
           python3 scripts/stack-identity-profile.py
@@ -393,9 +400,9 @@ jobs:
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
           python3 scripts/stack-database-smoke.py
           python3 scripts/stack-database-init-smoke.py
-          # No running registry service is rebuilt. The extra HTTPS Console
-          # is an unsigned source-derived profile, verified separately here.
-          docker build --build-arg NEXT_PUBLIC_STACK_OIDC_PROFILE=https-review --build-arg NEXT_PUBLIC_STACK_APPLICATION_ORIGIN=https://console.example.com --build-arg NEXT_PUBLIC_STACK_PUBLIC_ISSUER=https://identity.example.com/realms/agenttrust --label "org.opencontainers.image.revision=$GITHUB_SHA" -t agenttrust-stack-console:oidc-endpoint-https-candidate apps/console
+          # All sixteen application/service images are immutable registry refs.
+          # Signatures are issued only after this runtime test and clean scans.
+          docker tag "$STACK_HTTPS_CONSOLE_IMAGE" agenttrust-stack-console:oidc-endpoint-https-candidate
           docker build -t agenttrust-security:local tools/security
           docker pull node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
           python3 scripts/stack-https-identity-smoke.py --execute --with-browser
@@ -585,6 +592,7 @@ jobs:
           echo "STACK_CORE_IMAGE=$(cat stack-delivery/core-api.txt)" >> "$GITHUB_ENV"
           echo "STACK_WORKER_IMAGE=$(cat stack-delivery/ai-worker.txt)" >> "$GITHUB_ENV"
           echo "STACK_CONSOLE_IMAGE=$(cat stack-delivery/console.txt)" >> "$GITHUB_ENV"
+          echo "STACK_HTTPS_CONSOLE_IMAGE=$(cat stack-delivery/console-https.txt)" >> "$GITHUB_ENV"
           echo "STACK_OPA_IMAGE=$(cat stack-delivery/opa.txt)" >> "$GITHUB_ENV"
           echo "STACK_IDENTITY_IMAGE=$(cat stack-delivery/identity.txt)" >> "$GITHUB_ENV"
           echo "STACK_GATEWAY_IMAGE=$(cat stack-delivery/gateway.txt)" >> "$GITHUB_ENV"
@@ -597,7 +605,7 @@ jobs:
           echo "STACK_LOKI_IMAGE=$(cat stack-delivery/loki.txt)" >> "$GITHUB_ENV"
           echo "STACK_PROMETHEUS_IMAGE=$(cat stack-delivery/prometheus.txt)" >> "$GITHUB_ENV"
           echo "STACK_QUALITY_VERIFIER_IMAGE=$(cat stack-delivery/quality-verifier.txt)" >> "$GITHUB_ENV"
-          for name in core-api ai-worker console opa identity gateway object-store database local-model messaging telemetry tempo loki prometheus quality-verifier; do docker pull "$(cat "stack-delivery/$name.txt")"; done
+          for name in core-api ai-worker console console-https opa identity gateway object-store database local-model messaging telemetry tempo loki prometheus quality-verifier; do docker pull "$(cat "stack-delivery/$name.txt")"; done
       - name: Generate CycloneDX SBOMs and refuse every HIGH or CRITICAL finding
         run: python3 scripts/stack-security-images.py
       - name: Prepare ephemeral signer registry credentials

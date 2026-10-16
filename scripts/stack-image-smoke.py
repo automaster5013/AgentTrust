@@ -1,5 +1,6 @@
 """Check running immutable images and their actual language runtimes."""
-import json,os,pathlib,re,subprocess,traceback,urllib.request
+import hashlib,json,os,pathlib,re,subprocess,traceback,urllib.request
+from stack_https_release_profile import from_fixture, EVIDENCE_FILE
 root=pathlib.Path(__file__).resolve().parent.parent
 def run(args):return subprocess.run(args,cwd=root,capture_output=True,text=True,check=True)
 stage='prepare';identity_evidence={}
@@ -16,6 +17,20 @@ try:
   assert container['Image']==expected['Id'] and container['State']['Health']['Status']=='healthy'
   assert container['HostConfig']['ReadonlyRootfs'] and container['HostConfig']['CapDrop']==['ALL'] and 'no-new-privileges:true' in container['HostConfig']['SecurityOpt'];assert container['Config']['User']=={'core-api':'10001:10001','ai-worker':'10001','console':'node','opa':'10001','identity':'1000','gateway':'10001:10001','object-store':'10001:10001','database':'70:70','local-model':'10001:10001','messaging':'10001','telemetry':'10001:10001','tempo':'10001:10001','loki':'10001:10001','prometheus':'10001:10001','quality-verifier':'node'}[name]
   verified[name]=image
+ image_ids={name:json.loads(run(['docker','image','inspect',reference]).stdout)[0]['Id'] for name,reference in verified.items()}
+ stage='https-console-registry-runtime'
+ https_reference=os.environ['STACK_HTTPS_CONSOLE_IMAGE']
+ assert re.fullmatch(r'ghcr\.io/automaster5013/agenttrust-console-https@sha256:[a-f0-9]{64}',https_reference)
+ https_image=json.loads(run(['docker','image','inspect',https_reference]).stdout)[0]
+ verified['console-https']=https_reference;image_ids['console-https']=https_image['Id']
+ matches=[]
+ for path in (root/'.local').glob('stack-https-identity-*/summary.json'):
+  assert path.is_file() and not path.is_symlink() and 0<path.stat().st_size<=65536
+  raw=path.read_bytes();value=json.loads(raw)
+  if value.get('sourceRevision')==revision and value.get('completed') and value.get('httpsConsoleRegistryReference')==https_reference:matches.append(raw)
+ assert len(matches)==1
+ profile=from_fixture(matches[0],revision,verified,image_ids)
+ profile_bytes=(json.dumps(profile,indent=2)+'\n').encode()
  stage='prometheus-runtimes'
  for binary in ['prometheus','promtool']:
   version_output=run(['docker','exec','agenttrust-stack-prometheus-1','/bin/'+binary,'--version']).stdout
@@ -53,7 +68,11 @@ try:
  result={'revision':revision,'images':verified,'actualRuntimes':{'core-api':'Java 21','ai-worker':'Python 3.14','console':'Node.js 24','opa':'OPA 1.21.1','identity':'Keycloak 26.8.1','gateway':'Java 21 / Spring WebFlux','cache':'Redis 8.2','object-store':'MinIO RELEASE.2025-10-15T17-29-55Z','database':'PostgreSQL 17 / pgvector 0.8.7','local-model':'Ollama 0.40.2 CPU / patched Go 1.27.2','messaging':'NATS JetStream 2.12.15 / patched Go 1.27.2'},'identityProvider':'keycloak','runtimeImageIdentityVerified':True,'serverDeployed':False}
  result['actualRuntimes'].update({'tempo':'Tempo 3.1.0 / patched Go 1.27.2','loki':'Loki 3.7.8 / patched Go 1.27.2','prometheus':'Prometheus and promtool 3.15.0 / patched Go 1.27.2','quality-verifier':'Node.js 24 / Promptfoo 0.124.1'})
  result['actualRuntimes']['telemetry']='OpenTelemetry Collector 0.162.0 / patched Go 1.27.2'
- directory=root/'stack-delivery';directory.mkdir(exist_ok=True);(directory/'runtime-identity.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
+ result['actualRuntimes']['console-https']='Node.js 24 / Next.js HTTPS profile; actual temporary Chromium fixture'
+ result.update(imageIds=image_ids,httpsConsoleProfileRuntimeVerified=True,httpsConsoleProfileEvidence=EVIDENCE_FILE,
+  httpsConsoleProfileEvidenceSha256=hashlib.sha256(profile_bytes).hexdigest())
+ directory=root/'stack-delivery';directory.mkdir(exist_ok=True);(directory/EVIDENCE_FILE).open('xb').write(profile_bytes)
+ (directory/'runtime-identity.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
  print(json.dumps({'completed':True,'images':len(verified),'actualRuntimesVerified':True,'serverDeployed':False}))
 except Exception as error:
  print(json.dumps({'completed':False,'code':'STACK_IMAGE_IDENTITY_UNVERIFIED','failedStage':stage,'errorType':type(error).__name__,'identityEvidence':identity_evidence,'failureLocations':[{'file':pathlib.Path(row.filename).name,'line':row.lineno} for row in traceback.extract_tb(error.__traceback__)]}));raise SystemExit(1)

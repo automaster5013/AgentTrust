@@ -1,11 +1,17 @@
 """Keyless sign and verify exact CI image digests and CycloneDX attestations only after clean scans."""
 import base64,hashlib,json,os,pathlib,re,subprocess,uuid
+from stack_https_release_profile import validate as validate_profile, EVIDENCE_FILE
 root=pathlib.Path(__file__).resolve().parent.parent
 assert os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('GITHUB_REPOSITORY')=='automaster5013/AgentTrust' and os.environ.get('GITHUB_REF')=='refs/heads/main'
 sha=os.environ['GITHUB_SHA'];assert re.fullmatch('[a-f0-9]{40}',sha)
 reports=list((root/'.local').glob('stack-security-images-*/summary.json'));matches=[(path,json.loads(path.read_text(encoding='utf-8'))) for path in reports if json.loads(path.read_text(encoding='utf-8')).get('revision')==sha and json.loads(path.read_text(encoding='utf-8')).get('completed')]
-assert len(matches)==1;path,scans=matches[0];assert scans['registryImageReferences'] and set(scans['images'])=={'core-api','ai-worker','console','opa','identity','gateway','object-store','database','local-model','messaging','telemetry','tempo','loki','prometheus','quality-verifier'} and all(row['highCriticalFindings']==0 for row in scans['images'].values())
+assert len(matches)==1;path,scans=matches[0];assert scans['registryImageReferences'] and set(scans['images'])=={'core-api','ai-worker','console','console-https','opa','identity','gateway','object-store','database','local-model','messaging','telemetry','tempo','loki','prometheus','quality-verifier'} and all(row['highCriticalFindings']==0 for row in scans['images'].values())
 source=path.parent/'reports';delivery=root/'stack-delivery';destination=root/'stack-security-delivery';destination.mkdir()
+runtime=json.loads((delivery/'runtime-identity.json').read_text(encoding='utf-8'))
+profile_raw=(delivery/EVIDENCE_FILE).read_bytes()
+assert runtime['httpsConsoleProfileRuntimeVerified'] and hashlib.sha256(profile_raw).hexdigest()==runtime['httpsConsoleProfileEvidenceSha256']
+scan_ids={name:row['imageId'] for name,row in scans['images'].items()};assert runtime['imageIds']==scan_ids
+validate_profile(json.loads(profile_raw),sha,{name:row['reference'] for name,row in scans['images'].items()},scan_ids)
 identity='https://github.com/automaster5013/AgentTrust/.github/workflows/original-stack.yml@refs/heads/main'
 issuer='https://token.actions.githubusercontent.com'
 verify=['--certificate-identity',identity,'--certificate-oidc-issuer',issuer,'--certificate-github-workflow-repository','automaster5013/AgentTrust','--certificate-github-workflow-ref','refs/heads/main','--certificate-github-workflow-sha',sha]
@@ -36,8 +42,9 @@ for name,row in scans['images'].items():
  proof['images'][name]={'reference':reference,'imageId':row['imageId'],'components':row['components'],'sbomSha256':row['sbomSha256'],'vulnerabilityReportSha256':row['vulnerabilityReportSha256'],'keylessSignatureVerified':True,'sbomAttestationVerified':True}
  print(json.dumps({'image':name,'signatureVerified':True,'sbomAttestationVerified':True,'rawSecretsPrinted':False}),flush=True)
 manifest=json.loads((delivery/'manifest.json').read_text(encoding='utf-8'));assert manifest['revision']==sha and manifest['images']=={name:row['reference'] for name,row in proof['images'].items()} and manifest['registryImagesRuntimeVerified']
-proof['completed']=True;manifest.update({'schemaVersion':6,'imageSecurityVerified':True,'keylessSignaturesVerified':True,'sbomAttestationsVerified':True,'highCriticalFindings':0,'securityProof':'security-proof.json','deliveryStatus':'security-verified-signed'})
-for name in ['runtime-identity.json','revision.txt']:(destination/name).write_bytes((delivery/name).read_bytes())
+assert manifest['httpsConsoleProfileRuntimeVerified'] and manifest['httpsConsoleProfileEvidence']==EVIDENCE_FILE
+proof['completed']=True;manifest.update({'schemaVersion':7,'imageSecurityVerified':True,'keylessSignaturesVerified':True,'sbomAttestationsVerified':True,'highCriticalFindings':0,'securityProof':'security-proof.json','deliveryStatus':'security-verified-signed'})
+for name in ['runtime-identity.json','revision.txt',EVIDENCE_FILE]:(destination/name).write_bytes((delivery/name).read_bytes())
 (destination/'security-proof.json').write_text(json.dumps(proof,indent=2)+'\n',encoding='utf-8');(destination/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')
 checksums={item.name:hashlib.sha256(item.read_bytes()).hexdigest() for item in destination.iterdir() if item.is_file()};(destination/'checksums.json').write_text(json.dumps(checksums,indent=2)+'\n',encoding='utf-8')
 print(json.dumps({'completed':True,'signedAndVerifiedImages':len(proof['images']),'serverDeployed':False,'rawSecretsPrinted':False}))

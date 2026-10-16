@@ -1,5 +1,6 @@
 """Negative trust-boundary tests; fake metadata is never accepted as a signed delivery."""
 import base64,hashlib,importlib.util,json,pathlib,subprocess,sys,unittest,uuid
+import stack_https_release_profile as profile
 from unittest.mock import patch
 
 spec=importlib.util.spec_from_file_location('delivery',pathlib.Path(__file__).with_name('stack-delivery-verify.py'))
@@ -10,15 +11,16 @@ revision='1'*40;repository='automaster5013/AgentTrust'
 
 def raw(value):return json.dumps(value,separators=(',',':')).encode()
 
-def fixture(label,telemetry=False,observations=False,prometheus=False,quality=False):
+def fixture(label,telemetry=False,observations=False,prometheus=False,quality=False,https=False):
     folder=directory/label;folder.mkdir()
     names=delivery.IMAGES+('telemetry',) if telemetry else delivery.IMAGES
     if observations:names=delivery.IMAGES+('telemetry','tempo','loki')
     if prometheus:names=delivery.IMAGES+('telemetry','tempo','loki','prometheus')
     if quality:names=delivery.IMAGES+('telemetry','tempo','loki','prometheus','quality-verifier')
+    if https:names=delivery.IMAGES+('telemetry','tempo','loki','prometheus','quality-verifier','console-https')
     images={name:'ghcr.io/automaster5013/agenttrust-'+name+'@sha256:'+'1'*64 for name in names}
     values={'revision.txt':revision.encode()+b'\n'}
-    manifest={'schemaVersion':6 if quality else 5 if prometheus else 4 if observations else 3 if telemetry else 2,'revision':revision,'images':images,'sourceIntegrationPassed':True,
+    manifest={'schemaVersion':7 if https else 6 if quality else 5 if prometheus else 4 if observations else 3 if telemetry else 2,'revision':revision,'images':images,'sourceIntegrationPassed':True,
               'registryImagesRuntimeVerified':True,'imageSecurityVerified':True,'keylessSignaturesVerified':True,
               'sbomAttestationsVerified':True,'deliveryStatus':'security-verified-signed','serverDeployed':False,
               'productionSecurityVerified':False,'officialObservabilitySecurityVerified':False}
@@ -37,6 +39,18 @@ def fixture(label,telemetry=False,observations=False,prometheus=False,quality=Fa
         proof['images'][name]={'reference':images[name],'components':0,'sbomSha256':delivery.digest(values[name+'.cdx.json']),
                               'vulnerabilityReportSha256':delivery.digest(values[name+'.trivy.json']),
                               'keylessSignatureVerified':True,'sbomAttestationVerified':True}
+    if https:
+        ids={name:'sha256:'+'2'*64 for name in names}
+        evidence={'schemaVersion':1,'profile':'https-review','applicationOrigin':profile.ORIGIN,'publicIssuer':profile.ISSUER,
+            'revision':revision,'reference':images['console-https'],'imageId':ids['console-https'],
+            'fixtureSummarySha256':'3'*64,'runtimeDependencies':{name:ids[name] for name in ('core-api','database','identity')},
+            'nativeBrowserLogins':4,'federatedBrowserLogins':4,
+            **{key:True for key in profile.TRUE_FIELDS},**{key:False for key in profile.FALSE_FIELDS}}
+        values[profile.EVIDENCE_FILE]=raw(evidence)
+        for document in (manifest,runtime):
+            document.update(httpsConsoleProfileRuntimeVerified=True,httpsConsoleProfileEvidence=profile.EVIDENCE_FILE)
+        runtime.update(imageIds=ids,httpsConsoleProfileEvidenceSha256=delivery.digest(values[profile.EVIDENCE_FILE]))
+        for name in names:proof['images'][name]['imageId']=ids[name]
     values.update({'manifest.json':raw(manifest),'runtime-identity.json':raw(runtime),'security-proof.json':raw(proof)})
     for name,value in values.items():
         with (folder/name).open('xb') as output:output.write(value)
@@ -48,6 +62,37 @@ def checksum(folder):
     return delivery.digest((folder/'checksums.json').read_bytes())
 
 class Boundaries(unittest.TestCase):
+    def test_https_profile_requires_all_signed_proofs_and_runtime_evidence(self):
+        for filename in ('console-https.signature.bundle.json','console-https.sbom.bundle.json',profile.EVIDENCE_FILE):
+            folder,pinned=fixture('https-required-'+filename,https=True)
+            self.assertEqual(16,len(delivery.validate(folder,revision,pinned,repository)[2]))
+            self.assertEqual(70,len(list(folder.iterdir())))
+            (folder/filename).unlink();pinned=checksum(folder)
+            with self.assertRaises(ValueError):delivery.validate(folder,revision,pinned,repository)
+
+    def test_https_evidence_cannot_be_rebound_or_claim_production(self):
+        mutations=[('reference','ghcr.io/automaster5013/agenttrust-console-https@sha256:'+'4'*64),
+            ('imageId','sha256:'+'4'*64),('revision','4'*40),('productionDeploymentPerformed',True),
+            ('certificateVerificationEnabled',False),('nativeBrowserLogins',True),('privateInputsIncluded',True),
+            ('runtimeDependencies',{'core-api':'sha256:'+'4'*64,'database':'sha256:'+'2'*64,'identity':'sha256:'+'2'*64})]
+        for index,(key,value) in enumerate(mutations):
+            folder,_=fixture('https-adverse-'+str(index),https=True)
+            evidence=json.loads((folder/profile.EVIDENCE_FILE).read_bytes());evidence[key]=value
+            (folder/profile.EVIDENCE_FILE).write_bytes(raw(evidence))
+            runtime=json.loads((folder/'runtime-identity.json').read_bytes())
+            runtime['httpsConsoleProfileEvidenceSha256']=delivery.digest(raw(evidence))
+            (folder/'runtime-identity.json').write_bytes(raw(runtime));pinned=checksum(folder)
+            with self.assertRaises(ValueError):delivery.validate(folder,revision,pinned,repository)
+
+    def test_https_schema_downgrade_and_runtime_identity_change_are_refused(self):
+        for filename,key,value in [('manifest.json','schemaVersion',6),
+                ('runtime-identity.json','httpsConsoleProfileRuntimeVerified',False),
+                ('runtime-identity.json','imageIds',{})]:
+            folder,_=fixture('https-schema-'+key,https=True)
+            document=json.loads((folder/filename).read_bytes());document[key]=value
+            (folder/filename).write_bytes(raw(document));pinned=checksum(folder)
+            with self.assertRaises(ValueError):delivery.validate(folder,revision,pinned,repository)
+
     def test_reference_verifier_requires_both_signed_proofs(self):
         for suffix in ['signature.bundle.json','sbom.bundle.json']:
             folder,pinned=fixture('quality-'+suffix,quality=True)

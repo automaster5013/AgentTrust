@@ -1,5 +1,6 @@
 """Read-only supply-chain verification. Requires independently pinned revision and checksum-map hash."""
 import argparse,base64,hashlib,json,os,pathlib,re,shutil,subprocess,sys
+from stack_https_release_profile import validate as validate_profile, EVIDENCE_FILE
 
 IMAGES=('core-api','ai-worker','console','opa','identity','gateway','object-store','database','local-model','messaging')
 FILES={name+'.'+suffix for name in IMAGES for suffix in ['cdx.json','trivy.json','signature.bundle.json','sbom.bundle.json']}|{'revision.txt','manifest.json','runtime-identity.json','security-proof.json','checksums.json'}
@@ -45,8 +46,10 @@ def validate(directory,revision,checksums_hash,repository):
     elif manifest_preview.get('schemaVersion')==4:names=IMAGES+('telemetry','tempo','loki')
     elif manifest_preview.get('schemaVersion')==5:names=IMAGES+('telemetry','tempo','loki','prometheus')
     elif manifest_preview.get('schemaVersion')==6:names=IMAGES+('telemetry','tempo','loki','prometheus','quality-verifier')
+    elif manifest_preview.get('schemaVersion')==7:names=IMAGES+('telemetry','tempo','loki','prometheus','quality-verifier','console-https')
     else:raise ValueError('Unsupported delivery schema')
     files={name+'.'+suffix for name in names for suffix in ['cdx.json','trivy.json','signature.bundle.json','sbom.bundle.json']}|{'revision.txt','manifest.json','runtime-identity.json','security-proof.json','checksums.json'}
+    if manifest_preview['schemaVersion']==7:files.add(EVIDENCE_FILE)
     require({path.name for path in directory.iterdir()}==files)
     values={};total=0
     for name in sorted(files):
@@ -76,6 +79,14 @@ def validate(directory,revision,checksums_hash,repository):
     require(proof['completed'] is True and proof['keylessIdentity']==identity)
     require(proof['oidcIssuer']=='https://token.actions.githubusercontent.com')
     require(type(proof['highCriticalFindings']) is int and proof['highCriticalFindings']==0)
+    if manifest['schemaVersion']==7:
+        require(manifest.get('httpsConsoleProfileRuntimeVerified') is True and runtime.get('httpsConsoleProfileRuntimeVerified') is True)
+        require(manifest.get('httpsConsoleProfileEvidence')==runtime.get('httpsConsoleProfileEvidence')==EVIDENCE_FILE)
+        require(runtime.get('httpsConsoleProfileEvidenceSha256')==digest(values[EVIDENCE_FILE]))
+        require(isinstance(runtime.get('imageIds'),dict) and set(runtime['imageIds'])==set(names))
+        require(all(isinstance(runtime['imageIds'][name],str) and re.fullmatch('sha256:[a-f0-9]{64}',runtime['imageIds'][name])
+            and proof['images'][name].get('imageId')==runtime['imageIds'][name] for name in names))
+        validate_profile(json_bytes(values[EVIDENCE_FILE]),revision,manifest['images'],runtime['imageIds'])
     owner=repository.split('/')[0].lower()
     records=[]
     for name in names:
