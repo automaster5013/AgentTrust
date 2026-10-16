@@ -21,6 +21,17 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/console/package-lock.json
+      - name: Prepare the disposable runner browser and isolated NSS tools
+        working-directory: apps/console
+        run: |
+          npm ci --ignore-scripts
+          npx playwright install --with-deps chromium
+          sudo apt-get install --no-install-recommends -y libnss3-tools
       - name: Authenticate only the ephemeral runner registry client
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -62,7 +73,7 @@ jobs:
           docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f tests/fixtures/compose.synthetic-identity-baseline.yaml up -d --no-build --wait stack-core-api stack-identity
           python3 scripts/stack-identity-profile.py
       - name: Verify real TLS login and adverse identity claims
-        run: python3 scripts/stack-https-identity-smoke.py --execute
+        run: python3 scripts/stack-https-identity-smoke.py --execute --with-browser
       - name: Preserve only bounded public identity diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

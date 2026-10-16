@@ -6,6 +6,7 @@ from stack_https_fixture_enterprise import require
 from stack_https_fixture_enterprise_admin import install
 from stack_https_fixture_broker_client import BrokerIdentityClient
 from stack_https_identity_client import CONSOLE
+from stack_https_fixture_broker_state import primary_snapshot, state_sha256
 
 PRIMARY = '/admin/realms/agenttrust/'
 EXTERNAL = '/admin/realms/enterprise-synthetic/'
@@ -25,15 +26,7 @@ def verify_broker_controls(ca_file, accounts, target):
     external_ids = {u['id'] for u in target['external']['users']}
     with FixtureAdmin(passwords['password']) as primary, FixtureAdmin(passwords['enterprisePassword'], 'enterprise') as external:
         def snapshot():
-            users, _ = primary.wire(PRIMARY + 'users?first=0&max=100&briefRepresentation=false')
-            require({u['id'] for u in users} == primary_ids)
-            result = {u['id']: {'user': u} for u in users}
-            for uid in primary_ids:
-                roles, _ = primary.wire(PRIMARY + 'users/' + uid + '/role-mappings/realm')
-                links, _ = primary.wire(PRIMARY + 'users/' + uid + '/federated-identity')
-                attributes, _ = primary.wire(PRIMARY + 'users/' + uid + '/unmanagedAttributes')
-                result[uid].update(roles={r['id']: r for r in roles}, links=links, unmanagedAttributes=attributes)
-            return result
+            return primary_snapshot(primary, accounts)
 
         def sessions(admin, base, uid):
             value, _ = admin.wire(base + 'users/' + uid + '/sessions')
@@ -103,6 +96,7 @@ def verify_broker_controls(ca_file, accounts, target):
         'untrustedExternalAdministratorAndForeignScopeNotImported': True,
         'unlinkedExternalLoginWithCollidingNativeEmailRefused': True,
         'primaryUserCountUnchanged': 4, 'nativeAdminVisibleProfilesRolesAndLinksUnchanged': True,
+        'nativeAdminStateSha256': state_sha256(before),
         'applicationPrimaryAndExternalSessionsClosed': True,
         'linkedExternalSessionsClosedByActualBrokerLogoutBeforeFallback': True,
         'productionEnterpriseIdpVerified': False, 'originalRealmContacted': False,

@@ -211,7 +211,44 @@ counts must match the intended boundary. Administrative tokens and credentials
 remain private; artifacts contain only bounded public results. The fixed TLS
 edge also rejects literal/encoded/doubly encoded realm traversal paths.
 
-The federation contract and adverse path tests pass offline. Actual extended
-broker acceptance and Chromium verification are pending their exact-revision CI;
-the earlier basic HTTPS result does not certify these additions. A synthetic
-enterprise provider does not validate an undecided customer's real IdP.
+The extended protocol passed at `cd3f467` in
+[its exact-revision focused CI](https://github.com/automaster5013/AgentTrust/actions/runs/38839888358):
+four linked actual logins retained all three application roles, the unlinked
+colliding-email account was refused, and primary/external SSO sessions closed
+before fallback cleanup. Both fresh provider databases' sixteen user-attribute
+rows matched their intended values and before/after fingerprints. These bounded
+read-only checks avoid changing the default profile policy, which can hide
+unmanaged attributes from administrative representations. All original source
+services/data and temporary-resource cleanup checks passed as well.
+
+## Chromium and registry-service acceptance
+
+`--execute --with-browser` additionally requires a disposable Linux runner with
+the pinned Playwright dependency, Chromium and NSS tools installed. The source,
+registry-service and focused CI lanes require this mode. The browser receives
+only essential environment variables, uses fixed fixture DNS mappings, and
+refuses other page requests. It must reject an untrusted CA and a wrong hostname
+before HTTP, and abort a synthetic outside-fixture navigation before networking.
+Certificate verification remains enabled throughout.
+
+Each browser process receives a new fixture-owned NSS database with only the
+ephemeral CA added. Existing legacy NSS state causes refusal. HOME and the
+application/host trust stores are unchanged; XDG data/config/cache and temporary
+profiles live under the newly owned fixture directory and are removed afterward.
+No screenshot, video, trace, raw error, token or cookie is uploaded. Failure frames
+allow only fixed categories, case numbers and bounded source-line numbers.
+See [Chromium's NSS path selection](https://chromium.googlesource.com/chromium/src/+/HEAD/crypto/nss_util.cc).
+
+The browser must complete four native and four federated UI logins, preserve
+native scope/roles, reject foreign reads and viewer writes, log out each session,
+and refuse the unlinked enterprise account. A separate administrative process
+then verifies all primary/external SSO sessions are gone and the native profile,
+role and link hash matches the pre-browser state. Fresh database attribute and
+source-service/business fingerprints must still match after every phase.
+
+Chromium acceptance is pending the new exact-revision CI result. Registry tests
+use the exact published Core, database and IdP images; their HTTPS Console is a
+separately built source-derived profile with its revision label checked. That
+profile is explicitly not part of the fifteen-image signed delivery bundle and
+must not be represented as a signed HTTPS Console image. A synthetic enterprise
+provider also does not validate an undecided customer's real IdP.

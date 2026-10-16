@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 import uuid
-from stack_https_fixture_diagnostics import public_probe_failure
+from stack_https_fixture_diagnostics import public_probe_failure, public_browser_result
 from stack_https_fixture_enterprise import build as enterprise_configuration
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -44,6 +44,7 @@ def plan():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--execute', action='store_true')
+    parser.add_argument('--with-browser', action='store_true')
     args = parser.parse_args()
     if not args.execute:
         print(json.dumps(plan()))
@@ -51,6 +52,8 @@ def main():
     # Refuse before Docker queries, private input creation or any network call.
     execution_guard(os.environ)
     require(shutil.disk_usage(ROOT).free >= 22 * 1024 ** 3)
+    if args.with_browser:
+        require(shutil.which('node') is not None and shutil.which('certutil') is not None)
     identifier = str(uuid.uuid4())
     prefix = 'agenttrust-https-fixture-' + identifier
     directory = ROOT / '.local' / ('stack-https-identity-' + identifier)
@@ -70,10 +73,10 @@ def main():
         'originalCredentialsRead': False, 'productionDeploymentPerformed': False,
         'paidProviderCallsPerformed': False, 'privateInputsPrinted': False,
         'actualTlsLoginVerified': False, 'chromiumRenderingVerified': False,
-        'externalEnterpriseIdpVerified': False}
+        'externalEnterpriseIdpVerified': False, 'browserRequested': args.with_browser}
 
-    def run(command, data=None, timeout=60):
-        return subprocess.run(command, cwd=ROOT, input=data, capture_output=True, timeout=timeout)
+    def run(command, data=None, timeout=60, environment=None):
+        return subprocess.run(command, cwd=ROOT, input=data, capture_output=True, timeout=timeout, env=environment)
 
     def ok(command, data=None, timeout=60):
         result = run(command, data, timeout)
@@ -130,7 +133,7 @@ def main():
         process = run([*arguments, *extra, image, *command], timeout=timeout)
         if process.returncode:
             report['failedProcessExitCode'] = process.returncode
-            if kind == 'probe':
+            if kind in ('probe', 'browser-state'):
                 try:
                     report['protocolFailure'] = public_probe_failure(process.stdout)
                 except Exception:
@@ -187,6 +190,8 @@ def main():
         images['tools'] = ok(['docker', 'image', 'inspect', '--format', '{{.Id}}', 'agenttrust-security:local']).decode().strip()
         images['edge'] = ok(['docker', 'image', 'inspect', '--format', '{{.Id}}', NODE]).decode().strip()
         report.update(sourceRevision=ok(['git', 'rev-parse', 'HEAD']).decode().strip(), imageIds=images)
+        require(labels.get('org.opencontainers.image.revision') == report['sourceRevision'])
+        report.update(httpsConsoleSourceRevisionLabelVerified=True, httpsConsoleImageSignatureVerified=False)
         owner_password, api_password, identity_password, enterprise_password, client_secret = [secrets.token_hex(32) for _ in range(5)]
         organizations, projects, witnesses = [[str(uuid.uuid4()) for _ in range(2)] for _ in range(3)]
         accounts = [{'username': name, 'password': secrets.token_hex(24), 'role': role,
@@ -337,6 +342,33 @@ def main():
             *bind(certificate_dir / 'ca.crt', '/fixture/certificates/ca.crt')],
             ['python', '/scripts/stack_https_fixture_probe.py'], False, '256m', 300))
         require(result['completed'] and result['actualTlsProtocolLoginVerified'] and result['actualKeycloakTokenJwkUserinfoRequestsObserved'])
+        if args.with_browser:
+            report['phase'] = 'actual-chromium-tls-browser'
+            network = json.loads(ok(['docker', 'inspect', '--format', '{{json .NetworkSettings.Networks}}', prefix + '-edge']))
+            require(set(network) == {prefix})
+            private_file('browser.json', json.dumps({'edgeAddress': network[prefix]['IPAddress'],
+                'accounts': accounts, 'enterpriseManifest': manifest}))
+            state_file = private_file('browser-state-expected.json', json.dumps({
+                'nativeAdminStateSha256': result['syntheticEnterpriseBrokerControls']['nativeAdminStateSha256']}), True)
+            browser_environment = {key: os.environ[key] for key in ('PATH', 'HOME', 'LANG', 'LC_ALL',
+                'LD_LIBRARY_PATH', 'PLAYWRIGHT_BROWSERS_PATH', 'GITHUB_ACTIONS', 'CI', 'GITHUB_WORKSPACE', 'TZ') if key in os.environ}
+            browser = run(['node', str(ROOT / 'scripts/stack_https_fixture_browser.mjs'), str(directory)],
+                timeout=600, environment=browser_environment)
+            browser_result = public_browser_result(browser.stdout)
+            if browser.returncode or not browser_result['completed']:
+                require(browser_result['completed'] is False)
+                report['browserFailure'] = browser_result
+                raise RuntimeError('SYNTHETIC_HTTPS_BROWSER_UNVERIFIED')
+            report['browserEvidence'] = browser_result
+            report['phase'] = 'verify-post-browser-provider-state'
+            browser_state = json.loads(start('browser-state', images['tools'], [*script_bind,
+                *bind(account_file, '/fixture/accounts.json'), *bind(administrator_file, '/fixture/administrator.json'),
+                *bind(enterprise_config_file, '/fixture/enterprise-configuration.json'),
+                *bind(state_file, '/fixture/browser-state-expected.json')],
+                ['python', '/scripts/stack_https_fixture_broker_state.py'], False, '256m', 90))
+            require(browser_state['completed'] and browser_state['allPrimaryAndExternalProviderSessionsClosed']
+                and browser_state['nativeAdminVisibleProfilesRolesAndLinksMatchBeforeBrowser'])
+            report['browserPostState'] = browser_state
         require(witness_before == witness_hash() and witness_before.startswith('2|'))
         require(identity_attributes('agenttrust_stack_identity', 'agenttrust', realm['users']) == primary_attributes_before
             and identity_attributes('agenttrust_stack_enterprise', 'enterprise-synthetic', external_realm['users']) == external_attributes_before)
@@ -346,7 +378,9 @@ def main():
             syntheticEnterpriseBrokerVerified=result['actualSyntheticEnterpriseBrokerVerified'],
             enterpriseProviderIsSeparateSyntheticProcess=True,
             freshPrimaryAndExternalUserAttributesExactlyPreserved=True,
-            providerUserAttributeChecksAreReadOnlyAndFixtureOnly=True)
+            providerUserAttributeChecksAreReadOnlyAndFixtureOnly=True,
+            chromiumRenderingVerified=args.with_browser,
+            actualSyntheticEnterpriseBrowserVerified=bool(args.with_browser and report['browserEvidence']['enterpriseBrowserVerified']))
     except Exception as error:
         report.update(completed=False, errorType=type(error).__name__, code='SYNTHETIC_HTTPS_FIXTURE_UNVERIFIED')
     finally:
@@ -365,6 +399,17 @@ def main():
             except Exception:
                 cleaned = False
         if cleaned:
+            # These exact fresh children belong only to this UUID execution.
+            # Keep all browser profiles/cache/NSS state inside the owned tree.
+            for name in ('browser-untrusted', 'browser-trusted', 'browser-owned-tmp'):
+                path = directory / name
+                try:
+                    if path.exists():
+                        require(not path.is_symlink() and path.resolve().parent == directory.resolve()
+                            and path.resolve().is_relative_to(ROOT / '.local'))
+                        shutil.rmtree(path)
+                except Exception:
+                    cleaned = False
             for path in owned_files:
                 try:
                     require(path.resolve().is_relative_to(directory.resolve()) and not path.is_symlink())

@@ -15,7 +15,7 @@ class FixtureHttpRefused(ValueError):
         super().__init__('SYNTHETIC_HTTPS_HTTP_REFUSED')
 
 
-def public_probe_failure(raw):
+def bounded_frame(raw):
     if not isinstance(raw, bytes) or not 0 < len(raw) <= 16384:
         raise ValueError('SYNTHETIC_HTTPS_FAILURE_FRAME_REFUSED')
     def pairs(items):
@@ -25,7 +25,11 @@ def public_probe_failure(raw):
                 raise ValueError('SYNTHETIC_HTTPS_FAILURE_FRAME_REFUSED')
             result[key] = value
         return result
-    value = json.loads(raw.decode('utf-8'), object_pairs_hook=pairs)
+    return json.loads(raw.decode('utf-8'), object_pairs_hook=pairs)
+
+
+def public_probe_failure(raw):
+    value = bounded_frame(raw)
     if not isinstance(value, dict) or set(value) != {'completed', 'code', 'errorType', 'failureLocations', 'httpObservation'}:
         raise ValueError('SYNTHETIC_HTTPS_FAILURE_FRAME_REFUSED')
     if value['completed'] is not False or value['code'] != 'SYNTHETIC_HTTPS_PROTOCOL_UNVERIFIED':
@@ -44,6 +48,39 @@ def public_probe_failure(raw):
         if (not isinstance(observation, dict) or set(observation) != {'observedStatus', 'expectedStatus', 'endpointClass'}
                 or any(type(observation[key]) is not int or not 100 <= observation[key] <= 599
                        for key in ('observedStatus', 'expectedStatus'))
-                or observation['endpointClass'] not in ENDPOINT_CLASSES):
+                or not isinstance(observation['endpointClass'], str) or observation['endpointClass'] not in ENDPOINT_CLASSES):
             raise ValueError('SYNTHETIC_HTTPS_FAILURE_FRAME_REFUSED')
+    return value
+
+
+BROWSER_PHASES = frozenset(('execution-guard', 'untrusted-ca-negative-control',
+    'trusted-browser-and-hostname-negative-control', 'actual-browser-native-login',
+    'actual-browser-enterprise-login', 'actual-browser-scope-and-viewer-control',
+    'actual-browser-logout', 'actual-browser-unlinked-enterprise-refusal',
+    'unlinked-external-session-cleanup'))
+BROWSER_SUCCESS = {'completed': True, 'actualChromiumTlsLoginVerified': True,
+    'nativeAccountsVerified': 4, 'linkedEnterpriseBrowserLogins': 4,
+    'unlinkedEnterpriseBrowserLoginRefused': True, 'certificateVerificationDisabled': False,
+    'untrustedCaAndWrongHostRefused': True, 'outsideFixtureNavigationBlockedBeforeNetwork': True,
+    'allEightApplicationSessionsLoggedOut': True, 'hostTrustStoreChanged': False,
+    'enterpriseBrowserVerified': True, 'productionDeploymentPerformed': False}
+
+
+def public_browser_result(raw):
+    value = bounded_frame(raw)
+    require_keys = {'completed', 'code', 'phase', 'caseIndex', 'errorType', 'failureLines'}
+    if isinstance(value, dict) and value.get('completed') is True:
+        if (set(value) != set(BROWSER_SUCCESS)
+                or any(type(value[k]) is not type(expected) or value[k] != expected
+                       for k, expected in BROWSER_SUCCESS.items())):
+            raise ValueError('SYNTHETIC_HTTPS_BROWSER_FRAME_REFUSED')
+        return value
+    if (not isinstance(value, dict) or set(value) != require_keys
+            or value['completed'] is not False or value['code'] != 'SYNTHETIC_HTTPS_BROWSER_UNVERIFIED'
+            or not isinstance(value['phase'], str) or value['phase'] not in BROWSER_PHASES
+            or value['errorType'] not in ('Error', 'TimeoutError')
+            or type(value['caseIndex']) is not int or not 0 <= value['caseIndex'] <= 9
+            or not isinstance(value['failureLines'], list) or len(value['failureLines']) > 8
+            or any(type(line) is not int or not 1 <= line <= 20000 for line in value['failureLines'])):
+        raise ValueError('SYNTHETIC_HTTPS_BROWSER_FRAME_REFUSED')
     return value
