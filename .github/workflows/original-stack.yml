@@ -30,6 +30,7 @@ jobs:
           python3 scripts/stack-scan-lifecycle-test.py
           python3 scripts/stack-scan-work-test.py
           python3 scripts/stack-browser-quota-guard-test.py
+          python3 scripts/stack-gateway-health-probe-test.py
           python3 scripts/stack-workspace-onboarding-test.py
           python3 scripts/stack-workspace-dispatch-load-test.py
           python3 scripts/stack-https-identity-client-test.py

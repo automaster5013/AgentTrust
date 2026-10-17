@@ -14,6 +14,7 @@ WORKDIR /app
 ADD --chmod=644 --checksum=sha256:f787eb6c7f3d18e69a431e108a15278d25ee37f83d68b678f621e063f3988f82 https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v2.32.0/opentelemetry-javaagent.jar /app/opentelemetry-javaagent.jar
 COPY --from=build /build/target/gateway-0.1.0.jar app.jar
 COPY --from=build /build/HealthProbe.class .
+COPY --chmod=644 healthcheck.sh .
 USER 10001:10001
-HEALTHCHECK --interval=5s --timeout=3s --start-period=15s --retries=12 CMD ["env","-u","JAVA_TOOL_OPTIONS","java","-cp","/app","HealthProbe"]
+HEALTHCHECK --interval=5s --timeout=3s --start-period=15s --retries=12 CMD ["/bin/sh","/app/healthcheck.sh"]
 ENTRYPOINT ["java","-XX:MaxRAMPercentage=65","-jar","/app/app.jar"]
