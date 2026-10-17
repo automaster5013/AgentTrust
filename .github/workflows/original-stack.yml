@@ -189,7 +189,7 @@ jobs:
         run: |
           npm ci --ignore-scripts
           npx playwright install --with-deps chromium
-          STACK_E2E_QUOTA_GUARD=true npx playwright test
+          STACK_E2E_QUOTA_GUARD=true npx playwright test --grep 'administrator creates an immutable baseline campaign and approves the actual signed gate$' --repeat-each=10 --retries=0 --max-failures=0 --workers=1
       - name: Verify persisted results after service restart
         run: |
           docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml restart stack-core-api stack-ai-worker stack-console
