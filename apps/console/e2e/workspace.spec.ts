@@ -5,6 +5,7 @@ import {readFileSync,readdirSync,statSync} from 'node:fs';import {resolve} from 
 import {auditFilters} from '../src/lib/audit-search';
 import {uncertainCampaignWrite} from '../src/lib/campaign-write-error';
 import {uncertainEvaluationWrite} from '../src/lib/evaluation-request';
+import {diagnosticRequestKind,diagnosticFailure,sanitizedNetworkDiagnostic} from './network-diagnostics';
 async function existingSyntheticEvaluation(page:Page,passOnly=false){
  const response=await page.request.get('/backend/runs');expect(response.status()).toBe(200);const rows=await response.json() as {id:string;provider:string;scenario:string;state:string;decision:string}[];
  const row=rows.find(r=>r.provider==='synthetic'&&r.scenario!=='quality'&&r.state!=='queued'&&(!passOnly||r.decision==='pass'));expect(row).toBeTruthy();
@@ -380,6 +381,15 @@ async function login(page:Page,name:string,beforeNavigation?:()=>Promise<unknown
  await expect(page.getByRole('button',{name:'로그아웃',exact:true})).toBeVisible();phase('authenticated application controls visible');await expect(page.getByText('조직 '+user.organizationId.slice(0,8),{exact:true})).toBeVisible();phase('expected workspace scope visible');
 }
 test.beforeEach(async({page},info)=>{
+ const statuses=new WeakMap<object,number>();let networkRecords=0;
+ const recordNetwork=(request:import('@playwright/test').Request,event:'response'|'finished'|'failed')=>{
+  if(networkRecords>=48)return;const kind=diagnosticRequestKind(request.url(),request.method());if(!kind)return;
+  const value=sanitizedNetworkDiagnostic({kind,event,status:statuses.get(request),failure:diagnosticFailure(event==='failed'?request.failure()?.errorText:null),timing:request.timing()});
+  if(value){networkRecords++;info.annotations.push({type:'network-diagnostic',description:JSON.stringify(value)})}
+ };
+ page.on('response',response=>{statuses.set(response.request(),response.status());recordNetwork(response.request(),'response')});
+ page.on('requestfinished',request=>recordNetwork(request,'finished'));
+ page.on('requestfailed',request=>recordNetwork(request,'failed'));
  page.on('response',response=>{if(response.status()===429&&new URL(response.url()).origin==='http://127.0.0.1:4320'&&new URL(response.url()).pathname.startsWith('/backend/'))phase('actual gateway HTTP 429 observed; no quota bypass or automatic business write retry')});
  // Only fixed route classes and numeric HTTP status leave the browser. No URL,
  // query, account, request body, cookies, token or response text is recorded.
@@ -466,11 +476,17 @@ test('administrator creates an immutable baseline campaign and approves the actu
  expect(admission.status()).toBe(200);
  const candidate=await admission.json();
  phase('baseline candidate admission JSON decoded');
+ phase('baseline candidate selection visibility requested');
  await expect(region.getByText('캠페인 '+candidate.id,{exact:true})).toBeVisible();
+ phase('baseline candidate selection visible');
  await expect(region.getByRole('button',{name:'캠페인 검토 저장',exact:true})).toBeVisible();
+ phase('baseline candidate review form visible');
  await region.getByLabel('캠페인 검토 사유',{exact:true}).fill('Own browser synthetic baseline approval');
+ phase('baseline candidate review reason filled');
  await region.getByRole('button',{name:'캠페인 검토 저장',exact:true}).click();
+ phase('baseline candidate review click completed');
  await expect(region.getByText('캠페인 릴리스 허용',{exact:true})).toBeVisible();
+ phase('baseline candidate reviewed release allowance visible');
  const conditions=page.getByRole('region',{name:'고정된 릴리스 조건',exact:true});
  await conditions.getByRole('button',{name:'비교 기준·근거 유효 기간 확인',exact:true}).click();
  await expect(conditions.getByText('고정 기준 캠페인 '+reference.baselineCampaignId,{exact:true})).toBeVisible();
