@@ -474,11 +474,17 @@ test('administrator creates an immutable baseline campaign and approves the actu
  const admission=await admitted;
  phase('baseline candidate admission response HTTP '+admission.status());
  expect(admission.status()).toBe(200);
- const candidate=await admission.json();
- phase('baseline candidate admission JSON decoded');
+ // Require the actual UI to select the admitted record, then independently
+ // read its ID; do not depend on Chromium's transient protocol body store.
+ // An uncertain UI write still fails. No POST retry or body-read fallback.
  phase('baseline candidate selection visibility requested');
- await expect(region.getByText('캠페인 '+candidate.id,{exact:true})).toBeVisible();
- phase('baseline candidate selection visible');
+ const selectedCampaign=region.getByText(/^캠페인 [a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/);
+ await expect(selectedCampaign).toBeVisible();
+ const candidateId=(await selectedCampaign.innerText()).slice('캠페인 '.length);
+ const candidateRead=await page.request.get('/backend/campaigns/'+candidateId);expect(candidateRead.status()).toBe(200);
+ const candidate=await candidateRead.json();expect(candidate.id).toBe(candidateId);expect(candidate.agent_version_id).toBe(baseline.agent_version_id);expect(candidate.dataset_version_id).toBe(baseline.dataset_version_id);
+ expect(candidate.id).not.toBe(reference.baselineCampaignId);
+ phase('baseline candidate selection visible and independently read');
  await expect(region.getByRole('button',{name:'캠페인 검토 저장',exact:true})).toBeVisible();
  phase('baseline candidate review form visible');
  await region.getByLabel('캠페인 검토 사유',{exact:true}).fill('Own browser synthetic baseline approval');
