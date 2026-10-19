@@ -23,9 +23,16 @@ processors:
     metrics:
       metric:
         - 'not IsMatch(resource.attributes["service.name"], "^agenttrust-(core-api|gateway|ai-worker|privacy-probe)$")'
-        - 'not IsMatch(metric.name, "^(http\\.(server|client)\\.(request\\.duration|duration)|agenttrust\\.evaluations)$")'
+        - 'not IsMatch(metric.name, "^(http\\.(server|client)\\.(request\\.duration|duration)|agenttrust\\.evaluations|agenttrust\\.gateway\\.stage\\.duration)$")'
+        - 'metric.name == "agenttrust.gateway.stage.duration" and resource.attributes["service.name"] != "agenttrust-gateway"'
+        - 'metric.name == "agenttrust.gateway.stage.duration" and metric.type != METRIC_DATA_TYPE_HISTOGRAM'
+        - 'metric.name == "agenttrust.gateway.stage.duration" and metric.unit != "s"'
       datapoint:
         - 'Len(datapoint.exemplars) > 0'
+        - 'metric.name == "agenttrust.gateway.stage.duration" and not IsString(datapoint.attributes["agenttrust.gateway.stage"])'
+        - 'metric.name == "agenttrust.gateway.stage.duration" and not IsString(datapoint.attributes["agenttrust.gateway.outcome"])'
+        - 'metric.name == "agenttrust.gateway.stage.duration" and not IsMatch(datapoint.attributes["agenttrust.gateway.stage"], "^(identity|quota|forward)$")'
+        - 'metric.name == "agenttrust.gateway.stage.duration" and not IsMatch(datapoint.attributes["agenttrust.gateway.outcome"], "^(completed|error|cancelled)$")'
   transform/privacy:
     error_mode: propagate
     trace_statements:
@@ -66,14 +73,16 @@ processors:
           - 'set(scope.version, "")'
           - 'set(scope.schema_url, "")'
           - 'set(metric.description, "")'
-          - 'set(metric.unit, "")'
-          - 'keep_keys(datapoint.attributes, ["http.request.method", "http.response.status_code"])'
+          - 'set(metric.unit, "") where metric.name != "agenttrust.gateway.stage.duration"'
+          - 'keep_keys(datapoint.attributes, ["http.request.method", "http.response.status_code"]) where metric.name != "agenttrust.gateway.stage.duration"'
+          - 'keep_keys(datapoint.attributes, ["agenttrust.gateway.stage", "agenttrust.gateway.outcome"]) where metric.name == "agenttrust.gateway.stage.duration"'
           - 'delete_key(datapoint.attributes, "http.request.method") where not IsMatch(datapoint.attributes["http.request.method"], "^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)$")'
           - 'delete_key(datapoint.attributes, "http.response.status_code") where not IsInt(datapoint.attributes["http.response.status_code"])'
           - 'delete_key(datapoint.attributes, "http.response.status_code") where IsInt(datapoint.attributes["http.response.status_code"]) and (datapoint.attributes["http.response.status_code"] < 100 or datapoint.attributes["http.response.status_code"] > 599)'
       - context: metric
         statements:
-          - 'aggregate_on_attributes("sum", ["http.request.method", "http.response.status_code"])'
+          - 'aggregate_on_attributes("sum", ["http.request.method", "http.response.status_code"]) where metric.name != "agenttrust.gateway.stage.duration"'
+          - 'aggregate_on_attributes("sum", ["agenttrust.gateway.stage", "agenttrust.gateway.outcome"]) where metric.name == "agenttrust.gateway.stage.duration"'
   batch:
     timeout: 1s
     send_batch_size: 128

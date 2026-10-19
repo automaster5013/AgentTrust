@@ -9,6 +9,10 @@ server:
     include-message: never
     include-stacktrace: never
 management:
+  metrics:
+    enable:
+      all: false
+      agenttrust.gateway.stage.duration: true
   health:
     redis:
       enabled: false

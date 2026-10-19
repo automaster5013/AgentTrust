@@ -29,6 +29,7 @@ services:
       OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SERVER_RESPONSE: ''
   stack-gateway:
     environment:
+      OTEL_INSTRUMENTATION_MICROMETER_ENABLED: 'true'
       JAVA_TOOL_OPTIONS: -javaagent:/app/opentelemetry-javaagent.jar
       OTEL_SERVICE_NAME: agenttrust-gateway
       OTEL_EXPORTER_OTLP_ENDPOINT: http://stack-otel:4318

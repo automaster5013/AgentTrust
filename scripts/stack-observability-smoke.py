@@ -8,6 +8,7 @@ try:
  ids=json.loads(run(['docker','network','inspect','agenttrust_stack-backend']).stdout);assert len(ids)==1 and ids[0]['Internal'] is True
  worker=json.loads(run(['docker','inspect','agenttrust-stack-ai-worker-1']).stdout)[0];assert worker['Config']['Labels']['com.docker.compose.project']=='agenttrust' and worker['Config']['Labels']['com.docker.compose.service']=='stack-ai-worker' and worker['State']['Health']['Status']=='healthy'
  probe=run(['docker','run','--rm','--network','agenttrust_stack-backend','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--memory','128m','--pids-limit','32','--mount','type=bind,source='+str(root/'scripts/stack-observability-probe.py')+',target=/probe.py,readonly',worker['Image'],'python','/probe.py']);value=json.loads(probe.stdout);assert value['completed'] and value['privacyCanaryAbsentInTracesLogsMetrics'];report['privacyProbe']=value;report['checks'].append('actual trace log and metric privacy readback')
+ stage_probe=run([__import__('sys').executable,str(root/'scripts/stack-gateway-stage-privacy-test.py')]);stage_value=json.loads(stage_probe.stdout);assert stage_value['completed'] and stage_value['gatewayStageCanaryAbsent'] and stage_value['gatewayStageWrongServiceUnitTypeAndExemplarRefused'] and stage_value['originalRuntimeBindingsUnchanged'] and stage_value['ownedCollectorRemoved'];report['gatewayStagePrivacyProbe']=stage_value;report['checks'].append('isolated gateway stage histogram privacy and malformed-input readback')
  secret=(root/'.local/stack/grafana-password').read_text(encoding='utf-8');header='Basic '+base64.b64encode(('admin:'+secret).encode()).decode()
  def grafana(path):
   with urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:4324'+path,headers={'Authorization':header}),timeout=15) as response:raw=response.read(2097153)
@@ -23,6 +24,15 @@ try:
   if metrics.get('data',{}).get('result') and sum(float(row['value'][1]) for row in metrics['data']['result'])>0:break
   assert time.monotonic()<deadline;time.sleep(1)
  assert sum(float(row['value'][1]) for row in metrics['data']['result'])>0;report['checks'].append('actual Python evaluations exported as metrics')
+ deadline=time.monotonic()+30
+ while True:
+  stage_metrics=grafana('/api/datasources/proxy/uid/agenttrust-prometheus/api/v1/query?'+urllib.parse.urlencode({'query':'sum by (agenttrust_gateway_stage) (agenttrust_gateway_stage_duration_seconds_count{service_name="agenttrust-gateway",agenttrust_gateway_outcome="completed"})'}))
+  stage_counts={row['metric']['agenttrust_gateway_stage']:float(row['value'][1]) for row in stage_metrics.get('data',{}).get('result',[])}
+  if set(stage_counts)=={'identity','quota','forward'} and all(count>0 for count in stage_counts.values()):break
+  assert time.monotonic()<deadline;time.sleep(1)
+ buckets=grafana('/api/datasources/proxy/uid/agenttrust-prometheus/api/v1/query?'+urllib.parse.urlencode({'query':'sum by (le) (agenttrust_gateway_stage_duration_seconds_bucket{service_name="agenttrust-gateway",agenttrust_gateway_outcome="completed"})'}))
+ assert {float(row['metric']['le']) for row in buckets.get('data',{}).get('result',[])}=={.005,.025,.1,.25,.5,1.,3.,6.,float('inf')}
+ report['gatewayStageTiming']={'actualCompletedApplicationStages':sorted(stage_counts),'threeStageCountsPositive':True,'fixedHistogramBoundsSecondsVerified':True,'syntheticCancelledFixtureExcluded':True,'p95RootCauseOrProductionSloClaimed':False};report['checks'].append('actual gateway identity quota and forwarding histograms exported')
  logs=grafana('/api/datasources/proxy/uid/agenttrust-loki/loki/api/v1/query_range?'+urllib.parse.urlencode({'query':'{service_name="agenttrust-ai-worker"}','limit':'20'}));assert logs['data']['result'] and all(line[1]=='application event' for row in logs['data']['result'] for line in row['values']);report['checks'].append('actual evaluator logs contain only fixed body')
  traces=grafana('/api/datasources/proxy/uid/agenttrust-tempo/api/search?'+urllib.parse.urlencode({'q':'{resource.service.name="agenttrust-core-api"} && {resource.service.name="agenttrust-gateway"}','limit':'20'}));assert traces.get('traces')
  joined=False
