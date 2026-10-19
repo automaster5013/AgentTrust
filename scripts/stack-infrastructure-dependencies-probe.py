@@ -60,12 +60,18 @@ def _verify(source,output,schema,run,app_documents,cpu_milli,memory_bytes,result
    assert pod['securityContext']=={'runAsNonRoot':True,'runAsUser':UIDS[name],'runAsGroup':UIDS[name],'fsGroup':UIDS[name],'seccompProfile':{'type':'RuntimeDefault'}}
    assert container['securityContext']=={'allowPrivilegeEscalation':False,'readOnlyRootFilesystem':True,'capabilities':{'drop':['ALL']}} and container['resources']['limits']['memory']==MEMORY[name]
    assert container['startupProbe'] and container['readinessProbe'] and not container.get('livenessProbe') and not pod.get('hostNetwork') and not pod.get('hostPID')
-   assert all(not v.get('hostPath') for v in pod['volumes']) and all(not e.get('value') for e in container.get('env',[]) if 'PASSWORD' in e['name'])
+   assert all(not v.get('hostPath') for v in pod['volumes'])
+   for entry in (e for e in container.get('env',[]) if 'PASSWORD' in e['name']):
+    if entry['name']=='POSTGRES_PASSWORD_FILE':assert entry=={'name':'POSTGRES_PASSWORD_FILE','value':'/run/secrets/database-migration-password'}
+    else:assert set(entry)=={'name','valueFrom'} and set(entry['valueFrom'])=={'secretKeyRef'}
    claims=spec['volumeClaimTemplates'];assert len(claims)==1 and claims[0]['metadata']['name']=='data' and claims[0]['metadata']['annotations']=={'helm.sh/resource-policy':'keep'}
    assert claims[0]['spec']=={'accessModes':['ReadWriteOnce'],'volumeMode':'Filesystem','storageClassName':values['storageClass'],'resources':{'requests':{'storage':str(values['storageGiB'][name])+'Gi'}}}
    assert {'name':'data','mountPath':MOUNTS[name]} in container['volumeMounts'] and not any(v['name']=='data' for v in pod['volumes'])
    for volume in pod['volumes']:
     if 'secret' in volume:assert volume['secret']['secretName']==values['existingSecret'] and volume['secret']['defaultMode']==0o440 and volume['secret']['items']
+   projected={item['key']:item['path'] for volume in pod['volumes'] if 'secret' in volume for item in volume['secret']['items']}
+   expected={'db':{'database-migration-password':'database-migration-password','database-bootstrap.sql':'10-agenttrust.sql'},'nats':{'stack-nats-config':'stack-nats-config'},'redis':{'stack-redis-config':'stack-redis-config','stack-redis-token':'stack-redis-token'},'identity':{'stack-identity-realm':'agenttrust-realm.json'},'object-store':{'stack-minio-root-user':'stack-minio-root-user','stack-minio-root-password':'stack-minio-root-password'}}
+   assert projected==expected[name]
    for mount in container['volumeMounts']:
     if mount['name'] not in ['data','temporary','postgres-socket']:assert mount['readOnly'] is True
   assert set(workloads)==set(NAMES)
