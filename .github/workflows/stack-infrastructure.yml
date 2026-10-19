@@ -6,12 +6,22 @@ on:
   pull_request:
     paths: ['charts/**', 'infra/terraform/**', 'tools/infrastructure/**', 'scripts/stack-infrastructure-*.py', '.github/workflows/stack-infrastructure.yml', '.github/workflows/original-stack.yml']
   workflow_dispatch:
+    inputs:
+      diagnostic_run:
+        description: Existing Main original-stack run to inspect without rerunning it
+        required: false
+        type: string
+      diagnostic_revision:
+        description: Exact source revision of that existing run
+        required: false
+        type: string
 permissions: {contents: read}
 concurrency:
   group: stack-infrastructure-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
 jobs:
   validate:
+    if: ${{ !inputs.diagnostic_run }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -39,3 +49,17 @@ jobs:
             .local/stack-infrastructure-*/command-diagnostic.json
           if-no-files-found: error
           retention-days: 7
+  browser-diagnostic:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_run != '' }}
+    permissions: {contents: read, actions: read}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {persist-credentials: false}
+      - name: Authenticate existing artifact and print fixed browser classifications
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIAGNOSTIC_RUN_ID: ${{ inputs.diagnostic_run }}
+          DIAGNOSTIC_REVISION: ${{ inputs.diagnostic_revision }}
+        run: python3 scripts/stack-infrastructure-browser-diagnostic.py
