@@ -1,0 +1,6 @@
+apiVersion: v2
+name: agenttrust-dependencies-review
+description: Review-only persistent dependency definitions; no production authority or secret contents
+type: application
+version: 0.1.0
+appVersion: local-review

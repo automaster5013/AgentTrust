@@ -33,5 +33,9 @@ jobs:
             .local/stack-infrastructure-*/kubernetes-schema.log
             .local/stack-infrastructure-*/terraform-validate.log
             .local/stack-infrastructure-*/terraform-mock-plans.log
+            .local/stack-infrastructure-*/dependency-contracts.json
+            .local/stack-infrastructure-*/dependencies-*-rendered.yaml
+            .local/stack-infrastructure-*/dependencies-*-schema.log
+            .local/stack-infrastructure-*/command-diagnostic.json
           if-no-files-found: error
           retention-days: 7

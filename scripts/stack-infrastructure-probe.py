@@ -1,11 +1,16 @@
 """Render/validate with synthetic values and mocked providers. Never reads a kubeconfig or calls a cluster."""
-import copy,decimal,hashlib,json,pathlib,shutil,subprocess,tempfile,yaml
+import copy,decimal,hashlib,importlib.util,json,pathlib,re,shutil,subprocess,tempfile,yaml
 source=pathlib.Path('/src');output=pathlib.Path('/out');report={'completed':False,'checks':[],'clusterContacted':False,'resourcesApplied':False,'credentialsMounted':False}
 work=None
 schema='https://raw.githubusercontent.com/yannh/kubernetes-json-schema/5f1fa4f7908afc9b6641c62d282a4a22437626e1/{{.NormalizedKubernetesVersion}}-standalone{{.StrictSuffix}}/{{.ResourceKind}}{{.KindSuffix}}.json'
-names=['core-api','ai-worker','gateway','console','opa','quality-verifier'];values={'mode':'local-review','revision':'1'*40,'existingSecret':'agenttrust-stack-config','images':{name:'ghcr.io/automaster5013/agenttrust-'+name+'@sha256:'+'1'*64 for name in names},'dependencies':{'namespace':'agenttrust-dependencies',**{name:name.lower()+'.agenttrust-dependencies.svc.cluster.local' for name in ['postgres','nats','redis','identity','objectStore']}}}
+names=['core-api','ai-worker','gateway','console','opa','quality-verifier'];values={'mode':'local-review','revision':'1'*40,'existingSecret':'agenttrust-stack-config','images':{name:'ghcr.io/automaster5013/agenttrust-'+name+'@sha256:'+'1'*64 for name in names},'dependencies':{'namespace':'agenttrust-dependencies',**{name:'stack-'+service+'.agenttrust-dependencies.svc.cluster.local' for name,service in {'postgres':'db','nats':'nats','redis':'redis','identity':'identity','objectStore':'object-store'}.items()}}}
 def run(command,name,expected=0,cwd=None):
- result=subprocess.run(command,capture_output=True,text=True,timeout=300,cwd=cwd);(output/(name+'.log')).write_text(result.stdout+'\n'+result.stderr,encoding='utf-8');assert result.returncode==expected
+ report['activeCheck']=name;result=subprocess.run(command,capture_output=True,text=True,timeout=300,cwd=cwd);(output/(name+'.log')).write_text(result.stdout+'\n'+result.stderr,encoding='utf-8');report['lastCommandExitCode']=result.returncode;report['lastExpectedExitCode']=expected
+ if result.returncode!=expected:
+  match=re.search(r'template: ([a-zA-Z0-9_./-]+):(\d+):(\d+):',result.stderr)
+  safe={'check':name,'exitCode':result.returncode,'expectedExitCode':expected,'templateLocation':{'file':match.group(1),'line':int(match.group(2)),'column':int(match.group(3))} if match else None,'yamlParseFailure':'error converting YAML to JSON' in result.stderr,'nilTemplateValue':'nil pointer evaluating' in result.stderr,'missingTemplateField':"can't evaluate field" in result.stderr,'templateFunctionArityFailure':'wrong number of args' in result.stderr,'rawOutputIncluded':False}
+  (output/'command-diagnostic.json').write_text(json.dumps(safe,indent=2)+'\n',encoding='utf-8')
+ assert result.returncode==expected
  return result.stdout
 def cpu_milli(value):
  text=str(value);result=decimal.Decimal(text[:-1]) if text.endswith('m') else decimal.Decimal(text)*1000
@@ -132,6 +137,9 @@ try:
  run(['terraform','init','-backend=false','-input=false','-lockfile=readonly','-no-color'],'terraform-init',cwd=tf)
  run(['terraform','validate','-no-color'],'terraform-validate',cwd=tf);report['checks'].append('Terraform pinned providers and module validation')
  run(['terraform','test','-no-color'],'terraform-mock-plans',cwd=tf);report['checks'].append('seven mocked Terraform plans including actual rendered quota coverage, development key references and negative input boundaries')
+ dependency_spec=importlib.util.spec_from_file_location('dependency_review','/dependency-validate.py');dependency_module=importlib.util.module_from_spec(dependency_spec);dependency_spec.loader.exec_module(dependency_module)
+ report['dependencyReview']=dependency_module.verify(source,output,schema,run,documents,cpu_milli,memory_bytes)
+ assert report['dependencyReview']['completed'];report['totalResourcesValidatedAcrossAllReviewCharts']=report['totalResourcesValidatedAcrossProfiles']+report['dependencyReview']['validatedResourcesAcrossDependencyProfiles'];report['checks'].append('five persistent dependency definitions and cross-chart secret DNS network and resource contracts; no cluster application')
  report['completed']=True
 except Exception as error:report['errorType']=type(error).__name__
 finally:

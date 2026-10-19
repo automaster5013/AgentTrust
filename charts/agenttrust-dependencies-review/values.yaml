@@ -1,0 +1,20 @@
+# Deliberately not renderable until an operator supplies tested image digests
+# and a reviewed StorageClass. No cluster or storage provider is selected here.
+mode: local-review
+revision: ""
+applicationNamespace: agenttrust-review
+existingSecret: agenttrust-dependency-config
+storageClass: ""
+initializeObjectStore: false
+storageGiB:
+  db: 8
+  nats: 2
+  redis: 1
+  identity: 1
+  object-store: 8
+images:
+  db: ""
+  nats: ""
+  redis: ""
+  identity: ""
+  object-store: ""

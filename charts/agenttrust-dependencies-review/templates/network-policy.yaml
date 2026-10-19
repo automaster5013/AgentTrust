@@ -1,0 +1,66 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: agenttrust-dependencies-default-deny, namespace: {{ .Release.Namespace }}}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: agenttrust-dependencies-dns, namespace: {{ .Release.Namespace }}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/part-of: agenttrust-dependencies-review}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+{{- $rules := dict "db" (dict "port" 5432 "clients" (list "core-api")) "nats" (dict "port" 4222 "clients" (list "core-api" "ai-worker")) "redis" (dict "port" 6379 "clients" (list "gateway")) "identity" (dict "port" 8080 "clients" (list "core-api")) "object-store" (dict "port" 9000 "clients" (list "core-api")) }}
+{{- range $name, $rule := $rules }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: agenttrust-dependencies-{{ $name }}-ingress, namespace: {{ $.Release.Namespace }}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/part-of: agenttrust-dependencies-review, app.kubernetes.io/name: {{ $name }}}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+{{- range $client := $rule.clients }}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: {{ $.Values.applicationNamespace }}}}
+          podSelector: {matchLabels: {app.kubernetes.io/part-of: agenttrust-review, app.kubernetes.io/name: {{ $client }}}}
+{{- end }}
+{{- if eq $name "db" }}
+        - podSelector: {matchLabels: {app.kubernetes.io/part-of: agenttrust-dependencies-review, app.kubernetes.io/name: identity}}
+{{- else if eq $name "object-store" }}
+        - podSelector: {matchLabels: {app.kubernetes.io/part-of: agenttrust-dependencies-review, app.kubernetes.io/name: object-init}}
+{{- end }}
+      ports: [{protocol: TCP, port: {{ $rule.port }}}]
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: agenttrust-dependencies-identity-egress, namespace: {{ .Release.Namespace }}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/part-of: agenttrust-dependencies-review, app.kubernetes.io/name: identity}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/part-of: agenttrust-dependencies-review, app.kubernetes.io/name: db}}
+      ports: [{protocol: TCP, port: 5432}]
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: {{ .Values.applicationNamespace }}}}
+          podSelector: {matchLabels: {app.kubernetes.io/part-of: agenttrust-review, app.kubernetes.io/name: core-api}}
+      ports: [{protocol: TCP, port: 8080}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: agenttrust-dependencies-object-init-egress, namespace: {{ .Release.Namespace }}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/part-of: agenttrust-dependencies-review, app.kubernetes.io/name: object-init}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/part-of: agenttrust-dependencies-review, app.kubernetes.io/name: object-store}}
+      ports: [{protocol: TCP, port: 9000}]

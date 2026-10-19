@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mode",
+    "revision",
+    "applicationNamespace",
+    "existingSecret",
+    "storageClass",
+    "initializeObjectStore",
+    "storageGiB",
+    "images"
+  ],
+  "properties": {
+    "mode": {
+      "const": "local-review"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "applicationNamespace": {
+      "const": "agenttrust-review"
+    },
+    "existingSecret": {
+      "type": "string",
+      "pattern": "^agenttrust-[a-z0-9]([a-z0-9-]{0,40}[a-z0-9])?$"
+    },
+    "storageClass": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([a-z0-9.-]{0,61}[a-z0-9])?$"
+    },
+    "initializeObjectStore": {
+      "type": "boolean"
+    },
+    "storageGiB": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "db",
+        "nats",
+        "redis",
+        "identity",
+        "object-store"
+      ],
+      "properties": {
+        "db": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "nats": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "redis": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "identity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "object-store": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        }
+      }
+    },
+    "images": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "db",
+        "nats",
+        "redis",
+        "identity",
+        "object-store"
+      ],
+      "properties": {
+        "db": {
+          "type": "string",
+          "pattern": "^ghcr\\.io/automaster5013/agenttrust-db@sha256:[a-f0-9]{64}$"
+        },
+        "nats": {
+          "type": "string",
+          "pattern": "^ghcr\\.io/automaster5013/agenttrust-nats@sha256:[a-f0-9]{64}$"
+        },
+        "redis": {
+          "type": "string",
+          "pattern": "^ghcr\\.io/automaster5013/agenttrust-redis@sha256:[a-f0-9]{64}$"
+        },
+        "identity": {
+          "type": "string",
+          "pattern": "^ghcr\\.io/automaster5013/agenttrust-identity@sha256:[a-f0-9]{64}$"
+        },
+        "object-store": {
+          "type": "string",
+          "pattern": "^ghcr\\.io/automaster5013/agenttrust-object-store@sha256:[a-f0-9]{64}$"
+        }
+      }
+    }
+  }
+}

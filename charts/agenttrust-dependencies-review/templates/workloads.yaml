@@ -1,0 +1,161 @@
+{{- if ne .Values.mode "local-review" }}{{ fail "Only local-review dependency definitions are supported" }}{{ end }}
+{{- if ne .Release.Namespace "agenttrust-dependencies" }}{{ fail "Use the separate agenttrust-dependencies namespace" }}{{ end }}
+{{- if ne .Values.applicationNamespace "agenttrust-review" }}{{ fail "Only the explicit review application namespace is supported" }}{{ end }}
+{{- if not (regexMatch "^[a-f0-9]{40}$" .Values.revision) }}{{ fail "An exact tested source revision is required" }}{{ end }}
+{{- if not (regexMatch "^[a-z0-9]([a-z0-9.-]{0,61}[a-z0-9])?$" .Values.storageClass) }}{{ fail "An operator-reviewed StorageClass is required" }}{{ end }}
+{{- $definitions := dict
+ "db" (dict "uid" 70 "port" 5432 "memory" "512Mi" "cpu" "1" "mount" "/var/lib/postgresql/data" "secrets" (list "database-migration-password"))
+ "nats" (dict "uid" 10001 "port" 4222 "memory" "128Mi" "cpu" "1" "mount" "/tmp" "secrets" (list "stack-nats-config"))
+ "redis" (dict "uid" 999 "port" 6379 "memory" "96Mi" "cpu" "1" "mount" "/data" "secrets" (list "stack-redis-config" "stack-redis-token"))
+ "identity" (dict "uid" 1000 "port" 8080 "memory" "768Mi" "cpu" "2" "mount" "/opt/keycloak/data" "secrets" (list))
+ "object-store" (dict "uid" 10001 "port" 9000 "memory" "512Mi" "cpu" "1" "mount" "/tmp" "secrets" (list "stack-minio-root-user" "stack-minio-root-password")) }}
+{{- range $name, $def := $definitions }}
+{{- $image := index $.Values.images $name }}
+{{- if not (regexMatch (printf "^ghcr\\.io/automaster5013/agenttrust-%s@sha256:[a-f0-9]{64}$" $name) $image) }}{{ fail (printf "Exact immutable image digest required for %s" $name) }}{{ end }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: stack-{{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels: {app.kubernetes.io/part-of: agenttrust-dependencies-review, app.kubernetes.io/name: {{ $name }}}
+  annotations: {agenttrust.dev/revision: {{ $.Values.revision | quote }}}
+spec:
+  serviceName: stack-{{ $name }}-headless
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  updateStrategy: {type: OnDelete}
+  persistentVolumeClaimRetentionPolicy: {whenDeleted: Retain, whenScaled: Retain}
+  selector:
+    matchLabels: {app.kubernetes.io/part-of: agenttrust-dependencies-review, app.kubernetes.io/name: {{ $name }}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/part-of: agenttrust-dependencies-review, app.kubernetes.io/name: {{ $name }}}
+      annotations: {agenttrust.dev/revision: {{ $.Values.revision | quote }}}
+    spec:
+      serviceAccountName: agenttrust-dependencies-review
+      automountServiceAccountToken: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ $def.uid }}
+        runAsGroup: {{ $def.uid }}
+        fsGroup: {{ $def.uid }}
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: {{ $name }}
+          image: {{ $image | quote }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {cpu: {{ $def.cpu | quote }}, memory: {{ $def.memory }}}
+          ports:
+            - {name: client, containerPort: {{ $def.port }}}
+{{- if eq $name "identity" }}
+            - {name: management, containerPort: 9000}
+          args: [start, --optimized, --http-enabled=true, --hostname=http://127.0.0.1:4322, --import-realm]
+          env:
+            - {name: KC_DB_URL, value: "jdbc:postgresql://stack-db:5432/agenttrust_stack_identity"}
+            - {name: KC_DB_USERNAME, value: agenttrust_stack_identity}
+            - {name: KC_DB_PASSWORD, valueFrom: {secretKeyRef: {name: {{ $.Values.existingSecret }}, key: database-identity-password}}}
+            - {name: KC_BOOTSTRAP_ADMIN_USERNAME, value: stack-admin}
+            - {name: KC_BOOTSTRAP_ADMIN_PASSWORD, valueFrom: {secretKeyRef: {name: {{ $.Values.existingSecret }}, key: identity-admin-password}}}
+            - {name: KC_LOG_LEVEL, value: warn}
+          startupProbe: {httpGet: {path: /health/ready, port: management}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 60}
+          readinessProbe: {httpGet: {path: /health/ready, port: management}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 3}
+{{- else if eq $name "db" }}
+          env:
+            - {name: POSTGRES_DB, value: agenttrust_stack}
+            - {name: POSTGRES_USER, value: agenttrust_stack}
+            - {name: POSTGRES_PASSWORD_FILE, value: /run/secrets/database-migration-password}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          startupProbe: {exec: {command: [pg_isready, -h, 127.0.0.1, -U, agenttrust_stack, -d, agenttrust_stack]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 60}
+          readinessProbe: {exec: {command: [pg_isready, -h, 127.0.0.1, -U, agenttrust_stack, -d, agenttrust_stack]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 3}
+{{- else if eq $name "nats" }}
+            - {name: management, containerPort: 8222}
+          args: [-c, /run/secrets/stack-nats-config]
+          startupProbe: {exec: {command: [wget, -q, -O, /dev/null, "http://127.0.0.1:8222/healthz"]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 30}
+          readinessProbe: {exec: {command: [wget, -q, -O, /dev/null, "http://127.0.0.1:8222/healthz"]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 3}
+{{- else if eq $name "redis" }}
+          command: [redis-server, /run/secrets/stack-redis-config]
+          startupProbe:
+            exec: {command: [/bin/sh, -ec, 'test "$(REDISCLI_AUTH="$(cat /run/secrets/stack-redis-token)" redis-cli --user stack-gateway ping)" = PONG']}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            exec: {command: [/bin/sh, -ec, 'test "$(REDISCLI_AUTH="$(cat /run/secrets/stack-redis-token)" redis-cli --user stack-gateway ping)" = PONG']}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+{{- else }}
+          startupProbe: {exec: {command: [wget, -q, -O, /dev/null, "http://127.0.0.1:9000/minio/health/ready"]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 30}
+          readinessProbe: {exec: {command: [wget, -q, -O, /dev/null, "http://127.0.0.1:9000/minio/health/ready"]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 3}
+{{- end }}
+          volumeMounts:
+            - {name: data, mountPath: {{ $def.mount }}}
+{{- if gt (len $def.secrets) 0 }}
+            - {name: credentials, mountPath: /run/secrets, readOnly: true}
+{{- end }}
+{{- if and (ne $name "nats") (ne $name "object-store") }}
+            - {name: temporary, mountPath: /tmp}
+{{- end }}
+{{- if eq $name "db" }}
+            - {name: postgres-socket, mountPath: /var/run/postgresql}
+            - {name: database-bootstrap, mountPath: /docker-entrypoint-initdb.d, readOnly: true}
+{{- else if eq $name "identity" }}
+            - {name: realm, mountPath: /opt/keycloak/data/import, readOnly: true}
+{{- end }}
+      volumes:
+{{- if gt (len $def.secrets) 0 }}
+        - name: credentials
+          secret:
+            secretName: {{ $.Values.existingSecret }}
+            defaultMode: 0440
+            items:
+{{- range $key := $def.secrets }}
+              - {key: {{ $key }}, path: {{ $key }}}
+{{- end }}
+{{- end }}
+{{- if and (ne $name "nats") (ne $name "object-store") }}
+        - {name: temporary, emptyDir: {medium: Memory, sizeLimit: 64Mi}}
+{{- end }}
+{{- if eq $name "db" }}
+        - {name: postgres-socket, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+        - name: database-bootstrap
+          secret: {secretName: {{ $.Values.existingSecret }}, defaultMode: 0440, items: [{key: database-bootstrap.sql, path: 10-agenttrust.sql}]}
+{{- else if eq $name "identity" }}
+        - name: realm
+          secret: {secretName: {{ $.Values.existingSecret }}, defaultMode: 0440, items: [{key: stack-identity-realm, path: agenttrust-realm.json}]}
+{{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        annotations: {helm.sh/resource-policy: keep}
+      spec:
+        accessModes: [ReadWriteOnce]
+        volumeMode: Filesystem
+        storageClassName: {{ $.Values.storageClass | quote }}
+        resources:
+          requests: {storage: {{ printf "%dGi" (int (index $.Values.storageGiB $name)) }}}
+{{- range $headless := list false true }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stack-{{ $name }}{{ if $headless }}-headless{{ end }}
+  namespace: {{ $.Release.Namespace }}
+spec:
+  type: ClusterIP
+{{- if $headless }}
+  clusterIP: None
+{{- end }}
+  selector: {app.kubernetes.io/part-of: agenttrust-dependencies-review, app.kubernetes.io/name: {{ $name }}}
+  ports: [{name: client, port: {{ $def.port }}, targetPort: client}]
+{{- end }}
+{{- end }}

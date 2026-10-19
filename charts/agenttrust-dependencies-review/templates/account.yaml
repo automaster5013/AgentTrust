@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agenttrust-dependencies-review
+  namespace: {{ .Release.Namespace }}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: agenttrust-dependencies-review
+  namespace: {{ .Release.Namespace }}
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: 1Gi
+    limits.cpu: "7"
+    limits.memory: 3Gi
+    pods: "10"
+    services: "10"
+    secrets: "1"
+    persistentvolumeclaims: "5"
+    requests.storage: {{ printf "%dGi" (add (int .Values.storageGiB.db) (int .Values.storageGiB.nats) (int .Values.storageGiB.redis) (int .Values.storageGiB.identity) (int (index .Values.storageGiB "object-store"))) | quote }}

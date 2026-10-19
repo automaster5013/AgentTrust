@@ -1,0 +1,43 @@
+{{- if .Values.initializeObjectStore }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: stack-object-init-{{ .Values.revision | trunc 12 }}
+  namespace: {{ .Release.Namespace }}
+  annotations: {agenttrust.dev/revision: {{ .Values.revision | quote }}}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 120
+  template:
+    metadata:
+      labels: {app.kubernetes.io/part-of: agenttrust-dependencies-review, app.kubernetes.io/name: object-init}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: agenttrust-dependencies-review
+      automountServiceAccountToken: false
+      shareProcessNamespace: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: object-init
+          image: {{ index .Values.images "object-store" | quote }}
+          imagePullPolicy: IfNotPresent
+          command: [/usr/local/bin/minio-init]
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources:
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {cpu: "1", memory: 128Mi}
+          volumeMounts:
+            - {name: credentials, mountPath: /run/secrets, readOnly: true}
+            - {name: temporary, mountPath: /tmp}
+      volumes:
+        - {name: temporary, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+        - name: credentials
+          secret:
+            secretName: {{ .Values.existingSecret }}
+            defaultMode: 0440
+            items:
+              - {key: stack-minio-root-user, path: stack-minio-root-user}
+              - {key: stack-minio-root-password, path: stack-minio-root-password}
+              - {key: stack-minio-user, path: stack-minio-user}
+              - {key: stack-minio-password, path: stack-minio-password}
+{{- end }}
