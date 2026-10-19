@@ -6,7 +6,7 @@
 {{- $definitions := dict
  "db" (dict "uid" 70 "port" 5432 "memory" "512Mi" "cpu" "1" "mount" "/var/lib/postgresql/data" "secrets" (list "database-migration-password"))
  "nats" (dict "uid" 10001 "port" 4222 "memory" "128Mi" "cpu" "1" "mount" "/tmp" "secrets" (list "stack-nats-config"))
- "redis" (dict "uid" 999 "port" 6379 "memory" "96Mi" "cpu" "1" "mount" "/data" "secrets" (list "stack-redis-config" "stack-redis-token"))
+ "redis" (dict "uid" 999 "port" 6379 "memory" "96Mi" "cpu" "1" "mount" "/data" "secrets" (list "stack-redis-config" "stack-redis-acl" "stack-redis-token"))
  "identity" (dict "uid" 1000 "port" 8080 "memory" "768Mi" "cpu" "2" "mount" "/opt/keycloak/data" "secrets" (list))
  "object-store" (dict "uid" 10001 "port" 9000 "memory" "512Mi" "cpu" "1" "mount" "/tmp" "secrets" (list "stack-minio-root-user" "stack-minio-root-password")) }}
 {{- range $name, $def := $definitions }}

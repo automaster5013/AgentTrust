@@ -41,6 +41,21 @@ def _verify(source,output,schema,run,app_documents,cpu_milli,memory_bytes,result
  chart=source/'charts/agenttrust-dependencies-review'
  values={'mode':'local-review','revision':'1'*40,'applicationNamespace':'agenttrust-review','existingSecret':'agenttrust-dependency-config','storageClass':'operator-review-fixture','initializeObjectStore':False,'storageGiB':{'db':8,'nats':2,'redis':1,'identity':1,'object-store':8},'images':{name:'ghcr.io/automaster5013/agenttrust-'+name+'@sha256:'+'1'*64 for name in NAMES}}
  result.update(completed=False,phase='strict-lint',clusterContacted=False,resourcesApplied=False,secretValuesGenerated=False,actualStorageOrNetworkEnforcementVerified=False,actualDependencyStartupVerifiedByThisCheck=False,productionReady=False,checks=[],profiles=[])
+ # Independent source of file requirements: the functional Compose services.
+ # This catches a chart/checker pair that accidentally omits the same file.
+ canonical_files={};canonical_mounts={}
+ for filename in ['compose.stack.yaml','compose.stack.identity.yaml','compose.stack.gateway.yaml','compose.stack.object.yaml']:
+  public=yaml.safe_load((source/'compose'/filename).read_text(encoding='utf-8'))
+  for service,definition in public.get('services',{}).items():
+   if service not in ['stack-'+name for name in [*NAMES,'object-init']]:continue
+   for entry in definition.get('secrets',[]):
+    key=entry if isinstance(entry,str) else entry['source'];path=key if isinstance(entry,str) else pathlib.PurePosixPath(entry.get('target',key)).name
+    current=canonical_files.setdefault(service,{})
+    assert key not in current or current[key]==path;current[key]=path
+   for entry in definition.get('volumes',[]):
+    if isinstance(entry,str):canonical_mounts.setdefault(service,set()).add(entry.split(':')[1])
+ assert set(canonical_files)=={'stack-nats','stack-redis','stack-identity','stack-object-store','stack-object-init'}
+ assert 'stack-redis-acl' in canonical_files['stack-redis']
  input_path=output/'dependency-fixture-values.json';input_path.write_text(json.dumps(values),encoding='utf-8')
  run(['helm','lint','--strict','-f',str(input_path),str(chart)],'dependencies-lint')
  default=None
@@ -70,8 +85,9 @@ def _verify(source,output,schema,run,app_documents,cpu_milli,memory_bytes,result
    for volume in pod['volumes']:
     if 'secret' in volume:assert volume['secret']['secretName']==values['existingSecret'] and volume['secret']['defaultMode']==0o440 and volume['secret']['items']
    projected={item['key']:item['path'] for volume in pod['volumes'] if 'secret' in volume for item in volume['secret']['items']}
-   expected={'db':{'database-migration-password':'database-migration-password','database-bootstrap.sql':'10-agenttrust.sql'},'nats':{'stack-nats-config':'stack-nats-config'},'redis':{'stack-redis-config':'stack-redis-config','stack-redis-token':'stack-redis-token'},'identity':{'stack-identity-realm':'agenttrust-realm.json'},'object-store':{'stack-minio-root-user':'stack-minio-root-user','stack-minio-root-password':'stack-minio-root-password'}}
-   assert projected==expected[name]
+   if name=='db':assert projected=={'database-migration-password':'database-migration-password','database-bootstrap.sql':'10-agenttrust.sql'}
+   else:assert projected==canonical_files['stack-'+name]
+   assert MOUNTS[name] in canonical_mounts['stack-'+name]
    for mount in container['volumeMounts']:
     if mount['name'] not in ['data','temporary','postgres-socket']:assert mount['readOnly'] is True
   assert set(workloads)==set(NAMES)
@@ -94,6 +110,7 @@ def _verify(source,output,schema,run,app_documents,cpu_milli,memory_bytes,result
    assert pod['automountServiceAccountToken'] is False and pod['shareProcessNamespace'] is False and container['command']==['/usr/local/bin/minio-init'] and container['image']==values['images']['object-store']
    assert container['securityContext']=={'allowPrivilegeEscalation':False,'readOnlyRootFilesystem':True,'capabilities':{'drop':['ALL']}} and container['resources']['limits']=={'cpu':'1','memory':'128Mi'}
    assert {v['key'] for volume in pod['volumes'] if 'secret' in volume for v in volume['secret']['items']}=={'stack-minio-root-user','stack-minio-root-password','stack-minio-user','stack-minio-password'}
+   assert {v['key']:v['path'] for volume in pod['volumes'] if 'secret' in volume for v in volume['secret']['items']}==canonical_files['stack-object-init']
   result['phase']=profile+'-quota';quota=next(d['spec']['hard'] for d in documents if d['kind']=='ResourceQuota')
   budget={}
   for category in ['limits','requests']:
@@ -103,7 +120,7 @@ def _verify(source,output,schema,run,app_documents,cpu_milli,memory_bytes,result
   result['phase']=profile+'-strict-schema';validated=json.loads(run(['kubeconform','-strict','-summary','-output','json','-kubernetes-version','1.34.0','-schema-location',schema,str(rendered_path)],'dependencies-'+profile+'-schema'));assert validated['summary']['valid']==len(documents) and validated['summary']['invalid']==validated['summary']['errors']==validated['summary']['skipped']==0
   result['profiles'].append({'name':profile,'validatedResources':len(documents),'persistentClaims':5,'objectInitializationEnabled':initialize,'renderedBudget':budget,'quotaCoversRenderedBudget':True,'requestedStorageBytes':sum(values['storageGiB'].values())*1073741824})
   if not initialize:default=documents
- result['checks'].append('five digest-pinned bounded non-root persistent workloads; explicit Retain/OnDelete, file secrets, stable services and opt-in bounded initialization')
+ result['canonicalComposeDataAndFileContractsVerified']=True;result['checks'].append('five digest-pinned bounded non-root persistent workloads; explicit Retain/OnDelete, file projections and data paths matched against functional Compose contracts, stable services and opt-in bounded initialization')
  result['phase']='cross-chart-dns';app_services={d['metadata']['name']:d for d in app_documents if d['kind']=='Service' and d['spec']['type']=='ExternalName'}
  assert set(app_services)=={'stack-'+n for n in NAMES}
  for name in NAMES:assert app_services['stack-'+name]['spec']['externalName']=='stack-'+name+'.agenttrust-dependencies.svc.cluster.local'

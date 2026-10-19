@@ -40,7 +40,7 @@ namespace. It is separate from the existing application namespace Secret:
 |---|---|
 | PostgreSQL | `database-migration-password`, `database-bootstrap.sql` |
 | NATS | `stack-nats-config`; its token must match the application `stack-nats-token` |
-| Redis | `stack-redis-config`, `stack-redis-token`; gateway ACL/config/token must agree |
+| Redis | `stack-redis-config`, `stack-redis-acl`, `stack-redis-token`; gateway ACL/config/token must agree |
 | Keycloak | `database-identity-password`, `identity-admin-password`, `stack-identity-realm` |
 | MinIO | `stack-minio-root-user`, `stack-minio-root-password` |
 | Optional MinIO initialization | The two root keys plus limited `stack-minio-user`, `stack-minio-password` |
@@ -78,7 +78,8 @@ an authorized target acceptance run.
 
 `scripts/stack-infrastructure-check.py` checks this chart through the same pinned
 Helm/Kubeconform tools. It renders default and opt-in-initialization profiles,
-checks persistent mounts/UIDs/secret projections/services/quotas, evaluates
+checks persistent mounts/UIDs/secret projections/services/quotas, compares file
+projections and persistent data paths with the functional Compose services, evaluates
 declared cross-chart network paths with adversarial namespaces/components and
 refuses unsafe input variants. It preserves the original application's three
 signing profiles and seven mocked Terraform plans. These are manifest/schema and
