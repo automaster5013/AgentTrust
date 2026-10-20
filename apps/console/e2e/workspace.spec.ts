@@ -33,6 +33,27 @@ if(process.env.STACK_E2E_VISUAL_CAPTURE==='true')test('workspace controlled visu
  phase('controlled-visual-cohort-sha256 '+cohort);phase('actual demo-viewer,1440x960 and390x960,account scope run identifiers and hashes masked,no business writes');
 });
 
+if(process.env.STACK_E2E_ADMIN_CAPTURE==='true')test('administrator actual review form and mobile evidence remain scoped without writes',async({page})=>{
+ await login(page,'demo-admin');const {record}=await existingSyntheticEvaluation(page,true);
+ let writes=0;page.on('request',request=>{const path=new URL(request.url()).pathname;if(path.startsWith('/backend/')&&request.method()!=='GET'&&!['/backend/login','/backend/logout'].includes(path))writes++});
+ await page.locator('.runs li button').filter({hasText:record.id.slice(0,8)}).click();
+ const evidence=page.locator('.evidence'),form=evidence.locator('form').filter({has:page.getByRole('heading',{name:'관리자 검토',exact:true})}),save=form.getByRole('button',{name:'검토 저장·게이트 확인',exact:true});await expect(save).toBeEnabled();
+ const masks=[page.locator('.account'),page.locator('.scope'),page.locator('.mono'),page.locator('.runs button > span'),page.locator('.review-history p')];
+ for(const width of [1440,390]){
+  await page.setViewportSize({width,height:960});await form.scrollIntoViewIfNeeded();await expect(form).toBeInViewport();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await form.getByLabel('결정',{exact:true}).focus();await page.keyboard.press('Tab');await expect(form.getByLabel('검토 사유',{exact:true})).toBeFocused();await page.keyboard.press('Tab');await expect(save).toBeFocused();
+  await page.screenshot({path:test.info().outputPath('workspace-admin-review-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:masks});
+  await evidence.scrollIntoViewIfNeeded();expect(await evidence.locator('table').evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
+  await page.screenshot({path:test.info().outputPath('workspace-admin-detail-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:masks});
+ }
+ const basisPath='**/backend/runs/'+record.id+'/reviews/page';await page.route(basisPath,route=>route.fulfill({status:503,contentType:'application/json',body:'{}'}));
+ try{await form.getByRole('button',{name:'검토 기준 다시 조회',exact:true}).click();await expect(save).toBeDisabled();await expect(form).toContainText('최신 검토 기준을 확인하지 못해 저장할 수 없습니다.');await form.scrollIntoViewIfNeeded();await page.screenshot({path:test.info().outputPath('workspace-admin-review-unavailable-390.png'),animations:'disabled',maskColor:'#DCE3EA',mask:masks})}finally{await page.unroute(basisPath)}
+ await form.getByRole('button',{name:'검토 기준 다시 조회',exact:true}).click();await expect(save).toBeEnabled();
+ const blocked=page.locator('.runs li button').filter({has:page.locator('.badge.block')}).first();await blocked.click();await expect(evidence.getByRole('heading',{name:'관리자 검토',exact:true})).toHaveCount(0);expect(writes).toBe(0);
+ phase('actual demo-admin pass form,1440x960 and390x960,keyboard decision-reason-save order,no horizontal overflow,read-only503 basis disables save then actual recovery,block has no approval form; zero business writes; masked areas not visually assessed');
+});
+
 test('workspace navigation and responsive layout keep review tasks reachable without writes',async({page})=>{
  await login(page,'demo-viewer');
  const navigation=page.getByRole('navigation',{name:'워크스페이스 탐색',exact:true});

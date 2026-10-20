@@ -134,6 +134,17 @@ jobs:
           path: |
             .local/ui-visual/*.png
             .local/ui-visual/comparison.json
+      - name: Capture actual administrator review and mobile detail without writes
+        working-directory: apps/console
+        run: STACK_E2E_ADMIN_CAPTURE=true STACK_E2E_READ_ONLY=true STACK_E2E_QUOTA_GUARD=true npx playwright test --grep 'administrator actual review form and mobile evidence remain scoped without writes'
+      - name: Publish redacted administrator review images immediately
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: console-admin-review-${{ github.sha }}
+          path: apps/console/test-results/**/workspace-admin-*.png
+          if-no-files-found: error
+          retention-days: 7
       - name: Verify actual TLS OIDC login in a fresh portless fixture
         run: |
           docker build -t agenttrust-security:local tools/security
