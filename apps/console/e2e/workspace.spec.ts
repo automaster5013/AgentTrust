@@ -28,7 +28,7 @@ if(process.env.STACK_E2E_VISUAL_CAPTURE==='true')test('workspace controlled visu
  const label=process.env.STACK_E2E_VISUAL_LABEL;expect(['before','after']).toContain(label);
  for(const width of [1440,390]){
   await page.setViewportSize({width,height:960});await page.evaluate(()=>document.fonts.ready);await page.evaluate(()=>window.scrollTo(0,0));
-  await page.screenshot({path:resolve('../../.local/ui-visual',label+'-'+width+'.png'),fullPage:false,animations:'disabled',mask:[page.locator('.account'),page.locator('.scope'),page.locator('.runs button > span'),page.locator('.mono')]});
+  await page.screenshot({path:resolve('../../.local/ui-visual',label+'-'+width+'.png'),fullPage:false,animations:'disabled',maskColor:'#DCE3EA',mask:[page.locator('.account'),page.locator('.scope'),page.locator('.runs button > span'),page.locator('.mono')]});
  }
  phase('controlled-visual-cohort-sha256 '+cohort);phase('actual demo-viewer,1440x960 and390x960,account scope run identifiers and hashes masked,no business writes');
 });
@@ -44,7 +44,7 @@ test('workspace navigation and responsive layout keep review tasks reachable wit
  const firstEvaluation=page.locator('.evaluation-list .runs button').first(),firstDecision=await firstEvaluation.locator('.badge').innerText();
  await firstEvaluation.click();await expect(page.getByRole('heading',{name:'평가 근거',exact:true})).toBeVisible();await expect(page.locator('dl[aria-label="평가와 릴리스 구분"]')).toContainText('평가 판정');await expect(page.locator('dl[aria-label="평가와 릴리스 구분"]')).toContainText('현재 릴리스 판정');
  const evidenceJump=page.getByRole('link',{name:'선택한 평가 근거로 이동',exact:true});await expect(evidenceJump).toHaveAttribute('href','#selected-evaluation-evidence');await evidenceJump.click();await expect(page.getByRole('region',{name:'선택한 평가 근거',exact:true})).toBeInViewport();
- for(const width of [1440,390]){await page.setViewportSize({width,height:960});await evidenceJump.click();const evidence=page.locator('#selected-evaluation-evidence');await expect(evidence).toBeInViewport();await page.screenshot({path:test.info().outputPath('workspace-selected-evidence-'+width+'.png'),animations:'disabled',mask:[page.locator('.account'),page.locator('.scope'),page.locator('.mono'),page.locator('.runs button > span')]})}
+ for(const width of [1440,390]){await page.setViewportSize({width,height:960});await evidenceJump.click();const evidence=page.locator('#selected-evaluation-evidence');await expect(evidence).toBeInViewport();await page.screenshot({path:test.info().outputPath('workspace-selected-evidence-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:[page.locator('.account'),page.locator('.scope'),page.locator('.mono'),page.locator('.runs button > span')]})}
  await filters.getByRole('button',{name:firstDecision==='차단'?/^통과 /:/^차단 /}).click();await expect(evidenceJump).toHaveCount(0);await expect(page.getByRole('heading',{name:'평가 근거',exact:true})).toHaveCount(0);
 
  await filters.getByRole('button',{name:/^차단 /}).click();await expect(filters.getByRole('button',{name:/^차단 /})).toHaveAttribute('aria-pressed','true');
@@ -57,7 +57,7 @@ test('workspace navigation and responsive layout keep review tasks reachable wit
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
   if(width===390){const list=await page.locator('.evaluation-list').boundingBox(),create=await page.locator('.evaluation-create').boundingBox();expect(list).not.toBeNull();expect(create).not.toBeNull();expect(list!.y).toBeLessThan(create!.y)}
   const links=await navigation.getByRole('link').all();for(const link of links){const box=await link.boundingBox();expect(box).not.toBeNull();expect(box!.width).toBeGreaterThanOrEqual(44);expect(box!.height).toBeGreaterThanOrEqual(32)}
-  await page.screenshot({path:test.info().outputPath('workspace-'+width+'.png'),fullPage:false,mask:[page.locator('.account'),page.locator('.scope'),page.locator('.runs button > span'),page.locator('.mono')],animations:'disabled'});
+  await page.screenshot({path:test.info().outputPath('workspace-'+width+'.png'),fullPage:false,maskColor:'#DCE3EA',mask:[page.locator('.account'),page.locator('.scope'),page.locator('.runs button > span'),page.locator('.mono')],animations:'disabled'});
  }
  phase('actual authenticated viewer navigation, keyboard skip link,1440px/390px horizontal-overflow and navigation target checks; screenshots mask account scope run identifiers and hashes; no business writes');
 });
