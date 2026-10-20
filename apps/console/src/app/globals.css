@@ -133,3 +133,7 @@ legend{font-size:12px;font-weight:700;color:var(--muted);padding:0 8px;max-width
 .review-panel h3{margin-top:0}.review-panel .review-history{padding:16px;margin:20px 0;border:1px solid var(--line);border-radius:8px;background:#fff}
 .review-panel .field-help{margin:-8px 0 16px;font-size:12px}.review-panel>button.primary{min-height:44px}
 @media(max-width:720px){.review-panel{padding:16px}.review-panel>button.primary{width:100%}}
+
+.review-jumps{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 12px}
+.review-jumps a{display:inline-flex;align-items:center;min-height:44px;max-width:100%;padding:9px 14px;border:1px solid var(--line);border-radius:8px;background:var(--accent-soft);color:var(--accent);font-size:13px;font-weight:600;text-decoration:none;overflow-wrap:anywhere}
+.review-jumps a:hover{border-color:var(--accent);text-decoration:underline}

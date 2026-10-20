@@ -2,7 +2,7 @@
 import argparse,datetime,hashlib,io,json,os,pathlib,subprocess,sys,tarfile,uuid
 from stack_compose import stack_compose
 from stack_business_fingerprint import fingerprint
-R=pathlib.Path.cwd();L=R/'.local';OUT=L/'ui-visual/comparison.json';BASE='63f32d6616eda681b1a8485dd62d0f7b245883f8'
+R=pathlib.Path.cwd();L=R/'.local';OUT=L/'ui-visual/comparison.json';BASE='d6dada4f939aebd54e757b38000b12be1667a845'
 a=argparse.ArgumentParser();a.add_argument('--execute',action='store_true');args=a.parse_args();assert args.execute and os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('GITHUB_REPOSITORY')=='automaster5013/AgentTrust' and not OUT.exists()
 d={'completed':False,'baselineRevision':BASE,'candidateRevision':os.environ['GITHUB_SHA'],'productionDeploymentPerformed':False,'customerDataUsed':False,'rawToolOutputRecorded':False,'phase':'runner-contract'};OUT.parent.mkdir(parents=True,exist_ok=True)
 def run(cmd,timeout=60,env=None):

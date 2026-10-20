@@ -44,7 +44,7 @@ if(process.env.STACK_E2E_ADMIN_VISUAL==='true')test('administrator controlled vi
  const masks=[page.locator('.account'),page.locator('.scope'),page.locator('.mono'),page.locator('.runs button > span'),page.locator('.review-history p')];
  for(const width of [1440,390]){
   await page.setViewportSize({width,height:960});await page.evaluate(()=>document.fonts.ready);
-  for(const [name,region] of [['review',form],['detail',evidence.locator('table')]] as const){await region.scrollIntoViewIfNeeded();await page.screenshot({path:resolve('../../.local/ui-visual/admin-'+label+'-'+name+'-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:masks})}
+  for(const [name,region] of [['review',form],['detail',evidence]] as const){if(name==='detail')await region.evaluate(node=>node.scrollIntoView({block:'start'}));else await region.scrollIntoViewIfNeeded();await page.screenshot({path:resolve('../../.local/ui-visual/admin-'+label+'-'+name+'-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:masks})}
  }
  expect(writes).toBe(0);phase('controlled-visual-cohort-sha256 '+cohort);phase('actual administrator identical selected evaluation gate and review basis;1440x960 and390x960;neutral privacy masks preserved;zero business writes');
 });
@@ -56,18 +56,18 @@ if(process.env.STACK_E2E_ADMIN_CAPTURE==='true')test('administrator actual revie
  const evidence=page.locator('.evidence'),form=evidence.locator('form').filter({has:page.getByRole('heading',{name:'관리자 검토',exact:true})}),save=form.getByRole('button',{name:'검토 저장·게이트 확인',exact:true});await expect(save).toBeEnabled();await expect(form.getByLabel('검토 사유',{exact:true})).toHaveAttribute('aria-describedby','run-review-reason-help');
  const masks=[page.locator('.account'),page.locator('.scope'),page.locator('.mono'),page.locator('.runs button > span'),page.locator('.review-history p')];
  for(const width of [1440,390]){
-  await page.setViewportSize({width,height:960});await form.scrollIntoViewIfNeeded();await expect(form).toBeInViewport();
+  await page.setViewportSize({width,height:960});const tasks=evidence.getByRole('navigation',{name:'선택한 평가 작업 이동',exact:true});await tasks.getByRole('link',{name:'현재 게이트로 이동',exact:true}).click();await expect(evidence.locator('#run-current-gate')).toBeFocused();await expect(evidence.locator('#run-current-gate')).toBeInViewport();await tasks.getByRole('link',{name:'관리자 검토로 이동',exact:true}).click();await expect(form).toBeFocused();await expect(form).toBeInViewport();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await form.getByLabel('결정',{exact:true}).focus();await page.keyboard.press('Tab');await expect(form.getByLabel('검토 사유',{exact:true})).toBeFocused();await page.keyboard.press('Tab');await expect(save).toBeFocused();
   await page.screenshot({path:test.info().outputPath('workspace-admin-review-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:masks});
-  await evidence.locator('table').scrollIntoViewIfNeeded();await expect(evidence.locator('table')).toBeInViewport();expect(await evidence.locator('table').evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
+  await evidence.evaluate(node=>node.scrollIntoView({block:'start'}));await expect(evidence.locator('table')).toBeInViewport();expect(await evidence.locator('table').evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
   const rules=evidence.getByRole('table',{name:'평가 규칙별 결과 · 필수 여부와 근거',exact:true});for(const rule of record.result.rules){const row=rules.getByRole('row').filter({has:page.getByText(rule.id,{exact:true})});await expect(row).toContainText(({pass:'통과',fail:'실패',inconclusive:'판정 보류'} as Record<string,string>)[rule.status]);}
   await page.screenshot({path:test.info().outputPath('workspace-admin-detail-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:masks});
  }
  const basisPath='**/backend/runs/'+record.id+'/reviews/page';await page.route(basisPath,route=>route.fulfill({status:503,contentType:'application/json',body:'{}'}));
  try{await form.getByRole('button',{name:'검토 기준 다시 조회',exact:true}).click();await expect(save).toBeDisabled();await expect(form.locator('[aria-live="polite"]')).toHaveText('최신 검토 기준을 확인하지 못해 저장할 수 없습니다.');await form.scrollIntoViewIfNeeded();await page.screenshot({path:test.info().outputPath('workspace-admin-review-unavailable-390.png'),animations:'disabled',maskColor:'#DCE3EA',mask:masks})}finally{await page.unroute(basisPath)}
  await form.getByRole('button',{name:'검토 기준 다시 조회',exact:true}).click();await expect(save).toBeEnabled();
- const blocked=page.locator('.runs li button').filter({has:page.locator('.badge.block')}).first();await blocked.click();await expect(evidence.getByRole('heading',{name:'관리자 검토',exact:true})).toHaveCount(0);await expect(evidence.locator('.decision-summary .badge.block')).toHaveText('차단');await expect(evidence.locator('.evidence-rules').getByText('실패',{exact:true}).first()).toBeVisible();expect(writes).toBe(0);
+ const blocked=page.locator('.runs li button').filter({has:page.locator('.badge.block')}).first();await blocked.click();await expect(evidence.getByRole('heading',{name:'관리자 검토',exact:true})).toHaveCount(0);await expect(evidence.getByRole('link',{name:'관리자 검토로 이동',exact:true})).toHaveCount(0);await expect(evidence.locator('.decision-summary .badge.block')).toHaveText('차단');await expect(evidence.locator('.evidence-rules').getByText('실패',{exact:true}).first()).toBeVisible();expect(writes).toBe(0);
  phase('actual demo-admin pass form,1440x960 and390x960,keyboard decision-reason-save order,no horizontal overflow,read-only503 basis disables save then actual recovery,block has no approval form; zero business writes; masked areas not visually assessed');
 });
 
@@ -81,9 +81,9 @@ test('workspace navigation and responsive layout keep review tasks reachable wit
  const filters=page.getByRole('group',{name:'최근 평가 판정 필터',exact:true});
  const firstEvaluation=page.locator('.evaluation-list .runs button').first(),firstDecision=await firstEvaluation.locator('.badge').innerText();
  await firstEvaluation.click();await expect(page.getByRole('heading',{name:'평가 근거',exact:true})).toBeVisible();await expect(page.locator('dl[aria-label="평가와 릴리스 구분"]')).toContainText('평가 판정');await expect(page.locator('dl[aria-label="평가와 릴리스 구분"]')).toContainText('현재 릴리스 판정');
- const evidenceJump=page.getByRole('link',{name:'선택한 평가 근거로 이동',exact:true});await expect(evidenceJump).toHaveAttribute('href','#selected-evaluation-evidence');await evidenceJump.click();await expect(page.getByRole('region',{name:'선택한 평가 근거',exact:true})).toBeInViewport();
+ const evidenceJump=page.getByRole('link',{name:'선택한 평가 근거로 이동',exact:true});await expect(evidenceJump).toHaveAttribute('href','#selected-evaluation-evidence');await evidenceJump.click();await expect(page.getByRole('region',{name:'선택한 평가 근거',exact:true})).toBeInViewport();const taskNavigation=page.getByRole('navigation',{name:'선택한 평가 작업 이동',exact:true});await expect(taskNavigation.getByRole('link',{name:'관리자 검토로 이동',exact:true})).toHaveCount(0);await taskNavigation.getByRole('link',{name:'현재 게이트로 이동',exact:true}).click();await expect(page.locator('#run-current-gate')).toBeFocused();
  for(const width of [1440,390]){await page.setViewportSize({width,height:960});await evidenceJump.click();const evidence=page.locator('#selected-evaluation-evidence');await expect(evidence).toBeInViewport();await page.screenshot({path:test.info().outputPath('workspace-selected-evidence-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:[page.locator('.account'),page.locator('.scope'),page.locator('.mono'),page.locator('.runs button > span')]})}
- await filters.getByRole('button',{name:firstDecision==='차단'?/^통과 /:/^차단 /}).click();await expect(evidenceJump).toHaveCount(0);await expect(page.getByRole('heading',{name:'평가 근거',exact:true})).toHaveCount(0);
+ await filters.getByRole('button',{name:firstDecision==='차단'?/^통과 /:/^차단 /}).click();await expect(evidenceJump).toHaveCount(0);await expect(page.getByRole('heading',{name:'평가 근거',exact:true})).toHaveCount(0);await expect(taskNavigation).toHaveCount(0);
 
  await filters.getByRole('button',{name:/^차단 /}).click();await expect(filters.getByRole('button',{name:/^차단 /})).toHaveAttribute('aria-pressed','true');
  for(const badge of await page.locator('.evaluation-list .runs .badge').all())await expect(badge).toHaveText('차단');
