@@ -123,3 +123,4 @@ legend{font-size:12px;font-weight:700;color:var(--muted);padding:0 8px;max-width
 .decision-summary small{display:block;font-size:12px;color:var(--muted);margin-top:10px}
 .release-state.allowed{color:#116044}.release-state.blocked{color:#96352d}.release-state.unavailable{color:#795005}
 @media(max-width:720px){.decision-summary{grid-template-columns:minmax(0,1fr);gap:10px}.decision-summary>div{padding:14px}}
+@media(max-width:720px){.viewer-workspace .evaluation-list{order:-1}}
