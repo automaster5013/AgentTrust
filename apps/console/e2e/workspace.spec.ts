@@ -30,7 +30,7 @@ test('workspace navigation and responsive layout keep review tasks reachable wit
  await page.locator('.skip-link').focus();await page.keyboard.press('Enter');await expect(page.locator('#workspace-content')).toBeFocused();
  const filters=page.getByRole('group',{name:'최근 평가 판정 필터',exact:true});
  const firstEvaluation=page.locator('.evaluation-list .runs button').first(),firstDecision=await firstEvaluation.locator('.badge').innerText();
- await firstEvaluation.click();await expect(page.getByRole('heading',{name:'평가 근거',exact:true})).toBeVisible();
+ await firstEvaluation.click();await expect(page.getByRole('heading',{name:'평가 근거',exact:true})).toBeVisible();await expect(page.locator('dl[aria-label="평가와 릴리스 구분"]')).toContainText('평가 판정');await expect(page.locator('dl[aria-label="평가와 릴리스 구분"]')).toContainText('현재 릴리스 판정');
  await filters.getByRole('button',{name:firstDecision==='차단'?/^통과 /:/^차단 /}).click();await expect(page.getByRole('heading',{name:'평가 근거',exact:true})).toHaveCount(0);
 
  await filters.getByRole('button',{name:/^차단 /}).click();await expect(filters.getByRole('button',{name:/^차단 /})).toHaveAttribute('aria-pressed','true');
