@@ -28,6 +28,15 @@ test('workspace navigation and responsive layout keep review tasks reachable wit
   const link=navigation.getByRole('link',{name,exact:true});await expect(link).toHaveAttribute('href','#'+target);await link.click();await expect(page.locator('#'+target)).toBeVisible();
  }
  await page.locator('.skip-link').focus();await page.keyboard.press('Enter');await expect(page.locator('#workspace-content')).toBeFocused();
+ const filters=page.getByRole('group',{name:'최근 평가 판정 필터',exact:true});
+ const firstEvaluation=page.locator('.evaluation-list .runs button').first(),firstDecision=await firstEvaluation.locator('.badge').innerText();
+ await firstEvaluation.click();await expect(page.getByRole('heading',{name:'평가 근거',exact:true})).toBeVisible();
+ await filters.getByRole('button',{name:firstDecision==='차단'?/^통과 /:/^차단 /}).click();await expect(page.getByRole('heading',{name:'평가 근거',exact:true})).toHaveCount(0);
+
+ await filters.getByRole('button',{name:/^차단 /}).click();await expect(filters.getByRole('button',{name:/^차단 /})).toHaveAttribute('aria-pressed','true');
+ for(const badge of await page.locator('.evaluation-list .runs .badge').all())await expect(badge).toHaveText('차단');
+ await filters.getByRole('button',{name:/^전체 /}).click();await expect(filters.getByRole('button',{name:/^전체 /})).toHaveAttribute('aria-pressed','true');
+
  for(const width of [1440,390]){
   await page.setViewportSize({width,height:960});await page.evaluate(()=>window.scrollTo(0,0));
   await expect(navigation).toBeVisible();await expect(page.getByRole('heading',{name:'평가 워크스페이스',exact:true})).toBeVisible();

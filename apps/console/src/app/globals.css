@@ -102,3 +102,17 @@ th,td{padding:10px 6px;font-size:12px}
 
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;scroll-behavior:auto!important}
 }
+.decision-filters{display:flex;gap:6px;flex-wrap:wrap;margin-top:20px;padding:6px;background:#f3f6f8;border-radius:10px}
+.decision-filters button{flex:1 1 auto;border-color:transparent;background:transparent;font-size:12px;padding:8px;min-height:40px}
+.decision-filters button[aria-pressed=true]{background:var(--surface);border-color:var(--line);color:var(--accent);box-shadow:0 1px 4px #172b400a}
+.decision-filters span{margin-left:5px;font-variant-numeric:tabular-nums;color:var(--muted)}
+.list-context{font-size:12px;margin:10px 0 0}
+.gate-blocked{background:#fff5f2;border-color:#a54830}
+.gate-blocked>strong{color:#8c3524}
+.gate-unavailable{background:#fff8e8;border-color:#9a6c18}
+.gate-allowed>strong{color:#116044}
+fieldset{min-width:0;border:1px solid var(--line);border-radius:10px;padding:16px;margin:0 0 18px}
+legend{font-size:12px;font-weight:700;color:var(--muted);padding:0 8px;max-width:100%;overflow-wrap:anywhere}
+.card button+button{margin-left:6px}
+.card nav{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0}
+.card nav button+button{margin-left:0}
