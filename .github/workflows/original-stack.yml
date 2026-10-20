@@ -74,6 +74,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Prepare separate PostgreSQL and synthetic identities
         run: |
           python3 scripts/stack-policy-metadata.py --check
@@ -184,6 +185,8 @@ jobs:
       - name: Audit fixed verifier dependency installation
         working-directory: tools/promptfoo
         run: npm audit --omit=optional --audit-level=high
+      - name: Capture controlled before and after console screenshots on disposable runner
+        run: python3 scripts/stack-ui-visual-comparison.py --execute
       - name: Verify real browser evaluation and approval controls
         working-directory: apps/console
         run: |
@@ -310,6 +313,8 @@ jobs:
             .local/stack-oidc-image-config-*.json
             .local/stack-browser-*.json
             apps/console/test-results/**/workspace-*.png
+            .local/ui-visual/*.png
+            .local/ui-visual/comparison.json
             .local/stack-workspace-onboarding-*.json
             .local/stack-workspace-dispatch-load-*.json
           if-no-files-found: ignore

@@ -21,6 +21,18 @@ async function existingRecoverableCampaign(page:Page){
  throw Error('Existing recoverable synthetic campaign unavailable');
 }
 
+if(process.env.STACK_E2E_VISUAL_CAPTURE==='true')test('workspace controlled visual capture uses actual viewer and stable evaluation data',async({page})=>{
+ await login(page,'demo-viewer');await expect(page.getByRole('heading',{name:/최근 평가/})).toBeVisible();
+ const response=await page.request.get('/backend/runs');expect(response.status()).toBe(200);const records=await response.json();
+ const cohort=createHash('sha256').update(JSON.stringify(records)).digest('hex');
+ const label=process.env.STACK_E2E_VISUAL_LABEL;expect(['before','after']).toContain(label);
+ for(const width of [1440,390]){
+  await page.setViewportSize({width,height:960});await page.evaluate(()=>document.fonts.ready);await page.evaluate(()=>window.scrollTo(0,0));
+  await page.screenshot({path:resolve('../../.local/ui-visual',label+'-'+width+'.png'),fullPage:false,animations:'disabled',mask:[page.locator('.account'),page.locator('.scope'),page.locator('.runs button > span'),page.locator('.mono')]});
+ }
+ phase('controlled-visual-cohort-sha256 '+cohort);phase('actual demo-viewer,1440x960 and390x960,account scope run identifiers and hashes masked,no business writes');
+});
+
 test('workspace navigation and responsive layout keep review tasks reachable without writes',async({page})=>{
  await login(page,'demo-viewer');
  const navigation=page.getByRole('navigation',{name:'워크스페이스 탐색',exact:true});
