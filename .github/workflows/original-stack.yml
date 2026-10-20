@@ -123,6 +123,17 @@ jobs:
           npm ci --ignore-scripts
           npx playwright install --with-deps chromium
           sudo apt-get install --no-install-recommends -y libnss3-tools
+      - name: Capture controlled before and after console screenshots on disposable runner
+        run: python3 scripts/stack-ui-visual-comparison.py --execute
+      - name: Publish redacted console before and after images immediately
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: console-visual-before-after-${{ github.sha }}
+          retention-days: 7
+          path: |
+            .local/ui-visual/*.png
+            .local/ui-visual/comparison.json
       - name: Verify actual TLS OIDC login in a fresh portless fixture
         run: |
           docker build -t agenttrust-security:local tools/security
@@ -185,8 +196,6 @@ jobs:
       - name: Audit fixed verifier dependency installation
         working-directory: tools/promptfoo
         run: npm audit --omit=optional --audit-level=high
-      - name: Capture controlled before and after console screenshots on disposable runner
-        run: python3 scripts/stack-ui-visual-comparison.py --execute
       - name: Verify real browser evaluation and approval controls
         working-directory: apps/console
         run: |
