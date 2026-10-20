@@ -67,7 +67,7 @@ if(process.env.STACK_E2E_ADMIN_CAPTURE==='true')test('administrator actual revie
  const basisPath='**/backend/runs/'+record.id+'/reviews/page';await page.route(basisPath,route=>route.fulfill({status:503,contentType:'application/json',body:'{}'}));
  try{await form.getByRole('button',{name:'검토 기준 다시 조회',exact:true}).click();await expect(save).toBeDisabled();await expect(form.locator('[aria-live="polite"]')).toHaveText('최신 검토 기준을 확인하지 못해 저장할 수 없습니다.');await form.scrollIntoViewIfNeeded();await page.screenshot({path:test.info().outputPath('workspace-admin-review-unavailable-390.png'),animations:'disabled',maskColor:'#DCE3EA',mask:masks})}finally{await page.unroute(basisPath)}
  await form.getByRole('button',{name:'검토 기준 다시 조회',exact:true}).click();await expect(save).toBeEnabled();
- const blocked=page.locator('.runs li button').filter({has:page.locator('.badge.block')}).first();await blocked.click();await expect(evidence.getByRole('heading',{name:'관리자 검토',exact:true})).toHaveCount(0);expect(writes).toBe(0);
+ const blocked=page.locator('.runs li button').filter({has:page.locator('.badge.block')}).first();await blocked.click();await expect(evidence.getByRole('heading',{name:'관리자 검토',exact:true})).toHaveCount(0);await expect(evidence.locator('.decision-summary .badge.block')).toHaveText('차단');await expect(evidence.locator('.evidence-rules').getByText('실패',{exact:true}).first()).toBeVisible();expect(writes).toBe(0);
  phase('actual demo-admin pass form,1440x960 and390x960,keyboard decision-reason-save order,no horizontal overflow,read-only503 basis disables save then actual recovery,block has no approval form; zero business writes; masked areas not visually assessed');
 });
 
@@ -668,7 +668,7 @@ test('administrator creates evaluation, approves, rejects and cannot override re
  await page.getByLabel('검토 사유',{exact:true}).fill('Fresh synthetic approval after external rejection');await page.getByRole('button',{name:'검토 저장·게이트 확인',exact:true}).click();await expect(page.getByText('합성 릴리스 허용',{exact:true})).toBeVisible();
 
  await page.getByLabel('결정',{exact:true}).selectOption('rejected');await page.getByRole('button',{name:'검토 저장·게이트 확인',exact:true}).click();await expect(page.getByText('릴리스 허용 안 됨',{exact:true})).toBeVisible();phase('rejection denies');
- await page.getByLabel('합성 시나리오',{exact:true}).selectOption('block');await page.getByRole('button',{name:'평가 실행',exact:true}).click();await expect(page.locator('.evidence .badge.block')).toBeVisible({timeout:20000});await expect(page.getByRole('heading',{name:'관리자 검토',exact:true})).toHaveCount(0);await expect(page.getByText('릴리스 허용 안 됨',{exact:true})).toBeVisible();
+ await page.getByLabel('합성 시나리오',{exact:true}).selectOption('block');await page.getByRole('button',{name:'평가 실행',exact:true}).click();await expect(page.locator('.evidence .decision-summary .badge.block')).toHaveText('차단',{timeout:20000});await expect(page.locator('.evidence-rules').getByText('실패',{exact:true}).first()).toBeVisible();await expect(page.getByRole('heading',{name:'관리자 검토',exact:true})).toHaveCount(0);await expect(page.getByText('릴리스 허용 안 됨',{exact:true})).toBeVisible();
 });
 
 test('viewer can read own evidence and cannot create evaluations',async({page})=>{
