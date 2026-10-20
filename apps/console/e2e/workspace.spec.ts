@@ -21,6 +21,23 @@ async function existingRecoverableCampaign(page:Page){
  throw Error('Existing recoverable synthetic campaign unavailable');
 }
 
+test('workspace navigation and responsive layout keep review tasks reachable without writes',async({page})=>{
+ await login(page,'demo-viewer');
+ const navigation=page.getByRole('navigation',{name:'워크스페이스 탐색',exact:true});
+ for(const [name,target] of [['평가 실행·조회','evaluations'],['버전·캠페인','campaigns'],['준비 상태·사용량','operations'],['이력·감사','history']]){
+  const link=navigation.getByRole('link',{name,exact:true});await expect(link).toHaveAttribute('href','#'+target);await link.click();await expect(page.locator('#'+target)).toBeVisible();
+ }
+ await page.locator('.skip-link').focus();await page.keyboard.press('Enter');await expect(page.locator('#workspace-content')).toBeFocused();
+ for(const width of [1440,390]){
+  await page.setViewportSize({width,height:960});await page.evaluate(()=>window.scrollTo(0,0));
+  await expect(navigation).toBeVisible();await expect(page.getByRole('heading',{name:'평가 워크스페이스',exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+  const links=await navigation.getByRole('link').all();for(const link of links){const box=await link.boundingBox();expect(box).not.toBeNull();expect(box!.width).toBeGreaterThanOrEqual(44);expect(box!.height).toBeGreaterThanOrEqual(32)}
+  await page.screenshot({path:test.info().outputPath('workspace-'+width+'.png'),fullPage:false,mask:[page.locator('.account'),page.locator('.scope'),page.locator('.runs button > span'),page.locator('.mono')],animations:'disabled'});
+ }
+ phase('actual authenticated viewer navigation, keyboard skip link,1440px/390px horizontal-overflow and navigation target checks; screenshots mask account scope run identifiers and hashes; no business writes');
+});
+
 test('authenticated viewer preserves identity during evaluation list failure and retries only the read',async({page})=>{
  let mode='unavailable',writes=0;const list='**/backend/runs';
  let releaseFirstList!:()=>void,firstList=true;const initialList=new Promise<void>(resolve=>{releaseFirstList=resolve});

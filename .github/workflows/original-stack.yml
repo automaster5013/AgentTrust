@@ -309,6 +309,7 @@ jobs:
             .local/stack-https-identity-*/summary.json
             .local/stack-oidc-image-config-*.json
             .local/stack-browser-*.json
+            apps/console/test-results/**/workspace-*.png
             .local/stack-workspace-onboarding-*.json
             .local/stack-workspace-dispatch-load-*.json
           if-no-files-found: ignore
@@ -497,6 +498,7 @@ jobs:
           path: |
             .local/stack-https-identity-*/summary.json
             .local/stack-browser-*.json
+            apps/console/test-results/**/workspace-*.png
             .local/stack-workspace-onboarding-*.json
             .local/stack-workspace-dispatch-load-*.json
             .local/stack-gateway-smoke-*.json
