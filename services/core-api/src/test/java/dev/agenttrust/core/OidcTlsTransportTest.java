@@ -42,13 +42,13 @@ class OidcTlsTransportTest {
                 var defaults=new JdkClientHttpRequestFactory(defaultClient);defaults.setReadTimeout(Duration.ofSeconds(10));
                 var explicit=new JdkClientHttpRequestFactory(trustedClient);explicit.setReadTimeout(Duration.ofSeconds(10));
                 var untrusted=RestClient.builder().requestFactory(defaults).build();var trusted=RestClient.builder().requestFactory(explicit).build();
-                var trustFailure=assertThrows(ResourceAccessException.class,()->untrusted.get().uri("https://localhost:"+port+"/metadata").retrieve().body(String.class));assertTrue(hasTlsCause(trustFailure));assertEquals(0,requests.get());
+                var trustFailure=assertThrows(ResourceAccessException.class,()->untrusted.get().uri("https://localhost:"+port+"/metadata").retrieve().body(String.class));assertTrue(hasTlsCause(trustFailure),()->causeTypes(trustFailure));assertEquals(0,requests.get());
                 // This fixture verifies TLS causes; socket deadline behavior is tested separately.
                 var oidcDefault=RestClient.builder().requestFactory(OidcHttpTransport.factory(Duration.ofSeconds(10))).build();
                 var oidcTrustFailure=assertThrows(ResourceAccessException.class,()->oidcDefault.get().uri("https://localhost:"+port+"/metadata").retrieve().body(String.class));assertTrue(hasTlsCause(oidcTrustFailure),()->causeTypes(oidcTrustFailure));assertEquals(0,requests.get());
                 assertEquals("fixture metadata",trusted.get().uri("https://localhost:"+port+"/metadata").retrieve().body(String.class));assertEquals(1,requests.get());
                 String address=server.getAddress().getAddress().getHostAddress();String ipAuthority=address.contains(":")?"["+address+"]":address;
-                var hostnameFailure=assertThrows(ResourceAccessException.class,()->trusted.get().uri("https://"+ipAuthority+":"+port+"/metadata").retrieve().body(String.class));assertTrue(hasTlsCause(hostnameFailure));assertEquals(1,requests.get());
+                var hostnameFailure=assertThrows(ResourceAccessException.class,()->trusted.get().uri("https://"+ipAuthority+":"+port+"/metadata").retrieve().body(String.class));assertTrue(hasTlsCause(hostnameFailure),()->causeTypes(hostnameFailure));assertEquals(1,requests.get());
             }
         } finally {
             if(server!=null)server.stop(0);executor.shutdownNow();java.util.Arrays.fill(password,'\0');Files.deleteIfExists(store);Files.deleteIfExists(directory);
