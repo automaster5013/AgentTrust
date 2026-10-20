@@ -53,6 +53,7 @@ test('workspace navigation and responsive layout keep review tasks reachable wit
   await page.setViewportSize({width,height:960});await page.evaluate(()=>window.scrollTo(0,0));
   await expect(navigation).toBeVisible();await expect(page.getByRole('heading',{name:'평가 워크스페이스',exact:true})).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+  if(width===390){const list=await page.locator('.evaluation-list').boundingBox(),create=await page.locator('.evaluation-create').boundingBox();expect(list).not.toBeNull();expect(create).not.toBeNull();expect(list!.y).toBeLessThan(create!.y)}
   const links=await navigation.getByRole('link').all();for(const link of links){const box=await link.boundingBox();expect(box).not.toBeNull();expect(box!.width).toBeGreaterThanOrEqual(44);expect(box!.height).toBeGreaterThanOrEqual(32)}
   await page.screenshot({path:test.info().outputPath('workspace-'+width+'.png'),fullPage:false,mask:[page.locator('.account'),page.locator('.scope'),page.locator('.runs button > span'),page.locator('.mono')],animations:'disabled'});
  }
