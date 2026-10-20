@@ -43,7 +43,8 @@ test('workspace navigation and responsive layout keep review tasks reachable wit
  const filters=page.getByRole('group',{name:'최근 평가 판정 필터',exact:true});
  const firstEvaluation=page.locator('.evaluation-list .runs button').first(),firstDecision=await firstEvaluation.locator('.badge').innerText();
  await firstEvaluation.click();await expect(page.getByRole('heading',{name:'평가 근거',exact:true})).toBeVisible();await expect(page.locator('dl[aria-label="평가와 릴리스 구분"]')).toContainText('평가 판정');await expect(page.locator('dl[aria-label="평가와 릴리스 구분"]')).toContainText('현재 릴리스 판정');
- await filters.getByRole('button',{name:firstDecision==='차단'?/^통과 /:/^차단 /}).click();await expect(page.getByRole('heading',{name:'평가 근거',exact:true})).toHaveCount(0);
+ const evidenceJump=page.getByRole('link',{name:'선택한 평가 근거로 이동',exact:true});await expect(evidenceJump).toHaveAttribute('href','#selected-evaluation-evidence');await evidenceJump.click();await expect(page.getByRole('region',{name:'선택한 평가 근거',exact:true})).toBeInViewport();
+ await filters.getByRole('button',{name:firstDecision==='차단'?/^통과 /:/^차단 /}).click();await expect(evidenceJump).toHaveCount(0);await expect(page.getByRole('heading',{name:'평가 근거',exact:true})).toHaveCount(0);
 
  await filters.getByRole('button',{name:/^차단 /}).click();await expect(filters.getByRole('button',{name:/^차단 /})).toHaveAttribute('aria-pressed','true');
  for(const badge of await page.locator('.evaluation-list .runs .badge').all())await expect(badge).toHaveText('차단');
