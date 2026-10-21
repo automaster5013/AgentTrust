@@ -127,7 +127,7 @@ legend{font-size:12px;font-weight:700;color:var(--muted);padding:0 8px;max-width
 
 .evidence-rules .rule-requirement{display:block;margin-top:6px;font-size:11px;font-weight:400;color:var(--muted)}
 .evidence-rules th:first-child{width:32%}.evidence-rules th:nth-child(2){width:22%}
-.evidence-rules .badge{white-space:normal;line-height:1.5}
+.evidence-rules .badge{display:inline-block;max-width:100%;white-space:normal;word-break:keep-all;overflow-wrap:normal;line-height:1.5;text-align:center}
 
 .review-panel{max-width:760px;margin-top:28px;padding:24px;border:1px solid var(--line);border-radius:12px;background:var(--canvas)}
 .review-panel h3{margin-top:0}.review-panel .review-history{padding:16px;margin:20px 0;border:1px solid var(--line);border-radius:8px;background:#fff}
