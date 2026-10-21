@@ -7,6 +7,11 @@ on:
     paths: ['charts/**', 'infra/terraform/**', 'tools/infrastructure/**', 'scripts/stack-infrastructure-*.py', '.github/workflows/stack-infrastructure.yml', '.github/workflows/original-stack.yml']
   workflow_dispatch:
     inputs:
+      diagnostic_kind:
+        description: Existing artifact diagnostic scope
+        type: choice
+        options: [registry-browser, source-tls-pilot]
+        default: registry-browser
       diagnostic_run:
         description: Existing Main original-stack run to inspect without rerunning it
         required: false
@@ -62,4 +67,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DIAGNOSTIC_RUN_ID: ${{ inputs.diagnostic_run }}
           DIAGNOSTIC_REVISION: ${{ inputs.diagnostic_revision }}
-        run: python3 scripts/stack-infrastructure-browser-diagnostic.py
+          DIAGNOSTIC_KIND: ${{ inputs.diagnostic_kind }}
+        run: |
+          if [ "$DIAGNOSTIC_KIND" = source-tls-pilot ]; then
+            python3 scripts/stack-https-failure-diagnostic.py
+          else
+            python3 scripts/stack-infrastructure-browser-diagnostic.py
+          fi
