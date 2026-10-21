@@ -10,7 +10,7 @@ COPY --from=compiler /usr/local/go /usr/local/go
 ENV PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=local GOMAXPROCS=2 CGO_ENABLED=1 GODEBUG=http2client=0
 WORKDIR /source
 RUN curl --fail --location --retry 2 -o /tmp/source.tar.gz https://codeload.github.com/ollama/ollama/tar.gz/b061384d90ff455462bc32745dd0de479de717a3 && echo '74a09e8de6139ae60504f4892a768ce57de4796c01d1fe0edcfc03bcacc4cb67  /tmp/source.tar.gz' | sha256sum -c - && tar -xzf /tmp/source.tar.gz --strip-components=1 && rm /tmp/source.tar.gz
-RUN go get github.com/buger/jsonparser@v1.1.2 golang.org/x/crypto@v0.57.0 golang.org/x/image@v0.45.0 golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 golang.org/x/text@v0.42.0 && go mod tidy
+RUN go get github.com/buger/jsonparser@v1.1.2 github.com/klauspost/compress@v1.18.7 golang.org/x/crypto@v0.57.0 golang.org/x/image@v0.45.0 golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 golang.org/x/text@v0.42.0 && go mod tidy
 RUN go build -p 2 -trimpath -buildmode=pie -ldflags='-s -w -X github.com/ollama/ollama/version.Version=0.40.2' -o /patched-ollama .
 FROM ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libstdc++6 libgomp1 && rm -rf /var/lib/apt/lists/* && useradd --uid 10001 --user-group --no-create-home model
