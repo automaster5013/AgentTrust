@@ -76,6 +76,7 @@ if(process.env.STACK_E2E_ADMIN_CAPTURE==='true')test('administrator actual revie
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await form.getByLabel('결정',{exact:true}).focus();await page.keyboard.press('Tab');await expect(form.getByLabel('검토 사유',{exact:true})).toBeFocused();await page.keyboard.press('Tab');await expect(save).toBeFocused();
   await page.screenshot({path:test.info().outputPath('workspace-admin-review-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:masks});
+  const reason=form.getByLabel('검토 사유',{exact:true});await reason.fill('');await save.click();await expect(reason).toBeFocused();expect(await reason.evaluate(node=>(node as HTMLTextAreaElement).validity.valueMissing)).toBe(true);expect(writes).toBe(0);await expect(save).toBeEnabled();await page.screenshot({path:test.info().outputPath('workspace-admin-review-required-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:masks});
   await evidence.evaluate(node=>node.scrollIntoView({block:'start'}));await expect(evidence.locator('table')).toBeInViewport();expect(await evidence.locator('table').evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);
   const rules=evidence.getByRole('table',{name:'평가 규칙별 결과 · 필수 여부와 근거',exact:true});for(const rule of record.result.rules){const row=rules.getByRole('row').filter({has:page.getByText(rule.id,{exact:true})});await expect(row).toContainText(({pass:'통과',fail:'실패',inconclusive:'판정 보류'} as Record<string,string>)[rule.status]);}
   await page.screenshot({path:test.info().outputPath('workspace-admin-detail-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:masks});
@@ -92,7 +93,7 @@ if(process.env.STACK_E2E_ADMIN_CAPTURE==='true')test('administrator actual revie
    await page.screenshot({path:test.info().outputPath('workspace-admin-'+frame.record.decision+'-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:masks})}
  }
  expect(writes).toBe(0);
- phase('actual demo-admin pass form,1440x960 and390x960,keyboard Enter gate/review navigation and focused targets,keyboard decision-reason-save order,no horizontal overflow,read-only503 basis disables save then actual recovery,block and inconclusive have no approval form or review link and never allow release; zero business writes; masked areas not visually assessed');
+ phase('actual demo-admin pass form,1440x960 and390x960,keyboard Enter gate/review navigation and focused targets,keyboard decision-reason-save order,empty required reason blocks submission and focuses reason without writes,no horizontal overflow,read-only503 basis disables save then actual recovery,block and inconclusive have no approval form or review link and never allow release; zero business writes; masked areas not visually assessed');
 });
 
 test('workspace navigation and responsive layout keep review tasks reachable without writes',async({page})=>{
