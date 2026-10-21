@@ -1,4 +1,4 @@
-FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS build
+FROM golang:1.27.3-alpine@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS build
 ADD --checksum=sha256:7c74640d726f23689d8853e0d5a55707ad8b524417ca7416c036c4ecb9ddb01f https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/cmd%2Fbuilder%2Fv0.162.0/ocb_0.162.0_linux_amd64 /usr/local/bin/ocb
 RUN chmod 755 /usr/local/bin/ocb
 WORKDIR /build

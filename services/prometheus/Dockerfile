@@ -10,7 +10,7 @@ RUN pnpm run build
 WORKDIR /source
 RUN bash scripts/compress_assets.sh
 
-FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS build
+FROM golang:1.27.3-alpine@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS build
 ADD --checksum=sha256:eee7ec029ffdba7d9ee59171cad5ddaff10e71514b0bae1a6fde6dc1ae99e181 https://codeload.github.com/prometheus/prometheus/tar.gz/5241a27fe3c6983549fccc32f6e65917408c63cd /source.tar.gz
 RUN mkdir /source && tar -xzf /source.tar.gz --strip-components=1 -C /source
 COPY --from=ui /source/web/ui/static /source/web/ui/static

@@ -1,4 +1,4 @@
-FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS compile
+FROM golang:1.27.3-alpine@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS compile
 ADD --checksum=sha256:83e3ddd057e5c7aba76c34012cbd3e3c98e850061b307a39443331a857e8fcca https://codeload.github.com/nats-io/nats-server/tar.gz/d237c3be7f99cb45ef0809d6948c3882f4966adf /source.tar.gz
 RUN mkdir /source && tar -xzf /source.tar.gz --strip-components=1 -C /source
 WORKDIR /source

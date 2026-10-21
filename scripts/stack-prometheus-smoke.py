@@ -17,7 +17,7 @@ try:
     stage='binary-versions'
     for binary in ['prometheus','promtool']:
         result=command(['docker','exec','agenttrust-stack-prometheus-1','/bin/'+binary,'--version'])
-        assert result.returncode==0 and 'version 3.15.0' in result.stdout and 'go1.27.2' in result.stdout
+        assert result.returncode==0 and 'version 3.15.0' in result.stdout and 'go1.27.3' in result.stdout
         assert '5241a27fe3c6983549fccc32f6e65917408c63cd' in result.stdout and 'builtinassets' in result.stdout
     config=command(['docker','exec','agenttrust-stack-prometheus-1','/bin/promtool','check','config','/etc/prometheus.yaml'])
     assert config.returncode==0
@@ -44,7 +44,7 @@ with httpx.Client(timeout=5,follow_redirects=False,trust_env=False) as client:
    for chunk in response.iter_bytes():size+=len(chunk);assert size<=4194304
    assert size>0
  build=client.get(base+'/api/v1/status/buildinfo');assert build.status_code==200 and len(build.content)<=4096
- info=build.json()['data'];assert info['version']=='3.15.0' and info['goVersion']=='go1.27.2' and info['revision']=='5241a27fe3c6983549fccc32f6e65917408c63cd'
+ info=build.json()['data'];assert info['version']=='3.15.0' and info['goVersion']=='go1.27.3' and info['revision']=='5241a27fe3c6983549fccc32f6e65917408c63cd'
  print(json.dumps({'browserScriptCount':len(parser.paths),'buildInfoVerified':True}))
 '''
     probe=command(['docker','exec','agenttrust-stack-ai-worker-1','python','-c',code]);assert probe.returncode==0

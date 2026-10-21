@@ -1,4 +1,4 @@
-FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS build
+FROM golang:1.27.3-alpine@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS build
 ADD --checksum=sha256:a5489d155031677121f8e715791012bc96f1ecacf5b4bcaaee6eb6a902560156 https://codeload.github.com/grafana/tempo/tar.gz/77fc4563d1135d0ca2656709c7384c278a9c67b0 /source.tar.gz
 RUN mkdir /source && tar -xzf /source.tar.gz --strip-components=1 -C /source
 WORKDIR /source

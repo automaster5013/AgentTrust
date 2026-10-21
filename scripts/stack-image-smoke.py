@@ -34,7 +34,7 @@ try:
  stage='prometheus-runtimes'
  for binary in ['prometheus','promtool']:
   version_output=run(['docker','exec','agenttrust-stack-prometheus-1','/bin/'+binary,'--version']).stdout
-  assert 'version 3.15.0' in version_output and 'go1.27.2' in version_output
+  assert 'version 3.15.0' in version_output and 'go1.27.3' in version_output
  stage='java-runtimes'
  assert 'version "21.' in run(['docker','exec','agenttrust-stack-core-api-1','java','-version']).stderr
  assert 'version "21.' in run(['docker','exec','agenttrust-stack-gateway-1','java','-version']).stderr
@@ -65,9 +65,9 @@ try:
  redis=json.loads(run(['docker','inspect','agenttrust-stack-redis-1']).stdout)[0];assert redis['Config']['Image']=='redis:8.2-alpine@sha256:b51665e66f00759be7c3152ad5ac3c66fb2f619c13ef62dea7cc1f9914524635';assert 'v=8.2.' in run(['docker','exec','agenttrust-stack-redis-1','redis-server','--version']).stdout
  stage='identity-metadata'
  with urllib.request.urlopen('http://127.0.0.1:4321/api/auth-info',timeout=10) as response:assert json.loads(response.read(4097))['identityProvider']=='keycloak'
- result={'revision':revision,'images':verified,'actualRuntimes':{'core-api':'Java 21','ai-worker':'Python 3.14','console':'Node.js 24','opa':'OPA 1.21.1','identity':'Keycloak 26.8.1','gateway':'Java 21 / Spring WebFlux','cache':'Redis 8.2','object-store':'MinIO RELEASE.2025-10-15T17-29-55Z','database':'PostgreSQL 17 / pgvector 0.8.7','local-model':'Ollama 0.40.2 CPU / patched Go 1.27.2','messaging':'NATS JetStream 2.12.15 / patched Go 1.27.2'},'identityProvider':'keycloak','runtimeImageIdentityVerified':True,'serverDeployed':False}
- result['actualRuntimes'].update({'tempo':'Tempo 3.1.0 / patched Go 1.27.2','loki':'Loki 3.7.8 / patched Go 1.27.2','prometheus':'Prometheus and promtool 3.15.0 / patched Go 1.27.2','quality-verifier':'Node.js 24 / Promptfoo 0.124.1'})
- result['actualRuntimes']['telemetry']='OpenTelemetry Collector 0.162.0 / patched Go 1.27.2'
+ result={'revision':revision,'images':verified,'actualRuntimes':{'core-api':'Java 21','ai-worker':'Python 3.14','console':'Node.js 24','opa':'OPA 1.21.1','identity':'Keycloak 26.8.1','gateway':'Java 21 / Spring WebFlux','cache':'Redis 8.2','object-store':'MinIO RELEASE.2025-10-15T17-29-55Z','database':'PostgreSQL 17 / pgvector 0.8.7','local-model':'Ollama 0.40.2 CPU / patched Go 1.27.3','messaging':'NATS JetStream 2.12.15 / patched Go 1.27.3'},'identityProvider':'keycloak','runtimeImageIdentityVerified':True,'serverDeployed':False}
+ result['actualRuntimes'].update({'tempo':'Tempo 3.1.0 / patched Go 1.27.3','loki':'Loki 3.7.8 / patched Go 1.27.3','prometheus':'Prometheus and promtool 3.15.0 / patched Go 1.27.3','quality-verifier':'Node.js 24 / Promptfoo 0.124.1'})
+ result['actualRuntimes']['telemetry']='OpenTelemetry Collector 0.162.0 / patched Go 1.27.3'
  result['actualRuntimes']['console-https']='Node.js 24 / Next.js HTTPS profile; actual temporary Chromium fixture'
  result.update(imageIds=image_ids,httpsConsoleProfileRuntimeVerified=True,httpsConsoleProfileEvidence=EVIDENCE_FILE,
   httpsConsoleProfileEvidenceSha256=hashlib.sha256(profile_bytes).hexdigest())

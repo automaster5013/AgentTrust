@@ -3,7 +3,7 @@ RUN apk add --no-cache curl tar zstd
 RUN test "$(uname -m)" = x86_64 && curl --fail --location --retry 2 -o /tmp/ollama.tar.zst https://github.com/ollama/ollama/releases/download/v0.40.2/ollama-linux-amd64.tar.zst && echo '726bee78706c281b0eeef00746efe51a044d71c592c3f0b195820707f31fdf04  /tmp/ollama.tar.zst' | sha256sum -c -
 RUN mkdir /cpu && tar --wildcards --no-wildcards-match-slash -I zstd -xf /tmp/ollama.tar.zst -C /cpu bin/ollama 'lib/ollama/*.so*' lib/ollama/llama-server lib/ollama/GO_LICENSE && rm /tmp/ollama.tar.zst
 RUN curl --fail --location -o /cpu/LICENSE https://raw.githubusercontent.com/ollama/ollama/v0.40.2/LICENSE && echo '5934ed2ce0d15154bcdb9c85203210abac0da4314af34081e36df4599f90b226  /cpu/LICENSE' | sha256sum -c -
-FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS compiler
+FROM golang:1.27.3-alpine@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS compiler
 FROM ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7 AS patched
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl build-essential && rm -rf /var/lib/apt/lists/*
 COPY --from=compiler /usr/local/go /usr/local/go
