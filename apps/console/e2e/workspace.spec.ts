@@ -11,6 +11,17 @@ async function existingSyntheticEvaluation(page:Page,passOnly=false){
  const row=rows.find(r=>r.provider==='synthetic'&&r.scenario!=='quality'&&r.state!=='queued'&&(!passOnly||r.decision==='pass'));expect(row).toBeTruthy();
  const record=await (await page.request.get('/backend/runs/'+row!.id)).json(),me=await (await page.request.get('/backend/me')).json(),gate=await (await page.request.get('/backend/runs/'+row!.id+'/gate')).json();return {record,me,gate};
 }
+async function existingSyntheticNonPassEvaluations(page:Page){
+ const response=await page.request.get('/backend/runs');expect(response.status()).toBe(200);const rows=await response.json() as {id:string;provider:string;scenario:string;state:string;decision:string}[];
+ const frames=[];
+ for(const decision of ['block','inconclusive'] as const){
+  const candidates=rows.filter(row=>row.provider==='synthetic'&&row.scenario!=='quality'&&row.state!=='queued'&&row.decision===decision).sort((a,b)=>a.id.localeCompare(b.id));
+  const row=decision==='inconclusive'?(candidates.find(row=>row.scenario==='missing_evidence')??candidates[0]):candidates[0];expect(row).toBeTruthy();
+  const detailResponse=await page.request.get('/backend/runs/'+row!.id),gateResponse=await page.request.get('/backend/runs/'+row!.id+'/gate');expect(detailResponse.status()).toBe(200);expect(gateResponse.status()).toBe(200);
+  const record=await detailResponse.json(),gate=await gateResponse.json();expect(record.id).toBe(row!.id);expect(record.provider).toBe('synthetic');expect(record.decision).toBe(decision);expect(gate.deploymentAllowed).toBe(false);frames.push({record,gate});
+ }
+ return frames;
+}
 async function prepareSyntheticEvaluationForm(page:Page,record:{scenario:string;provider:string;requires_approval:boolean}){
  await page.getByLabel('합성 시나리오',{exact:true}).selectOption(record.scenario);await page.getByLabel('실행 공급자',{exact:true}).selectOption(record.provider);await page.getByLabel('관리자 승인 필요',{exact:true}).setChecked(record.requires_approval);
 }
@@ -36,7 +47,7 @@ if(process.env.STACK_E2E_VISUAL_CAPTURE==='true')test('workspace controlled visu
 if(process.env.STACK_E2E_ADMIN_VISUAL==='true')test('administrator controlled visual capture uses the same actual evaluation and review basis',async({page})=>{
  await login(page,'demo-admin');const {record,gate}=await existingSyntheticEvaluation(page,true);
  const basis=await (await page.request.get('/backend/runs/'+record.id+'/reviews/page')).json();
- const cohort=createHash('sha256').update(JSON.stringify({record,gate,basis})).digest('hex');
+ const nonPass=await existingSyntheticNonPassEvaluations(page),cohort=createHash('sha256').update(JSON.stringify({record,gate,basis,nonPass})).digest('hex');
  const label=process.env.STACK_E2E_VISUAL_LABEL;expect(['before','after']).toContain(label);
  let writes=0;page.on('request',r=>{const path=new URL(r.url()).pathname;if(path.startsWith('/backend/')&&r.method()!=='GET'&&!['/backend/login','/backend/logout'].includes(path))writes++});
  await page.locator('.runs li button').filter({hasText:record.id.slice(0,8)}).click();
@@ -46,7 +57,12 @@ if(process.env.STACK_E2E_ADMIN_VISUAL==='true')test('administrator controlled vi
   await page.setViewportSize({width,height:960});await page.evaluate(()=>document.fonts.ready);
   for(const [name,region] of [['review',form],['detail',evidence]] as const){if(name==='detail')await region.evaluate(node=>node.scrollIntoView({block:'start'}));else await region.scrollIntoViewIfNeeded();await page.screenshot({path:resolve('../../.local/ui-visual/admin-'+label+'-'+name+'-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:masks})}
  }
- expect(writes).toBe(0);phase('controlled-visual-cohort-sha256 '+cohort);phase('actual administrator identical selected evaluation gate and review basis;1440x960 and390x960;neutral privacy masks preserved;zero business writes');
+ for(const frame of nonPass){
+  await page.locator('.runs li button').filter({hasText:frame.record.id.slice(0,8)}).click();await expect(evidence.locator(':scope > p.mono')).toContainText(frame.record.id);
+  await expect(evidence.locator('.decision-summary .badge.'+frame.record.decision)).toHaveText(frame.record.decision==='block'?'차단':'판정 보류');await expect(evidence.getByRole('heading',{name:'관리자 검토',exact:true})).toHaveCount(0);await expect(evidence.locator('.gate > strong')).toHaveText('릴리스 허용 안 됨');
+  for(const width of [1440,390]){await page.setViewportSize({width,height:960});await page.evaluate(()=>document.fonts.ready);await evidence.evaluate(node=>node.scrollIntoView({block:'start'}));await page.screenshot({path:resolve('../../.local/ui-visual/admin-'+label+'-'+frame.record.decision+'-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:masks})}
+ }
+ expect(writes).toBe(0);phase('controlled-visual-cohort-sha256 '+cohort);phase('actual administrator identical pass block and inconclusive evaluation states and gates,pass review basis;1440x960 and390x960;neutral privacy masks preserved;zero business writes');
 });
 
 if(process.env.STACK_E2E_ADMIN_CAPTURE==='true')test('administrator actual review form and mobile evidence remain scoped without writes',async({page})=>{
@@ -67,8 +83,13 @@ if(process.env.STACK_E2E_ADMIN_CAPTURE==='true')test('administrator actual revie
  const basisPath='**/backend/runs/'+record.id+'/reviews/page';await page.route(basisPath,route=>route.fulfill({status:503,contentType:'application/json',body:'{}'}));
  try{await form.getByRole('button',{name:'검토 기준 다시 조회',exact:true}).click();await expect(save).toBeDisabled();await expect(form.locator('[aria-live="polite"]')).toHaveText('최신 검토 기준을 확인하지 못해 저장할 수 없습니다.');await form.scrollIntoViewIfNeeded();await page.screenshot({path:test.info().outputPath('workspace-admin-review-unavailable-390.png'),animations:'disabled',maskColor:'#DCE3EA',mask:masks})}finally{await page.unroute(basisPath)}
  await form.getByRole('button',{name:'검토 기준 다시 조회',exact:true}).click();await expect(save).toBeEnabled();
- const blocked=page.locator('.runs li button').filter({has:page.locator('.badge.block')}).first();await blocked.click();await expect(evidence.getByRole('heading',{name:'관리자 검토',exact:true})).toHaveCount(0);await expect(evidence.getByRole('link',{name:'관리자 검토로 이동',exact:true})).toHaveCount(0);await expect(evidence.locator('.decision-summary .badge.block')).toHaveText('차단');await expect(evidence.locator('.evidence-rules').getByText('실패',{exact:true}).first()).toBeVisible();expect(writes).toBe(0);
- phase('actual demo-admin pass form,1440x960 and390x960,keyboard Enter gate/review navigation and focused targets,keyboard decision-reason-save order,no horizontal overflow,read-only503 basis disables save then actual recovery,block has no approval form; zero business writes; masked areas not visually assessed');
+ for(const frame of await existingSyntheticNonPassEvaluations(page)){
+  await page.locator('.runs li button').filter({hasText:frame.record.id.slice(0,8)}).click();await expect(evidence.locator(':scope > p.mono')).toContainText(frame.record.id);await expect(evidence.getByRole('heading',{name:'관리자 검토',exact:true})).toHaveCount(0);await expect(evidence.getByRole('link',{name:'관리자 검토로 이동',exact:true})).toHaveCount(0);
+  await expect(evidence.locator('.decision-summary .badge.'+frame.record.decision)).toHaveText(frame.record.decision==='block'?'차단':'판정 보류');await expect(evidence.locator('.evidence-rules').getByText(frame.record.decision==='block'?'실패':'판정 보류',{exact:true}).first()).toBeVisible();await expect(evidence.locator('.gate > strong')).toHaveText('릴리스 허용 안 됨');
+  for(const width of [1440,390]){await page.setViewportSize({width,height:960});await evidence.getByRole('link',{name:'현재 게이트로 이동',exact:true}).focus();await page.keyboard.press('Enter');await expect(evidence.locator('#run-current-gate')).toBeFocused();await evidence.evaluate(node=>node.scrollIntoView({block:'start'}));expect(await evidence.locator('table').evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);await page.screenshot({path:test.info().outputPath('workspace-admin-'+frame.record.decision+'-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:masks})}
+ }
+ expect(writes).toBe(0);
+ phase('actual demo-admin pass form,1440x960 and390x960,keyboard Enter gate/review navigation and focused targets,keyboard decision-reason-save order,no horizontal overflow,read-only503 basis disables save then actual recovery,block and inconclusive have no approval form or review link and never allow release; zero business writes; masked areas not visually assessed');
 });
 
 test('workspace navigation and responsive layout keep review tasks reachable without writes',async({page})=>{
