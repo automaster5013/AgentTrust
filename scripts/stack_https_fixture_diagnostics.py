@@ -3,6 +3,20 @@ import json
 import re
 
 
+OIDC_FAILURE_CATEGORIES = frozenset(('TLS', 'TIMEOUT', 'TRANSPORT', 'WORKSPACE_IDENTITY',
+    'AUTHORIZATION_REQUEST', 'STATE', 'NONCE', 'ID_TOKEN', 'USERINFO', 'TOKEN_RESPONSE',
+    'OAUTH2_OTHER', 'OTHER'))
+
+
+def public_oidc_failure_category(raw):
+    if not isinstance(raw, bytes) or not 0 < len(raw) < 64:
+        raise ValueError('SYNTHETIC_OIDC_CATEGORY_REFUSED')
+    value = raw.decode('ascii')
+    if value not in OIDC_FAILURE_CATEGORIES:
+        raise ValueError('SYNTHETIC_OIDC_CATEGORY_REFUSED')
+    return value
+
+
 ENDPOINT_CLASSES = frozenset(('console-home', 'oidc-callback', 'idp-authorization',
     'idp-login', 'idp-logout', 'identity', 'csrf', 'logout', 'run-detail', 'run-list-or-write',
     'fixture-admin-auth', 'fixture-mapper', 'fixture-admin-config', 'other-fixed-fixture-path'))

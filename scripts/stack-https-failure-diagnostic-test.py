@@ -36,5 +36,12 @@ class DiagnosticPrivacyTest(unittest.TestCase):
             value = self.fixture(); value.update(changes)
             with self.assertRaises((ValueError, AssertionError)): diagnostic.sanitize_summary(value, SHA)
 
+    def test_callback_category_retains_only_fixed_enum(self):
+        value = self.fixture(); value['callbackFailureCategory'] = 'NONCE'
+        self.assertEqual('NONCE', diagnostic.sanitize_summary(value, SHA)['callbackFailureCategory'])
+        for private in ['PRIVATE-CANARY', 'NONCE PRIVATE-CANARY', 'NONCE\n', '']:
+            value['callbackFailureCategory'] = private
+            with self.assertRaises((ValueError, AssertionError)): diagnostic.sanitize_summary(value, SHA)
+
 
 if __name__ == '__main__': unittest.main()

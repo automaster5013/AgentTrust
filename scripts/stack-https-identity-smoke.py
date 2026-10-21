@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 import uuid
-from stack_https_fixture_diagnostics import public_probe_failure, public_browser_result
+from stack_https_fixture_diagnostics import public_probe_failure, public_browser_result, public_oidc_failure_category
 from stack_https_fixture_enterprise import build as enterprise_configuration
 from stack_https_fixture_pilot import validate_result as validate_pilot_result
 
@@ -321,7 +321,8 @@ def main():
         mounts = [*bind(account_file, '/run/secrets/stack-demo-credentials'), *bind(secret_file, '/run/secrets/stack-oidc-client-secret'), *bind(truststore, '/fixture.jks')]
         for path, target in extra_tokens:
             mounts.extend(bind(path, target))
-        start('core', images['core'], ['--network-alias', 'stack-core-api', '--env-file', str(core_env), '--entrypoint', 'java', *mounts],
+        start('core', images['core'], ['--network-alias', 'stack-core-api', '--env-file', str(core_env),
+            '-e', 'AGENTTRUST_FIXTURE_OIDC_FAILURE_DIAGNOSTICS=true', '--entrypoint', 'java', *mounts],
             ['-Djavax.net.ssl.trustStore=/fixture.jks', '-Djavax.net.ssl.trustStorePassword=fixture-public-ca',
              '-XX:MaxRAMPercentage=65', '-jar', '/app/core-api.jar'], memory='768m')
         start('console', images['console'], ['--network-alias', 'tls-console', '-e', 'CORE_API_URL=http://stack-core-api:8080'], memory='384m')
@@ -397,6 +398,10 @@ def main():
             while run(['docker', 'exec', prefix + '-worker', 'python', '-c',
                     'import urllib.request;urllib.request.urlopen("http://127.0.0.1:8000/ready",timeout=2)']).returncode:
                 require(time.monotonic() < until); time.sleep(1)
+            # Remove only this owned fixture's fixed diagnostic marker so earlier
+            # negative controls cannot be mistaken for the pilot failure.
+            own(prefix + '-core')
+            ok(['docker', 'exec', prefix + '-core', 'rm', '-f', '/tmp/agenttrust-oidc-failure-category'])
             report['phase'] = 'actual-federated-evaluation-approval-and-revocation'
             pilot = json.loads(start('pilot', images['tools'], [*script_bind,
                 *bind(account_file, '/fixture/accounts.json'),
@@ -431,6 +436,17 @@ def main():
     except Exception as error:
         report.update(completed=False, errorType=type(error).__name__, code='SYNTHETIC_HTTPS_FIXTURE_UNVERIFIED')
     finally:
+        if not report['completed'] and report['phase'] == 'actual-federated-evaluation-approval-and-revocation':
+            try:
+                own(prefix + '-core', cleanup=True)
+                category = run(['docker', 'exec', prefix + '-core', 'cat', '/tmp/agenttrust-oidc-failure-category'])
+                if category.returncode == 0:
+                    report['callbackFailureCategory'] = public_oidc_failure_category(category.stdout)
+                    report['failureCategoryCapturedFromOwnedCoreOnly'] = True
+                else:
+                    report['callbackFailureCategoryUnavailable'] = True
+            except Exception:
+                report['callbackFailureCategoryRefused'] = True
         cleaned = True
         for name in reversed(containers):
             try:
@@ -477,6 +493,8 @@ def main():
         path = directory / 'summary.json'
         path.open('x', encoding='utf-8').write(json.dumps(report, indent=2) + '\n')
         print(json.dumps({'completed': report['completed'], 'phase': report['phase'], 'reportPath': str(path),
+            'callbackFailureCategory': report.get('callbackFailureCategory'),
+            'protocolFailure': report.get('protocolFailure'),
             'actualTlsLoginVerified': report['actualTlsLoginVerified'], 'privateInputsPrinted': False,
             'ownedResourcesRemoved': cleaned}))
     return 0 if report['completed'] else 1

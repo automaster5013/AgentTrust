@@ -1,6 +1,6 @@
 """Classify one authenticated failed Main HTTPS fixture artifact without private values."""
 import hashlib,io,json,os,pathlib,re,shutil,urllib.error,urllib.parse,urllib.request,zipfile
-from stack_https_fixture_diagnostics import public_probe_failure
+from stack_https_fixture_diagnostics import public_probe_failure, public_oidc_failure_category
 
 
 def sanitize_summary(value, revision):
@@ -11,8 +11,14 @@ def sanitize_summary(value, revision):
     error = value.get('errorType')
     assert isinstance(error, str) and re.fullmatch('[A-Za-z][A-Za-z0-9]{0,63}', error)
     result['errorType'] = error
+    if 'callbackFailureCategory' in value:
+        category = value['callbackFailureCategory']
+        assert isinstance(category, str)
+        result['callbackFailureCategory'] = public_oidc_failure_category(category.encode('ascii'))
     for key in ['sourceRuntimeUnchanged', 'sourceBusinessTablesUnchanged',
-                'ownedContainersNetworkAndPrivateFilesRemoved', 'protocolFailureFrameRefused']:
+                'ownedContainersNetworkAndPrivateFilesRemoved', 'protocolFailureFrameRefused',
+                'failureCategoryCapturedFromOwnedCoreOnly', 'callbackFailureCategoryUnavailable',
+                'callbackFailureCategoryRefused']:
         if key in value:
             assert type(value[key]) is bool
             result[key] = value[key]
