@@ -524,7 +524,7 @@ test('viewer data tables remain readable and keyboard scrollable on mobile',asyn
   for(const width of [390,1440]){
    await page.setViewportSize({width,height:960});await scroll.scrollIntoViewIfNeeded();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
    if(width===390){expect(await scroll.evaluate(n=>n.scrollWidth>n.clientWidth)).toBe(true);await scroll.evaluate(n=>{n.scrollLeft=0});await scroll.focus();await expect(scroll).toBeFocused();await page.keyboard.press('ArrowRight');await expect.poll(()=>scroll.evaluate(n=>n.scrollLeft)).toBeGreaterThan(0);}
-   await scroll.evaluate(n=>{n.scrollLeft=0});await page.screenshot({path:test.info().outputPath('workspace-table-'+file+'-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:[page.locator('.account'),page.locator('.scope'),page.locator('.mono'),page.locator('.runs button > span')]});
+   await scroll.evaluate(n=>{n.scrollLeft=0;n.scrollIntoView({block:'start'})});await expect.poll(()=>scroll.evaluate(n=>n.scrollLeft)).toBe(0);await expect(scroll.locator('caption')).toBeInViewport();if(width===390){for(const time of await scroll.locator('time').all()){expect(await time.evaluate(n=>getComputedStyle(n).whiteSpace)).toBe('nowrap');}}await page.screenshot({path:test.info().outputPath('workspace-table-'+file+'-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:[page.locator('.account'),page.locator('.scope'),page.locator('.mono'),page.locator('.runs button > span')]});
   }
  }
  phase('five actual scoped data tables,390px internal keyboard scroll and1440px,page width preserved,no business writes');

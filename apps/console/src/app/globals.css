@@ -140,4 +140,4 @@ legend{font-size:12px;font-weight:700;color:var(--muted);padding:0 8px;max-width
 
 /* Keep narrow-screen data tables readable without expanding the page. */
 .table-scroll{max-width:100%;min-width:0;overflow-x:auto;overscroll-behavior-x:contain}
-@media(max-width:720px){.table-scroll>table{min-width:640px;table-layout:auto}.table-scroll th,.table-scroll td{overflow-wrap:normal;word-break:normal}.table-scroll .mono{overflow-wrap:anywhere;min-width:120px}}
+@media(max-width:720px){.table-scroll>table{min-width:640px;table-layout:auto}.table-scroll th,.table-scroll td{overflow-wrap:normal;word-break:normal}.table-scroll .mono{overflow-wrap:anywhere;min-width:120px}.table-scroll time{white-space:nowrap}}
