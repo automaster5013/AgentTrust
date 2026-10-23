@@ -509,6 +509,59 @@ test.beforeEach(async({page},info)=>{
 async function logout(page:Page){const csrf=await page.request.get('/backend/csrf');const token=(await csrf.json()).token;const logout=await page.request.post('/backend/logout',{headers:{'X-CSRF-TOKEN':token,Origin:'http://127.0.0.1:4320'},data:{}});expect(logout.status()).toBe(200);expect((await page.request.get('/backend/me')).status()).toBe(401);const value=await logout.json();if(value.logoutUrl){expect(value.logoutUrl).toBe('http://127.0.0.1:4322/realms/agenttrust/protocol/openid-connect/logout?client_id=agenttrust-console&post_logout_redirect_uri=http%3A%2F%2F127.0.0.1%3A4320%2F');await page.goto(value.logoutUrl);if(new URL(page.url()).port==='4322'){await page.locator('#kc-logout').click();await page.waitForURL('http://127.0.0.1:4320/')}phase('own identity provider session logged out')}phase('own session logged out')}
 test.afterEach(async({page})=>{await logout(page)});
 
+test('viewer data tables remain readable and keyboard scrollable on mobile',async({page})=>{
+ await login(page,'demo-viewer');
+ const cases=[
+  ['프로젝트 모델 실행 한도','현재 실행 한도 조회','공급자별 예약과 평가 상태','usage'],
+  ['프로젝트 평가 이력','최신 평가 이력 조회','평가 이력 표','runs'],
+  ['프로젝트 캠페인 이력','최신 캠페인 이력 조회','캠페인 이력 표','campaigns'],
+  ['프로젝트 감사 기록','최신 감사 기록 조회','프로젝트 감사 기록 표','audit'],
+  ['감사 기록 검색','감사 기록 검색 실행','감사 검색 결과 표','audit-search']
+ ] as const;
+ for(const [name,button,label,file] of cases){
+  const region=page.getByRole('region',{name,exact:true});await region.getByRole('button',{name:button,exact:true}).click();
+  const scroll=page.getByRole('region',{name:label+' · 좁은 화면에서 좌우로 이동',exact:true});await expect(scroll.getByRole('table')).toBeVisible();
+  for(const width of [390,1440]){
+   await page.setViewportSize({width,height:960});await scroll.scrollIntoViewIfNeeded();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+   if(width===390){expect(await scroll.evaluate(n=>n.scrollWidth>n.clientWidth)).toBe(true);await scroll.evaluate(n=>{n.scrollLeft=0});await scroll.focus();await expect(scroll).toBeFocused();await page.keyboard.press('ArrowRight');await expect.poll(()=>scroll.evaluate(n=>n.scrollLeft)).toBeGreaterThan(0);}
+   phase('table '+file+' '+width+': horizontal reset');
+   // Keyboard scrolling can continue asynchronously after the first positive offset.
+   // Wait for that motion to settle before positioning the screenshot fixture.
+   await scroll.evaluate(async n=>{
+    let previous=n.scrollLeft,stableFrames=0;
+    for(let frame=0;frame<180&&stableFrames<6;frame++){
+     await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+     const next=n.scrollLeft;stableFrames=Math.abs(next-previous)<0.1?stableFrames+1:0;previous=next;
+    }
+    if(stableFrames<6)throw Error('TABLE_KEYBOARD_SCROLL_DID_NOT_SETTLE');
+    n.scrollIntoView({block:'start',inline:'nearest',behavior:'instant'});
+    n.scrollTo({left:0,behavior:'instant'});
+   });
+   phase('table '+file+' '+width+': keyboard scroll settled; reset requested');
+   await expect.poll(()=>scroll.evaluate(n=>n.scrollLeft)).toBe(0);
+   // Preserve the actual failing viewport too; assertions remain mandatory.
+   await page.screenshot({path:test.info().outputPath('workspace-table-'+file+'-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:[page.locator('.account'),page.locator('.scope'),page.locator('.mono'),page.locator('.runs button > span')]});
+   phase('table '+file+' '+width+': caption viewport');
+   await expect(scroll.locator('caption')).toBeInViewport();
+   if(width===390){phase('table '+file+' '+width+': timestamp wrapping');for(const time of await scroll.locator('time').all()){expect(await time.evaluate(n=>getComputedStyle(n).whiteSpace)).toBe('nowrap');}}
+   phase('table '+file+' '+width+': visual assertions passed');
+  }
+ }
+ phase('five actual scoped data tables,390px internal keyboard scroll and1440px,page width preserved,no business writes');
+});
+
+test('audit export arriving after workspace authentication loss never downloads',async({page})=>{
+ await login(page,'demo-viewer');let release!:()=>void,ready!:()=>void;const held=new Promise<void>(resolve=>{release=resolve}),received=new Promise<void>(resolve=>{ready=resolve});let downloads=0;const note=()=>{downloads++};page.on('download',note);
+ await page.route('**/backend/audit-export',async route=>{const response=await route.fetch();expect(response.status()).toBe(200);ready();await held;await route.fulfill({response});});
+ try{
+  await page.getByRole('region',{name:'프로젝트 감사 기록',exact:true}).getByRole('button',{name:'감사 기록 JSON 다운로드',exact:true}).click();await received;
+  await page.route('**/backend/me',route=>route.fulfill({status:401,contentType:'application/json',body:'{}'}));await page.getByRole('button',{name:'최근 평가 다시 조회',exact:true}).click();await expect(page.getByRole('button',{name:'Keycloak으로 로그인',exact:true})).toBeVisible();
+  const response=page.waitForResponse(r=>new URL(r.url()).pathname==='/backend/audit-export');release();await (await response).finished();
+  const unexpected=await page.waitForEvent('download',{timeout:1500}).then(()=>true,()=>false);expect(unexpected).toBe(false);expect(downloads).toBe(0);
+  phase('actual scoped export response held until injected401 unmount;late verified bytes do not trigger download;no business writes');
+ }finally{release();page.off('download',note);await page.unroute('**/backend/audit-export');await page.unroute('**/backend/me');}
+});
+
 test('viewer navigates real older evaluation pages and opens scoped evidence',async({page})=>{
  await login(page,'demo-viewer');
  const region=page.getByRole('region',{name:'프로젝트 평가 이력',exact:true});
