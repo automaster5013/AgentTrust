@@ -525,7 +525,20 @@ test('viewer data tables remain readable and keyboard scrollable on mobile',asyn
    await page.setViewportSize({width,height:960});await scroll.scrollIntoViewIfNeeded();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
    if(width===390){expect(await scroll.evaluate(n=>n.scrollWidth>n.clientWidth)).toBe(true);await scroll.evaluate(n=>{n.scrollLeft=0});await scroll.focus();await expect(scroll).toBeFocused();await page.keyboard.press('ArrowRight');await expect.poll(()=>scroll.evaluate(n=>n.scrollLeft)).toBeGreaterThan(0);}
    phase('table '+file+' '+width+': horizontal reset');
-   await scroll.evaluate(n=>{n.scrollLeft=0;n.scrollIntoView({block:'start'})});await expect.poll(()=>scroll.evaluate(n=>n.scrollLeft)).toBe(0);
+   // Keyboard scrolling can continue asynchronously after the first positive offset.
+   // Wait for that motion to settle before positioning the screenshot fixture.
+   await scroll.evaluate(async n=>{
+    let previous=n.scrollLeft,stableFrames=0;
+    for(let frame=0;frame<180&&stableFrames<6;frame++){
+     await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+     const next=n.scrollLeft;stableFrames=Math.abs(next-previous)<0.1?stableFrames+1:0;previous=next;
+    }
+    if(stableFrames<6)throw Error('TABLE_KEYBOARD_SCROLL_DID_NOT_SETTLE');
+    n.scrollIntoView({block:'start',inline:'nearest',behavior:'instant'});
+    n.scrollTo({left:0,behavior:'instant'});
+   });
+   phase('table '+file+' '+width+': keyboard scroll settled; reset requested');
+   await expect.poll(()=>scroll.evaluate(n=>n.scrollLeft)).toBe(0);
    // Preserve the actual failing viewport too; assertions remain mandatory.
    await page.screenshot({path:test.info().outputPath('workspace-table-'+file+'-'+width+'.png'),animations:'disabled',maskColor:'#DCE3EA',mask:[page.locator('.account'),page.locator('.scope'),page.locator('.mono'),page.locator('.runs button > span')]});
    phase('table '+file+' '+width+': caption viewport');
