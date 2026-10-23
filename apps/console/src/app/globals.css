@@ -137,3 +137,7 @@ legend{font-size:12px;font-weight:700;color:var(--muted);padding:0 8px;max-width
 .review-jumps{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 12px}
 .review-jumps a{display:inline-flex;align-items:center;min-height:44px;max-width:100%;padding:9px 14px;border:1px solid var(--line);border-radius:8px;background:var(--accent-soft);color:var(--accent);font-size:13px;font-weight:600;text-decoration:none;overflow-wrap:anywhere}
 .review-jumps a:hover{border-color:var(--accent);text-decoration:underline}
+
+/* Keep narrow-screen data tables readable without expanding the page. */
+.table-scroll{max-width:100%;min-width:0;overflow-x:auto;overscroll-behavior-x:contain}
+@media(max-width:720px){.table-scroll>table{min-width:640px;table-layout:auto}.table-scroll th,.table-scroll td{overflow-wrap:normal;word-break:normal}.table-scroll .mono{overflow-wrap:anywhere;min-width:120px}}
