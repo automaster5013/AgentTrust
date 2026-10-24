@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {createHash} from 'node:crypto';
-import {auditFilters,auditSearchPage,auditSearchPath,auditRunTarget,type AuditFilters} from '../src/lib/audit-search.ts';
+import {auditFilters,auditSearchPage,auditSearchPath,auditRunTarget,filterAuditPageByActor,type AuditFilters} from '../src/lib/audit-search.ts';
 import {proxyPath,oauthQuery} from '../src/lib/proxy-policy.ts';import type {Identity} from '../src/lib/contracts.ts';
 const org='11111111-1111-4111-8111-111111111111',project='22222222-2222-4222-8222-222222222222',actor='33333333-3333-4333-8333-333333333333';const user={organizationId:org,projectId:project,actorId:actor} as Identity;
 const filters=auditFilters('version.agents.retired',actor);
@@ -41,4 +41,15 @@ test('audit navigation only opens run coordinates for evaluation and review acti
  for(const action of ['evaluation.queued','evaluation.completed','evaluation.cancelled','review.approved','review.rejected'])assert.equal(auditRunTarget({action,resourceId:actor}),actor);
  for(const action of ['campaign.queued','campaign.observation.signed','version.agents.retired','test.fixture.audit-export','evaluation.completed/../campaigns'])assert.equal(auditRunTarget({action,resourceId:actor}),null);
  for(const resourceId of ['1-1-1-1-1','AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA',actor+'?project=other'])assert.equal(auditRunTarget({action:'evaluation.completed',resourceId}),null);
+});
+
+test('current-page actor filter preserves verified records and the opaque server boundary',async()=>{
+ const unfiltered=auditFilters('all','all'),first={...row(9),actorId:org},second={...row(8),actorId:actor};
+ const verified=await auditSearchPage({...page([first,second]),filters:unfiltered},user,unfiltered),before=JSON.stringify(verified);
+ assert.deepEqual(filterAuditPageByActor(verified,org).map(entry=>entry.id),[first.id]);
+ assert.deepEqual(filterAuditPageByActor(verified,actor).map(entry=>entry.id),[second.id]);
+ assert.deepEqual(filterAuditPageByActor(verified,''),verified.entries);
+ assert.deepEqual(filterAuditPageByActor(verified,project),[]);
+ assert.equal(JSON.stringify(verified),before);
+ for(const invalid of ['not-a-uuid',actor+'?project=other','AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA'])assert.throws(()=>filterAuditPageByActor(verified,invalid));
 });
