@@ -31,3 +31,16 @@ test('execution state distinguishes queued and failed inconclusive evidence inde
  assert.deepEqual(filterCampaignCases(cases,{required:'all',decision:'pass',state:'queued'}),[]);
  assert.throws(()=>filterCampaignCases(cases,{required:'all',decision:'all',state:'approved'} as unknown as Parameters<typeof filterCampaignCases>[1]));
 });
+
+
+test('case identifier search intersects filters, normalizes text and never changes full evidence',()=>{
+ const before=JSON.stringify(cases),all={required:'all',decision:'all',state:'all'} as const;
+ assert.deepEqual(filterCampaignCases(cases,{...all,caseQuery:'  ERROR  '}).map(c=>c.caseId),['optional-error']);
+ assert.deepEqual(filterCampaignCases(cases,{...all,caseQuery:'ed'}).map(c=>c.caseId),['passed','blocked']);
+ assert.deepEqual(filterCampaignCases(cases,{...all,caseQuery:'error',required:'required'}),[]);
+ assert.deepEqual(filterCampaignCases(cases,{...all,caseQuery:'error',required:'optional',state:'failed',decision:'inconclusive'}).map(c=>c.caseId),['optional-error']);
+ for(const caseQuery of ['', '   '])assert.deepEqual(filterCampaignCases(cases,{...all,caseQuery}),cases);
+ assert.deepEqual(filterCampaignCases(cases,{...all,caseQuery:'<script>'}),[]);
+ for(const caseQuery of ['x'.repeat(65),null,3])assert.throws(()=>filterCampaignCases(cases,{...all,caseQuery} as unknown as Parameters<typeof filterCampaignCases>[1]));
+ assert.equal(JSON.stringify(cases),before);
+});
