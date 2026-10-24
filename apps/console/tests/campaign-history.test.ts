@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {campaignHistoryPage} from '../src/lib/campaign-history.ts';
+import {campaignHistoryPage,filterCampaignHistoryPage} from '../src/lib/campaign-history.ts';
 import type {Identity} from '../src/lib/contracts.ts';
 import {proxyPath,oauthQuery} from '../src/lib/proxy-policy.ts';
 const org='11111111-1111-4111-8111-111111111111',project='22222222-2222-4222-8222-222222222222',dataset='33333333-3333-4333-8333-333333333333';
@@ -34,4 +34,19 @@ test('campaign history proxy admits only bounded authenticated read navigation',
  }
  for(const segments of [['campaign-history','page','short'],['campaign-history','organization',org],['campaign-history','dataset',dataset,'page',cursor(row(3))+'=']])assert.throws(()=>proxyPath(segments,'GET'));
  assert.throws(()=>oauthQuery('/api/campaign-history',new URLSearchParams('organizationId='+org)));
+});
+
+test('campaign filters intersect version and request approval without altering scoped cursor',()=>{
+ const entries=Array.from({length:25},(_,i)=>({...row(30-i),requiresApproval:i%2===0,agentVersionId:i%3===0?project:org}));
+ const verified=campaignHistoryPage(page(entries,cursor(entries.at(-1)!)),user),before=JSON.stringify(verified);
+ assert.deepEqual(filterCampaignHistoryPage(verified,{approval:'required',agentVersionId:project}),entries.filter((_,i)=>i%2===0&&i%3===0));
+ assert.deepEqual(filterCampaignHistoryPage(verified,{approval:'not-required',agentVersionId:null}),entries.filter((_,i)=>i%2!==0));
+ assert.deepEqual(filterCampaignHistoryPage(verified,{approval:'all',agentVersionId:dataset}),[]);
+ assert.equal(verified.nextCursor,cursor(entries.at(-1)!));assert.equal(JSON.stringify(verified),before);
+ assert.deepEqual(filterCampaignHistoryPage(verified,{approval:'all',agentVersionId:null}),entries);
+ assert.deepEqual(filterCampaignHistoryPage({entries:[],nextCursor:null},{approval:'required',agentVersionId:project}),[]);
+});
+test('campaign filters reject unknown approval states and noncanonical version identifiers',()=>{
+ const verified=campaignHistoryPage(page(),user);
+ for(const filter of [{approval:'approved',agentVersionId:null},{approval:'all',agentVersionId:'partial'},{approval:'all',agentVersionId:'FFFFFFFF-FFFF-4FFF-8FFF-FFFFFFFFFFFF'}])assert.throws(()=>filterCampaignHistoryPage(verified,filter as Parameters<typeof filterCampaignHistoryPage>[1]));
 });

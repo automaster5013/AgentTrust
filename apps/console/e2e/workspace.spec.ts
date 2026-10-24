@@ -868,6 +868,16 @@ test('viewer opens existing campaign history and clears a foreign filtered page'
  await region.getByRole('button',{name:'최신 캠페인 이력 조회',exact:true}).click();
  await expect(region.locator('[data-campaign-history-id]').first()).toBeVisible();
  const first=await region.locator('[data-campaign-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-campaign-history-id')));
+ const filterResponse=await page.request.get('/backend/campaign-history');expect(filterResponse.ok()).toBe(true);
+ const filterPage=await filterResponse.json(),example=filterPage.entries[0];
+ await region.getByLabel('캠페인 이력 승인 설정',{exact:true}).selectOption(example.requiresApproval?'required':'not-required');
+ await region.getByLabel('캠페인 이력 에이전트 버전',{exact:true}).selectOption(example.agentVersionId);
+ const matching=filterPage.entries.filter((row:{requiresApproval:boolean;agentVersionId:string})=>row.requiresApproval===example.requiresApproval&&row.agentVersionId===example.agentVersionId);
+ await expect(region.locator('[data-campaign-history-id]')).toHaveCount(matching.length);
+ expect(await region.locator('[data-campaign-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-campaign-history-id')))).toEqual(matching.map((row:{id:string})=>row.id));
+ await region.getByRole('button',{name:'캠페인 이력 필터 해제',exact:true}).click();
+ await expect(region.locator('[data-campaign-history-id]')).toHaveCount(filterPage.entries.length);
+
  let selected=first[0]!;
  if(await region.getByRole('button',{name:'다음 캠페인 페이지',exact:true}).isEnabled()){
   await region.getByRole('button',{name:'다음 캠페인 페이지',exact:true}).click();await expect(region.getByText(/캠페인 이력 페이지 2/)).toBeVisible();
