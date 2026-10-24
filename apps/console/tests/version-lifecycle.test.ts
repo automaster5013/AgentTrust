@@ -37,3 +37,8 @@ test('lifecycle read and retirement mutation use distinct exact proxy methods',(
  assert.equal(proxyPath([...path,'retirement'],'POST'),'/api/'+[...path,'retirement'].join('/'));
  assert.throws(()=>proxyPath([...path,'retirement'],'GET'));assert.throws(()=>proxyPath([...path,'retirement','extra'],'POST'));
 });
+
+test('retirement timestamps reject calendar normalization while preserving exact UTC fractions',()=>{
+ for(const retiredAt of ['2026-02-30T02:00:00Z','2026-10-12T24:00:00Z','2026-10-12T02:00Z','2026-10-12T02:00:00.1234567890Z'])assert.throws(()=>versionLifecycle({...retired,retiredAt},user,'agents',record.agent_version_id,record.agent_content_sha256));
+ for(const retiredAt of ['2024-02-29T02:00:00Z','2026-10-12T02:00:00.123456789Z'])assert.equal(versionLifecycle({...retired,retiredAt},user,'agents',record.agent_version_id,record.agent_content_sha256).retiredAt,retiredAt);
+});
