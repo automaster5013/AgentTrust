@@ -59,3 +59,15 @@ test('execution-state filters distinguish pending from failed inconclusive runs 
  assert.equal(JSON.stringify(verified),before);
  assert.throws(()=>filterRunHistoryPage(verified,{state:'cancelled',decision:'all',provider:'all'} as unknown as RunHistoryFilter));
 });
+
+test('approval setting filter intersects other conditions and never represents current review permission',()=>{
+ const raw=[{...row(4),requiresApproval:true},{...row(3),requiresApproval:false},{...row(2),requiresApproval:true,state:'failed',decision:'inconclusive',scenario:'error',provider:'ollama'}];
+ const verified=runHistoryPage(page(raw),user),before=JSON.stringify(verified);
+ assert.deepEqual(filterRunHistoryPage(verified,{approval:'required',state:'all',decision:'all',provider:'all'}).map(x=>x.id),[raw[0].id,raw[2].id]);
+ assert.deepEqual(filterRunHistoryPage(verified,{approval:'not-required',state:'all',decision:'pass',provider:'all'}).map(x=>x.id),[raw[1].id]);
+ assert.deepEqual(filterRunHistoryPage(verified,{approval:'required',state:'failed',decision:'inconclusive',provider:'ollama'}).map(x=>x.id),[raw[2].id]);
+ assert.deepEqual(filterRunHistoryPage(verified,{approval:'not-required',state:'failed',decision:'all',provider:'all'}),[]);
+ assert.deepEqual(filterRunHistoryPage(verified,{approval:'all',state:'all',decision:'all',provider:'all'}),verified.entries);
+ assert.equal(JSON.stringify(verified),before);
+ assert.throws(()=>filterRunHistoryPage(verified,{approval:'approved',state:'all',decision:'all',provider:'all'} as unknown as RunHistoryFilter));
+});
