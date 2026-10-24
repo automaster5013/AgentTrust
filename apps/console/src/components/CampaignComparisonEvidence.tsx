@@ -1,0 +1,6 @@
+import type {Comparison} from '../lib/campaign-contracts';
+const statuses={'no-regression':'새 회귀 없음',regression:'새 회귀 발견',inconclusive:'비교 판정 불가'};
+export default function CampaignComparisonEvidence({value}:{value:Comparison}){
+ const groups=[{title:'새 필수 실패',ids:value.newlyFailedRequiredCases},{title:'미확인 필수 사례',ids:value.unresolvedRequiredCases},{title:'개선된 필수 사례',ids:value.improvedRequiredCases}];
+ return <section aria-label="검증된 캠페인 회귀 비교 결과" aria-live="polite"><h5>비교 결과 {statuses[value.status]}</h5><p>새 필수 실패: {value.newlyFailedRequiredCases.join(', ')||'없음'} · 미확인: {value.unresolvedRequiredCases.join(', ')||'없음'}</p>{groups.map(group=><section key={group.title} aria-label={group.title}><h6>{group.title} · {group.ids.length}개</h6>{group.ids.length?<ul>{group.ids.map(id=><li key={id} className="mono">{id}</li>)}</ul>:<p>해당 사례 없음</p>}</section>)}<p>개선은 비교 기준에서 차단됐던 필수 사례가 현재 통과했다는 뜻입니다. 새 회귀 없음은 전체 사례 통과나 배포 허용을 뜻하지 않습니다. 미확인 사례와 실행 오류는 비교 판정을 보류합니다.</p></section>;
+}

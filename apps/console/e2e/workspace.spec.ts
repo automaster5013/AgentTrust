@@ -923,6 +923,8 @@ test('viewer selects an existing historical baseline and verifies a real campaig
  const response=page.waitForResponse(value=>value.url().endsWith('/comparison/'+proof.comparisonCampaignId)&&value.request().method()==='GET');
  await page.getByRole('button',{name:'캠페인 회귀 비교',exact:true}).click();expect((await response).status()).toBe(200);
  await expect(page.getByText(/새 필수 실패: 없음/)).toBeVisible();
+ await expect(page.getByRole('region',{name:'검증된 캠페인 회귀 비교 결과',exact:true})).toBeVisible();
+ await expect(page.getByRole('heading',{name:/개선된 필수 사례 · \d+개/})).toBeVisible();
  phase('read-only historical dataset navigation supplies the real baseline to Java comparison verification');
 });
 
