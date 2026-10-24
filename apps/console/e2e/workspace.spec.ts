@@ -885,6 +885,17 @@ test('viewer opens existing campaign history and clears a foreign filtered page'
  }
  await region.getByRole('button',{name:'캠페인 근거 '+selected.slice(0,8),exact:true}).click();
  await expect(page.getByText('캠페인 '+selected,{exact:true})).toBeVisible();
+ const caseRegion=page.getByRole('region',{name:'캠페인 사례 근거 탐색',exact:true});
+ const campaignResponse=await page.request.get('/backend/campaigns/'+selected);expect(campaignResponse.ok()).toBe(true);
+ const campaignEvidence=await campaignResponse.json(),caseExample=campaignEvidence.cases[0];
+ await caseRegion.getByLabel('사례 필수 여부',{exact:true}).selectOption(caseExample.required?'required':'optional');
+ await caseRegion.getByLabel('사례 판정',{exact:true}).selectOption(caseExample.decision);
+ const expectedCases=campaignEvidence.cases.filter((row:{required:boolean;decision:string})=>row.required===caseExample.required&&row.decision===caseExample.decision);
+ await expect(caseRegion.locator('[data-campaign-case-id]')).toHaveCount(expectedCases.length);
+ expect(await caseRegion.locator('[data-campaign-case-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-campaign-case-id')))).toEqual(expectedCases.map((row:{caseId:string})=>row.caseId));
+ await caseRegion.getByRole('button',{name:'사례 필터 해제',exact:true}).click();
+ await expect(caseRegion.locator('[data-campaign-case-id]')).toHaveCount(campaignEvidence.cases.length);
+
  await region.getByRole('button',{name:'최신 캠페인 이력 조회',exact:true}).click();await expect(region.locator('[data-campaign-history-id]').first()).toBeVisible();
  const request=await page.request.get('/backend/campaigns/'+selected),record=await request.json();
  const snapshot=await (await page.request.get('/backend/campaign-history/dataset/'+record.dataset_version_id)).json();
