@@ -890,7 +890,8 @@ test('viewer opens existing campaign history and clears a foreign filtered page'
  const campaignEvidence=await campaignResponse.json(),caseExample=campaignEvidence.cases[0];
  await caseRegion.getByLabel('사례 필수 여부',{exact:true}).selectOption(caseExample.required?'required':'optional');
  await caseRegion.getByLabel('사례 판정',{exact:true}).selectOption(caseExample.decision);
- const expectedCases=campaignEvidence.cases.filter((row:{required:boolean;decision:string})=>row.required===caseExample.required&&row.decision===caseExample.decision);
+ await caseRegion.getByLabel('사례 실행 상태',{exact:true}).selectOption(caseExample.state);
+ const expectedCases=campaignEvidence.cases.filter((row:{required:boolean;decision:string;state:string})=>row.required===caseExample.required&&row.decision===caseExample.decision&&row.state===caseExample.state);
  await expect(caseRegion.locator('[data-campaign-case-id]')).toHaveCount(expectedCases.length);
  expect(await caseRegion.locator('[data-campaign-case-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-campaign-case-id')))).toEqual(expectedCases.map((row:{caseId:string})=>row.caseId));
  await caseRegion.getByRole('button',{name:'사례 필터 해제',exact:true}).click();
