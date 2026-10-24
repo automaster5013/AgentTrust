@@ -71,3 +71,16 @@ test('approval setting filter intersects other conditions and never represents c
  assert.equal(JSON.stringify(verified),before);
  assert.throws(()=>filterRunHistoryPage(verified,{approval:'approved',state:'all',decision:'all',provider:'all'} as unknown as RunHistoryFilter));
 });
+
+
+test('scenario filters separate quality from synthetic evidence while preserving intersections and navigation',()=>{
+ const raw=[{...row(5),scenario:'quality',provider:'ollama'},row(4),{...row(3),scenario:'block',decision:'block'},{...row(2),scenario:'missing_evidence',decision:'inconclusive'},{...row(1),scenario:'error',state:'failed',decision:'inconclusive'}];
+ const verified=runHistoryPage(page(raw),user),before=JSON.stringify(verified);
+ for(const scenario of ['quality','pass','block','missing_evidence','error'] as const)assert.deepEqual(filterRunHistoryPage(verified,{scenario,state:'all',decision:'all',provider:'all'}).map(x=>x.id),raw.filter(x=>x.scenario===scenario).map(x=>x.id));
+ assert.deepEqual(filterRunHistoryPage(verified,{scenario:'quality',approval:'required',state:'succeeded',decision:'pass',provider:'ollama'}).map(x=>x.id),[raw[0].id]);
+ assert.deepEqual(filterRunHistoryPage(verified,{scenario:'quality',state:'all',decision:'all',provider:'synthetic'}),[]);
+ const entries=Array.from({length:25},(_,i)=>row(30-i)),token=cursor(entries.at(-1)!);const full=runHistoryPage(page(entries,token),user);
+ assert.deepEqual(filterRunHistoryPage(full,{scenario:'quality',state:'all',decision:'all',provider:'all'}),[]);assert.equal(full.nextCursor,token);
+ assert.equal(JSON.stringify(verified),before);
+ assert.throws(()=>filterRunHistoryPage(verified,{scenario:'unknown',state:'all',decision:'all',provider:'all'} as unknown as RunHistoryFilter));
+});
