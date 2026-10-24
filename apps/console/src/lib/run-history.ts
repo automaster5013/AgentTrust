@@ -26,9 +26,9 @@ export function runHistoryPage(value:unknown,user:Identity,requestedCursor:strin
  return {entries,nextCursor:page.nextCursor as string|null};
 }
 
-export type RunHistoryFilter={decision:Run['decision']|'all';provider:Run['provider']|'all'};
+export type RunHistoryFilter={state:Run['state']|'all';decision:Run['decision']|'all';provider:Run['provider']|'all'};
 /** Filter an already scope-verified page; never changes its cursor or release authority. */
 export function filterRunHistoryPage(page:RunHistoryPage,filter:RunHistoryFilter):RunHistoryEntry[]{
- if(!['all','pass','block','inconclusive'].includes(filter.decision)||!['all','synthetic','ollama','openai','openai-compatible'].includes(filter.provider))throw Error('INVALID_RUN_HISTORY_FILTER');
- return page.entries.filter(row=>(filter.decision==='all'||row.decision===filter.decision)&&(filter.provider==='all'||row.provider===filter.provider));
+ if(!['all','queued','succeeded','failed'].includes(filter.state)||!['all','pass','block','inconclusive'].includes(filter.decision)||!['all','synthetic','ollama','openai','openai-compatible'].includes(filter.provider))throw Error('INVALID_RUN_HISTORY_FILTER');
+ return page.entries.filter(row=>(filter.state==='all'||row.state===filter.state)&&(filter.decision==='all'||row.decision===filter.decision)&&(filter.provider==='all'||row.provider===filter.provider));
 }

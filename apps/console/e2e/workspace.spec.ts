@@ -571,9 +571,10 @@ test('viewer navigates real older evaluation pages and opens scoped evidence',as
  expect(first.length).toBe(25);
  const currentPage=await (await page.request.get('/backend/run-history')).json();
  const chosen=currentPage.entries[0];
+ await region.getByLabel('평가 이력 실행 상태',{exact:true}).selectOption(chosen.state);
  await region.getByLabel('평가 이력 판정',{exact:true}).selectOption(chosen.decision);
  await region.getByLabel('평가 이력 공급자',{exact:true}).selectOption(chosen.provider);
- const matching=currentPage.entries.filter((row:{decision:string;provider:string})=>row.decision===chosen.decision&&row.provider===chosen.provider);
+ const matching=currentPage.entries.filter((row:{state:string;decision:string;provider:string})=>row.state===chosen.state&&row.decision===chosen.decision&&row.provider===chosen.provider);
  await expect(region.locator('[data-run-history-id]')).toHaveCount(matching.length);
  expect(await region.locator('[data-run-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-run-history-id')))).toEqual(matching.map((row:{id:string})=>row.id));
  await region.getByRole('button',{name:'평가 이력 필터 해제',exact:true}).click();
