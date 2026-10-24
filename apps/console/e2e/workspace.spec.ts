@@ -953,6 +953,12 @@ test('viewer verifies an older registered version before selecting it for campai
   const region=page.getByRole('region',{name:'프로젝트 '+label+' 버전 이력',exact:true});
   await region.getByRole('button',{name:label+' 버전 이력 조회',exact:true}).click();await expect(region.locator('[data-version-history-id]').first()).toBeVisible();
   const first=await region.locator('[data-version-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-history-id')));
+  const versionPage=await (await page.request.get('/backend/version-history/'+kind)).json(),resourceKey=versionPage.entries[0].resourceKey;
+  await region.getByLabel(label+' 이력 이름',{exact:true}).selectOption(resourceKey);
+  const nameMatches=versionPage.entries.filter((entry:{resourceKey:string})=>entry.resourceKey===resourceKey);
+  expect(await region.locator('[data-version-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-history-id')))).toEqual(nameMatches.map((entry:{id:string})=>entry.id));
+  await region.getByRole('button',{name:'이름 필터 해제',exact:true}).click();
+  expect(await region.locator('[data-version-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-history-id')))).toEqual(first);
   if(await region.getByRole('button',{name:'다음 '+label+' 버전 페이지',exact:true}).isEnabled()){
    await region.getByRole('button',{name:'다음 '+label+' 버전 페이지',exact:true}).click();await expect(region.getByText(new RegExp(label+' 버전 페이지 2 '))).toBeVisible();
    const older=await region.locator('[data-version-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-history-id')));expect(older.some(id=>first.includes(id))).toBe(false);
