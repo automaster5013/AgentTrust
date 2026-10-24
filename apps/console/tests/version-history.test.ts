@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {versionHistoryPage,verifyVersionHistoryBinding,type VersionKind} from '../src/lib/version-history.ts';
+import {versionHistoryPage,verifyVersionHistoryBinding,filterVersionHistoryPage,type VersionKind} from '../src/lib/version-history.ts';
 import type {Identity} from '../src/lib/contracts.ts';import {proxyPath} from '../src/lib/proxy-policy.ts';
 const org='11111111-1111-4111-8111-111111111111',project='22222222-2222-4222-8222-222222222222';const user={organizationId:org,projectId:project} as Identity;
 const row=(n:number)=>({id:'ffffffff-ffff-4fff-8fff-'+n.toString(16).padStart(12,'0'),resourceKey:'agent-test',version:n,contentSha256:'a'.repeat(64),createdAt:'2026-10-11T05:00:00.123456Z'});
@@ -19,4 +19,13 @@ test('immutable detail selection binds microseconds even when JavaScript millise
 test('detail selection refuses substituted identity key version and immutable hash',()=>{
  const registered=versionHistoryPage(page([row(3)]),user,'agents').entries[0];
  for(const changed of [{id:row(2).id},{resource_key:'another-agent'},{version:2},{content_sha256:'b'.repeat(64)}])assert.throws(()=>verifyVersionHistoryBinding(registered,{...registered,...changed}));
+});
+
+test('exact resource-name filtering preserves verified version coordinates and page cursor',()=>{
+ const rows=Array.from({length:25},(_,i)=>({...row(30-i),resourceKey:i%2?'other-agent':'agent-test'})),token=cursor(rows.at(-1)!);
+ const verified=versionHistoryPage(page(rows,token),user,'agents'),before=JSON.stringify(verified);
+ assert.deepEqual(filterVersionHistoryPage(verified,'agent-test').map(x=>x.id),verified.entries.filter(x=>x.resource_key==='agent-test').map(x=>x.id));
+ assert.deepEqual(filterVersionHistoryPage(verified,''),verified.entries);assert.deepEqual(filterVersionHistoryPage(verified,'missing-agent'),[]);
+ assert.equal(JSON.stringify(verified),before);assert.equal(verified.nextCursor,token);
+ for(const key of ['../escape','AGENT','ab','agent?foreign=1','a'.repeat(65)])assert.throws(()=>filterVersionHistoryPage(verified,key));
 });
