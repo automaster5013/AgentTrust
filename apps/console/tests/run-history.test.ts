@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {runHistoryPage} from '../src/lib/run-history.ts';
+import {runHistoryPage,filterRunHistoryPage,type RunHistoryFilter} from '../src/lib/run-history.ts';
 import type {Identity} from '../src/lib/contracts.ts';
 import {proxyPath,oauthQuery} from '../src/lib/proxy-policy.ts';
 const org='11111111-1111-4111-8111-111111111111',project='22222222-2222-4222-8222-222222222222',actor='33333333-3333-4333-8333-333333333333';
@@ -29,3 +29,23 @@ test('run history proxy exposes bounded GET navigation without adding a writable
 });
 
 test('run cursor rejects audit domain and invalid engine-independent result states',()=>{const token=cursor(row(3)),bytes=Buffer.from(token,'base64url');bytes.write('BAD');assert.throws(()=>runHistoryPage(page(),user,bytes.toString('base64url')));assert.throws(()=>runHistoryPage(page([{...row(3),state:'failed',decision:'pass'}]),user));assert.throws(()=>runHistoryPage(page([{...row(3),requiresApproval:'true'}]),user));assert.throws(()=>runHistoryPage(page([{...row(3),provider:'unapproved-provider'}]),user));});
+
+
+test('current-page filters intersect decision and provider without changing verified order, rows or cursor',()=>{
+ const raw=[row(4),{...row(3),provider:'ollama',decision:'block',scenario:'block'},{...row(2),provider:'ollama'},{...row(1),state:'failed',decision:'inconclusive',scenario:'error'}];
+ const verified=runHistoryPage(page(raw),user),before=JSON.stringify(verified);
+ assert.deepEqual(filterRunHistoryPage(verified,{decision:'all',provider:'all'}).map(x=>x.id),raw.map(x=>x.id));
+ assert.deepEqual(filterRunHistoryPage(verified,{decision:'pass',provider:'ollama'}).map(x=>x.id),[raw[2].id]);
+ assert.deepEqual(filterRunHistoryPage(verified,{decision:'block',provider:'all'}).map(x=>x.id),[raw[1].id]);
+ assert.deepEqual(filterRunHistoryPage(verified,{decision:'inconclusive',provider:'all'}).map(x=>x.id),[raw[3].id]);
+ assert.deepEqual(filterRunHistoryPage(verified,{decision:'pass',provider:'openai'}),[]);
+ assert.equal(JSON.stringify(verified),before);
+ const entries=Array.from({length:25},(_,i)=>row(30-i)),token=cursor(entries.at(-1)!);const full=runHistoryPage(page(entries,token),user);
+ assert.deepEqual(filterRunHistoryPage(full,{decision:'block',provider:'all'}),[]);assert.equal(full.nextCursor,token);
+ assert.deepEqual(filterRunHistoryPage(runHistoryPage(page([]),user),{decision:'all',provider:'all'}),[]);
+});
+
+test('current-page filters refuse unknown choices rather than silently displaying unrelated evidence',()=>{
+ const verified=runHistoryPage(page(),user);
+ for(const filter of [{decision:'approved',provider:'all'},{decision:'all',provider:'foreign'}])assert.throws(()=>filterRunHistoryPage(verified,filter as RunHistoryFilter));
+});
