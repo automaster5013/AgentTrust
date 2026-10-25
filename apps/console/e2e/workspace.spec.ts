@@ -114,6 +114,16 @@ test('workspace navigation and responsive layout keep review tasks reachable wit
  for(const badge of await page.locator('.evaluation-list .runs .badge').all())await expect(badge).toHaveText('차단');
  await filters.getByRole('button',{name:/^전체 /}).click();await expect(filters.getByRole('button',{name:/^전체 /})).toHaveAttribute('aria-pressed','true');
 
+ const search=page.getByRole('searchbox',{name:'최근 평가 검색',exact:true});
+ const originalCount=await page.locator('.evaluation-list .runs button').count();
+ const firstText=await page.locator('.evaluation-list .runs button > span').first().innerText();
+ const identifier=firstText.split(' · ').at(-1)!;
+ await search.fill(identifier.toUpperCase());await expect(page.locator('.evaluation-list .runs button')).toHaveCount(1);
+ await search.fill('<script>');await expect(page.getByText('검색·필터 조건에 해당하는 평가가 없습니다.',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'검색·필터 초기화',exact:true}).click();await expect(search).toHaveValue('');await expect(page.locator('.evaluation-list .runs button')).toHaveCount(originalCount);
+ const processing=page.getByLabel('최근 평가 처리 상태',{exact:true});await processing.selectOption('queued');
+ await expect(page.getByText('검색·필터는 현재 불러온 목록에만 적용합니다. 처리 완료는 평가 통과나 릴리스 허용을 뜻하지 않습니다.',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'검색·필터 초기화',exact:true}).click();await expect(processing).toHaveValue('all');
  for(const width of [1440,390]){
   await page.setViewportSize({width,height:960});await page.evaluate(()=>window.scrollTo(0,0));
   await expect(navigation).toBeVisible();await expect(page.getByRole('heading',{name:'평가 워크스페이스',exact:true})).toBeVisible();
