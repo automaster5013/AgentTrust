@@ -1,6 +1,6 @@
 {
   "ollama": {
-    "contentSha256": "796b005e3d7b79d5012b1f1629b54d704007b27ce7c0b4bee7965b6e0d73066f",
+    "contentSha256": "fd667864582bac7f37f4d6a8bf56929339d02831885743bad8e5acc4ab027654",
     "definition": {
       "answerComparison": "Unicode-NFC-trim-exact",
       "arbitraryCodeAllowed": false,
@@ -29,12 +29,12 @@
         "quality_provider.py": "18f23c96ea3990687b86d89eab7eb2dc5338da1d8a5db3d04ab8fece2ae9f7f9",
         "quality_worker.py": "4056d4099e8efefa2e04e074a67bc5ef4f78ff78eff53e0be0e4fe827466a640"
       },
-      "validatorProfileSha256": "36a32e236a51f92d38cfcfa199f061d822ae590d340660723405b6c1c54501f7",
+      "validatorProfileSha256": "3964533f46dcdcf7809738fb309f6620e64e8536c6e2fd8f4e1c28d5161b611a",
       "verifierTimeoutSeconds": 17
     }
   },
   "openai-compatible": {
-    "contentSha256": "74145e2f2b99eb54d14f8a014c8fb2c461e22077a876c589859f5a04abb61eaa",
+    "contentSha256": "89ba31b8cdc3944cf91c0f944c60e9aea28d2c58eba690b20c1d6b682e7004d4",
     "definition": {
       "answerComparison": "Unicode-NFC-trim-exact",
       "arbitraryCodeAllowed": false,
@@ -63,7 +63,7 @@
         "quality_provider.py": "18f23c96ea3990687b86d89eab7eb2dc5338da1d8a5db3d04ab8fece2ae9f7f9",
         "quality_worker.py": "4056d4099e8efefa2e04e074a67bc5ef4f78ff78eff53e0be0e4fe827466a640"
       },
-      "validatorProfileSha256": "36a32e236a51f92d38cfcfa199f061d822ae590d340660723405b6c1c54501f7",
+      "validatorProfileSha256": "3964533f46dcdcf7809738fb309f6620e64e8536c6e2fd8f4e1c28d5161b611a",
       "verifierTimeoutSeconds": 17
     }
   }
