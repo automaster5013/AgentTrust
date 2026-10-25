@@ -616,6 +616,8 @@ test('viewer reads immutable baseline conditions and verifies actual v2 current 
  const conditions=page.getByRole('region',{name:'고정된 릴리스 조건',exact:true});
  await conditions.getByRole('button',{name:'비교 기준·근거 유효 기간 확인',exact:true}).click();
  await expect(conditions.getByText('고정 기준 캠페인 '+baseline,{exact:true})).toBeVisible();
+ await expect(conditions.getByRole('region',{name:'검증된 캠페인 회귀 비교 결과',exact:true}).getByText(id,{exact:true})).toBeVisible();
+ await expect(conditions.getByRole('region',{name:'검증된 캠페인 회귀 비교 결과',exact:true}).getByText(baseline,{exact:true})).toBeVisible();
  await expect(conditions.getByText(/양쪽 근거 유효 기간 60초/)).toBeVisible();
  const checks=page.getByRole('region',{name:'서명된 현재 판정 확인',exact:true});
  await checks.getByRole('button',{name:'현재 판정 서명 확인',exact:true}).click();
@@ -931,12 +933,24 @@ test('viewer selects an existing historical baseline and verifies a real campaig
  await region.getByRole('button',{name:'최신 캠페인 이력 조회',exact:true}).click();await expect(region.locator('[data-campaign-history-id]').first()).toBeVisible();
  await region.getByRole('button',{name:'비교 기준 '+proof.comparisonCampaignId.slice(0,8)+' 선택',exact:true}).click();
  await expect(page.getByLabel('비교 기준 캠페인',{exact:true})).toHaveValue(proof.comparisonCampaignId);
- const response=page.waitForResponse(value=>value.url().endsWith('/comparison/'+proof.comparisonCampaignId)&&value.request().method()==='GET');
- await page.getByRole('button',{name:'캠페인 회귀 비교',exact:true}).click();expect((await response).status()).toBe(200);
+ const comparisonPath='**/backend/campaigns/'+proof.campaignId+'/comparison/'+proof.comparisonCampaignId;
+ let releaseComparison!:()=>void,comparisonReceived!:()=>void;
+ const heldComparison=new Promise<void>(resolve=>{releaseComparison=resolve}),receivedComparison=new Promise<void>(resolve=>{comparisonReceived=resolve});
+ await page.route(comparisonPath,async route=>{const response=await route.fetch();expect(response.status()).toBe(200);comparisonReceived();await heldComparison;await route.fulfill({response});});
+ try{
+  await page.getByRole('button',{name:'캠페인 회귀 비교',exact:true}).click();await receivedComparison;
+  await expect(page.getByLabel('비교 기준 캠페인',{exact:true})).toBeDisabled();
+  await expect(page.getByRole('region',{name:'검증된 캠페인 회귀 비교 결과',exact:true})).toHaveCount(0);
+ }finally{releaseComparison();}
  await expect(page.getByText(/새 필수 실패: 없음/)).toBeVisible();
  await expect(page.getByRole('region',{name:'검증된 캠페인 회귀 비교 결과',exact:true})).toBeVisible();
  await expect(page.getByRole('heading',{name:/개선된 필수 사례 · \d+개/})).toBeVisible();
- phase('read-only historical dataset navigation supplies the real baseline to Java comparison verification');
+ const comparisonResult=page.getByRole('region',{name:'검증된 캠페인 회귀 비교 결과',exact:true});
+ await expect(comparisonResult.getByText(proof.campaignId,{exact:true})).toBeVisible();
+ await expect(comparisonResult.getByText(proof.comparisonCampaignId,{exact:true})).toBeVisible();
+ await page.getByLabel('비교 기준 캠페인',{exact:true}).selectOption('');
+ await expect(comparisonResult).toHaveCount(0);
+ phase('read-only historical dataset navigation supplies the real baseline to Java comparison verification; result identifies both requests and clears on baseline change');
 });
 
 

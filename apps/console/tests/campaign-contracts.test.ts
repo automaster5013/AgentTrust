@@ -40,3 +40,12 @@ test('comparison rejects changes that contradict the verified current case decis
  assert.equal(comparison(value,user,blocked,uid(8)).status,'regression');
  assert.equal(comparison({...value,comparison:{...value.comparison,status:'no-regression',newlyFailedRequiredCases:[],improvedRequiredCases:['required-pass']}},user,record,uid(8)).status,'no-regression');
 });
+
+test('comparison result remains bound to the captured candidate baseline and tenant',()=>{
+ const record=campaign(fixture(),user,uid(6)),baseline=uid(8);
+ const response={campaignId:record.id,baselineCampaignId:baseline,organizationId:user.organizationId,projectId:user.projectId,datasetVersionId:record.dataset_version_id,datasetContentSha256:record.dataset_content_sha256,comparison:{status:'no-regression',newlyFailedRequiredCases:[],unresolvedRequiredCases:[],improvedRequiredCases:[],deploymentAuthority:false}};
+ for(const changed of [{...response,campaignId:uid(9)},{...response,baselineCampaignId:uid(9)},{...response,organizationId:uid(9)},{...response,projectId:uid(9)}])assert.throws(()=>comparison(changed,user,record,baseline));
+ assert.throws(()=>comparison(response,user,record,uid(9)));
+ assert.throws(()=>comparison({...response,baselineCampaignId:record.id},user,record,record.id));
+ assert.equal(comparison(response,user,record,baseline).status,'no-regression');
+});
