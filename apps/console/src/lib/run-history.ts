@@ -25,3 +25,10 @@ export function runHistoryPage(value:unknown,user:Identity,requestedCursor:strin
  if(page.nextCursor!==null){if(typeof page.nextCursor!=='string'||entries.length!==25)throw Error('INVALID_RUN_HISTORY_CURSOR');const next=cursor(page.nextCursor,user),last=entries.at(-1)!,at=time(last.created_at);if(next.id!==last.id||next.seconds!==at.seconds||next.nanos!==at.nanos)throw Error('INVALID_RUN_HISTORY_CURSOR');}
  return {entries,nextCursor:page.nextCursor as string|null};
 }
+
+export type RunHistoryFilter={scenario?:Run['scenario']|'all';approval?:'all'|'required'|'not-required';state:Run['state']|'all';decision:Run['decision']|'all';provider:Run['provider']|'all'};
+/** Filter an already scope-verified page; never changes its cursor or release authority. */
+export function filterRunHistoryPage(page:RunHistoryPage,filter:RunHistoryFilter):RunHistoryEntry[]{
+ if(!['all','pass','block','missing_evidence','error','quality'].includes(filter.scenario??'all')||!['all','required','not-required'].includes(filter.approval??'all')||!['all','queued','succeeded','failed'].includes(filter.state)||!['all','pass','block','inconclusive'].includes(filter.decision)||!['all','synthetic','ollama','openai','openai-compatible'].includes(filter.provider))throw Error('INVALID_RUN_HISTORY_FILTER');
+ return page.entries.filter(row=>((filter.scenario??'all')==='all'||row.scenario===filter.scenario)&&((filter.approval??'all')==='all'||row.requires_approval===(filter.approval==='required'))&&(filter.state==='all'||row.state===filter.state)&&(filter.decision==='all'||row.decision===filter.decision)&&(filter.provider==='all'||row.provider===filter.provider));
+}

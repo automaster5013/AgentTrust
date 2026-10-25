@@ -29,3 +29,10 @@ export function campaignHistoryPage(value:unknown,user:Identity,dataset:string|n
  if(page.nextCursor!==null){if(typeof page.nextCursor!=='string'||entries.length!==25)throw Error('INVALID_CAMPAIGN_HISTORY_CURSOR');const next=cursor(page.nextCursor,user,dataset),last=entries.at(-1)!,at=time(last.createdAt);if(next.id!==last.id||next.seconds!==at.seconds||next.nanos!==at.nanos)throw Error('INVALID_CAMPAIGN_HISTORY_CURSOR');}
  return {entries,nextCursor:page.nextCursor as string|null};
 }
+
+export type CampaignHistoryFilter={approval:'all'|'required'|'not-required';agentVersionId:string|null};
+/** Filters only a scope-verified page; never infers campaign completion or release authority. */
+export function filterCampaignHistoryPage(page:CampaignHistoryPage,filter:CampaignHistoryFilter):CampaignHistoryEntry[]{
+ if(!['all','required','not-required'].includes(filter.approval)||filter.agentVersionId!==null&&!uuid.test(filter.agentVersionId))throw Error('INVALID_CAMPAIGN_HISTORY_FILTER');
+ return page.entries.filter(row=>(filter.approval==='all'||row.requiresApproval===(filter.approval==='required'))&&(filter.agentVersionId===null||row.agentVersionId===filter.agentVersionId));
+}

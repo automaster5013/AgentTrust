@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {runHistoryPage} from '../src/lib/run-history.ts';
+import {runHistoryPage,filterRunHistoryPage,type RunHistoryFilter} from '../src/lib/run-history.ts';
 import type {Identity} from '../src/lib/contracts.ts';
 import {proxyPath,oauthQuery} from '../src/lib/proxy-policy.ts';
 const org='11111111-1111-4111-8111-111111111111',project='22222222-2222-4222-8222-222222222222',actor='33333333-3333-4333-8333-333333333333';
@@ -29,3 +29,58 @@ test('run history proxy exposes bounded GET navigation without adding a writable
 });
 
 test('run cursor rejects audit domain and invalid engine-independent result states',()=>{const token=cursor(row(3)),bytes=Buffer.from(token,'base64url');bytes.write('BAD');assert.throws(()=>runHistoryPage(page(),user,bytes.toString('base64url')));assert.throws(()=>runHistoryPage(page([{...row(3),state:'failed',decision:'pass'}]),user));assert.throws(()=>runHistoryPage(page([{...row(3),requiresApproval:'true'}]),user));assert.throws(()=>runHistoryPage(page([{...row(3),provider:'unapproved-provider'}]),user));});
+
+
+test('current-page filters intersect decision and provider without changing verified order, rows or cursor',()=>{
+ const raw=[row(4),{...row(3),provider:'ollama',decision:'block',scenario:'block'},{...row(2),provider:'ollama'},{...row(1),state:'failed',decision:'inconclusive',scenario:'error'}];
+ const verified=runHistoryPage(page(raw),user),before=JSON.stringify(verified);
+ assert.deepEqual(filterRunHistoryPage(verified,{state:'all',decision:'all',provider:'all'}).map(x=>x.id),raw.map(x=>x.id));
+ assert.deepEqual(filterRunHistoryPage(verified,{state:'all',decision:'pass',provider:'ollama'}).map(x=>x.id),[raw[2].id]);
+ assert.deepEqual(filterRunHistoryPage(verified,{state:'all',decision:'block',provider:'all'}).map(x=>x.id),[raw[1].id]);
+ assert.deepEqual(filterRunHistoryPage(verified,{state:'all',decision:'inconclusive',provider:'all'}).map(x=>x.id),[raw[3].id]);
+ assert.deepEqual(filterRunHistoryPage(verified,{state:'all',decision:'pass',provider:'openai'}),[]);
+ assert.equal(JSON.stringify(verified),before);
+ const entries=Array.from({length:25},(_,i)=>row(30-i)),token=cursor(entries.at(-1)!);const full=runHistoryPage(page(entries,token),user);
+ assert.deepEqual(filterRunHistoryPage(full,{state:'all',decision:'block',provider:'all'}),[]);assert.equal(full.nextCursor,token);
+ assert.deepEqual(filterRunHistoryPage(runHistoryPage(page([]),user),{state:'all',decision:'all',provider:'all'}),[]);
+});
+
+test('current-page filters refuse unknown choices rather than silently displaying unrelated evidence',()=>{
+ const verified=runHistoryPage(page(),user);
+ for(const filter of [{state:'all',decision:'approved',provider:'all'},{state:'all',decision:'all',provider:'foreign'}])assert.throws(()=>filterRunHistoryPage(verified,filter as RunHistoryFilter));
+});
+
+test('execution-state filters distinguish pending from failed inconclusive runs and preserve page boundaries',()=>{
+ const raw=[{...row(4),state:'queued',decision:'inconclusive'},row(3),{...row(2),state:'failed',decision:'inconclusive',scenario:'error',provider:'ollama'}];
+ const verified=runHistoryPage(page(raw),user),before=JSON.stringify(verified);
+ for(const state of ['queued','succeeded','failed'] as const)assert.deepEqual(filterRunHistoryPage(verified,{state,decision:'all',provider:'all'}).map(x=>x.id),raw.filter(x=>x.state===state).map(x=>x.id));
+ assert.deepEqual(filterRunHistoryPage(verified,{state:'failed',decision:'inconclusive',provider:'ollama'}).map(x=>x.id),[raw[2].id]);
+ assert.deepEqual(filterRunHistoryPage(verified,{state:'queued',decision:'pass',provider:'all'}),[]);
+ assert.equal(JSON.stringify(verified),before);
+ assert.throws(()=>filterRunHistoryPage(verified,{state:'cancelled',decision:'all',provider:'all'} as unknown as RunHistoryFilter));
+});
+
+test('approval setting filter intersects other conditions and never represents current review permission',()=>{
+ const raw=[{...row(4),requiresApproval:true},{...row(3),requiresApproval:false},{...row(2),requiresApproval:true,state:'failed',decision:'inconclusive',scenario:'error',provider:'ollama'}];
+ const verified=runHistoryPage(page(raw),user),before=JSON.stringify(verified);
+ assert.deepEqual(filterRunHistoryPage(verified,{approval:'required',state:'all',decision:'all',provider:'all'}).map(x=>x.id),[raw[0].id,raw[2].id]);
+ assert.deepEqual(filterRunHistoryPage(verified,{approval:'not-required',state:'all',decision:'pass',provider:'all'}).map(x=>x.id),[raw[1].id]);
+ assert.deepEqual(filterRunHistoryPage(verified,{approval:'required',state:'failed',decision:'inconclusive',provider:'ollama'}).map(x=>x.id),[raw[2].id]);
+ assert.deepEqual(filterRunHistoryPage(verified,{approval:'not-required',state:'failed',decision:'all',provider:'all'}),[]);
+ assert.deepEqual(filterRunHistoryPage(verified,{approval:'all',state:'all',decision:'all',provider:'all'}),verified.entries);
+ assert.equal(JSON.stringify(verified),before);
+ assert.throws(()=>filterRunHistoryPage(verified,{approval:'approved',state:'all',decision:'all',provider:'all'} as unknown as RunHistoryFilter));
+});
+
+
+test('scenario filters separate quality from synthetic evidence while preserving intersections and navigation',()=>{
+ const raw=[{...row(5),scenario:'quality',provider:'ollama'},row(4),{...row(3),scenario:'block',decision:'block'},{...row(2),scenario:'missing_evidence',decision:'inconclusive'},{...row(1),scenario:'error',state:'failed',decision:'inconclusive'}];
+ const verified=runHistoryPage(page(raw),user),before=JSON.stringify(verified);
+ for(const scenario of ['quality','pass','block','missing_evidence','error'] as const)assert.deepEqual(filterRunHistoryPage(verified,{scenario,state:'all',decision:'all',provider:'all'}).map(x=>x.id),raw.filter(x=>x.scenario===scenario).map(x=>x.id));
+ assert.deepEqual(filterRunHistoryPage(verified,{scenario:'quality',approval:'required',state:'succeeded',decision:'pass',provider:'ollama'}).map(x=>x.id),[raw[0].id]);
+ assert.deepEqual(filterRunHistoryPage(verified,{scenario:'quality',state:'all',decision:'all',provider:'synthetic'}),[]);
+ const entries=Array.from({length:25},(_,i)=>row(30-i)),token=cursor(entries.at(-1)!);const full=runHistoryPage(page(entries,token),user);
+ assert.deepEqual(filterRunHistoryPage(full,{scenario:'quality',state:'all',decision:'all',provider:'all'}),[]);assert.equal(full.nextCursor,token);
+ assert.equal(JSON.stringify(verified),before);
+ assert.throws(()=>filterRunHistoryPage(verified,{scenario:'unknown',state:'all',decision:'all',provider:'all'} as unknown as RunHistoryFilter));
+});

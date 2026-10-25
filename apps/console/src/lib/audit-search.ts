@@ -38,3 +38,9 @@ export async function auditSearchPage(value:unknown,user:Identity,filters:AuditF
  if(parsed.entries.some(entry=>filters.action!==null&&entry.action!==filters.action||filters.resourceId!==null&&entry.resourceId!==filters.resourceId))throw Error('INVALID_AUDIT_FILTER_BINDING');
  return {entries:parsed.entries,nextCursor:page.nextCursor as string|null};
 }
+
+/** Presentation filter on an already tenant-verified page; preserves its server cursor. */
+export function filterAuditPageByActor(page:AuditPage,actorId:string):AuditEntry[]{
+ if(actorId!==''&&!uuid.test(actorId))throw Error('INVALID_AUDIT_ACTOR_FILTER');
+ return page.entries.filter(entry=>actorId===''||entry.actorId===actorId);
+}

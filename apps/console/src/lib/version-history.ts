@@ -32,3 +32,9 @@ export function versionHistoryPage(value:unknown,user:Identity,kind:VersionKind,
 export function verifyVersionHistoryBinding(row:Version,detail:Version):void{
  if(detail.id!==row.id||detail.resource_key!==row.resource_key||detail.version!==row.version||detail.content_sha256!==row.content_sha256||time(detail.created_at).text!==time(row.created_at).text)throw Error('INVALID_VERSION_BINDING');
 }
+
+/** Narrow the verified current page without changing ordering, hashes or cursor. */
+export function filterVersionHistoryPage(page:VersionHistoryPage,resourceKey:string):VersionHistoryEntry[]{
+ if(resourceKey!==''&&!/^[a-z][a-z0-9-]{2,63}$/.test(resourceKey))throw Error('INVALID_VERSION_HISTORY_FILTER');
+ return page.entries.filter(row=>resourceKey===''||row.resource_key===resourceKey);
+}

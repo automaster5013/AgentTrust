@@ -30,3 +30,22 @@ test('new agent contracts hash actual fixed execution profiles and reject profil
 });
 
 test('cancelled campaign preserves child and immutable version bindings',async()=>{const {doc}=await archiveFixture(),before=structuredClone(doc.campaign);before.state='queued';before.decision='inconclusive';before.cases[0].state='queued';before.cases[0].decision='inconclusive';before.result.state='queued';before.result.decision='inconclusive';before.result.rules[0].status='inconclusive';const previous=await verifiedCampaign(before,user,before.id),after=structuredClone(before);after.state='failed';after.cases[0].state='failed';after.result.state='failed';assert.equal((await verifiedCancelledCampaign(after,user,previous)).decision,'inconclusive');await assert.rejects(()=>verifiedCancelledCampaign({...after,cases:[{...after.cases[0],runId:uid(8)}]},user,previous));await assert.rejects(()=>verifiedCancelledCampaign(before,user,previous));const completed=await verifiedCampaign(doc.campaign,user,doc.campaign.id);await assert.rejects(()=>verifiedCancelledCampaign(after,user,completed));});
+
+test('comparison rejects changes that contradict the verified current case decisions',()=>{
+ const record=campaign(fixture(),user,uid(6));
+ const value={campaignId:record.id,baselineCampaignId:uid(8),organizationId:user.organizationId,projectId:user.projectId,datasetVersionId:record.dataset_version_id,datasetContentSha256:record.dataset_content_sha256,comparison:{status:'regression',newlyFailedRequiredCases:['required-pass'],unresolvedRequiredCases:[],improvedRequiredCases:[],deploymentAuthority:false}};
+ assert.throws(()=>comparison(value,user,record,uid(8)));
+ const blocked={...record,cases:record.cases.map(row=>({...row,decision:'block' as const}))};
+ assert.throws(()=>comparison({...value,comparison:{...value.comparison,status:'no-regression',newlyFailedRequiredCases:[],improvedRequiredCases:['required-pass']}},user,blocked,uid(8)));
+ assert.equal(comparison(value,user,blocked,uid(8)).status,'regression');
+ assert.equal(comparison({...value,comparison:{...value.comparison,status:'no-regression',newlyFailedRequiredCases:[],improvedRequiredCases:['required-pass']}},user,record,uid(8)).status,'no-regression');
+});
+
+test('comparison result remains bound to the captured candidate baseline and tenant',()=>{
+ const record=campaign(fixture(),user,uid(6)),baseline=uid(8);
+ const response={campaignId:record.id,baselineCampaignId:baseline,organizationId:user.organizationId,projectId:user.projectId,datasetVersionId:record.dataset_version_id,datasetContentSha256:record.dataset_content_sha256,comparison:{status:'no-regression',newlyFailedRequiredCases:[],unresolvedRequiredCases:[],improvedRequiredCases:[],deploymentAuthority:false}};
+ for(const changed of [{...response,campaignId:uid(9)},{...response,baselineCampaignId:uid(9)},{...response,organizationId:uid(9)},{...response,projectId:uid(9)}])assert.throws(()=>comparison(changed,user,record,baseline));
+ assert.throws(()=>comparison(response,user,record,uid(9)));
+ assert.throws(()=>comparison({...response,baselineCampaignId:record.id},user,record,record.id));
+ assert.equal(comparison(response,user,record,baseline).status,'no-regression');
+});
