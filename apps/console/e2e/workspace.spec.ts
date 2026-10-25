@@ -385,7 +385,7 @@ test('viewer searches actual scoped audit actions and resources and rejects a su
  const nextPath='**/backend/audit-search/all/all/'+reference.nextCursor;
  try{await page.route(nextPath,route=>route.fulfill({status:503,contentType:'application/json',body:'{}'}));await region.getByRole('button',{name:'다음 검색 페이지',exact:true}).click();await expect(region.getByRole('status')).toContainText('감사 검색을 확인하지 못했습니다.');await expect(rows).toHaveCount(0);await expect(region.getByRole('navigation',{name:'감사 검색 페이지',exact:true})).toHaveCount(0)}finally{await page.unroute(nextPath)}
  await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);expect(await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')))).toEqual(first);
- await region.getByRole('button',{name:'다음 검색 페이지',exact:true}).click();await expect(region.getByText('검색 페이지 2 · 25개 기록',{exact:true})).toBeVisible();const second=await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')));expect(second.some(id=>first.includes(id))).toBe(false);await region.getByRole('button',{name:'이전 검색 페이지',exact:true}).click();await expect(region.getByText('검색 페이지 1 · 25개 기록',{exact:true})).toBeVisible();expect(await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')))).toEqual(first);
+ await region.getByRole('button',{name:'다음 검색 페이지',exact:true}).click();await expect(region.getByText('검색 페이지 2 · 25개 기록 · 25개 표시',{exact:true})).toBeVisible();const second=await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')));expect(second.some(id=>first.includes(id))).toBe(false);await region.getByRole('button',{name:'이전 검색 페이지',exact:true}).click();await expect(region.getByText('검색 페이지 1 · 25개 기록 · 25개 표시',{exact:true})).toBeVisible();expect(await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')))).toEqual(first);
  phase('failed next-page request clears older rows and page controls; manual restart restores the first page before distinct next and previous navigation');
  const path='**/backend/audit-search/all/all';try{await page.route(path,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...reference,filters:{action:'review.approved',resourceId:null}})}));await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('감사 검색을 확인하지 못했습니다.');await expect(rows).toHaveCount(0)}finally{await page.unroute(path)}
  // Hold a real old-condition response until a new search has completed. The
@@ -563,44 +563,77 @@ test('audit export arriving after workspace authentication loss never downloads'
 });
 
 test('viewer navigates real older evaluation pages and opens scoped evidence',async({page})=>{
+ phase('history acceptance source step 1');
  await login(page,'demo-viewer');
  const region=page.getByRole('region',{name:'프로젝트 평가 이력',exact:true});
+ phase('history acceptance source step 2');
  await region.getByRole('button',{name:'최신 평가 이력 조회',exact:true}).click();
+ phase('history acceptance source step 3');
  await expect(region.locator('[data-run-history-id]')).toHaveCount(25);
+ phase('history acceptance source step 4');
  const first=await region.locator('[data-run-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-run-history-id')));
  expect(first.length).toBe(25);
+ phase('history acceptance source step 5');
  const currentPage=await (await page.request.get('/backend/run-history')).json();
  const chosen=currentPage.entries[0];
+ phase('history acceptance source step 6');
  await region.getByLabel('평가 이력 시나리오',{exact:true}).selectOption(chosen.scenario);
  const scenarioMatches=currentPage.entries.filter((row:{scenario:string})=>row.scenario===chosen.scenario);
+ phase('history acceptance source step 7');
  expect(await region.locator('[data-run-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-run-history-id')))).toEqual(scenarioMatches.map((row:{id:string})=>row.id));
+ phase('history acceptance source step 8');
  await expect(region.getByRole('button',{name:'평가 이력 필터 해제',exact:true})).toBeEnabled();
+ phase('history acceptance source step 9');
  await region.getByRole('button',{name:'평가 이력 필터 해제',exact:true}).click();
+ phase('history acceptance source step 10');
  await expect(region.getByLabel('평가 이력 시나리오',{exact:true})).toHaveValue('all');
+ phase('history acceptance source step 11');
  await expect(region.locator('[data-run-history-id]')).toHaveCount(25);
+ phase('history acceptance source step 12');
  await region.getByLabel('평가 이력 시나리오',{exact:true}).selectOption(chosen.scenario);
+ phase('history acceptance source step 13');
  await region.getByLabel('평가 이력 승인 필요 설정',{exact:true}).selectOption(chosen.requiresApproval?'required':'not-required');
+ phase('history acceptance source step 14');
  await region.getByLabel('평가 이력 실행 상태',{exact:true}).selectOption(chosen.state);
+ phase('history acceptance source step 15');
  await region.getByLabel('평가 이력 판정',{exact:true}).selectOption(chosen.decision);
+ phase('history acceptance source step 16');
  await region.getByLabel('평가 이력 공급자',{exact:true}).selectOption(chosen.provider);
  const matching=currentPage.entries.filter((row:{scenario:string;state:string;decision:string;provider:string;requiresApproval:boolean})=>row.scenario===chosen.scenario&&row.requiresApproval===chosen.requiresApproval&&row.state===chosen.state&&row.decision===chosen.decision&&row.provider===chosen.provider);
+ phase('history acceptance source step 17');
  await expect(region.locator('[data-run-history-id]')).toHaveCount(matching.length);
+ phase('history acceptance source step 18');
  expect(await region.locator('[data-run-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-run-history-id')))).toEqual(matching.map((row:{id:string})=>row.id));
+ phase('history acceptance source step 19');
  await region.getByRole('button',{name:'평가 이력 필터 해제',exact:true}).click();
+ phase('history acceptance source step 20');
  await expect(region.locator('[data-run-history-id]')).toHaveCount(25);
+ phase('history acceptance source step 21');
  await region.getByRole('button',{name:'다음 평가 페이지',exact:true}).click();
+ phase('history acceptance source step 22');
  await expect(region.getByText(/이력 페이지 2/)).toBeVisible();
+ phase('history acceptance source step 23');
  const older=await region.locator('[data-run-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-run-history-id')));
  expect(older.length).toBeGreaterThan(0);expect(older.some(id=>first.includes(id))).toBe(false);
+ phase('history acceptance source step 24');
  await region.getByRole('button',{name:'평가 근거 '+older[0]!.slice(0,8),exact:true}).click();
+ phase('history acceptance source step 25');
  await expect(page.locator('.evidence').getByText('실행 '+older[0],{exact:true})).toBeVisible();
+ phase('history acceptance source step 26');
  await region.getByRole('button',{name:'이전 평가 페이지',exact:true}).click();
+ phase('history acceptance source step 27');
  await expect(region.getByText(/이력 페이지 1/)).toBeVisible();
+ phase('history acceptance source step 28');
  expect(await region.locator('[data-run-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-run-history-id')))).toEqual(first);
+  phase('history acceptance source step 29');
   const snapshot=await (await page.request.get('/backend/run-history')).json();
+  phase('history acceptance source step 30');
   await page.route('**/backend/run-history',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...snapshot,projectId:'ffffffff-ffff-4fff-8fff-ffffffffffff'})}));
+  phase('history acceptance source step 31');
   await region.getByRole('button',{name:'최신 평가 이력 조회',exact:true}).click();
+  phase('history acceptance source step 32');
   await expect(region.getByText('평가 이력을 확인하지 못했습니다. 다시 조회해 주세요.',{exact:true})).toBeVisible();
+  phase('history acceptance source step 33');
   await expect(region.locator('[data-run-history-id]')).toHaveCount(0);
  phase('actual read-only browser history returns distinct pages and opens the selected existing evaluation');
 });
@@ -876,46 +909,80 @@ test('administrator cancels a real pending evaluation and campaign through brows
 
 
 test('viewer opens existing campaign history and clears a foreign filtered page',async({page})=>{
+ phase('history acceptance source step 1');
  await login(page,'demo-viewer');const region=page.getByRole('region',{name:'프로젝트 캠페인 이력',exact:true});
+ phase('history acceptance source step 2');
  await region.getByRole('button',{name:'최신 캠페인 이력 조회',exact:true}).click();
+ phase('history acceptance source step 3');
  await expect(region.locator('[data-campaign-history-id]').first()).toBeVisible();
+ phase('history acceptance source step 4');
  const first=await region.locator('[data-campaign-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-campaign-history-id')));
+ phase('history acceptance source step 5');
  const filterResponse=await page.request.get('/backend/campaign-history');expect(filterResponse.ok()).toBe(true);
+ phase('history acceptance source step 6');
  const filterPage=await filterResponse.json(),example=filterPage.entries[0];
+ phase('history acceptance source step 7');
  await region.getByLabel('캠페인 이력 승인 설정',{exact:true}).selectOption(example.requiresApproval?'required':'not-required');
+ phase('history acceptance source step 8');
  await region.getByLabel('캠페인 이력 에이전트 버전',{exact:true}).selectOption(example.agentVersionId);
  const matching=filterPage.entries.filter((row:{requiresApproval:boolean;agentVersionId:string})=>row.requiresApproval===example.requiresApproval&&row.agentVersionId===example.agentVersionId);
+ phase('history acceptance source step 9');
  await expect(region.locator('[data-campaign-history-id]')).toHaveCount(matching.length);
+ phase('history acceptance source step 10');
  expect(await region.locator('[data-campaign-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-campaign-history-id')))).toEqual(matching.map((row:{id:string})=>row.id));
+ phase('history acceptance source step 11');
  await region.getByRole('button',{name:'캠페인 이력 필터 해제',exact:true}).click();
+ phase('history acceptance source step 12');
  await expect(region.locator('[data-campaign-history-id]')).toHaveCount(filterPage.entries.length);
 
  let selected=first[0]!;
+ phase('history acceptance source step 13');
  if(await region.getByRole('button',{name:'다음 캠페인 페이지',exact:true}).isEnabled()){
+  phase('history acceptance source step 14');
   await region.getByRole('button',{name:'다음 캠페인 페이지',exact:true}).click();await expect(region.getByText(/캠페인 이력 페이지 2/)).toBeVisible();
+  phase('history acceptance source step 15');
   const second=await region.locator('[data-campaign-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-campaign-history-id')));expect(second.length).toBeGreaterThan(0);expect(second.some(id=>first.includes(id))).toBe(false);selected=second[0]!;
  }
+ phase('history acceptance source step 16');
  await region.getByRole('button',{name:'캠페인 근거 '+selected.slice(0,8),exact:true}).click();
+ phase('history acceptance source step 17');
  await expect(page.getByText('캠페인 '+selected,{exact:true})).toBeVisible();
  const caseRegion=page.getByRole('region',{name:'캠페인 사례 근거 탐색',exact:true});
+ phase('history acceptance source step 18');
  const campaignResponse=await page.request.get('/backend/campaigns/'+selected);expect(campaignResponse.ok()).toBe(true);
+ phase('history acceptance source step 19');
  const campaignEvidence=await campaignResponse.json(),caseExample=campaignEvidence.cases[0];
+ phase('history acceptance source step 20');
  await caseRegion.getByLabel('사례 식별자 검색',{exact:true}).fill(caseExample.caseId.toUpperCase());
+ phase('history acceptance source step 21');
  await caseRegion.getByLabel('사례 필수 여부',{exact:true}).selectOption(caseExample.required?'required':'optional');
+ phase('history acceptance source step 22');
  await caseRegion.getByLabel('사례 판정',{exact:true}).selectOption(caseExample.decision);
+ phase('history acceptance source step 23');
  await caseRegion.getByLabel('사례 실행 상태',{exact:true}).selectOption(caseExample.state);
  const expectedCases=campaignEvidence.cases.filter((row:{caseId:string;required:boolean;decision:string;state:string})=>row.caseId.toLowerCase().includes(caseExample.caseId.toLowerCase())&&row.required===caseExample.required&&row.decision===caseExample.decision&&row.state===caseExample.state);
+ phase('history acceptance source step 24');
  await expect(caseRegion.locator('[data-campaign-case-id]')).toHaveCount(expectedCases.length);
+ phase('history acceptance source step 25');
  expect(await caseRegion.locator('[data-campaign-case-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-campaign-case-id')))).toEqual(expectedCases.map((row:{caseId:string})=>row.caseId));
+ phase('history acceptance source step 26');
  await caseRegion.getByRole('button',{name:'사례 필터 해제',exact:true}).click();
+ phase('history acceptance source step 27');
  await expect(caseRegion.getByLabel('사례 식별자 검색',{exact:true})).toHaveValue('');
+ phase('history acceptance source step 28');
  await expect(caseRegion.locator('[data-campaign-case-id]')).toHaveCount(campaignEvidence.cases.length);
 
+ phase('history acceptance source step 29');
  await region.getByRole('button',{name:'최신 캠페인 이력 조회',exact:true}).click();await expect(region.locator('[data-campaign-history-id]').first()).toBeVisible();
+ phase('history acceptance source step 30');
  const request=await page.request.get('/backend/campaigns/'+selected),record=await request.json();
+ phase('history acceptance source step 31');
  const snapshot=await (await page.request.get('/backend/campaign-history/dataset/'+record.dataset_version_id)).json();
+ phase('history acceptance source step 32');
  await page.route('**/backend/campaign-history/dataset/'+record.dataset_version_id,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...snapshot,organizationId:'ffffffff-ffff-4fff-8fff-ffffffffffff'})}));
+ phase('history acceptance source step 33');
  await region.getByRole('button',{name:'최신 캠페인 이력 조회',exact:true}).click();
+ phase('history acceptance source step 34');
  await expect(region.getByText('캠페인 이력을 확인하지 못했습니다. 다시 조회해 주세요.',{exact:true})).toBeVisible();await expect(region.locator('[data-campaign-history-id]')).toHaveCount(0);
  phase('actual campaign history opens existing frozen evidence and refuses foreign dataset response');
 });
@@ -973,32 +1040,52 @@ test('viewer checks real evaluation dependencies and clears untrusted or unavail
 
 
 test('viewer verifies an older registered version before selecting it for campaign preparation',async({page})=>{
+ phase('history acceptance source step 1');
  await login(page,'demo-viewer');
  for(const [kind,label,selectLabel] of [['agents','에이전트','캠페인 에이전트 버전'],['datasets','데이터셋','캠페인 데이터셋 버전']] as const){
   const region=page.getByRole('region',{name:'프로젝트 '+label+' 버전 이력',exact:true});
+  phase('history acceptance source step 2');
   await region.getByRole('button',{name:label+' 버전 이력 조회',exact:true}).click();await expect(region.locator('[data-version-history-id]').first()).toBeVisible();
+  phase('history acceptance source step 3');
   const first=await region.locator('[data-version-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-history-id')));
+  phase('history acceptance source step 4');
   const versionPage=await (await page.request.get('/backend/version-history/'+kind)).json(),resourceKey=versionPage.entries[0].resourceKey;
+  phase('history acceptance source step 5');
   await region.getByLabel(label+' 이력 이름',{exact:true}).selectOption(resourceKey);
   const nameMatches=versionPage.entries.filter((entry:{resourceKey:string})=>entry.resourceKey===resourceKey);
+  phase('history acceptance source step 6');
   expect(await region.locator('[data-version-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-history-id')))).toEqual(nameMatches.map((entry:{id:string})=>entry.id));
+  phase('history acceptance source step 7');
   await region.getByRole('button',{name:'이름 필터 해제',exact:true}).click();
+  phase('history acceptance source step 8');
   expect(await region.locator('[data-version-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-history-id')))).toEqual(first);
+  phase('history acceptance source step 9');
   if(await region.getByRole('button',{name:'다음 '+label+' 버전 페이지',exact:true}).isEnabled()){
+   phase('history acceptance source step 10');
    await region.getByRole('button',{name:'다음 '+label+' 버전 페이지',exact:true}).click();await expect(region.getByText(new RegExp(label+' 버전 페이지 2 '))).toBeVisible();
+   phase('history acceptance source step 11');
    const older=await region.locator('[data-version-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-history-id')));expect(older.some(id=>first.includes(id))).toBe(false);
   }
+  phase('history acceptance source step 12');
   const row=region.locator('[data-version-history-id]').last(),id=await row.getAttribute('data-version-history-id');
+  phase('history acceptance source step 13');
   const response=page.waitForResponse(r=>r.url().endsWith('/versions/'+kind+'/'+id)&&r.request().method()==='GET');await row.getByRole('button',{name:new RegExp('^'+label+' 버전 .* 선택$')}).click();expect((await response).status()).toBe(200);
+  phase('history acceptance source step 14');
   await expect(region.getByText(/내용·해시·활성 상태 확인 후 선택:/)).toBeVisible();await expect(page.getByLabel(selectLabel,{exact:true})).toHaveValue(id!);
+  phase('history acceptance source step 15');
   if(!first.includes(id)){await region.getByRole('button',{name:'이전 '+label+' 버전 페이지',exact:true}).click();await expect(region.getByText(new RegExp(label+' 버전 페이지 1 '))).toBeVisible();expect(await region.locator('[data-version-history-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-history-id')))).toEqual(first);}
   const alternateId=first.find(value=>value!==id);expect(alternateId).toBeTruthy();const alternate=region.locator('[data-version-history-id="'+alternateId+'"]');expect(alternateId).not.toBe(id);
+  phase('history acceptance source step 16');
   const detail=await (await page.request.get('/backend/versions/'+kind+'/'+alternateId)).json(),match=/^(.*T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(?:Z|\+00:00)$/.exec(detail.created_at);expect(match).not.toBeNull();
   const nanos=Number((match![2]??'').padEnd(9,'0')),changed=nanos%1000000===999000?nanos-1000:nanos+1000,created_at=match![1]+'.'+String(changed).padStart(9,'0')+'Z';expect(Date.parse(created_at)).toBe(Date.parse(detail.created_at));
+  phase('history acceptance source step 17');
   const detailRoute='**/backend/versions/'+kind+'/'+alternateId;await page.route(detailRoute,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...detail,created_at})}));
+  phase('history acceptance source step 18');
   try{await alternate.getByRole('button',{name:new RegExp('^'+label+' 버전 .* 선택$')}).click();await expect(region.getByText('버전 내용과 해시·활성 상태를 확인하지 못했습니다. 선택을 적용하지 않았습니다.',{exact:true})).toBeVisible();await expect(page.getByLabel(selectLabel,{exact:true})).toHaveValue(id!)}finally{await page.unroute(detailRoute)}
   phase(kind+' detail with a one-microsecond metadata substitution is refused while the earlier verified selection remains');
+  phase('history acceptance source step 19');
   const snapshot=await (await page.request.get('/backend/version-history/'+kind)).json();await page.route('**/backend/version-history/'+kind,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...snapshot,kind:kind==='agents'?'datasets':'agents'})}));
+  phase('history acceptance source step 20');
   await region.getByRole('button',{name:label+' 버전 이력 조회',exact:true}).click();await expect(region.getByText('버전 이력을 확인하지 못했습니다. 다시 조회해 주세요.',{exact:true})).toBeVisible();await expect(region.locator('[data-version-history-id]')).toHaveCount(0);await expect(page.getByLabel(selectLabel,{exact:true})).toHaveValue(id!);await page.unroute('**/backend/version-history/'+kind);
  }
  phase('actual immutable version content/hash checked before controlled selection; foreign-kind page refused');
