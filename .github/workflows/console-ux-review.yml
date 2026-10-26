@@ -1,0 +1,48 @@
+name: Console UX review
+on:
+  pull_request:
+    paths:
+      - 'apps/console/**'
+      - 'scripts/console-ui-review.cjs'
+      - '.github/workflows/console-ux-review.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: console-ux-review-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  visual-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/console/package-lock.json
+      - name: Install pinned console dependencies and isolated browser
+        working-directory: apps/console
+        run: |
+          npm ci --ignore-scripts
+          npx playwright install --with-deps chromium
+          sudo apt-get install --no-install-recommends -y fonts-noto-cjk
+      - name: Check types and component contracts
+        run: |
+          npm --prefix apps/console run typecheck
+          npm --prefix apps/console test
+      - name: Render actual components and review responsive layout without API or credentials
+        run: node scripts/console-ui-review.cjs
+      - name: Preserve component review screens and measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: console-ux-review-${{ github.sha }}
+          path: |
+            .local/console-ux-review/*.png
+            .local/console-ux-review/summary.json
+          if-no-files-found: error
+          retention-days: 7
