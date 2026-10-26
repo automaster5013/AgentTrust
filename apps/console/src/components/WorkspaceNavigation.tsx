@@ -9,5 +9,5 @@ export default function WorkspaceNavigation(){
   for(const s of sections){const target=document.getElementById(s.id);if(target)observer?.observe(target)}
   return ()=>{observer?.disconnect();window.removeEventListener('hashchange',syncHash)};
  },[]);
- return <nav className="workspace-nav" aria-label="워크스페이스 탐색"><p className="nav-heading" aria-hidden="true">워크스페이스</p>{sections.map(s=><a key={s.id} href={'#'+s.id} aria-label={s.label} aria-current={active===s.id?'location':undefined} onClick={()=>setActive(s.id)}><span className="nav-number" aria-hidden="true">{s.number}</span><span className="nav-copy"><strong>{s.label}</strong><small aria-hidden="true">{s.description}</small></span></a>)}<p className="nav-note">근거 확인 → 검토 → 현재 게이트</p></nav>;
+ return <nav className="workspace-nav" aria-label="워크스페이스 탐색"><p className="nav-heading" aria-hidden="true">워크스페이스</p>{sections.map(s=><a key={s.id} href={'#'+s.id} aria-label={s.label} aria-current={active===s.id?'location':undefined} onFocus={event=>event.currentTarget.scrollIntoView({block:'nearest',inline:'nearest'})} onClick={()=>setActive(s.id)}><span className="nav-number" aria-hidden="true">{s.number}</span><span className="nav-copy"><strong>{s.label}</strong><small aria-hidden="true">{s.description}</small></span></a>)}<p className="nav-note">근거 확인 → 검토 → 현재 게이트</p></nav>;
 }

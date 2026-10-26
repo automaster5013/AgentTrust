@@ -102,6 +102,19 @@ test('workspace navigation and responsive layout keep review tasks reachable wit
  for(const [name,target] of [['평가 실행·조회','evaluations'],['버전·캠페인','campaigns'],['준비 상태·사용량','operations'],['이력·감사','history']]){
   const link=navigation.getByRole('link',{name,exact:true});await expect(link).toHaveAttribute('href','#'+target);await link.click();await expect(page.locator('#'+target)).toBeVisible();
  }
+
+ const originalViewport=page.viewportSize()??{width:1280,height:960};
+ for(const width of [640,320]){
+  await page.setViewportSize({width,height:960});
+  const names=['평가 실행·조회','버전·캠페인','준비 상태·사용량','이력·감사'];
+  await navigation.getByRole('link',{name:names[0],exact:true}).focus();
+  for(let index=0;index<names.length;index++){
+   const link=navigation.getByRole('link',{name:names[index],exact:true});
+   await expect(link).toBeFocused();await expect(link).toBeInViewport({ratio:1});
+   if(index<names.length-1)await link.press('Tab');
+  }
+ }
+ await page.setViewportSize(originalViewport);
  await page.locator('.skip-link').focus();await page.keyboard.press('Enter');await expect(page.locator('#workspace-content')).toBeFocused();
  const filters=page.getByRole('group',{name:'최근 평가 판정 필터',exact:true});
  const firstEvaluation=page.locator('.evaluation-list .runs button').first(),firstDecision=await firstEvaluation.locator('.badge').innerText();
