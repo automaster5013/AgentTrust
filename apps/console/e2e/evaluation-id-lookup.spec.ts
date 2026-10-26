@@ -19,8 +19,9 @@ test('known evaluation ID opens actual evidence without history paging and faile
   const response=await page.request.get('/backend/runs');expect(response.status()).toBe(200);const rows=await response.json() as {id:string;state:string}[];const own=rows.find(x=>x.state!=='queued')!;expect(own).toBeTruthy();
   const form=page.getByRole('form',{name:'평가 ID로 근거 바로 열기'}),input=form.getByLabel('전체 평가 ID');
   await input.fill('../runs');await form.getByRole('button',{name:'평가 ID로 근거 확인'}).click();await expect(form).toContainText('전체 평가 ID를 입력해 주세요.');
+  await page.screenshot({path:test.info().outputPath('workspace-evaluation-id-before-lookup.png'),fullPage:true});
   await input.fill(' '+own.id.toUpperCase()+' ');await form.getByRole('button',{name:'평가 ID로 근거 확인'}).click();await expect(form).toContainText('평가 근거와 현재 게이트를 확인했습니다.');const evidence=page.getByRole('region',{name:'선택한 평가 근거',exact:true});await expect(evidence).toContainText('실행 '+own.id);await expect(evidence).toContainText('현재 릴리스 게이트');
-  await page.screenshot({path:test.info().outputPath('evaluation-id-lookup.png'),fullPage:true});
+  await page.screenshot({path:test.info().outputPath('workspace-evaluation-id-lookup.png'),fullPage:true});
   await page.route('**/backend/runs/'+own.id,route=>route.fulfill({status:503,contentType:'application/json',body:'{}'}));await form.getByRole('button',{name:'평가 ID로 근거 확인'}).click();await expect(form).toContainText('평가를 확인하지 못했습니다.');await expect(evidence).toHaveCount(0);
  }finally{await logout(page)}
 });
