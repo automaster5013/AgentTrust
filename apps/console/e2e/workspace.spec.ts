@@ -1025,6 +1025,15 @@ test('viewer selects an existing historical baseline and verifies a real campaig
  const comparisonResult=page.getByRole('region',{name:'검증된 캠페인 회귀 비교 결과',exact:true});
  await expect(comparisonResult.getByText(proof.campaignId,{exact:true})).toBeVisible();
  await expect(comparisonResult.getByText(proof.comparisonCampaignId,{exact:true})).toBeVisible();
+ await comparisonResult.getByLabel('회귀 비교 원인',{exact:true}).selectOption('failed');
+ await expect(comparisonResult.getByRole('region',{name:'개선된 필수 사례',exact:true})).toHaveCount(0);
+ await comparisonResult.getByRole('searchbox',{name:'회귀 비교 사례 검색',exact:true}).fill('<script>');
+ await comparisonResult.getByRole('button',{name:'회귀 비교 필터 초기화',exact:true}).click();
+ await expect(comparisonResult.getByLabel('회귀 비교 원인',{exact:true})).toHaveValue('all');
+ await expect(comparisonResult.getByRole('searchbox',{name:'회귀 비교 사례 검색',exact:true})).toHaveValue('');
+ await expect(comparisonResult.getByRole('button',{name:'후보 캠페인 근거 열기',exact:true})).toBeVisible();
+ await expect(comparisonResult.getByRole('button',{name:'비교 기준 캠페인 근거 열기',exact:true})).toBeVisible();
+
  await page.getByLabel('비교 기준 캠페인',{exact:true}).selectOption('');
  await expect(comparisonResult).toHaveCount(0);
  phase('read-only historical dataset navigation supplies the real baseline to Java comparison verification; result identifies both requests and clears on baseline change');
