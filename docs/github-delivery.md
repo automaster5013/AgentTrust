@@ -120,6 +120,12 @@ npm run deploy:preflight
 이 검사는 검증된 백업과의 일치를 확인하며 보안 설정 자체의 완전한 감사를 대체하지 않는다. 백업 생성 전에 이미 존재한 문제, 검사 후 변경, 지문에 포함되지 않는 객체·인덱스·DB 설정과 외부 인증, 역할의 실제 비밀번호, 운영 데이터 최신성, 원격 복원, 롤백 안전성은 보증하지 않는다. 백업과 복원 보고서는 신뢰할 수 있는 운영자가 관리해야 한다.
 
 
+### Deployment isolation override checks (2026-10-28)
+
+The shared deployment/rollback preflight now rejects API/worker overrides that reintroduce host privileges alongside read-only filesystems and dropped capabilities: privileged mode, added capabilities/devices/device-cgroup rules, inherited volumes, automatic Docker API socket access, network mode overrides, non-private namespace modes, and unconfined seccomp/AppArmor options. It accepts omitted settings or explicit safe values without changing its input.
+
+This is a reviewed source change, unapplied to the running product. Rendered Compose validation does not verify live container isolation, full production security, deployment, rollback execution or operational acceptance.
+
 ### 실패 진단과 자동화 출력
 
 사전 점검은 성공·실패 모두 표준 출력에 JSON 보고서를 출력한다. 기존 성공 필드는 유지하며 `schemaVersion: 1`, `status: passed|blocked`, 검사별 `checks`를 추가한다. 실패는 종료 코드 1과 `failedCheck`, 고정된 `code`, 비밀 없는 `guidance`를 반환한다. 실패 전 완료 단계만 `passed`, 실패 단계는 `blocked`, 이후 수행하지 않은 단계는 `not_run`이다. 부분 통과를 배포 허용으로 취급하지 않는다. 성공은 종료 코드 0이며 모든 단계가 `passed`다.

@@ -1,5 +1,19 @@
 # AgentTrust
 
+## 포트폴리오 현재 상태 — 2026-10-28
+
+최종 제출 대상은 기존 `http://127.0.0.1:4310/`의 JavaScript 제품입니다. 핵심 기능·제한 설명, 실제 확인·미확인 결과 구분, 영상 제외 문서 목록과 문서용 ZIP을 준비해 현재 포트폴리오 준비 작업을 종료했습니다.
+
+**실제 영상·자막·화면 및 음성 노출 검토는 미완료·보류입니다.** 영상은 제출처 규정에 맞춰 추후 직접 제작합니다. 실제 4310 브라우저 핵심 과업·200/400% 확대·Narrator도 미확인 상태를 유지합니다. 이를 합성 검사나 새 스택 CI로 대신하지 않습니다. 전체 완료율은 산출하지 않습니다.
+
+- [제품 개요와 제한](docs/portfolio-4310-overview.md) · [확인 결과와 미확인 범위](docs/portfolio-4310-verification.md)
+- [제출 기준](docs/portfolio-submission.md) · [최종 점검표](docs/portfolio-submission-checklist.md) · [문서 파일 목록](docs/portfolio-4310-files.json)
+- [시연 참고 순서](docs/portfolio-demo.md) · [영상·OCR·자막 도구와 재현 방법](docs/portfolio-media-tools.md)
+
+미디어 도구는 합성 자료로 검증한 보조 도구입니다. 자동 녹화·자원 입장·예약 작업은 시작하지 않으며 실제 촬영 재개에는 별도 요청과 기존 입장 조건이 필요합니다. 배포 사전검사의 격리 우회 차단 소스 보완은 실행 제품 미적용 상태입니다. GitHub 소스 반영은 PR 병합·배포·운영 수용을 뜻하지 않습니다.
+
+아래 기술 전환·CI·이미지·성능 수치는 각 리비전의 보존 이력입니다. 새 스택·과거 UI 미디어를 기존 4310 제출 성과로 합산하지 않습니다. 기존 자산·가드·서비스는 보존합니다.
+
 [![Original stack integration](https://github.com/automaster5013/AgentTrust/actions/workflows/original-stack.yml/badge.svg?branch=main)](https://github.com/automaster5013/AgentTrust/actions/workflows/original-stack.yml)
 
 [![Validate and deliver](https://github.com/automaster5013/AgentTrust/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/automaster5013/AgentTrust/actions/workflows/validate.yml)
