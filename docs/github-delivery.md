@@ -1,5 +1,15 @@
 # GitHub CI와 이미지 전달
 
+## 2026-10-28 CI/CD 보완
+
+기존 4310 JavaScript 전달 경로는 `test` → 후보 이미지 게시 → 정확한 digest의 레지스트리 실행 검증 → 검증된 이미지의 `main` 태그 승격이다. PR에서는 `test`만 실행하고 게시·승격은 건너뛴다. `main`의 소스 검증과 레지스트리 실행·복원·배포 사전검사가 모두 성공해야 승격하며, 서버 자동 배포는 구성하지 않는다. 소스 반영·이미지 승격·실제 서버 적용은 별개다.
+
+`validate.yml`은 포트폴리오 오프라인 검사에 Python 3.14를 명시하고 setup action도 commit SHA로 고정한다. 별도 `portfolio-tools.yml`은 Ubuntu/Python 3.10·3.14와 Windows/Python 3.14에서 미디어 경계 검사·문서 검사와 Windows PowerShell 구문 검사를 수행한다. 이 경량 검사는 촬영·로그인·FFmpeg 다운로드·Docker·실제 서비스·유료 공급자를 호출하지 않는다. 별도 workflow로 두어 전달 검증기가 확인하는 기존 네 작업의 이름과 개수를 유지한다.
+
+`ae1e4bb`의 [기본 CI](https://github.com/automaster5013/AgentTrust/actions/runs/40665471561)와 [UI 검토 CI](https://github.com/automaster5013/AgentTrust/actions/runs/40665471456)는 성공했다. [새 스택 통합 CI](https://github.com/automaster5013/AgentTrust/actions/runs/40665471462)의 소스 보안 검사는 통과했으며 전체 통합 상태는 해당 실행 결과를 별도로 확인한다. 이는 이후 workflow 보완 커밋의 통과나 `main` 이미지 게시·실제 배포 완료를 뜻하지 않는다.
+
+병합 전에는 정확한 PR head의 실행 결과를 확인한다. 기본 CI와 새 경량 CI, 해당 변경에 적용되는 새 스택 통합·UI CI 결과를 구분하며 과거 성공을 새 리비전에 재사용하지 않는다. 현재 PR은 미병합·실행 제품 미적용 상태이고, 영상·자막·노출 검토는 제출처 규정에 맞춘 추후 제작까지 미완료·보류다.
+
 ## Immutable registry-image browser acceptance
 
 The `images` job now runs the complete synthetic browser suite against the

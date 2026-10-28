@@ -26,11 +26,15 @@ jobs:
       - run: npm ci --cache .cache/npm --ignore-scripts
       - run: npm run setup
       - run: npm run check
+      - name: Use a fixed Python minor for offline portfolio checks
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.14'
       - name: Verify offline portfolio documents and media tools
         run: |
-          python3 -m unittest discover -s scripts -p 'test_portfolio_media*.py'
-          python3 scripts/test_portfolio_submission_audit.py
-          python3 scripts/portfolio-submission-audit.py
+          python -m unittest discover -s scripts -p 'test_portfolio_media*.py'
+          python scripts/test_portfolio_submission_audit.py
+          python scripts/portfolio-submission-audit.py
       - run: npm run connector:contract
       - run: npm run connector:replay
       - run: npm run connector:compare
