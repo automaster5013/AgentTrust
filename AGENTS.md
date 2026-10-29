@@ -16,3 +16,5 @@
 - 사용자 결정(2026-10-28, 영상 보류): 기존 4310 실제 영상은 제출처 규정에 맞춰 사용자가 추후 직접 제작한다. 실제 영상·자막·노출 검토(종료조건 3)는 미완료·보류이며 완료로 간주하지 않는다. 현재 촬영 요구·자동 녹화·입장 재실행·삭제된 자동화 재개를 하지 않는다. 나중에 명시적으로 재개하면 제출처 규정을 먼저 확인하고 보존된 로컬 미디어 도구를 사용한다. 상세 재개 기록은 .local/portfolio-4310-focused-review-20261027/deferred-video-user-decision-20261028.json이다.
 
 - 사용자 결정(2026-10-30, 별도 물리 백업 보류): 별도 물리 저장장치 백업은 보류하고 현 상태를 유지한다. E 외장 SSD 위의 프로젝트(T)·Docker(R)·기존 오프라인 백업 및 R/T 자동 연결·AgentTrust 20개 자동 기동 설정을 보존하며 LogiTrack은 정지 상태를 유지한다. R/T는 E에 종속된 가상 드라이브이며 별도 물리 백업 완료로 간주하지 않는다. 별도 백업의 생성·이동·삭제·서비스 정지는 사용자의 재개 요청 없이 진행하지 않는다. 상세 결정은 docs/storage-migration-verification.md에 기록한다.
+
+- 사용자 명시 요청(2026-10-30, LogiTrack 이전 완료): LogiTrack 프로젝트는 E 기반 `T:\LogiTrack`으로 이전하고 `C:\LogiTrack` junction을 유지한다. 내용·권한 검증 후 C 원본 백업을 삭제했으며 E 원본 보관본은 비공개 이전 기록 폴더에 보존한다. AgentTrust 20개 정상 운영과 LogiTrack 12개 정지, 기존 Docker 자산·R/T 연결을 유지한다. 이후 새 요청 없이 LogiTrack의 기동·재생성·원본 보관본 삭제를 하지 않는다. 상세 결과는 docs/storage-migration-verification.md와 LogiTrack 저장소의 동명 문서에 기록한다.
