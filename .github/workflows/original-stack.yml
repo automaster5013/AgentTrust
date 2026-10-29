@@ -21,6 +21,7 @@ jobs:
           fetch-depth: 0
       - name: Build pinned source security tools
         run: |
+          python3 -m unittest discover -s scripts -p test_stack_owned_fixture.py
           python3 scripts/stack-execution-profiles.py --check
           python3 scripts/stack-quality-profiles.py --check
           python3 scripts/stack-delivery-verifier-test.py
