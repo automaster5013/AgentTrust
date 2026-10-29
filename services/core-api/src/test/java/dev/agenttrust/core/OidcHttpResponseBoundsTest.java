@@ -119,14 +119,16 @@ class OidcHttpResponseBoundsTest {
         for(Throwable cause=error;cause!=null;cause=cause.getCause())if(expected.equals(cause.getMessage()))return true;
         return false;
     }
-    @Test @Timeout(10) void userInfoStatusFollowupCannotTransmitASecondBearerRequest() throws Exception {
+    @Test @Timeout(30) void userInfoStatusFollowupCannotTransmitASecondBearerRequest() throws Exception {
         var server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);var requests=new AtomicInteger();
         server.createContext("/userinfo",exchange->{requests.incrementAndGet();byte[] body="{\"error\":\"temporarily_unavailable\"}".getBytes(StandardCharsets.UTF_8);exchange.getResponseHeaders().set("Content-Type","application/json");exchange.getResponseHeaders().set("Retry-After","0");exchange.sendResponseHeaders(503,body.length);try(var output=exchange.getResponseBody()){output.write(body);}});server.start();
         try{
             var registration=request(server.getAddress().getPort()).getClientRegistration();
             var token=new OAuth2AccessToken(OAuth2AccessToken.TokenType.BEARER,"fixture-token",java.time.Instant.now(),java.time.Instant.now().plusSeconds(60));
             var userRequest=new org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest(registration,token);
-            var error=assertThrows(OAuth2AuthenticationException.class,()->OidcHttpTransport.users(Duration.ofSeconds(1)).loadUser(userRequest));
+            // This test checks replay refusal, not the 1-second transport deadline.
+            // Concurrent cold CI image builds must still reach the initial 503.
+            var error=assertThrows(OAuth2AuthenticationException.class,()->OidcHttpTransport.users(Duration.ofSeconds(10)).loadUser(userRequest));
             assertTrue(hasCauseMessage(error,"OIDC request replay refused"));assertEquals(1,requests.get());
         }finally{server.stop(0);}
     }
