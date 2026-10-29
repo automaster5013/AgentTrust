@@ -49,6 +49,14 @@ E 장치 자체가 고장 나면 원본과 같은 장치의 백업이 함께 영
 
 서비스 정지·기동·재시작이나 Docker 재생성은 수행하지 않았다. 이번 LogiTrack 이전 후 별도 재부팅·LogiTrack 기동 검사는 수행하지 않았다. 원본 보관본도 E에 있으므로 별도 물리 백업 보류 결정은 유지한다. 상세 기록은 LogiTrack 저장소의 `docs/storage-migration-verification.md`에 반영한다.
 
+## LogiTrack 이전 작업 종료 및 미수행·보류 — 2026-10-30
+
+LogiTrack E 이전과 검증된 C 원본 백업 정리 작업은 종료하며 이 범위에 남은 필수 작업은 없다. 파일·권한 검증, C 연결 경로, E 원본 보관본 및 공유 Docker 자산 보존은 완료했다. AgentTrust 20개 정상 운영과 LogiTrack 12개 정지를 유지한다.
+
+이번 LogiTrack 이전 후 별도 Windows 재부팅·LogiTrack 기동·기능 검사는 미수행이다. 기존 T 연결 설정은 앞선 AgentTrust 재부팅 검증을 통과한 설정을 유지하지만, 이를 LogiTrack 이전 후의 새 검증 결과로 대신하지 않는다. 별도 물리 백업은 사용자 결정으로 보류다. LogiTrack PR #411의 보안 수정도 미병합·미배포이며 운영 서비스 적용·DB 마이그레이션 검증은 수행하지 않았다. 이 항목들은 완료로 표시하지 않으며 이번 이전 종료 조건에 추가하지 않는다.
+
+종료 검토 시 LogiTrack `d66d55f`의 네 CI와 AgentTrust `da08303`의 다섯 CI가 모두 통과했다. [AgentTrust 전체 통합 CI](https://github.com/automaster5013/AgentTrust/actions/runs/40939163722)와 [LogiTrack CI](https://github.com/automaster5013/LogiTrack/actions/runs/40944963931)는 해당 리비전의 기록이다. 이후 문서 커밋의 CI 통과를 의미하지 않는다. 종료 후 새 요청 없이 서비스 기동·재시작·추가 정리·병합·배포를 진행하지 않는다.
+
 ## 운영 범위와 근거
 
 - R·T의 기존 SYSTEM 부팅 시 mount 작업은 유지한다. Docker Desktop은 사용자 로그인 시 자동 시작한다. 로그인 전 무인 서비스 실행은 이번 구성의 검증 범위가 아니다.
