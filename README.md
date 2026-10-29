@@ -1,5 +1,9 @@
 # AgentTrust
 
+## Windows 저장소 이전 및 자동 기동 — 2026-10-29
+
+프로젝트와 Docker 데이터를 E 드라이브의 NTFS 가상디스크로 이전했습니다. 실제 Windows 재부팅 후 R·T 자동 연결, 로그인 후 기존 AgentTrust 20개 자동 healthy, 컨테이너 42개·볼륨 18개·이미지 보존, LogiTrack 정지 및 4310 HTTP 200을 수동 복구 없이 확인했습니다. [이전·검증 결과와 운영 범위](docs/storage-migration-verification.md) · [자동 기동 설정](docs/windows-autostart.md). 실제 시연 영상 검토는 계속 미완료·보류입니다.
+
 ## 포트폴리오 현재 상태 — 2026-10-28
 
 최종 제출 대상은 기존 `http://127.0.0.1:4310/`의 JavaScript 제품입니다. 핵심 기능·제한 설명, 실제 확인·미확인 결과 구분, 영상 제외 문서 목록과 문서용 ZIP을 준비해 현재 포트폴리오 준비 작업을 종료했습니다.
