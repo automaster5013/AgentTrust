@@ -66,3 +66,11 @@ LogiTrack E 이전과 검증된 C 원본 백업 정리 작업은 종료하며 �
 - 실제 4310 영상·자막·노출 검토는 사용자 추후 제작으로 계속 미완료·보류다.
 
 [자동 기동 설정과 확인 방법](windows-autostart.md)
+
+## ReleasePilot 프로젝트 이전·C 원본 정리 — 2026-10-30
+
+ReleasePilot을 기존 E 기반 NTFS의 `T:\ReleasePilot`으로 이전하고 `C:\ReleasePilot` junction을 유지한다. 35,836개 파일·6,039개 실제 디렉터리·2개 junction·2,695,687,314바이트 및 대체 스트림 0개의 내용·권한 검증을 통과했다. E 원본 보관본을 만든 후 C 백업·활성 프로젝트·보관본을 모두 검증하고 C 백업을 삭제했다. 2026-10-30 11:32:08 KST 최종 기록과 후속 읽기 전용 검사에서 C 백업 부재와 E 활성 프로젝트·보관본 보존을 확인했다.
+
+컨테이너 42개·볼륨 18개·이미지 목록을 보존했으며 AgentTrust 20개 healthy와 LogiTrack 12개 정지를 확인했다. Terraform 외부 공급자 캐시는 보존했고 경로·크기·수정 시각 메타데이터 해시가 일치했다. 캐시 전체 내용 해시 검증을 의미하지 않는다. 서비스 변경이나 기존 R·T 자동 연결 설정 변경은 수행하지 않았다.
+
+이번 이전·검증된 C 백업 정리 범위는 완료다. 이전 후 별도 Windows 재부팅·ReleasePilot 기동·기능 검사는 미수행이며 별도 물리 백업은 계속 보류다. 상세 기록은 ReleasePilot 저장소의 `docs/operations/storage-migration-verification.md`에 반영한다. 비공개 이전 기록과 원본 보관본은 GitHub에 포함하지 않는다.
