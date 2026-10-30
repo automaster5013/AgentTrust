@@ -31,7 +31,7 @@ def get(url, headers=None, limit=1048576):
         return raw,dict(response.headers.items())
 
 
-def validate_run(run,jobs,revision,run_id,attempt):
+def validate_run(run,jobs,revision,run_id,attempt,expected_jobs=JOBS):
     require(type(run_id) is int and run_id>0 and type(attempt) is int and attempt>0)
     require(re.fullmatch('[a-f0-9]{40}',revision) is not None)
     require(run['id']==run_id and run['run_attempt']==attempt and run['head_sha']==revision)
@@ -39,15 +39,15 @@ def validate_run(run,jobs,revision,run_id,attempt):
     require(run['head_branch']=='main' and run['event'] in ('push','workflow_dispatch'))
     require(run['path']=='.github/workflows/original-stack.yml')
     require(run['status']=='completed' and run['conclusion']=='success')
-    rows=jobs['jobs'];require(jobs['total_count']==len(rows)==len(JOBS))
-    require({row['name'] for row in rows}==JOBS)
+    rows=jobs['jobs'];require(jobs['total_count']==len(rows)==len(expected_jobs))
+    require({row['name'] for row in rows}==expected_jobs)
     for row in rows:
         require(row['run_id']==run_id and row['run_attempt']==attempt)
         require(row['status']=='completed' and row['conclusion']=='success')
     return {'trustedMainRunVerified':True,'runId':run_id,'runAttempt':attempt,'requiredJobsVerified':len(rows)}
 
 
-def main_run(revision,run_id,attempt,fetch=get):
+def main_run(revision,run_id,attempt,fetch=get,expected_jobs=JOBS):
     require(type(run_id) is int and run_id>0 and type(attempt) is int and attempt>0)
     headers={'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}
     token=os.environ.get('GITHUB_TOKEN')
@@ -55,7 +55,7 @@ def main_run(revision,run_id,attempt,fetch=get):
     base='https://api.github.com/repos/'+REPOSITORY+'/actions/runs/'+str(run_id)
     run=json.loads(fetch(base,headers)[0])
     jobs=json.loads(fetch(base+'/attempts/'+str(attempt)+'/jobs?per_page=100',headers)[0])
-    return validate_run(run,jobs,revision,run_id,attempt)
+    return validate_run(run,jobs,revision,run_id,attempt,expected_jobs)
 
 
 def public_manifests(rows,fetch=get,image_ids=None):

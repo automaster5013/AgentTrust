@@ -820,3 +820,33 @@ schema path was rerun after the release-verifier extraction: twenty healthy owne
 containers and seventeen source/live migrations matched, with all three private
 Compose groups still identified and no operational change. Private observation:
 `.local/dockerhub-cd-20261030/candidate-flow-schema-v1.json`.
+
+### Actual pinned-main Docker Hub publication path — 2026-10-30
+
+The owner clarified that actual Docker Hub publication is the priority, rather than
+continuing render-only development. A separate, narrowly pinned main-mirror workflow
+now publishes the already successful main release `d40cdd063f7f711fdd513d231ec2da2473796619`
+from source run `40266953272` attempt 1. All four historical source jobs succeeded;
+that workflow predates Docker Hub publication. The authenticated source artifact
+`12631309929` ZIP digest is `14cb0e4da4a76d41fa6379a04b145a0633cbf8f3a9835ba5747fc52201a106f5`;
+the downloaded ZIP matched and its checksum-map hash is
+`36205e03707d098850b99d8fe64d20211b6c7eb134e81082fc4e46ecafc13519`.
+The bundle contains sixteen images and schema-7 runtime/security evidence.
+
+`dockerhub-main-mirror.yml` runs only in the owned implementation branch/main,
+uses the existing user-provided encrypted publishing secret, re-verifies main-run
+identity, all image/SBOM signatures and pinned artifact checksums, and mirrors
+unchanged images into public `automaster5013/agenttrust-*` repositories. It performs
+anonymous destination manifest/config-ID readback and emits a schema-3 receipt that
+separates the original successful main source run from the later publication run.
+This is neither publication of the new development branch nor service deployment.
+Existing schema-2 consumers deliberately do not silently accept the new receipt
+format until their two-run validation path is implemented. The original main-only
+build/security pipeline and its defaults remain unchanged; no PR is merged and
+no operating container is replaced by the mirror job.
+
+At implementation commit time publication has not yet been verified. A started
+job or successful login is not a completed mirror. Completion requires all sixteen
+public destination digests/config IDs and the uploaded publication receipt; a failed
+push may leave a partial set of repositories. Actual CD remains a separate unfinished
+workstream with the existing operational preservation and recovery gates.

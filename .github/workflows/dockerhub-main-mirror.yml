@@ -1,0 +1,57 @@
+name: Publish pinned signed main to Docker Hub
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/commercial-workspace-ux-20261026]
+    paths: [.github/workflows/dockerhub-main-mirror.yml]
+permissions:
+  contents: read
+  actions: read
+  packages: read
+concurrency:
+  group: agenttrust-dockerhub-pinned-main
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'automaster5013/AgentTrust' && (github.ref == 'refs/heads/codex/commercial-workspace-ux-20261026' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: AgentTrust-dockerhub
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 40266953272
+          name: original-stack-security-delivery-d40cdd063f7f711fdd513d231ec2da2473796619
+          path: .local/dockerhub-pinned-bundle
+      - name: Build existing pinned signature verification tools
+        run: docker build -t agenttrust-security:local tools/security
+      - name: Authenticate temporary publishing client
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HUB_TOKEN: ${{ secrets.AUTOMASTER5013_AGENTTRUST }}
+        shell: bash
+        run: |
+          test -n "$HUB_TOKEN"
+          export DOCKER_CONFIG="$RUNNER_TEMP/agenttrust-main-mirror"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG" >> "$GITHUB_ENV"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          printf '%s' "$HUB_TOKEN" | docker login docker.io --username automaster5013 --password-stdin
+      - name: Verify signed main and publish all sixteen images without deployment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/stack-dockerhub-main-mirror.py --bundle .local/dockerhub-pinned-bundle --publish --output .local/dockerhub-main-receipt.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: dockerhub-main-d40cdd0-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .local/dockerhub-main-receipt.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove temporary login files
+        if: always()
+        run: rm -f "$RUNNER_TEMP/agenttrust-main-mirror/config.json"
