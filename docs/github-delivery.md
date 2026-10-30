@@ -354,3 +354,41 @@ Only then activate the target-specific rollout. No self-hosted runner, scheduled
 poller, automatic service update or operating-system task has been installed by
 this configuration step. Main-only signed publication is retained; the draft PR
 has not been merged and branch CI success cannot activate that path.
+
+### Read-only local CD planning — 2026-10-30
+
+Run from `C:\AgentTrust`:
+
+```powershell
+python scripts/stack-local-cd-plan.py --output .local/cd-review/inventory.json
+```
+
+This inventories only the running `agenttrust` project. It refuses missing,
+duplicate, unhealthy, unexpectedly named or foreign services and requires the
+preserved `unless-stopped` policy for all twenty live containers. Its private
+report records immutable rollback image IDs, mount identities without bind-source
+paths, current Compose file names and hashes. It does not output environment
+values, credentials or raw Docker inspection data. Output must be a new file
+inside `.local`; existing reports are not overwritten. It uses only `docker ps`
+and `docker inspect`; no container, image, volume or system configuration changes.
+The actual owner installation passed this inventory with twenty healthy services.
+The report is private `.local/dockerhub-cd-20261030/inventory-v1.json`.
+
+With a real publication receipt, also pass `--receipt`, independently anchored
+`--expected-receipt-sha256`, `--expected-revision`, and explicit
+`--console-profile development` or `https-review`. A complete sixteen-image
+receipt must match the full revision and personal namespace, source/destination
+digests and SHA tags. The resulting proposal maps fifteen runtime services to
+candidate digests and retains their rollback IDs/policies; the unused console
+profile is still published. It excludes legacy api/worker/db, Redis and Grafana.
+
+This is a proposal, not an executor or cryptographic receipt authenticator. It
+always reports `automaticDeploymentAllowed: false`. Receipt booleans and a file
+checksum do not authenticate release provenance. Main-run and signed-bundle
+verification, live migration compatibility, authenticated backup/recovery,
+private-overlay/rollback rehearsal, a secured target executor and review of the
+first operational transition remain blocking stages. No fabricated release
+receipt was applied to the running installation, and no operational CD completion
+is claimed. Four offline test groups exercise foreign/unhealthy inventory,
+changed policies, incomplete/duplicate images, forged targets, wrong revisions
+and alternative console profiles in the existing source-security CI job.
