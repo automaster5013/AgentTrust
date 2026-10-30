@@ -27,6 +27,7 @@ jobs:
           python3 scripts/stack-observability-orchestration-test.py
           python3 scripts/stack-tempo-metadata-test.py
           python3 scripts/stack-host-capacity-test.py
+          python3 scripts/stack-tempo-repair-plan-test.py
           python3 scripts/stack-local-cd-executor-test.py
           python3 scripts/stack-store-queue-probe-test.py
           python3 scripts/stack-recovery-evidence-join-test.py

@@ -369,3 +369,6 @@ The original-image reference digests are encrypted before stopping that owned
 reader, then the candidate starts. At most one Tempo fixture runs at a time;
 source and candidate trace comparisons retain their full content checks. The
 initial 2 GiB and checkpoint 1 GiB Windows reserves are not lowered.
+
+
+운영 Tempo에 대한 단계별 조건·판정·원상복귀 경계는 [운영 복구 검토 계획](stack-tempo-operating-recovery-plan.md)을 따른다. 기존 격리 성공에서 사용한 후보 재기동은 운영 무재시작 복구 증거와 구분한다.
