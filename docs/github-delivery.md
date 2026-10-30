@@ -316,3 +316,40 @@ review of the concrete service changes before the first operational transition.
 The preserved 4310 installation and the original technology stack remain distinct
 delivery paths; this extension covers all sixteen stack images and does not
 replace either installation.
+
+### Confirmed Docker Hub configuration — 2026-10-30
+
+The owner selected personal namespace `automaster5013`, public repositories for
+all sixteen `agenttrust-*` images, and the existing `C:\AgentTrust` installation
+as the intended CD target. UI/API inspection found the user-created environment
+is actually named `AgentTrust-dockerhub` and its existing encrypted secret is
+`AUTOMASTER5013_AGENTTRUST`. The workflow references those existing names; the
+earlier setup examples using `dockerhub` / `DOCKERHUB_TOKEN` are superseded for
+this installation. No secret value was retrieved or copied. Repository variables
+`DOCKERHUB_USERNAME=automaster5013`, `DOCKERHUB_NAMESPACE=automaster5013`, and
+`DOCKERHUB_ENABLED=false` are configured. Publication remains disabled pending
+validation and main release selection.
+
+`dockerhub-auth-preflight.yml` is a dispatch-only credential check on the owned
+implementation branch or main. It performs Docker login on a hosted runner,
+removes its temporary credential file, and pushes/deploys nothing. Success proves
+authentication only, not repository write permissions or visibility. It consumes
+the same existing environment secret as the publication job.
+
+The target currently has no registered GitHub self-hosted runner. Its running
+stack uses a private signed-runtime Compose override. A plain source checkout
+and `compose up` would therefore omit the actual runtime configuration. CD must
+retain that override, restart policies, signing keys, volumes and R/T mounts.
+It must preserve the three legacy 4310 containers, Redis, Grafana, and all
+LogiTrack resources. `console` and `console-https` are alternative delivered
+profiles, not two replacements for the same live container. The sixteen-image
+publication receipt alone is insufficient to authorize a local rollout.
+
+Before the first service transition, pin a main release and its authenticated
+signed bundle, verify destination digest equality, compare migrations to the
+live installation, prove compatible backup/recovery, snapshot rollback image
+references and container policies, and present the exact planned service changes.
+Only then activate the target-specific rollout. No self-hosted runner, scheduled
+poller, automatic service update or operating-system task has been installed by
+this configuration step. Main-only signed publication is retained; the draft PR
+has not been merged and branch CI success cannot activate that path.

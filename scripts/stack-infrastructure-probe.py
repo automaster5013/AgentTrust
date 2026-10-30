@@ -33,7 +33,7 @@ def ci_isolation(original,infrastructure):
   value=jobs[name]['needs'];assert set(value if isinstance(value,list) else [value])=={parent}
  for name in ['images','security-images']:assert jobs[name]['if']=="github.event_name != 'pull_request' && github.ref == 'refs/heads/main'"
  assert jobs['dockerhub']['if']=="github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.DOCKERHUB_ENABLED == 'true'"
- assert jobs['dockerhub']['environment']=='dockerhub'
+ assert jobs['dockerhub']['environment']=='AgentTrust-dockerhub'
  assert jobs['dockerhub']['permissions']=={'contents':'read','actions':'read','packages':'read'}
  lines=[line.strip() for job in jobs.values() for step in job['steps'] for line in step.get('run','').splitlines()]
  assert [line for line in lines if line.startswith('docker push ')]==['docker push "$image"']

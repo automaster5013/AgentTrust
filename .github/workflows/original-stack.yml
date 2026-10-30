@@ -692,7 +692,7 @@ jobs:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.DOCKERHUB_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    environment: dockerhub
+    environment: AgentTrust-dockerhub
     permissions:
       contents: read
       actions: read
@@ -711,7 +711,7 @@ jobs:
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
-          HUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          HUB_TOKEN: ${{ secrets.AUTOMASTER5013_AGENTTRUST }}
           HUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
         shell: bash
         run: |
