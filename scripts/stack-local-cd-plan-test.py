@@ -20,6 +20,30 @@ def receipt_fixture():
                     'tag':'docker.io/automaster5013/agenttrust-'+n+':'+REV} for n in sorted(cd.ALL_IMAGES)]}
 
 class PlanningTests(unittest.TestCase):
+ def test_review_overrides_only_set_images_and_restart(self):
+  inv=cd.summarize(inventory_fixture())
+  plan=cd.receipt_plan(receipt_fixture(),REV,inv,'development')
+  for override in [cd.candidate_override(plan,inv),cd.rollback_override(inv)]:
+   self.assertEqual(set(override),{'services'})
+   self.assertEqual(set(override['services']),set(cd.COMPONENTS))
+   for service,value in override['services'].items():
+    self.assertEqual(set(value),{'image','restart'})
+    self.assertEqual(value['restart'],'unless-stopped')
+  bad=copy.deepcopy(plan);bad[0]['service']='db'
+  with self.assertRaises(ValueError):cd.candidate_override(bad,inv)
+  bad=copy.deepcopy(plan);bad[0]['rollbackImageId']='sha256:'+'0'*64
+  with self.assertRaises(ValueError):cd.candidate_override(bad,inv)
+  with self.assertRaises(ValueError):cd.receipt_plan(receipt_fixture(),REV,inv,'typo')
+ def test_per_service_override_order_is_preserved_without_union(self):
+  inv=cd.summarize(inventory_fixture())
+  inv['stack-console']['composeFiles']=['base','console-private']
+  inv['stack-gateway']['composeFiles']=['console-private','base']
+  groups=cd.runtime_file_groups(inv)
+  self.assertEqual(len(groups),3)
+  self.assertEqual(sorted(s for group in groups for s in group['services']),sorted(cd.COMPONENTS))
+  console=next(group for group in groups if 'stack-console' in group['services'])
+  self.assertEqual(console['filesInOrder'],['base','console-private'])
+  self.assertNotIn('stack-gateway',console['services'])
  def test_running_id_membership_changes_refused_before_inspection(self):
   ids=tuple(format(i,'064x') for i in range(20))
   for current in [ids+('f'*64,),ids[:-1],ids[:-1]+('f'*64,),ids[:-1]+(ids[0],)]:

@@ -42,6 +42,7 @@ def summarize(containers):
 
 
 def receipt_plan(receipt, revision, inventory, profile):
+    require(profile in ('development','https-review'))
     require(re.fullmatch('[a-f0-9]{40}', revision) is not None)
     require(type(receipt['schemaVersion']) is int and receipt['schemaVersion'] == 2 and receipt['revision'] == revision)
     for flag in ['published','destinationDigestsVerified','sourceSignaturesVerifiedHere']:
@@ -63,6 +64,43 @@ def receipt_plan(receipt, revision, inventory, profile):
     return [{'service': service, 'candidate': images['console-https' if service == 'stack-console' and profile == 'https-review' else component],
              'rollbackImageId': inventory[service]['rollbackImageId'], 'restartPolicy': inventory[service]['restartPolicy']}
             for service, component in sorted(COMPONENTS.items())]
+
+
+def rollback_override(inventory):
+    require(set(inventory) == set(COMPONENTS) | PRESERVED)
+    services = {}
+    for service in sorted(COMPONENTS):
+        image = inventory[service]['rollbackImageId']
+        require(re.fullmatch('sha256:[a-f0-9]{64}', image) is not None)
+        require(inventory[service]['restartPolicy'] == 'unless-stopped')
+        services[service] = {'image': image, 'restart': 'unless-stopped'}
+    return {'services': services}
+
+
+def candidate_override(plan, inventory):
+    require(isinstance(plan,list) and len(plan) == len(COMPONENTS))
+    require({row['service'] for row in plan} == set(COMPONENTS))
+    services = {}
+    for row in plan:
+        service = row['service']
+        component = COMPONENTS[service]
+        allowed = ('console','console-https') if service == 'stack-console' else (component,)
+        require(any(re.fullmatch('docker.io/automaster5013/agenttrust-' + name + '@sha256:[a-f0-9]{64}', row['candidate']) for name in allowed))
+        require(row['rollbackImageId'] == inventory[service]['rollbackImageId'])
+        require(row['restartPolicy'] == inventory[service]['restartPolicy'] == 'unless-stopped')
+        services[service] = {'image': row['candidate'], 'restart': 'unless-stopped'}
+    return {'services': services}
+
+
+def runtime_file_groups(inventory):
+    # Do not merge per-service file histories: private overrides differ in real installs.
+    groups = {}
+    for service in sorted(COMPONENTS):
+        files = inventory[service]['composeFiles']
+        require(isinstance(files,list) and 0 < len(files) <= 32 and len(set(files)) == len(files))
+        require(all(isinstance(file,str) and file for file in files))
+        groups.setdefault(tuple(files),[]).append(service)
+    return [{'services':services,'filesInOrder':list(files)} for files,services in groups.items()]
 
 
 def docker(args):
@@ -121,14 +159,19 @@ def main():
             raw = args.receipt.read_bytes(); require(len(raw) <= 65536)
             require(hashlib.sha256(raw).hexdigest() == args.expected_receipt_sha256)
             plan = receipt_plan(json.loads(raw), args.expected_revision, inventory, args.console_profile)
+        rollback = rollback_override(inventory)
+        candidate = candidate_override(plan,inventory) if plan is not None else None
+        runtime_groups = runtime_file_groups(inventory)
         recheck(ids, inventory, root, hashes)
         report = {'schemaVersion':1,'readOnly':True,'inventory':inventory,'composeFileSha256':hashes,
-                  'plannedServices':plan,'preservedServices':sorted(PRESERVED), 'logitrackAccessed':False,
+                  'plannedServices':plan,'rollbackComposeOverride':rollback,'candidateComposeOverride':candidate,
+                  'runtimeComposeGroups':runtime_groups,'singleRuntimeComposeVerified':len(runtime_groups)==1,'overridesApplied':False,
+                  'rollbackRehearsed':False,'preservedServices':sorted(PRESERVED), 'logitrackAccessed':False,
                   'registryContacted':False,'imagesPulled':False,'actualDeploymentPerformed':False,
                   'automaticDeploymentAllowed':False,'receiptSignatureVerifiedHere':False,
                   'blockers':['trusted-main-run-and-signed-bundle-verification','migration-compatibility',
                               'authenticated-backup-and-recovery','private-runtime-overlay-and-rollback-rehearsal',
-                              'target-executor-not-installed','first-operational-transition-review']}
+                              'target-executor-not-installed','first-operational-transition-review'] + (['per-service-runtime-reconciliation'] if len(runtime_groups)>1 else [])}
         output.parent.mkdir(parents=True, exist_ok=True)
         with output.open('x', encoding='utf-8') as handle:
             handle.write(json.dumps(report, indent=2) + '\n')

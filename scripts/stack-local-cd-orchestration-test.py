@@ -44,6 +44,7 @@ class OrchestrationTests(unittest.TestCase):
    def replace(target,**kw):return stack.enter_context(patch(target,**kw))
    def obj(target,name,**kw):return stack.enter_context(patch.object(target,name,**kw))
    obj(e.planner,'docker',side_effect=lambda args:'\n'.join(format(i,'064x') for i in range(20)) if args[0]=='ps' else '[]')
+   obj(e.planner,'runtime_file_groups',return_value=[{'services':sorted(e.planner.COMPONENTS),'filesInOrder':['fixture']}])
    obj(e.planner,'compose_hashes',side_effect=[{'fixture':'same'},{'fixture':'changed'}] if fault=='overlay-race' else lambda *args:{'fixture':'same'})
    obj(e.planner,'summarize',side_effect=[inventory,{**inventory,'extra':{}}] if fault=='inventory-race' else lambda _:copy.deepcopy(inventory))
    obj(e,'migration_catalog',return_value=catalog)

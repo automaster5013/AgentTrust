@@ -588,3 +588,34 @@ separately and explicitly records whether config digests were verified. Existing
 signature, attempt, source/destination receipt and backup checks remain required.
 Forty-five focused tests passed, including a simulated platform-index success and
 four refusal variants; no real published release was substituted by these fixtures.
+
+### Candidate / rollback review overrides and actual runtime groups — 2026-10-30
+
+The local planner now emits review-only `candidateComposeOverride` (only with a
+validated schema-2 receipt) and `rollbackComposeOverride` for the fifteen intended
+stack runtime services. Each service entry contains only an immutable image
+reference and `restart: unless-stopped`; no environment, command, volumes, ports,
+keys or health settings are copied or replaced. The rollback proposal uses the
+exact currently cached image IDs. Legacy api/worker/db, Redis and Grafana remain
+excluded. Neither override is applied or a standalone runnable Compose installation.
+Bare rollback image IDs require the existing local cache and must not be treated
+as remote registry references or proof of a tested rollback.
+
+Actual owner inspection found **three different ordered Compose file histories**
+across the fifteen stack runtime services. `runtimeComposeGroups` preserves each
+service's existing sequence rather than selecting one list or taking a union.
+`singleRuntimeComposeVerified` is therefore false, and both local planning and
+joined evidence explicitly add `per-service-runtime-reconciliation` to their
+blockers. This is a concrete reason a generic all-service `compose up` cannot be
+approved from these reports. Preserve each private overlay and reconcile effective
+runtime settings before any future rollout/recovery execution. The planner emits
+no apply command and no executable target agent has been installed.
+
+Private `rollback-review-v1.json` records the real fifteen-service rollback proposal
+and the three groups; `runtime-groups-schema-v1.json` confirms the same groups and
+all seventeen matching live migrations. Both are under the existing private
+`.local/dockerhub-cd-20261030` directory and claim neither publication nor rollback
+rehearsal. Candidate override generation has only synthetic receipt coverage because
+no real current main Docker Hub receipt exists. Forty-seven relevant offline tests
+passed, including unexpected service/image/profile rejection and preserving two
+opposite override orderings as distinct groups.

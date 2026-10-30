@@ -106,6 +106,9 @@ def run(args, report):
     ids = planner.running_ids()
     inventory = planner.summarize(json.loads(planner.docker(['inspect',*ids])))
     hashes = planner.compose_hashes(inventory, ROOT)
+    runtime_groups = planner.runtime_file_groups(inventory)
+    report['runtimeConfigurationGroups']=len(runtime_groups)
+    report['singleRuntimeComposeVerified']=len(runtime_groups)==1
     report['healthyAgentTrustContainers']=len(inventory)
     report['stage']='migration-ledger'
     catalog = migration_catalog(args.expected_revision)
@@ -115,7 +118,7 @@ def run(args, report):
         require(live_ledger() == ledger)
         planner.recheck(ids, inventory, ROOT, hashes)
         report.update(completed=True,scope='inventory-and-migration-only',signedReleaseVerified=False,
-                      recoveryEvidenceVerified=False,blockers=['signed-release-and-anchored-backup-config-required'])
+                      recoveryEvidenceVerified=False,blockers=['signed-release-and-anchored-backup-config-required'] + (['per-service-runtime-reconciliation'] if len(runtime_groups)>1 else []))
         return
     report['stage']='independent-anchors'
     config = delivery.json_bytes(anchored_file(args.evidence_config,args.expected_config_sha256))
@@ -171,7 +174,7 @@ def run(args, report):
     report.update(main_run(args.expected_revision,config['runId'],config['runAttempt']))
     report.update(completed=True,scope='signed-publication-and-retained-development-recovery-binding',
                   blockers=['target-executor',
-                            'operational-backup-policy','first-operational-transition-review'])
+                            'operational-backup-policy','first-operational-transition-review'] + (['per-service-runtime-reconciliation'] if len(runtime_groups)>1 else []))
 
 
 def main():
