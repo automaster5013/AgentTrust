@@ -16,7 +16,7 @@ class EvidenceTests(unittest.TestCase):
   for bad in cases:
    with self.assertRaises((ValueError,KeyError)):e.same_schema(catalog,bad)
  def test_anchored_bytes_change_and_size(self):
-  with tempfile.TemporaryDirectory() as temp:
+  with tempfile.TemporaryDirectory(dir=e.ROOT) as temp:
    p=pathlib.Path(temp)/'proof.json';p.write_bytes(b'{}')
    digest=e.hashlib.sha256(b'{}').hexdigest()
    self.assertEqual(e.anchored_file(p,digest),b'{}')

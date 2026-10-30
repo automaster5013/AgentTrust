@@ -500,3 +500,23 @@ Four new offline test groups exercise wrong branch/event/SHA/attempt/workflow,
 failed/skipped/duplicate/incomplete jobs, modified manifest bytes/digest headers,
 foreign namespaces and untrusted network origins. These execute in the existing
 source-security CI job before signature/publishing work.
+
+### Two-hour autonomous development window and orchestration controls — 2026-10-30
+
+The owner requested two hours of autonomous continuation starting about 17:18 KST,
+ending at 19:18 KST. A new heartbeat on this chat continues CI investigation and
+CD implementation within the existing service-preservation boundaries; old
+unrelated automations remain untouched. No merge, publication activation, operating
+service replacement, writer-quiescing backup or target runner installation is
+implied by that development window.
+
+`stack-local-cd-orchestration-test.py` exercises the entire joined evidence path
+with simulated external signature, registry, GitHub, snapshot/key and Docker/DB
+boundaries. The successful simulation checks repeated snapshot authentication and
+main-run verification while deployment and operational-backup claims remain false.
+Seven simulated failure variants cover signature rejection, receipt mismatch,
+untrusted online release, missing registry manifest, stale recovery, changed live
+inventory and changed migration ledger. All fail before joined completion. These
+are orchestration tests, not real cryptographic publication or recovery evidence.
+The new tests run in the existing source-security job; temporary test files remain
+inside the repository workspace.
