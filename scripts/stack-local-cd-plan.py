@@ -118,7 +118,7 @@ def runtime_file_groups(inventory):
 
 
 def docker(args):
-    process = subprocess.run(['docker', *args], capture_output=True, text=True, timeout=30)
+    process = subprocess.run(['docker', *args], capture_output=True, text=True, encoding="utf-8", timeout=30)
     require(process.returncode == 0)
     return process.stdout
 

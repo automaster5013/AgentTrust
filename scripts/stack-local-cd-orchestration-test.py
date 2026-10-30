@@ -34,6 +34,7 @@ class OrchestrationTests(unittest.TestCase):
   snapshot={'snapshotId':'fixture-id','revision':REV,'encryptedManifestSha256':config['snapshotManifestSha256'],'authenticatedEncryptedComponents':6}
   snap=types.SimpleNamespace(verify=Mock(side_effect=lambda *a,**k:copy.deepcopy(snapshot)),bounded_file=Mock(return_value=encrypted),document=Mock(return_value={}))
   crypt=types.SimpleNamespace(transform=Mock(return_value=b'{}'))
+  source_module=types.SimpleNamespace(source_preflight=Mock(return_value={}),Rehearsal=types.SimpleNamespace(configuration=lambda source:b'{"changed":true}' if fault=='configuration-drift' else b'{}'))
   key=Mock();key.read_bytes.return_value=b'0'*32
   catalog=[{'version':'1','script':'V1__one.sql','checksum':123,'sha256':'f'*64}]
   ledger=[{'version':'1','script':'V1__one.sql','checksum':123,'success':True,'installed_rank':1}]
@@ -56,10 +57,10 @@ class OrchestrationTests(unittest.TestCase):
    obj(e,'anchored_file',side_effect=anchored)
    obj(e.delivery,'validate',return_value=(pathlib.Path('fixture-bundle'),'identity',records))
    obj(e.delivery,'Verifier',return_value=verifier)
-   obj(e,'load',side_effect=lambda name,file:snap if name=='retained_snapshot' else crypt)
+   obj(e,'load',side_effect=lambda name,file:snap if name=='retained_snapshot' else source_module if name=='current_source_configuration' else crypt)
    replace('stack_backup_custody.retained_key',return_value=(key,b'hash'))
    replace('stack_backup_custody.key_unchanged',return_value=True)
-   replace('stack_coherent_archive.validate_manifest',return_value={'services':{'stack-db':{'imageId':'sha256:'+DIG}}})
+   replace('stack_coherent_archive.validate_manifest',return_value={'services':{'stack-db':{'imageId':'sha256:'+DIG}},'components':{'configuration':{'bytes':len(encrypted),'sha256':hashlib.sha256(encrypted).hexdigest()}}})
    online=replace('stack_release_online.main_run',return_value={'trustedMainRunVerified':True})
    manifests=replace('stack_release_online.public_manifests',return_value={'destinationManifestDigestsVerified':True})
    publication=replace('stack_release_online.publication_run',return_value={'publicationRunVerified':True})
@@ -85,7 +86,7 @@ class OrchestrationTests(unittest.TestCase):
   for fault in ['online','registry']:
    with self.subTest(fault=fault):self.exercise(fault)
  def test_stale_recovery_and_state_races(self):
-  for fault in ['stale','inventory-race','schema-race','overlay-race']:
+  for fault in ['stale','inventory-race','schema-race','overlay-race','configuration-drift']:
    with self.subTest(fault=fault):self.exercise(fault)
 
 if __name__=='__main__':unittest.main()

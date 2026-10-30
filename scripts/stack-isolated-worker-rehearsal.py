@@ -1,5 +1,6 @@
 """Bounded stateless worker candidate/baseline/candidate rehearsal; no operational mutations."""
 import argparse,hashlib,importlib.util,json,pathlib,subprocess,sys,uuid
+from stack_image_identity import cached_identity as cached_image_identity
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location('evidence',ROOT/'scripts/stack-local-cd-evidence.py');e=importlib.util.module_from_spec(spec);spec.loader.exec_module(e)
 PROBE=r'''
@@ -27,6 +28,11 @@ asyncio.run(main())
 def command(args,timeout=90):
  result=subprocess.run(args,cwd=ROOT,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=timeout)
  e.require(result.returncode==0);return result.stdout
+
+
+def cached_identity(image,reference,expected_config):
+ e.require(e.re.fullmatch('docker.io/automaster5013/agenttrust-ai-worker@sha256:[a-f0-9]{64}',reference))
+ return cached_image_identity(image,reference,expected_config)
 
 
 def fixture_command(image,identifier):
@@ -58,7 +64,8 @@ def main():
    command(['docker','pull',candidate],300)
    report['stage']='candidate-image-id'
    identity=json.loads((release['directory']/'runtime-identity.json').read_bytes())['imageIds']['ai-worker']
-   e.require(command(['docker','image','inspect',candidate,'--format','{{.Id}}']).strip()==identity)
+   local=json.loads(command(['docker','image','inspect',candidate]))[0]
+   report['imageIdentityMode']=cached_identity(local,candidate,identity)
    report['stage']='stateless-candidate-baseline-candidate'
    for reference in (candidate,baseline,candidate):
     result=json.loads(command(fixture_command(reference,str(uuid.uuid4()))))

@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import zlib
+from types import SimpleNamespace
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MIGRATIONS = 'services/core-api/src/main/resources/db/migration/'
@@ -153,7 +154,7 @@ def run(args, report):
     snap = load('retained_snapshot','stack-coherent-snapshot-verify.py')
     crypt = load('backup_envelope','stack-backup-crypt.py')
     from stack_backup_custody import retained_key, key_unchanged
-    from stack_coherent_archive import validate_manifest
+    from stack_coherent_archive import validate_manifest, verify_component
     key_path,key_hash = retained_key(ROOT,config['retainedKey'])
     key = key_path.read_bytes()
     snapshot = snap.verify(ROOT,pathlib.Path(config['snapshot']),key_path,config['snapshotId'],config['snapshotRevision'],config['snapshotManifestSha256'],
@@ -161,6 +162,14 @@ def run(args, report):
     encrypted = snap.bounded_file(pathlib.Path(config['snapshot'])/'manifest.aesgcm',1048576)
     require(hashlib.sha256(encrypted).hexdigest() == config['snapshotManifestSha256'])
     manifest = validate_manifest(snap.document(crypt.transform('decrypt',key,encrypted)),config['snapshotId'],config['snapshotRevision'])
+    configuration_ciphertext=snap.bounded_file(pathlib.Path(config['snapshot'])/'configuration.aesgcm',64*1024*1024)
+    verify_component(configuration_ciphertext,manifest['components']['configuration'])
+    captured_configuration=delivery.json_bytes(crypt.transform('decrypt',key,configuration_ciphertext))
+    source_module=load('current_source_configuration','stack-coherent-recovery.py')
+    sources=source_module.source_preflight()
+    current_configuration=delivery.json_bytes(source_module.Rehearsal.configuration(SimpleNamespace(sources=sources)))
+    require(captured_configuration==current_configuration)
+    report['currentSourceConfigurationBound']=True
     snapshot['serviceImageIds']={service:row['imageId'] for service,row in manifest['services'].items()}
     require(key_unchanged(key_path,key_hash))
     report['authenticatedSnapshotComponents']=snapshot['authenticatedEncryptedComponents']
