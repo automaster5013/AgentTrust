@@ -20,6 +20,14 @@ def receipt_fixture():
                     'tag':'docker.io/automaster5013/agenttrust-'+n+':'+REV} for n in sorted(cd.ALL_IMAGES)]}
 
 class PlanningTests(unittest.TestCase):
+ def test_schema_three_requires_separate_source_and_publisher_identity(self):
+  receipt=receipt_fixture();receipt['schemaVersion']=3
+  receipt['publicationRun'].update(workflow='.github/workflows/dockerhub-main-mirror.yml',ref='refs/heads/codex/commercial-workspace-ux-20261026')
+  receipt['sourceRun']={'runId':17,'runAttempt':1}
+  inv=cd.summarize(inventory_fixture());self.assertEqual(len(cd.receipt_plan(receipt,REV,inv,'development')),15)
+  for field,value in [('runId',0),('runAttempt',True)]:
+   bad=copy.deepcopy(receipt);bad['sourceRun'][field]=value
+   with self.assertRaises(ValueError):cd.receipt_plan(bad,REV,inv,'development')
  def test_hot_updated_resources_and_security_policy_change_fingerprint(self):
   original=inventory_fixture();before=cd.summarize(original)
   for section,key,value in [('HostConfig','Memory',1073741824),('HostConfig','Privileged',True),

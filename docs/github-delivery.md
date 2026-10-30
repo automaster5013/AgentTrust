@@ -850,3 +850,59 @@ job or successful login is not a completed mirror. Completion requires all sixte
 public destination digests/config IDs and the uploaded publication receipt; a failed
 push may leave a partial set of repositories. Actual CD remains a separate unfinished
 workstream with the existing operational preservation and recovery gates.
+
+### Docker Hub publication completed — 2026-10-30 19:02 KST
+
+**Actual public publication is complete.** The successful publisher run is
+[41037195649](https://github.com/automaster5013/AgentTrust/actions/runs/41037195649)
+(attempt 1, publisher code `6e6c5dbcec0ec1678709107df6c26802bdafb5b1`). The images
+are the already signed/runtime-verified current main source
+`d40cdd063f7f711fdd513d231ec2da2473796619`, not the later development-branch changes.
+All sixteen public repositories under `automaster5013` now contain that full-SHA tag:
+
+`agenttrust-core-api`, `agenttrust-ai-worker`, `agenttrust-console`,
+`agenttrust-console-https`, `agenttrust-opa`, `agenttrust-identity`,
+`agenttrust-gateway`, `agenttrust-object-store`, `agenttrust-database`,
+`agenttrust-local-model`, `agenttrust-messaging`, `agenttrust-telemetry`,
+`agenttrust-tempo`, `agenttrust-loki`, `agenttrust-prometheus`,
+`agenttrust-quality-verifier`.
+
+For example: [core API](https://hub.docker.com/r/automaster5013/agenttrust-core-api)
+and [console](https://hub.docker.com/r/automaster5013/agenttrust-console).
+The job verified all source signatures/SBOMs and all sixteen unchanged public
+manifest/config-image digests. It uploaded artifact `12968038833`, whose ZIP hash
+`d02ac1216544671e6716f9e9ca5225e1cfa01060dae2cd8ae4938fdadd58492c`
+was independently compared after download. The raw receipt SHA-256 is
+`488911f4a800eaef56dd78f86c15cb5fdbc812ee053d36b0a7f76283923948b4`.
+
+The first run partially published ai-worker then failed because Docker's local
+RepoDigests omitted `docker.io/`; source and target digest bytes already matched.
+The normalization fix retained exact digest checks, and the complete retry passed.
+No prior partial repositories or other assets were deleted. The one-off mirror is
+now manual-dispatch only so later edits cannot unintentionally republish it.
+
+Schema-3 consumers now verify the two executions separately: all four jobs of the
+historical signed main source run and the single successful owned publication job,
+with independent source and publisher IDs/attempts and the publisher code revision.
+Schema-2 normal pipeline receipts still require all five original-stack jobs;
+their default requirements have not been weakened. Private schema-3 config adds
+`sourceRunId`, `sourceRunAttempt`, and `publicationRevision` to the existing explicit
+publication `runId`/`runAttempt`. Context, cross-attempt and full mocked-join controls
+passed; sixty-two relevant unit tests and workflow syntax checks passed locally.
+
+The **real published candidate render path also passed locally** using the actual
+signed bundle, authenticated receipt and exact successful source/publication runs.
+It cryptographically reverified source signatures, read back public destination
+manifest/config IDs, matched the seventeen live migrations, rendered baseline and
+candidate models across all three current Compose groups, and bound both one-shot
+helpers. Private evidence is under `.local/dockerhub-main-d40cdd0-20261030`.
+The report explicitly keeps `candidateImagesExecuted: false`,
+`backupOrRecoveryVerifiedHere: false`, and `automaticDeploymentAllowed: false`.
+The two historical disk/runtime image drifts remain reported, not repaired.
+
+**Actual service CD remains unfinished.** Publication does not install a target
+executor, create fresh compatible recovery evidence, execute an isolated candidate
+or approve the first operating transition. Those remain required before enabling
+service automation. No branch PR was merged and no service was deployed. All twenty
+AgentTrust operational container IDs and image IDs matched the original inventory;
+AgentTrust twenty and LogiTrack twelve remained healthy.

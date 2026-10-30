@@ -6,7 +6,7 @@ e=importlib.util.module_from_spec(spec);spec.loader.exec_module(e)
 REV='a'*40;DIG='b'*64
 
 class OrchestrationTests(unittest.TestCase):
- def exercise(self,fault=None):
+ def exercise(self,fault=None,schema=2):
   inventory={s:{'rollbackImageId':'sha256:'+DIG,'restartPolicy':'unless-stopped'} for s in set(e.planner.COMPONENTS)|e.planner.PRESERVED}
   records=[{'name':n,'reference':'ghcr.io/automaster5013/agenttrust-'+n+'@sha256:'+DIG,'digest':DIG} for n in sorted(e.planner.ALL_IMAGES)]
   receipt={'schemaVersion':2,'publicationRun':{'repository':'automaster5013/AgentTrust','workflow':'.github/workflows/original-stack.yml','runId':1,'runAttempt':1},'revision':REV,'published':True,'destinationDigestsVerified':True,'sourceSignaturesVerifiedHere':True,
@@ -19,6 +19,10 @@ class OrchestrationTests(unittest.TestCase):
           'snapshot':'fixture-snapshot','snapshotId':'fixture-id','snapshotRevision':REV,
           'snapshotManifestSha256':hashlib.sha256(encrypted).hexdigest(),'retainedKey':'fixture-key',
           'recoveryReport':'recovery','recoveryReportSha256':'e'*64,'maximumRecoveryAgeHours':24}
+  if schema==3:
+   receipt['schemaVersion']=3;receipt['publicationRun'].update(workflow='.github/workflows/dockerhub-main-mirror.yml',ref='refs/heads/codex/commercial-workspace-ux-20261026')
+   receipt['sourceRun']={'runId':17,'runAttempt':1}
+   config.update(sourceRunId=17,sourceRunAttempt=1,publicationRevision='f'*40)
   proof={'completed':True,'businessCriticalDevelopmentRecoveryVerified':True,'sourceServicesRestored':True,
          'ownFixtureAndTemporarySecretsCleaned':True,'fixtureId':'fixture-id','sourceRevision':REV,
          'encryptedManifestSha256':config['snapshotManifestSha256'],
@@ -58,6 +62,7 @@ class OrchestrationTests(unittest.TestCase):
    replace('stack_coherent_archive.validate_manifest',return_value={'services':{'stack-db':{'imageId':'sha256:'+DIG}}})
    online=replace('stack_release_online.main_run',return_value={'trustedMainRunVerified':True})
    manifests=replace('stack_release_online.public_manifests',return_value={'destinationManifestDigestsVerified':True})
+   publication=replace('stack_release_online.publication_run',return_value={'publicationRunVerified':True})
    if fault=='online':online.side_effect=ValueError('fixture main run refused')
    if fault=='registry':manifests.side_effect=ValueError('fixture manifest refused')
    args=types.SimpleNamespace(expected_revision=REV,evidence_config=pathlib.Path('config'),expected_config_sha256='0'*64)
@@ -71,6 +76,7 @@ class OrchestrationTests(unittest.TestCase):
     self.assertEqual(snap.verify.call_count,2);self.assertEqual(online.call_count,2)
     self.assertEqual(verifier.verify.call_count,1)
     self.assertIn('first-operational-transition-review',report['blockers'])
+ def test_schema_three_separates_source_and_publication_verification(self):self.exercise(schema=3)
  def test_simulated_join_keeps_deployment_disabled(self):self.exercise()
  def test_signature_and_receipt_failures(self):
   for fault in ['signature','receipt','attempt']:

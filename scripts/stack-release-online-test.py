@@ -1,6 +1,7 @@
 """Offline main-run and registry tampering controls. No external calls."""
 import copy,hashlib,json,unittest
-from stack_release_online import JOBS,MEDIA,validate_run,public_manifests,get
+from stack_release_online import JOBS,MEDIA,validate_run,validate_publication_run,verify_release_runs,public_manifests,get
+from unittest.mock import patch
 REV='a'*40
 
 def fixture():
@@ -11,6 +12,23 @@ def fixture():
  return run,jobs
 
 class OnlineTests(unittest.TestCase):
+ def test_separate_main_source_and_owned_publisher_runs(self):
+  source,jobs=fixture();jobs['jobs']=[j for j in jobs['jobs'] if j['name']!='Publish verified stack to Docker Hub'];jobs['total_count']=4
+  self.assertTrue(validate_run(source,jobs,REV,1,2,JOBS-{'Publish verified stack to Docker Hub'})['trustedMainRunVerified'])
+  with self.assertRaises(ValueError):validate_run(source,jobs,REV,1,2)
+  published=copy.deepcopy(source);published.update(id=3,path='.github/workflows/dockerhub-main-mirror.yml',head_branch='codex/commercial-workspace-ux-20261026')
+  pubjobs={'total_count':1,'jobs':[{'name':'publish','run_id':3,'run_attempt':2,'status':'completed','conclusion':'success'}]}
+  self.assertTrue(validate_publication_run(published,pubjobs,REV,3,2)['publicationRunVerified'])
+  for key,value in [('event','pull_request'),('head_branch','other'),('head_sha','b'*40),('path','other.yml')]:
+   bad=copy.deepcopy(published);bad[key]=value
+   with self.assertRaises(ValueError):validate_publication_run(bad,pubjobs,REV,3,2)
+  config={'sourceRunId':1,'sourceRunAttempt':2,'runId':3,'runAttempt':2,'publicationRevision':REV}
+  receipt={'schemaVersion':3,'sourceRun':{'runId':1,'runAttempt':2},'publicationRun':{'runId':3,'runAttempt':2}}
+  with patch('stack_release_online.main_run',return_value={'trustedMainRunVerified':True}) as check_source,patch('stack_release_online.publication_run',return_value={'publicationRunVerified':True}) as check_pub:
+   result=verify_release_runs(config,REV,receipt);self.assertTrue(result['publicationRunVerified'])
+   self.assertEqual(check_source.call_args.kwargs['expected_jobs'],JOBS-{'Publish verified stack to Docker Hub'})
+   bad=copy.deepcopy(receipt);bad['sourceRun']['runAttempt']=1
+   with self.assertRaises(ValueError):verify_release_runs(config,REV,bad)
  def test_main_identity_attempt_and_all_jobs(self):
   run,jobs=fixture();self.assertTrue(validate_run(run,jobs,REV,1,2)['trustedMainRunVerified'])
   for key,value in [('head_branch','feature'),('event','pull_request'),('run_attempt',1),('head_sha','b'*40),('conclusion','failure'),('path','.github/workflows/other.yml')]:

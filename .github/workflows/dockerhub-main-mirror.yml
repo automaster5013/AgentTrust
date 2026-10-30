@@ -2,9 +2,6 @@ name: Publish pinned signed main to Docker Hub
 # Docker Hub canonical references may omit docker.io; exact digest readback is required.
 on:
   workflow_dispatch:
-  push:
-    branches: [codex/commercial-workspace-ux-20261026]
-    paths: [.github/workflows/dockerhub-main-mirror.yml]
 permissions:
   contents: read
   actions: read
