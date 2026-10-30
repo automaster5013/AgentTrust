@@ -8,11 +8,12 @@ spec=importlib.util.spec_from_file_location('tempo_cache','%s/scripts/stack-mode
 def trace_fingerprint(frame):
  spans=[]
  for batch in frame.get('batches',frame.get('resourceSpans',[])):
-  resource=sorted(batch.get('resource',{}).get('attributes',[]),key=lambda row:row['key'])
+  resource=dict(batch.get('resource',{}));resource['attributes']=sorted(resource.get('attributes',[]),key=lambda row:json.dumps(row,sort_keys=True))
+  context={k:v for k,v in batch.items() if k not in ('resource','scopeSpans','instrumentationLibrarySpans')}
   for scope in batch.get('scopeSpans',batch.get('instrumentationLibrarySpans',[])):
    for raw in scope.get('spans',[]):
     span=dict(raw);span['attributes']=sorted(span.get('attributes',[]),key=lambda row:row['key'])
-    spans.append({'resource':resource,'span':span})
+    spans.append({'resource':resource,'context':context,'scope':{k:v for k,v in scope.items() if k!='spans'},'span':span})
  m.e.require(spans);encoded=json.dumps(sorted(spans,key=lambda row:json.dumps(row,sort_keys=True)),sort_keys=True,separators=(',',':')).encode()
  return hashlib.sha256(encoded).hexdigest(),len(spans)
 
@@ -21,11 +22,13 @@ def trace_id(value):
 
 def get(name,path):
  m.e.require(name=='agenttrust-stack-tempo-1' or m.e.re.fullmatch('agenttrust-stack-coldrestore-[a-f0-9-]{36}-stack-tempo',name))
- m.e.require(path.startswith('/api/search?') or m.e.re.fullmatch('/api/traces/[a-f0-9]{32}',path))
+ m.e.require(path.startswith('/api/search?') or m.e.re.fullmatch(r'/api/traces/[a-f0-9]{32}\?start=\d+&end=\d+',path))
  row=m.c.inspect(name)
  if name!='agenttrust-stack-tempo-1':m.e.require(row['HostConfig']['NetworkMode']=='none' and row['Config']['Labels'].get('agenttrust.fixture')==name.removeprefix('agenttrust-stack-coldrestore-').removesuffix('-stack-tempo'))
  else:m.e.require(row['Config']['Labels'].get('com.docker.compose.project')=='agenttrust' and row['Config']['Labels'].get('com.docker.compose.service')=='stack-tempo')
- result=m.c.run(['docker','run','--rm','--log-driver','none','--network','container:'+row['Id'],'--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--memory','192m','--pids-limit','32','--mount','type=bind,source='+str(ROOT/'scripts/stack-tempo-read-probe.py')+',target=/probe.py,readonly','agenttrust-security:local','python','/probe.py',path],timeout=20)
+ result=m.c.run(['docker','run','--rm','--log-driver','none','--network','container:'+row['Id'],'--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--memory','192m','--pids-limit','32','--mount','type=bind,source='+str(ROOT/'scripts/stack-tempo-read-probe.py')+',target=/probe.py,readonly','agenttrust-security:local','python','/probe.py',path],timeout=20,check=False)
+ if result.returncode:
+  failure=json.loads(result.stdout).get('readError',{});error=ValueError('Tempo read refused');error.read_failure={**failure,'sourceRead':name=='agenttrust-stack-tempo-1'};raise error
  m.e.require(0<len(result.stdout)<=2097152);return json.loads(result.stdout)
 
 def run(config_path,config_hash):
@@ -73,10 +76,13 @@ def run(config_path,config_hash):
   while not search.get('traces') and time.monotonic()<until:checkpoint();time.sleep(2);search=get(name,'/api/search?'+query)
   drill.report.update(searchResults=len(search.get('traces',[])),traceIdLengths=sorted({len(v['traceID']) for v in search.get('traces',[])}),selectedClosedBlocks=len(selected),restoredFiles=len(files),restoredFileHashesAndModesVerified=True);matches=[]
   for row in search.get('traces',[]):
-   trace=trace_id(row['traceID']);restored=trace_fingerprint(get(name,'/api/traces/'+trace));original=trace_fingerprint(get('agenttrust-stack-tempo-1','/api/traces/'+trace))
+   trace=trace_id(row['traceID']);bounds=urllib.parse.urlencode({'start':min(b['start'] for b in selected)-1,'end':max(b['end'] for b in selected)+1});path='/api/traces/'+trace+'?'+bounds
+   drill.stage('read-restored-trace-content');restored=trace_fingerprint(get(name,path))
+   drill.stage('read-original-trace-content');original=trace_fingerprint(get('agenttrust-stack-tempo-1',path))
+   m.e.require(restored==original)
    if restored==original:matches.append({'sha256':restored[0],'spans':restored[1]})
-  m.e.require(matches);checkpoint();drill.report.update(completed=True,selectedTempoHistoryRecoveryVerified=True,selectedClosedBlocks=len(selected),restoredFiles=len(files),selectedBytes=sum(v['bytes'] for v in files.values()),matchingHistoricalTraces=len(matches),matchingSpans=sum(v['spans'] for v in matches),sourceSelectedFilesUnchanged=True)
- except Exception as error:drill.report.update(completed=False,errorType=type(error).__name__,failureLocations=[{'file':pathlib.Path(x.filename).name,'line':x.lineno} for x in traceback.extract_tb(error.__traceback__)])
+  m.e.require(matches and len(matches)==len(search['traces']));checkpoint();drill.report.update(completed=True,selectedTempoHistoryRecoveryVerified=True,selectedClosedBlocks=len(selected),restoredFiles=len(files),selectedBytes=sum(v['bytes'] for v in files.values()),matchingHistoricalTraces=len(matches),matchingSpans=sum(v['spans'] for v in matches),sourceSelectedFilesUnchanged=True)
+ except Exception as error:drill.report.update(tempoReadFailure=getattr(error,'read_failure',None),completed=False,errorType=type(error).__name__,failureLocations=[{'file':pathlib.Path(x.filename).name,'line':x.lineno} for x in traceback.extract_tb(error.__traceback__)])
  finally:
   try:checkpoint();drill.report['operationalContainersUnchanged']=True
   except Exception:drill.report.update(completed=False,operationalContainersUnchanged=False)
@@ -88,5 +94,5 @@ def main():
  try:
   m.e.require(pathlib.Path.cwd().resolve()==ROOT and args.execute);drill=run(args.config,args.expected_config_sha256)
   print(json.dumps({'completed':drill.report['completed'],'reportPath':str(drill.directory/'summary.json'),'fullTempoHistoryRecovered':False,'actualDeploymentPerformed':False}));return 0 if drill.report['completed'] else 1
- except Exception as error:print(json.dumps({'completed':False,'code':'TEMPO_HISTORY_RECOVERY_REFUSED','errorType':type(error).__name__,'failureLocations':[{'file':pathlib.Path(x.filename).name,'line':x.lineno} for x in traceback.extract_tb(error.__traceback__)]}));return 1
+ except Exception as error:print(json.dumps({'completed':False,'code':'TEMPO_HISTORY_RECOVERY_REFUSED','errorType':type(error).__name__,'httpStatusCode':getattr(error,'code',None),'failureLocations':[{'file':pathlib.Path(x.filename).name,'line':x.lineno} for x in traceback.extract_tb(error.__traceback__)]}));return 1
 if __name__=='__main__':sys.exit(main())

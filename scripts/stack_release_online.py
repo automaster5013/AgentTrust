@@ -4,7 +4,9 @@ import json
 import os
 import re
 import urllib.parse
+import urllib.error
 import urllib.request
+import time
 
 REPOSITORY = 'automaster5013/AgentTrust'
 JOBS = {'security-source','integration','images','security-images','Publish verified stack to Docker Hub'}
@@ -25,10 +27,17 @@ def get(url, headers=None, limit=1048576):
     parsed=urllib.parse.urlsplit(url)
     require(parsed.scheme=='https' and parsed.hostname in {'api.github.com','auth.docker.io','registry-1.docker.io'} and not parsed.username and not parsed.password)
     request=urllib.request.Request(url,headers=headers or {})
-    with urllib.request.build_opener(NoRedirect()).open(request,timeout=30) as response:
-        require(response.status==200)
-        raw=response.read(limit+1);require(0<len(raw)<=limit)
-        return raw,dict(response.headers.items())
+    for attempt in range(3):
+        try:
+            with urllib.request.build_opener(NoRedirect()).open(request,timeout=30) as response:
+                require(response.status==200)
+                raw=response.read(limit+1);require(0<len(raw)<=limit)
+                return raw,dict(response.headers.items())
+        except urllib.error.HTTPError as error:
+            # Retry transient gateway errors only. Never bypass auth/rate limits.
+            if error.code not in (502,503,504) or attempt==2:raise
+            error.close();time.sleep(attempt+1)
+
 
 
 def validate_run(run,jobs,revision,run_id,attempt,expected_jobs=JOBS):

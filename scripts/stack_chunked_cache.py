@@ -9,7 +9,7 @@ def validate(manifest):
  require(manifest['schemaVersion']==1 and manifest['kind']=='bounded-file-cache' and manifest['crossStoreSnapshotAtomic'] is False)
  total=0;indexes=[];require(0<len(manifest['files'])<=20000)
  for name,row in manifest['files'].items():
-  path=pathlib.PurePosixPath(name);require(name and path.parts and len(name)<=1024 and str(path)==name and not path.is_absolute() and '..' not in path.parts and re.fullmatch('[A-Za-z0-9._/-]+',name))
+  path=pathlib.PurePosixPath(name);require(name and path.parts and len(name)<=1024 and str(path)==name and not path.is_absolute() and '..' not in path.parts and re.fullmatch('[A-Za-z0-9._/=-]+',name))
   require(type(row['bytes']) is int and 0<=row['bytes']<=LIMIT and type(row['mode']) is int and 0<=row['mode']<=0o777 and re.fullmatch('[a-f0-9]{64}',row['sha256']))
   offset=0
   for chunk in row['chunks']:

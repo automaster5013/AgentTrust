@@ -13,7 +13,7 @@ def file_digest(path):
 
 def path_for(value,read_alias=False):
  path=pathlib.PurePosixPath(value)
- require(value and path.parts and len(value)<=1024 and not path.is_absolute() and '..' not in path.parts and str(path)==value and re.fullmatch('[A-Za-z0-9._/-]+',value))
+ require(value and path.parts and len(value)<=1024 and not path.is_absolute() and '..' not in path.parts and str(path)==value and re.fullmatch('[A-Za-z0-9._/=-]+',value))
  target=ROOT.joinpath(*path.parts)
  for item in (target,*target.parents):
   if item==ROOT.parent:break
@@ -54,6 +54,17 @@ def select_blocks():
   selected.append({'prefix':path.relative_to(ROOT).as_posix(),'start':int(start.timestamp()),'end':int(end.timestamp()),'objects':row['totalObjects']})
   if len(selected)==3:break
  require(selected);return selected
+
+def select_prometheus():
+ candidates=[]
+ for path in ROOT.iterdir():
+  if not re.fullmatch('[0-9A-HJKMNP-TV-Z]{26}',path.name):continue
+  require(path.is_dir() and not path.is_symlink());meta=path/'meta.json';require(meta.is_file() and not meta.is_symlink() and meta.stat().st_size<=1048576)
+  row=json.loads(meta.read_bytes());require(row['ulid']==path.name and type(row['minTime']) is int and type(row['maxTime']) is int and row['minTime']<row['maxTime'])
+  if row['stats']['numSamples']>0 and row['maxTime']/1000<datetime.datetime.now(datetime.timezone.utc).timestamp()-120:
+   candidates.append({'prefix':path.name,'start':row['minTime']//1000,'end':row['maxTime']//1000,'samples':row['stats']['numSamples']})
+  require(len(candidates)<=1000)
+ require(candidates);return sorted(candidates,key=lambda r:r['end'],reverse=True)[:3]
 
 def catalog():
  files={};total=0
@@ -111,8 +122,9 @@ def sqlite_verify(raw):
  finally:database.close()
 
 def main():
- parser=argparse.ArgumentParser();parser.add_argument('action',choices=('inventory','select-blocks','catalog','summary','links','link','sqlite-snapshot','sqlite-verify','read','write','finalize'));parser.add_argument('--path');parser.add_argument('--prefix');parser.add_argument('--target');parser.add_argument('--offset',type=int,default=0);parser.add_argument('--size',type=int,default=0);parser.add_argument('--mode',type=int,default=384);args=parser.parse_args()
+ parser=argparse.ArgumentParser();parser.add_argument('action',choices=('inventory','select-blocks','select-prometheus','catalog','summary','links','link','sqlite-snapshot','sqlite-verify','read','write','finalize'));parser.add_argument('--path');parser.add_argument('--prefix');parser.add_argument('--target');parser.add_argument('--offset',type=int,default=0);parser.add_argument('--size',type=int,default=0);parser.add_argument('--mode',type=int,default=384);args=parser.parse_args()
  if args.action=='inventory':print(json.dumps(inventory(args.prefix),sort_keys=True));return
+ if args.action=='select-prometheus':print(json.dumps(select_prometheus()));return
  if args.action=='select-blocks':print(json.dumps(select_blocks()));return
  if args.action=='catalog':print(json.dumps(catalog(),sort_keys=True));return
  if args.action=='summary':print(json.dumps(summary(),sort_keys=True));return

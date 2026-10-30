@@ -24,7 +24,7 @@ def verify_retained(directory,key_file,expected):
  return {'completed':True,'kind':'authenticated-chunked-model-cache','files':len(manifest['files']),'bytes':total,'chunks':count,'fullStackRecoveryVerified':False,'inferenceExecutedHere':False}
 
 def file_command(drill,volume,action,path=None,offset=0,size=0,mode=384,prefix=None,target=None):
- m.e.require(volume in (drill.source_volume,drill.target_volume) and action in ('inventory','links','link','select-blocks','read','write','finalize'))
+ m.e.require(volume in (drill.source_volume,drill.target_volume) and action in ('inventory','links','link','select-blocks','select-prometheus','read','write','finalize'))
  write=action in ('write','finalize','link')
  if write:m.e.require(volume==drill.target_volume)
  if volume==drill.target_volume:drill.own_volume(volume)

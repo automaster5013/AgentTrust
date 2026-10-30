@@ -5,6 +5,8 @@ from unittest.mock import patch
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 def module(name,file):
  spec=importlib.util.spec_from_file_location(name,ROOT/'scripts'/file);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
+logs=module('logs_history','stack-loki-history-recovery.py')
+metrics=module('metrics_history','stack-prometheus-history-recovery.py')
 model=module('offline_model','stack-offline-model-probe.py')
 helper=module('block_helper','stack-file-volume-helper.py');tempo=module('tempo_rehearsal','stack-tempo-history-recovery.py')
 
@@ -47,6 +49,33 @@ class ExtraHistory(unittest.TestCase):
   self.assertEqual(tempo.trace_id('AB12'),'0'*28+'ab12')
   for value in ('../escape','g'*32,'f'*33,''):
    with self.assertRaises(ValueError):tempo.trace_id(value)
+ def test_prometheus_selects_closed_ulid_blocks_without_wal(self):
+  with tempfile.TemporaryDirectory(dir=ROOT/'.local') as temporary,patch.object(helper,'ROOT',pathlib.Path(temporary)):
+   root=pathlib.Path(temporary);path=root/('0'*25+'1');path.mkdir();(root/'wal').mkdir()
+   (path/'meta.json').write_text(json.dumps({'ulid':path.name,'minTime':1000000,'maxTime':2000000,'stats':{'numSamples':3}}))
+   self.assertEqual(helper.select_prometheus()[0]['prefix'],path.name)
+   row=json.loads((path/'meta.json').read_text());row['ulid']='substitute';(path/'meta.json').write_text(json.dumps(row))
+   with self.assertRaises(ValueError):helper.select_prometheus()
+ def test_metric_content_changes_and_empty_results_refused(self):
+  def frame(v):return {'status':'success','data':{'resultType':'matrix','result':[{'metric':{'job':'agenttrust-otel'},'values':[[100,'1'],[130,v]]}]}}
+  self.assertEqual(metrics.metric_fingerprint(frame('1'))[1],2);self.assertNotEqual(metrics.metric_fingerprint(frame('1')),metrics.metric_fingerprint(frame('0')))
+  for bad in ({'status':'success','data':{'resultType':'matrix','result':[]}},dict(frame('1'),warnings=['partial'])):
+   with self.assertRaises(ValueError):metrics.metric_fingerprint(bad)
+ def test_metrics_reads_refuse_other_names_and_large_windows(self):
+  for name,start,end in [('logitrack-prometheus',100,200),('agenttrust-stack-prometheus-1',100,4000)]:
+   with self.assertRaises(ValueError):metrics.get(name,start,end)
+ def test_log_bytes_and_timestamp_are_bound_and_empty_history_refused(self):
+  def frame(value):return {'status':'success','data':{'resultType':'streams','result':[{'stream':{'service_name':'fixture'},'values':[['1000000000',value]]}]}}
+  self.assertEqual(logs.log_fingerprint(frame('saved'))[1],1);self.assertNotEqual(logs.log_fingerprint(frame('saved')),logs.log_fingerprint(frame('changed')))
+  with self.assertRaises(ValueError):logs.log_fingerprint({'status':'success','data':{'resultType':'streams','result':[]}})
+ def test_base64_padding_filename_is_safe_but_traversal_is_not(self):
+  self.assertEqual(helper.path_for('chunks/Zml4dHVyZQ==').name,'Zml4dHVyZQ==')
+  with self.assertRaises(ValueError):helper.path_for('chunks/../escape==')
+ def test_trace_scope_and_resource_metadata_changes_are_bound(self):
+  def frame(scope,resource):return {'batches':[{'resource':resource,'scopeSpans':[{'scope':scope,'spans':[{'spanId':'one','name':'read'}]}]}]}
+  original=tempo.trace_fingerprint(frame({'name':'one'},{'droppedAttributesCount':0}))
+  self.assertNotEqual(original,tempo.trace_fingerprint(frame({'name':'two'},{'droppedAttributesCount':0})))
+  self.assertNotEqual(original,tempo.trace_fingerprint(frame({'name':'one'},{'droppedAttributesCount':1})))
  def test_offline_probe_refuses_redirects(self):
   with self.assertRaises(ValueError):model.RefuseRedirect().redirect_request(None,None,None,None,None,None)
  def test_trace_probe_refuses_other_services_and_unbounded_paths(self):

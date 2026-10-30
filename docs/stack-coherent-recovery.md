@@ -208,3 +208,39 @@ Tempo restored three closed blocks with exact file hashes/modes and returned
 This remains incomplete recovery evidence. Hex IDs now normalize omitted leading
 zeroes with strict bounds; unit coverage does not establish live span equality.
 No full telemetry, atomic backup or operating CD completion is claimed.
+
+
+## Historical telemetry source comparisons (2026-10-31)
+
+`stack-prometheus-history-recovery.py` selects up to three nonempty closed ULID
+blocks, authenticates encrypted chunks, restores exact file hashes/modes into an
+owned volume and starts the signed published Prometheus image without network or
+host ports. It compares the fixed `up{job="agenttrust-otel"}` historical query in
+each block against source reads taken before and after recovery. The actual run
+restored 12 files / 1,747,050 bytes and matched all 33 samples across three windows.
+This is selected closed-block and query evidence, not complete metrics coverage.
+The current head, WAL and wbl are excluded. Source admin APIs are not enabled or
+called. See [Prometheus storage backup guidance](https://prometheus.io/docs/prometheus/latest/storage/).
+
+`stack-loki-history-recovery.py` captures only a bounded file set observed unchanged
+before/after copying, including its existing local persisted state. It starts only
+an owned restored volume and compares at most 100 historical `service_name` log
+entries against source reads before/after. Empty history, changed timestamps/text,
+partial/error responses and source file drift fail verification. A stable read
+window is not an atomic snapshot; recent in-memory logs and live WAL completeness
+remain unproved. The tool never flushes or stops source writers. Loki filenames
+with base64 `=` padding are accepted as canonical relative paths; traversal and
+external links remain rejected. See [Loki WAL semantics](https://grafana.com/docs/loki/latest/operations/storage/wal/).
+
+Tempo comparisons normalize bounded hex IDs with omitted leading zeroes, then use
+the selected blocks' time bounds for both original and restored trace reads.
+Resource metadata, scope metadata and every span field participate in the digest;
+all selected search results must match, rather than accepting a single match.
+Read failures record a sanitized status and source/fixture role without raw traces.
+See [Tempo trace query bounds](https://grafana.com/docs/tempo/latest/api_docs/).
+
+Mocked full-path orchestration tests exercise command construction, complete
+restore/readback, source drift before startup and a changed query result. Both
+negative paths clean owned fixtures and keep full-stack/deployment gates false.
+Release readback retries only transient 502/503/504 responses, at most three
+attempts; auth and rate-limit errors are never bypassed.

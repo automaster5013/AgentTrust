@@ -1,5 +1,5 @@
 """Offline main-run and registry tampering controls. No external calls."""
-import copy,hashlib,json,unittest
+import copy,hashlib,json,unittest,urllib.error
 from stack_release_online import JOBS,MEDIA,validate_run,validate_publication_run,verify_release_runs,public_manifests,get
 from unittest.mock import patch
 REV='a'*40
@@ -89,6 +89,24 @@ class OnlineTests(unittest.TestCase):
    with self.assertRaises(ValueError):public_manifests(rows,fetch,image_ids={name:config_id for name in names})
   rows,fetch=fixture()
   with self.assertRaises(ValueError):public_manifests(rows,fetch,image_ids={})
+ def test_gateway_retry_is_bounded_and_does_not_bypass_auth(self):
+  class Response:
+   status=200;headers={}
+   def __enter__(self):return self
+   def __exit__(self,*args):pass
+   def read(self,n):return b'{}'
+  for code,expected in [(503,3),(403,1),(429,1)]:
+   error=urllib.error.HTTPError('https://api.github.com/a',code,'fixture',{},None)
+   with patch('stack_release_online.urllib.request.build_opener') as factory,patch('stack_release_online.time.sleep'):
+    factory.return_value.open.side_effect=[error]*(expected-1)+[Response()] if code==503 else error
+    if code==503:self.assertEqual(get('https://api.github.com/a')[0],b'{}')
+    else:
+     with self.assertRaises(urllib.error.HTTPError):get('https://api.github.com/a')
+    self.assertEqual(factory.return_value.open.call_count,expected);error.close()
+  with patch('stack_release_online.urllib.request.build_opener') as factory,patch('stack_release_online.time.sleep'):
+   factory.return_value.open.side_effect=urllib.error.HTTPError('https://api.github.com/a',502,'fixture',{},None)
+   with self.assertRaises(urllib.error.HTTPError):get('https://api.github.com/a')
+   self.assertEqual(factory.return_value.open.call_count,3)
  def test_untrusted_network_destination_refused_before_request(self):
   for url in ['http://api.github.com/a','https://evil.example/a','https://token@api.github.com/a']:
    with self.assertRaises(ValueError):get(url)
