@@ -49,7 +49,7 @@ def select_blocks():
   if not meta.is_file() or meta.is_symlink():continue
   require(meta.stat().st_size<=1048576);row=json.loads(meta.read_bytes())
   end=datetime.datetime.fromisoformat(row['endTime'].replace('Z','+00:00'));start=datetime.datetime.fromisoformat(row['startTime'].replace('Z','+00:00'))
-  if end.tzinfo is None or start.tzinfo is None or (now-end).total_seconds()<120 or row.get('totalObjects',0)<=0:continue
+  if end.tzinfo is None or start.tzinfo is None or (now-end).total_seconds()<1200 or row.get('totalObjects',0)<=0:continue
   require(str(row['blockID'])==path.name)
   selected.append({'prefix':path.relative_to(ROOT).as_posix(),'start':int(start.timestamp()),'end':int(end.timestamp()),'objects':row['totalObjects']})
   if len(selected)==3:break

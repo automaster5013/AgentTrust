@@ -160,7 +160,7 @@ A development key on the same disk is not independent backup custody.
   Only the restored owned volume is used for network-disabled model startup and
   bounded offline inference. Cache restoration alone never proves inference.
 - `stack-tempo-history-recovery.py` selects up to three closed blocks older than
-  two minutes, excludes live WAL, restores exact hashes/modes and queries the
+  twenty minutes (beyond the default recent/live-only search window), excludes live WAL, restores exact hashes/modes and queries the
   published candidate. Historical trace spans must match the source readback.
   Selection is deliberately bounded: the source contains about 6.57 GB of closed
   blocks across 156,743 files. This is not full Tempo history or WAL recovery.
@@ -190,3 +190,5 @@ are separate facts. No online supplemental report sets full-stack recovery,
 operational backup or automatic deployment to true. Prometheus/Loki recovery,
 complete telemetry WAL/history, coherent cross-store backup custody and reviewed
 operating transition remain release gates until separately evidenced.
+
+Tempo selection uses the backend query cutoff described in [Grafana polling documentation](https://grafana.com/docs/tempo/latest/configuration/polling/). Recent blocks alone can return no traces while search still targets live stores; an empty result is a failed recovery proof.

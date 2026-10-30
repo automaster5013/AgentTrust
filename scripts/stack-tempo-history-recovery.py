@@ -68,7 +68,7 @@ def run(config_path,config_hash):
            '--mount','type=volume,source='+drill.target_volume+',target=/var/tempo','--mount','type=bind,source='+str(path)+',target=/etc/tempo.yaml,readonly',image['Id'],'-config.file=/etc/tempo.yaml','-target=all'])
   drill.wait(name,'stack-tempo');query=urllib.parse.urlencode({'start':min(b['start'] for b in selected)-1,'end':max(b['end'] for b in selected)+1,'limit':20});search=get(name,'/api/search?'+query);until=time.monotonic()+90
   while not search.get('traces') and time.monotonic()<until:checkpoint();time.sleep(2);search=get(name,'/api/search?'+query)
-  matches=[]
+  drill.report.update(searchResults=len(search.get('traces',[])),selectedClosedBlocks=len(selected),restoredFiles=len(files),restoredFileHashesAndModesVerified=True);matches=[]
   for row in search.get('traces',[]):
    trace=row['traceID'];m.e.require(m.e.re.fullmatch('[a-f0-9]{32}',trace));restored=trace_fingerprint(get(name,'/api/traces/'+trace));original=trace_fingerprint(get('agenttrust-stack-tempo-1','/api/traces/'+trace))
    if restored==original:matches.append({'sha256':restored[0],'spans':restored[1]})
