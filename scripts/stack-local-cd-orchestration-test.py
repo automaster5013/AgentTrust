@@ -36,6 +36,8 @@ class OrchestrationTests(unittest.TestCase):
   verifier=Mock()
   if fault=='signature':verifier.verify.side_effect=ValueError('fixture signature refused')
   def anchored(path,*args):
+   if str(path).endswith('checksums.json'):return json.dumps({'runtime-identity.json':'f'*64}).encode()
+   if str(path).endswith('runtime-identity.json'):return json.dumps({'imageIds':{r['name']:'sha256:'+DIG for r in records}}).encode()
    return json.dumps(config if str(path)=='config' else receipt if str(path)=='receipt' else proof).encode()
   report={'completed':False,'automaticDeploymentAllowed':False,'actualDeploymentPerformed':False}
   with contextlib.ExitStack() as stack:

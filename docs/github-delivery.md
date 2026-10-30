@@ -569,3 +569,22 @@ verified twenty healthy containers and the selected source's seventeen migration
 matched the live ledger, with no pending migrations or service/DB modifications.
 Private observations are `inventory-recheck-v1.json` and `schema-recheck-v1.json`
 under `.local/dockerhub-cd-20261030`; they do not certify a signed publication.
+
+### Destination platform/config digest identity — 2026-10-30
+
+Joined online readback now anchors `runtime-identity.json` through the signed
+bundle's independently pinned checksum map and binds each destination image's
+config digest to that runtime image ID. For OCI/Docker indexes it accepts exactly
+one linux/amd64 platform manifest, verifies that child manifest's own raw-byte
+digest and registry header, and then checks its config digest. Ambiguous or missing
+platforms, changed child bytes, wrong config identity and incomplete image-ID maps
+are refused. Direct schema-2 image manifests receive the same config-ID check.
+
+This adds a metadata identity check between the published destination and the
+exact source image that supplied runtime evidence. It downloads neither image
+layers nor config blobs, executes no candidate image and does not infer runtime
+success at the destination. The manifest-reading report counts child manifests
+separately and explicitly records whether config digests were verified. Existing
+signature, attempt, source/destination receipt and backup checks remain required.
+Forty-five focused tests passed, including a simulated platform-index success and
+four refusal variants; no real published release was substituted by these fixtures.

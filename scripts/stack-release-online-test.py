@@ -43,6 +43,34 @@ class OnlineTests(unittest.TestCase):
    with self.assertRaises(ValueError):public_manifests(rows,corrupt)
   bad=copy.deepcopy(rows);bad[0]['reference']='docker.io/other/image@'+digest
   with self.assertRaises(ValueError):public_manifests(bad,fetch)
+ def test_platform_manifest_binds_the_signed_config_image_id(self):
+  names=['component-'+chr(ord('a')+i) for i in range(16)]
+  config_id='sha256:'+'c'*64
+  def fixture(ambiguous=False,wrong_config=False,corrupt_child=False):
+   child=json.dumps({'schemaVersion':2,'mediaType':MEDIA[0],
+                     'config':{'digest':'sha256:'+'d'*64 if wrong_config else config_id},'layers':[]}).encode()
+   child_digest='sha256:'+hashlib.sha256(child).hexdigest()
+   entry={'digest':child_digest,'platform':{'os':'linux','architecture':'amd64'}}
+   top=json.dumps({'schemaVersion':2,'mediaType':MEDIA[1],
+                   'manifests':[entry,entry] if ambiguous else [entry]}).encode()
+   top_digest='sha256:'+hashlib.sha256(top).hexdigest()
+   rows=[{'name':name,'reference':'docker.io/automaster5013/agenttrust-'+name+'@'+top_digest} for name in names]
+   def fetch(url,headers=None,limit=1048576):
+    if 'auth.docker.io' in url:return b'{"token":"fixture"}',{}
+    expected=url.rsplit('/',1)[1]
+    raw=top if expected==top_digest else child+(b' ' if corrupt_child else b'')
+    return raw,{'Docker-Content-Digest':expected}
+   return rows,fetch
+  rows,fetch=fixture()
+  result=public_manifests(rows,fetch,image_ids={name:config_id for name in names})
+  self.assertTrue(result['destinationImageConfigDigestsVerified'])
+  self.assertEqual(result['publicRegistryManifestsRead'],32)
+  self.assertFalse(result['imageConfigBlobsDownloaded'])
+  for kwargs in [{'ambiguous':True},{'wrong_config':True},{'corrupt_child':True}]:
+   rows,fetch=fixture(**kwargs)
+   with self.assertRaises(ValueError):public_manifests(rows,fetch,image_ids={name:config_id for name in names})
+  rows,fetch=fixture()
+  with self.assertRaises(ValueError):public_manifests(rows,fetch,image_ids={})
  def test_untrusted_network_destination_refused_before_request(self):
   for url in ['http://api.github.com/a','https://evil.example/a','https://token@api.github.com/a']:
    with self.assertRaises(ValueError):get(url)

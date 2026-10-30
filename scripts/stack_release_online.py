@@ -58,8 +58,12 @@ def main_run(revision,run_id,attempt,fetch=get):
     return validate_run(run,jobs,revision,run_id,attempt)
 
 
-def public_manifests(rows,fetch=get):
+def public_manifests(rows,fetch=get,image_ids=None):
     require(isinstance(rows,list) and len(rows)==16 and len({r['name'] for r in rows})==16)
+    if image_ids is not None:
+        require(isinstance(image_ids,dict) and set(image_ids)=={r['name'] for r in rows})
+        require(all(re.fullmatch('sha256:[a-f0-9]{64}',value) for value in image_ids.values()))
+    child_count=0
     for row in rows:
         require(re.fullmatch(r'[a-z]+(?:-[a-z]+)*',row['name']) is not None)
         prefix='docker.io/automaster5013/agenttrust-'+row['name']+'@'
@@ -69,11 +73,25 @@ def public_manifests(rows,fetch=get):
         query=urllib.parse.urlencode({'service':'registry.docker.io','scope':'repository:'+repository+':pull'})
         response=json.loads(fetch('https://auth.docker.io/token?'+query,limit=65536)[0])
         token=response.get('token',response.get('access_token'));require(isinstance(token,str) and 0<len(token)<=32768)
-        raw,headers=fetch('https://registry-1.docker.io/v2/'+repository+'/manifests/'+digest,
-                          {'Authorization':'Bearer '+token,'Accept':', '.join(MEDIA)})
-        normalized={k.lower():v for k,v in headers.items()}
-        require(normalized.get('docker-content-digest')==digest)
-        require('sha256:'+hashlib.sha256(raw).hexdigest()==digest)
-        frame=json.loads(raw);require(frame.get('schemaVersion')==2 and frame.get('mediaType') in MEDIA)
-    return {'destinationManifestDigestsVerified':True,'publicRegistryManifestsRead':len(rows),
+        def read_manifest(expected):
+            require(re.fullmatch('sha256:[a-f0-9]{64}',expected) is not None)
+            raw,headers=fetch('https://registry-1.docker.io/v2/'+repository+'/manifests/'+expected,
+                              {'Authorization':'Bearer '+token,'Accept':', '.join(MEDIA)})
+            normalized={k.lower():v for k,v in headers.items()}
+            require(normalized.get('docker-content-digest')==expected)
+            require('sha256:'+hashlib.sha256(raw).hexdigest()==expected)
+            frame=json.loads(raw);require(frame.get('schemaVersion')==2 and frame.get('mediaType') in MEDIA)
+            return frame
+        frame=read_manifest(digest)
+        if image_ids is not None:
+            if frame['mediaType'] in (MEDIA[1],MEDIA[3]):
+                entries=frame['manifests'];require(isinstance(entries,list) and 0<len(entries)<=32)
+                matches=[entry for entry in entries if entry.get('platform',{}).get('os')=='linux'
+                         and entry.get('platform',{}).get('architecture')=='amd64']
+                require(len(matches)==1)
+                frame=read_manifest(matches[0]['digest']);child_count+=1
+            require(frame['mediaType'] in (MEDIA[0],MEDIA[2]))
+            require(frame['config']['digest']==image_ids[row['name']])
+    return {'destinationManifestDigestsVerified':True,'publicRegistryManifestsRead':len(rows)+child_count,
+            'destinationImageConfigDigestsVerified':image_ids is not None,'imageConfigBlobsDownloaded':False,
             'imageLayersDownloaded':False,'registryImagesExecuted':False}

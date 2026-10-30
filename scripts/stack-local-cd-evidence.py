@@ -136,7 +136,9 @@ def run(args, report):
     report['stage']='trusted-main-run-online'
     report.update(main_run(args.expected_revision,config['runId'],config['runAttempt']))
     report['stage']='destination-manifest-readback'
-    report.update(public_manifests(receipt['images']))
+    checksum_map=delivery.json_bytes(anchored_file(directory/'checksums.json',config['checksumsSha256']))
+    runtime=delivery.json_bytes(anchored_file(directory/'runtime-identity.json',checksum_map['runtime-identity.json']))
+    report.update(public_manifests(receipt['images'],image_ids=runtime['imageIds']))
     report['stage']='retained-snapshot-authentication'
     snap = load('retained_snapshot','stack-coherent-snapshot-verify.py')
     crypt = load('backup_envelope','stack-backup-crypt.py')
