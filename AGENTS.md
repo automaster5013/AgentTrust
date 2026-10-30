@@ -20,3 +20,5 @@
 - 사용자 명시 요청(2026-10-30, LogiTrack 이전 완료): LogiTrack 프로젝트는 E 기반 `T:\LogiTrack`으로 이전하고 `C:\LogiTrack` junction을 유지한다. 내용·권한 검증 후 C 원본 백업을 삭제했으며 E 원본 보관본은 비공개 이전 기록 폴더에 보존한다. AgentTrust 20개 정상 운영과 LogiTrack 12개 정지, 기존 Docker 자산·R/T 연결을 유지한다. 이후 새 요청 없이 LogiTrack의 기동·재생성·원본 보관본 삭제를 하지 않는다. 상세 결과는 docs/storage-migration-verification.md와 LogiTrack 저장소의 동명 문서에 기록한다.
 
 - 사용자 결정(2026-10-30, LogiTrack 이전 작업 종료): LogiTrack E 이전·검증된 C 원본 백업 정리는 종료했고 해당 범위의 필수 잔여 작업은 없다. 이전 후 별도 Windows 재부팅·LogiTrack 기동·기능 검사는 미수행, 별도 물리 백업은 보류, PR #411 보안 수정은 미병합·미배포로 구분한다. 새 요청 없이 이를 재개하거나 종료 조건에 추가하지 않는다. AgentTrust 20개 정상 운영·LogiTrack 12개 정지와 기존 자료·R/T 설정을 유지한다.
+
+- 사용자 결정(2026-10-30, LogiTrack 운영 재개): 기존 LogiTrack 12개 컨테이너를 정상 운영 상태로 변경하도록 명시적으로 요청했다. 이전의 LogiTrack 정지 유지 지시는 이 요청으로 대체된다. 기존 컨테이너·이미지·볼륨과 E 기반 프로젝트·R/T 설정 및 AgentTrust 20개 정상 운영은 보존한다. 제품 소스 배포·컨테이너 재생성은 이 요청 범위에 포함하지 않는다. 실제 기동 결과는 비공개 .local/logitrack-start-20261030/result.json을 기준으로 구분한다.

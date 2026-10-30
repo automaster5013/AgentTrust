@@ -19,3 +19,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "C:\AgentTrust\.local\docker
 이번 변경은 현재 컨테이너의 런타임 정책이다. 향후 compose나 배포로 컨테이너를 교체할 때는 해당 배포 설정에도 재시작 정책을 반영하고 새 ID allowlist를 검토해야 한다. 현재 동결된 제품 compose 파일은 변경하지 않았다.
 
 Docker 정책 공식 문서: https://docs.docker.com/engine/containers/start-containers-automatically/
+
+## 현재 운영 기준 변경 — 2026-10-30
+
+사용자 요청으로 LogiTrack 기존 12개도 기동해 모두 healthy를 확인했고, AgentTrust 20개 정상 운영을 유지한다. 위 LogiTrack 정지 기록은 2026-10-29 재부팅 검증 당시의 상태다. 이후 운영 재개 상태로 새 재부팅 검증은 수행하지 않았다. 기존 비공개 자동 기동 검증 도구는 LogiTrack 정지를 전제로 하므로 현재 운영 상태 확인에 그대로 사용하거나 조건 불일치 때문에 LogiTrack을 정지하지 않는다. 이번 운영 재개에서 재시작 정책·R/T 연결·로그인 자동 기동 설정은 변경하지 않았다.
