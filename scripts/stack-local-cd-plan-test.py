@@ -1,4 +1,5 @@
-import copy, importlib.util, pathlib, unittest
+import copy, importlib.util, pathlib, tempfile, unittest
+from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('cd',pathlib.Path(__file__).with_name('stack-local-cd-plan.py'))
 cd=importlib.util.module_from_spec(spec);spec.loader.exec_module(cd)
 REV='a'*40;DIG='b'*64
@@ -19,6 +20,20 @@ def receipt_fixture():
                     'tag':'docker.io/automaster5013/agenttrust-'+n+':'+REV} for n in sorted(cd.ALL_IMAGES)]}
 
 class PlanningTests(unittest.TestCase):
+ def test_running_id_membership_changes_refused_before_inspection(self):
+  ids=tuple(format(i,'064x') for i in range(20))
+  for current in [ids+('f'*64,),ids[:-1],ids[:-1]+('f'*64,),ids[:-1]+(ids[0],)]:
+   with patch.object(cd,'docker',return_value='\n'.join(current)) as command:
+    with self.assertRaises(ValueError):cd.recheck(ids,{},pathlib.Path.cwd(),{})
+    self.assertEqual(command.call_count,1)
+ def test_compose_hashes_reject_changed_files_and_oversized_config(self):
+  with tempfile.TemporaryDirectory(dir=pathlib.Path(cd.__file__).parent.parent) as directory:
+   root=pathlib.Path(directory).resolve();config=root/'private.compose.json';config.write_bytes(b'{}')
+   inventory={'service':{'composeFiles':[str(config)]}}
+   before=cd.compose_hashes(inventory,root);config.write_bytes(b'{ }')
+   self.assertNotEqual(before,cd.compose_hashes(inventory,root))
+   config.write_bytes(b'0'*1048577)
+   with self.assertRaises(ValueError):cd.compose_hashes(inventory,root)
  def test_publication_origin_and_legacy_receipts_refused(self):
   inv=cd.summarize(inventory_fixture())
   for key,value in [('repository','other/AgentTrust'),('workflow','other.yml'),('runId',True),('runAttempt',0)]:

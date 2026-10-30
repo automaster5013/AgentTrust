@@ -41,7 +41,8 @@ class OrchestrationTests(unittest.TestCase):
   with contextlib.ExitStack() as stack:
    def replace(target,**kw):return stack.enter_context(patch(target,**kw))
    def obj(target,name,**kw):return stack.enter_context(patch.object(target,name,**kw))
-   obj(e.planner,'docker',side_effect=lambda args:'fixture\n' if args[0]=='ps' else '[]')
+   obj(e.planner,'docker',side_effect=lambda args:'\n'.join(format(i,'064x') for i in range(20)) if args[0]=='ps' else '[]')
+   obj(e.planner,'compose_hashes',side_effect=[{'fixture':'same'},{'fixture':'changed'}] if fault=='overlay-race' else lambda *args:{'fixture':'same'})
    obj(e.planner,'summarize',side_effect=[inventory,{**inventory,'extra':{}}] if fault=='inventory-race' else lambda _:copy.deepcopy(inventory))
    obj(e,'migration_catalog',return_value=catalog)
    obj(e,'live_ledger',side_effect=[ledger,[]] if fault=='schema-race' else lambda:copy.deepcopy(ledger))
@@ -75,7 +76,7 @@ class OrchestrationTests(unittest.TestCase):
   for fault in ['online','registry']:
    with self.subTest(fault=fault):self.exercise(fault)
  def test_stale_recovery_and_state_races(self):
-  for fault in ['stale','inventory-race','schema-race']:
+  for fault in ['stale','inventory-race','schema-race','overlay-race']:
    with self.subTest(fault=fault):self.exercise(fault)
 
 if __name__=='__main__':unittest.main()

@@ -71,6 +71,33 @@ def docker(args):
     return process.stdout
 
 
+def running_ids():
+    ids = tuple(sorted(docker(['ps','--no-trunc','--filter','label=com.docker.compose.project=agenttrust','--format','{{.ID}}']).splitlines()))
+    require(len(ids) == len(set(ids)) == 20)
+    require(all(re.fullmatch('[a-f0-9]{64}', value) for value in ids))
+    return ids
+
+
+def compose_hashes(inventory, root):
+    files = sorted({path for value in inventory.values() for path in value['composeFiles']})
+    require(0 < len(files) <= 32)
+    hashes = {}
+    for file in files:
+        path = pathlib.Path(file).resolve()
+        require(path.is_relative_to(root) and path.is_file() and 0 < path.stat().st_size <= 1048576)
+        raw = path.read_bytes(); require(len(raw) <= 1048576)
+        hashes[str(path)] = hashlib.sha256(raw).hexdigest()
+    return hashes
+
+
+def recheck(ids, inventory, root, hashes):
+    # Re-enumerate the project: inspecting old IDs alone misses newly added services.
+    require(running_ids() == ids)
+    current = summarize(json.loads(docker(['inspect', *ids])))
+    require(current == inventory)
+    require(compose_hashes(current, root) == hashes)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=pathlib.Path, required=True)
@@ -85,21 +112,16 @@ def main():
         require(pathlib.Path.cwd().resolve() == root)
         output = args.output.resolve()
         require(output.is_relative_to((root / '.local').resolve()) and not output.exists())
-        ids = docker(['ps','--filter','label=com.docker.compose.project=agenttrust','--format','{{.ID}}']).splitlines()
-        require(len(ids) == 20)
+        ids = running_ids()
         inventory = summarize(json.loads(docker(['inspect', *ids])))
-        files = sorted({path for value in inventory.values() for path in value['composeFiles']})
-        hashes = {}
-        for file in files:
-            path = pathlib.Path(file).resolve()
-            require(path.is_relative_to(root) and path.is_file())
-            hashes[str(path)] = hashlib.sha256(path.read_bytes()).hexdigest()
+        hashes = compose_hashes(inventory, root)
         plan = None
         if args.receipt:
             require(args.expected_revision and args.console_profile and args.expected_receipt_sha256)
             raw = args.receipt.read_bytes(); require(len(raw) <= 65536)
             require(hashlib.sha256(raw).hexdigest() == args.expected_receipt_sha256)
             plan = receipt_plan(json.loads(raw), args.expected_revision, inventory, args.console_profile)
+        recheck(ids, inventory, root, hashes)
         report = {'schemaVersion':1,'readOnly':True,'inventory':inventory,'composeFileSha256':hashes,
                   'plannedServices':plan,'preservedServices':sorted(PRESERVED), 'logitrackAccessed':False,
                   'registryContacted':False,'imagesPulled':False,'actualDeploymentPerformed':False,

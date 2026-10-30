@@ -103,8 +103,9 @@ def recovery_binding(proof, inventory, snapshot, now, max_age):
 def run(args, report):
     require(pathlib.Path.cwd().resolve() == ROOT)
     report['stage']='live-inventory'
-    ids = planner.docker(['ps','--filter','label=com.docker.compose.project=agenttrust','--format','{{.ID}}']).splitlines()
+    ids = planner.running_ids()
     inventory = planner.summarize(json.loads(planner.docker(['inspect',*ids])))
+    hashes = planner.compose_hashes(inventory, ROOT)
     report['healthyAgentTrustContainers']=len(inventory)
     report['stage']='migration-ledger'
     catalog = migration_catalog(args.expected_revision)
@@ -112,7 +113,7 @@ def run(args, report):
     report['migrationCatalogSha256']=hashlib.sha256(json.dumps(catalog,sort_keys=True).encode()).hexdigest()
     if not args.evidence_config:
         require(live_ledger() == ledger)
-        require(planner.summarize(json.loads(planner.docker(['inspect',*ids]))) == inventory)
+        planner.recheck(ids, inventory, ROOT, hashes)
         report.update(completed=True,scope='inventory-and-migration-only',signedReleaseVerified=False,
                       recoveryEvidenceVerified=False,blockers=['signed-release-and-anchored-backup-config-required'])
         return
@@ -157,7 +158,7 @@ def run(args, report):
     require(migration_catalog(config['snapshotRevision']) == catalog)
     report['stage']='recheck-live-state'
     require(live_ledger() == ledger)
-    require(planner.summarize(json.loads(planner.docker(['inspect',*ids]))) == inventory)
+    planner.recheck(ids, inventory, ROOT, hashes)
     require(delivery.validate(directory,args.expected_revision,config['checksumsSha256'],config['repository']) == (directory,identity,records))
     snapshot_again = snap.verify(ROOT,pathlib.Path(config['snapshot']),key_path,config['snapshotId'],config['snapshotRevision'],config['snapshotManifestSha256'], decrypt=lambda raw:crypt.transform('decrypt',key,raw))
     require(snapshot_again['authenticatedEncryptedComponents'] == snapshot['authenticatedEncryptedComponents'])

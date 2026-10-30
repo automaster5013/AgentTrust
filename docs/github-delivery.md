@@ -544,3 +544,28 @@ repository, legacy receipts and cross-attempt substitution in the full simulated
 join. Forty-two relevant tests and workflow syntax checks passed locally. There
 is still no actual Docker Hub publication or operational deployment from this
 branch, so no real receipt needed migration and no service was modified.
+
+### Re-enumeration and private Compose drift controls — 2026-10-30
+
+Local planning and the joined evidence path now re-enumerate the running
+`agenttrust` project at final validation rather than only inspecting the container
+IDs selected at the start. Exactly twenty unique full container IDs must remain
+identical; added, removed or replaced services are refused. Existing health,
+image/mount/restart metadata must still match the initial summary. This closes
+the case where a newly added project container was invisible when only the old
+IDs were re-inspected.
+
+Both paths also capture and recheck every current Compose file's bytes, including
+the private signed-runtime override. Config files remain within the resolved
+repository root, with at most 32 files and 1 MiB per file. Only hashes are retained;
+no private configuration contents are printed. An overlay changed during the
+joined verification now prevents completion. These remain point-in-time checks,
+not a lock against later changes and not permission to apply a rollout.
+
+Focused tests reject added/replaced/missing/duplicate IDs, changed config bytes,
+oversized config and a changed private overlay during the complete simulated join.
+Forty-four related local tests passed. The real read-only owner inventory again
+verified twenty healthy containers and the selected source's seventeen migrations
+matched the live ledger, with no pending migrations or service/DB modifications.
+Private observations are `inventory-recheck-v1.json` and `schema-recheck-v1.json`
+under `.local/dockerhub-cd-20261030`; they do not certify a signed publication.
