@@ -639,3 +639,70 @@ fingerprints change. Forty-eight relevant tests passed. The real read-only twent
 container inventory also passed with all service-specific Compose groups retained;
 the private observation is `runtime-policy-review-v1.json` under the existing
 `.local/dockerhub-cd-20261030` directory.
+
+### Three-group comparison and safe transition review — 2026-10-30
+
+`stack-local-cd-reconcile.py --output .local/cd-review/reconciliation.json` compares
+all three **existing** ordered file histories using read-only `docker compose
+config --no-interpolate --no-env-resolution --format json`. The full rendered
+models stay in process memory; only sanitized differences/status are saved. It
+inspects already cached images and repeats live inventory/policy/file-hash checks.
+It neither pulls images, resolves service environment files nor applies Compose.
+
+The actual sanitized observation is private
+`.local/dockerhub-cd-20261030/compose-reconciliation-v3.json`:
+
+| Group | Owned live services | File history | Current finding |
+| --- | --- | --- | --- |
+| 1 | core API, AI worker, identity (3) | Shared seven files plus historical signed runtime image override | Selected cached image IDs match all three live containers |
+| 2 | console, gateway (2) | Shared seven files plus historical application image override | Both current file image declarations differ from the references used to create the live containers; their cached image IDs do not match live IDs |
+| 3 | DB, NATS, object store, local model, OPA, quality verifier, OTel, Tempo, Loki, Prometheus (10) | Shared seven files plus runtime and supporting image overrides | Selected cached image IDs match all ten live containers |
+
+All three private override files contain only `image` changes. Their service
+coverage overlaps, including console/gateway, so concatenating them can silently
+select an older image. All fifteen target service models **excluding image** are
+equal across the three rendered histories. Top-level network, volume, secret and
+config definitions are also equal. These are uninterpolated model comparisons,
+not equality of resolved environment values or live mounted secret bytes.
+`runtimeReconciliationPassed` remains false because of the two real image drifts;
+`completed: true` means the analysis completed, not that rollout is approved.
+Do not repair this drift by reapplying the historical files to healthy services.
+
+The existing runtime policy is `unless-stopped` for all fifteen targets, while the
+rendered source has a different/default restart policy for all fifteen. Every
+review candidate/rollback image override must therefore keep the explicit runtime
+restart setting. The current cached live image IDs remain the rollback baseline;
+the group-2 disk declarations are not a valid rollback baseline.
+
+Concrete next transition gates, preserving current operation until review:
+
+1. Freeze the twenty current container IDs, mount/policy fingerprints, fifteen
+   cached rollback image IDs and all ordered private-file hashes. Keep legacy
+   api/worker/db, Redis, Grafana and every LogiTrack resource outside the target.
+2. Build a **new review-only** release override from an authenticated sixteen-image
+   main receipt, selecting one console profile and assigning exact digests to the
+   fifteen owned runtime services. Do not overwrite the three historical files or
+   combine their image declarations. Bind init/migration service images to the same
+   core/object release before any future command could start dependencies.
+3. Reconcile resolved environment/secret custody separately and render the proposed
+   final model in isolation. Its non-image fields and top-level resource identities
+   must match the captured effective baseline; restart differences must be explicit.
+4. Require the same-schema seventeen-migration ledger check, exact signed main
+   run/attempt, public manifest/config-ID readback, fresh authenticated snapshot and
+   compatible recovery proof. The old retained drill does not satisfy current
+   freshness and is not operational-backup proof. Do not run the writer-stopping
+   drill against current services under the keep-running instruction.
+5. Rehearse candidate and rollback in an isolated fixture before a concrete first
+   transition review. No target executor is installed. A future single-replica
+   replacement may interrupt requests; this analysis establishes no zero-downtime
+   guarantee. Backing-store upgrades need explicit data-format compatibility and
+   recovery review, not an assumed image downgrade.
+6. Only after those gates, present the exact affected services, maintenance impact,
+   health/readiness checks and recovery actions for the operational transition.
+   On a future failure, stop promotion and use only the captured compatible image
+   baseline; never downgrade schema or restore over operational volumes automatically.
+
+Five reconciliation test groups cover owning-group image selection, redacted
+private-environment differences, missing/duplicate/foreign services or image flags,
+resource field differences and project resource definitions. Fifty-three related
+local tests passed; current health and source-policy files were not changed.
