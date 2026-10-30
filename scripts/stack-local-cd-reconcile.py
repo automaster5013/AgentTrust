@@ -5,6 +5,7 @@ import json
 import pathlib
 import re
 import sys
+import tempfile
 
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location('local_planner',ROOT/'scripts/stack-local-cd-plan.py')
@@ -34,6 +35,32 @@ def compare_models(models,groups):
     return selected,differences
 
 
+def review_baseline_override(inventory):
+    result=planner.rollback_override(inventory)
+    # These one-shot helpers must follow their runtime image, never inherit unless-stopped.
+    for helper,parent in [('stack-migrate','stack-core-api'),('stack-object-init','stack-object-store')]:
+        result['services'][helper]={'image':inventory[parent]['rollbackImageId']}
+    return result
+
+
+def baseline_model_checks(models,inventory,originals):
+    require(isinstance(models,list) and models and len(models)==len(originals))
+    expected=review_baseline_override(inventory)['services']
+    for model,original in zip(models,originals):
+        require(not project_resource_differences([original,model]))
+        for service,fields in expected.items():
+            actual=model['services'][service]
+            require(all(actual.get(key)==value for key,value in fields.items()))
+            ignored={'image','restart'} if service in planner.COMPONENTS else {'image'}
+            require({k:v for k,v in actual.items() if k not in ignored} ==
+                    {k:v for k,v in original['services'][service].items() if k not in ignored})
+        for helper in ['stack-migrate','stack-object-init']:
+            require(model['services'][helper].get('restart','no')=='no')
+    # Ignore the documented restart normalization; other target fields must stay identical.
+    return {'reviewBaselineImagesBound':True,'reviewBaselineRuntimeServices':len(planner.COMPONENTS),
+            'reviewBaselineOneShotHelpersBound':2,'reviewBaselineApplied':False}
+
+
 def project_resource_differences(models):
     require(isinstance(models,list) and models)
     base={k:v for k,v in models[0].items() if k!='services'}
@@ -45,7 +72,7 @@ def project_resource_differences(models):
     return result
 
 
-def analyze():
+def analyze(review_baseline=False):
     require(pathlib.Path.cwd().resolve()==ROOT)
     ids=planner.running_ids();raw_inventory=json.loads(planner.docker(['inspect',*ids]));inventory=planner.summarize(raw_inventory)
     created_references={row['Config']['Labels']['com.docker.compose.service']:row['Config']['Image'] for row in raw_inventory}
@@ -69,8 +96,24 @@ def analyze():
         if not image_matches[service]:
             image_drift[service]='cached-reference-moved' if created_references[service]==image else 'declared-image-differs-from-created-reference'
         if row['declaredRestart']!=inventory[service]['restartPolicy']:restart_overrides.append(service)
+    review_summary={}
+    if review_baseline:
+        work=ROOT/'work';work.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='cd-baseline-render-',dir=work) as directory:
+            override=pathlib.Path(directory)/'baseline.compose.json'
+            override.write_text(json.dumps(review_baseline_override(inventory)),encoding='utf-8')
+            reviewed=[]
+            for group in groups:
+                args=['compose','--project-name','agenttrust']
+                for file in group['filesInOrder']:args+=['-f',file]
+                raw=planner.docker(args+['-f',str(override),'config','--no-interpolate','--no-env-resolution','--format','json'])
+                require(0<len(raw.encode())<=4194304);reviewed.append(json.loads(raw))
+            review_summary=baseline_model_checks(reviewed,inventory,models)
+            _,review_differences=compare_models(reviewed,groups)
+            require(not review_differences and not project_resource_differences(reviewed))
+            review_summary['reviewBaselineModelsEqualAcrossGroups']=True
     planner.recheck(ids,inventory,ROOT,hashes)
-    return {'completed':True,'readOnly':True,'runtimeConfigurationGroups':len(groups),
+    return {**review_summary,'completed':True,'readOnly':True,'runtimeConfigurationGroups':len(groups),
             'groups':[{'group':i,'services':g['services'],'composeFileCount':len(g['filesInOrder'])} for i,g in enumerate(groups,1)],
             'runtimeReconciliationPassed':not differences and not resource_differences and all(image_matches.values()),
             'projectResourceModelsEqual':not resource_differences,'projectResourceDifferences':resource_differences,
@@ -87,10 +130,11 @@ def analyze():
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=pathlib.Path,required=True)
+    parser.add_argument('--review-baseline',action='store_true')
     args=parser.parse_args();report={'completed':False,'readOnly':True,'actualDeploymentPerformed':False,'automaticDeploymentAllowed':False}
     try:
         output=args.output.resolve();require(output.is_relative_to((ROOT/'.local').resolve()) and not output.exists())
-        report=analyze()
+        report=analyze(args.review_baseline)
         output.parent.mkdir(parents=True,exist_ok=True)
         with output.open('x',encoding='utf-8') as handle:handle.write(json.dumps(report,indent=2)+'\n')
     except Exception:

@@ -34,6 +34,23 @@ class ReconciliationTests(unittest.TestCase):
    elif fault=='foreign':groups[2]['services'][0]='db'
    else:models[0]['services'][groups[0]['services'][0]]['image']='--privileged'
    with self.assertRaises((ValueError,KeyError)):r.compare_models(models,groups)
+ def test_review_baseline_binds_runtime_and_one_shot_images_without_other_changes(self):
+  models,_=self.fixture()
+  inventory={s:{'rollbackImageId':'sha256:'+'b'*64,'restartPolicy':'unless-stopped'} for s in set(r.planner.COMPONENTS)|r.planner.PRESERVED}
+  override=r.review_baseline_override(inventory)
+  self.assertEqual(set(override['services']),set(r.planner.COMPONENTS)|{'stack-migrate','stack-object-init'})
+  for original in models:
+   for helper in ['stack-migrate','stack-object-init']:original['services'][helper]={'image':'fixture:old','restart':'no','command':['fixture-init']}
+  rendered=copy.deepcopy(models)
+  for model in rendered:
+   for service,fields in override['services'].items():model['services'][service].update(fields)
+  self.assertTrue(r.baseline_model_checks(rendered,inventory,models)['reviewBaselineImagesBound'])
+  for kind in ['runtime-setting','helper-loop','project-resource']:
+   bad=copy.deepcopy(rendered)
+   if kind=='runtime-setting':bad[0]['services']['stack-core-api']['read_only']=False
+   elif kind=='helper-loop':bad[0]['services']['stack-migrate']['restart']='unless-stopped'
+   else:bad[0]['volumes']={'changed':{}}
+   with self.assertRaises(ValueError):r.baseline_model_checks(bad,inventory,models)
  def test_project_network_volume_and_secret_definitions_are_compared(self):
   models,_=self.fixture();self.assertEqual(r.project_resource_differences(models),[])
   for field in ['networks','volumes','secrets','configs']:

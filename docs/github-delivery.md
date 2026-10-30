@@ -706,3 +706,36 @@ Five reconciliation test groups cover owning-group image selection, redacted
 private-environment differences, missing/duplicate/foreign services or image flags,
 resource field differences and project resource definitions. Fifty-three related
 local tests passed; current health and source-policy files were not changed.
+
+### Render-only normalization of the current live baseline — 2026-10-30
+
+The reconciliation command now supports `--review-baseline`. It creates an owned
+scratch Compose override containing the fifteen **current live** cached image IDs
+and explicit `unless-stopped` policies, plus image-only bindings for the one-shot
+migration and object-init helpers to their current core/object-store image IDs.
+Helpers retain `restart: no`; no automatic migration or initialization is run.
+The scratch override is rendered against each existing file group, then removed
+from its own temporary workspace. Existing private files, containers and images
+are untouched, and the output contains only sanitized comparison results.
+
+For every target, the rendered result must have the expected baseline image and
+restart fields. Every other runtime field, every helper field except image, and
+all project-level resource definitions must equal the original group model. The
+resulting fifteen-service models must also agree across all three histories.
+The actual local run passed those render-only checks for fifteen runtimes and two
+helpers, proving that an additional **review** override can describe a consistent
+current image baseline without inheriting group-2's stale image declarations.
+
+```powershell
+python scripts/stack-local-cd-reconcile.py --review-baseline --output .local/cd-review/baseline-render.json
+```
+
+Private observation: `.local/dockerhub-cd-20261030/review-baseline-render-v3.json`.
+`reviewBaselineModelsEqualAcrossGroups: true` does not repair the existing on-disk
+histories: `runtimeReconciliationPassed` remains false and the real image-drift
+blocker remains listed. No settings were interpolated, environment files resolved,
+layers pulled, candidate images executed, migrations run or runtime policies changed.
+This is a render rehearsal of a current-image baseline, not an isolated service
+restart/rollback rehearsal or signed candidate release evidence. Fifty-four focused
+tests passed, including refusals for helper restart loops, changed non-image
+runtime settings and changed project resources during the proposed normalization.
