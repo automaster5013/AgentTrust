@@ -269,3 +269,50 @@ Revision `786322d7ce90c226e88a0b360e77bdac16331df5` passed all four [original-st
 The authenticated 65-file delivery ZIP and every file checksum matched. The independently anchored checksum-map SHA-256 is `645e1c581a2ec200246e092c505b124ee8329f85d99594d1fe2bbf8cfb71ece3`. All 30 image/SBOM signatures for 15 images passed independent local cryptographic verification and a second verification with networking disabled and a separately trusted Sigstore root. A memory-only copy with a certificate-signature byte changed was refused at cryptographic verification even after recomputing its checksum map. The original 65 files remained unchanged.
 
 HIGH/CRITICAL findings were zero in these integrity-verified CI reports. Consumer verification does not perform a new vulnerability scan or re-execute registry images locally. This proof applies to the stated revision; later audit-export and complete-baseline-bundle changes require their own evidence. Grafana remediation, production identity/TLS and trust-key operations, full-system recovery and production deployment remain open. Production approval and paid-provider claims remain false.
+
+## Docker Hub delivery extension — implementation pending activation (2026-10-30)
+
+The existing `original-stack.yml` now has an optional `dockerhub` job after
+`security-images`. It reuses the same run's signed security delivery bundle,
+rechecks source signatures and all sixteen component records, then pulls each
+GHCR digest, tags it with the full revision, and pushes it to
+`docker.io/<namespace>/agenttrust-<component>:<revision>`. It reads back the
+expected destination digest before issuing a complete publication receipt.
+There is no rebuild, `latest` promotion, Compose execution or service change.
+This follows Docker's [tag](https://docs.docker.com/reference/cli/docker/image/tag/)
+and [push](https://docs.docker.com/reference/cli/docker/image/push/) commands.
+A changed registry manifest digest fails publication verification. An interrupted
+job may leave some images published; only a receipt with all sixteen records
+represents a completed delivery. The destination does not receive a new runtime
+execution test or registry-hosted signature/attestation copy. The original signed
+bundle and unchanged digests must accompany consumer verification; its GHCR
+references and Sigstore identities are deliberately retained.
+
+Activation requires the `dockerhub` GitHub environment, repository variable
+`DOCKERHUB_ENABLED=true`, variables `DOCKERHUB_NAMESPACE` and
+`DOCKERHUB_USERNAME`, and environment secret `DOCKERHUB_TOKEN` with only the
+required repository write access. Confirm account/organization ownership and
+create all sixteen repositories with the requested visibility before activation;
+this workflow does not set visibility. Never put tokens in chat, files or Git.
+Credentials exist only in the temporary runner client configuration and are
+removed on completion. PRs cannot publish. GitHub environment protection may
+require an approval before the job starts. Main-only source publication and
+signing policies are unchanged, so the current draft PR branch cannot publish.
+
+The `stack-dockerhub.py` command defaults to a metadata-only plan; `--publish`
+also requires trusted GitHub main execution and cryptographic source verification.
+A checksum calculated in the same trusted runner is a transfer-integrity anchor,
+not an independently authenticated release selection. A downloaded bundle used
+outside that job needs an independently obtained expected checksum and revision.
+The receipt explicitly records `serverDeployed: false`.
+
+**Status:** local implementation and offline checks only. Docker Hub account,
+namespace, visibility, credential provisioning and deployment target are awaiting
+user configuration. No Docker Hub publication or remote CI for this change has
+yet been verified. Automatic service deployment is not implemented/activated by
+this registry job. Target-specific deployment needs a protected runner/connection,
+a health check, backup and compatible migration/rollback policy, and explicit
+review of the concrete service changes before the first operational transition.
+The preserved 4310 installation and the original technology stack remain distinct
+delivery paths; this extension covers all sixteen stack images and does not
+replace either installation.
