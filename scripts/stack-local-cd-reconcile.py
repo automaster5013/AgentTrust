@@ -101,6 +101,12 @@ def render_review(groups,override):
         return reviewed
 
 
+def candidate_evidence_module():
+    spec=importlib.util.spec_from_file_location('candidate_evidence',ROOT/'scripts/stack-local-cd-evidence.py')
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    return module
+
+
 def analyze(review_baseline=False,candidate=None):
     require(pathlib.Path.cwd().resolve()==ROOT)
     ids=planner.running_ids();raw_inventory=json.loads(planner.docker(['inspect',*ids]));inventory=planner.summarize(raw_inventory)
@@ -133,8 +139,7 @@ def analyze(review_baseline=False,candidate=None):
         require(not review_differences and not project_resource_differences(reviewed))
         review_summary['reviewBaselineModelsEqualAcrossGroups']=True
     if candidate is not None:
-        evidence_spec=importlib.util.spec_from_file_location('candidate_evidence',ROOT/'scripts/stack-local-cd-evidence.py')
-        evidence=importlib.util.module_from_spec(evidence_spec);evidence_spec.loader.exec_module(evidence)
+        evidence=candidate_evidence_module()
         config_path,config_hash,revision=candidate
         config=evidence.delivery.json_bytes(evidence.anchored_file(config_path,config_hash))
         ledger=evidence.live_ledger()

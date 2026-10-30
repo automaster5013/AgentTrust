@@ -801,3 +801,22 @@ conditions before any operational transition can be reviewed:
 No new candidate runtime fixture or target executor has been created by this change.
 A fresh compatible authenticated recovery source and a real signed main receipt are
 still missing; those are retained as unmet gates, not replaced with mocked success.
+
+### Complete candidate-render orchestration controls — 2026-10-30
+
+The candidate rendering path now has whole-flow simulated tests in addition to
+the existing full signed-release/recovery join tests. A successful simulated run
+must render both the current-image baseline and candidate, repeat the ledger read,
+recheck release artifact/config anchors and the online main attempt, and finally
+recheck the live inventory. It must report registry metadata inspection while
+keeping candidate execution, backup verification and automatic deployment false.
+Five refusal variants cover a rejected trust chain, changed non-image service
+settings, changed release artifact identity, final online verification failure and
+ledger changes during review. The tests use synthetic boundaries and are not real
+signed candidate runtime acceptance or authenticated recovery proof.
+
+Fifty-seven focused tests and workflow syntax checks passed. The real read-only
+schema path was rerun after the release-verifier extraction: twenty healthy owner
+containers and seventeen source/live migrations matched, with all three private
+Compose groups still identified and no operational change. Private observation:
+`.local/dockerhub-cd-20261030/candidate-flow-schema-v1.json`.
