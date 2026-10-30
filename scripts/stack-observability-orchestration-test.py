@@ -22,7 +22,7 @@ class Orchestration(unittest.TestCase):
    if 'read' in args:return result(data)
    if 'write' in args:written[args[args.index('--path')+1]]=kwargs['data'];return result()
    return result()
-  with tempfile.TemporaryDirectory(dir=ROOT/'.local') as temporary,contextlib.ExitStack() as stack:
+  with tempfile.TemporaryDirectory(dir=ROOT) as temporary,contextlib.ExitStack() as stack:
    directory=pathlib.Path(temporary)
    class Drill:
     def __init__(self,sources):
@@ -38,7 +38,7 @@ class Orchestration(unittest.TestCase):
    def api(name,start,end):
     value='0' if mismatch and 'coldrestore' in name else '1'
     return {'status':'success','data':{'resultType':'matrix','result':[{'metric':{'job':'agenttrust-otel'},'values':[[start,'1'],[end,value]]}]}}
-   patches=[(m,'session_capacity',lambda *a:None),(m.d,'live_baseline',lambda:(['source'],{}, {'stack-prometheus':{}},{'stack-prometheus':source})),(m.d,'resolved_groups',lambda *a:({},{})),(m.d,'hash_files',lambda *a:{}),(m.e.planner,'compose_hashes',lambda *a:{}),(m.e.planner,'recheck',lambda *a:None),(m.e,'verify_candidate_release',lambda *a:release),(m.c,'reserve',lambda:None),(m.c,'run',run),(m.c,'Rehearsal',Drill),(m.c,'private_file',lambda p,r:p.write_bytes(r)),(m,'protect',lambda p:p.mkdir()),(m,'cached_identity',lambda *a:None),(m,'load',lambda *a:NS(transform=lambda action,key,raw:raw)),(driver,'get',api)]
+   patches=[(m,'session_capacity',lambda *a:None),(m.d,'live_baseline',lambda:(['source'],{}, {'stack-prometheus':{}},{'stack-prometheus':source})),(m.d,'resolved_groups',lambda *a:({},{})),(m.d,'hash_files',lambda *a:{}),(m.e.planner,'compose_hashes',lambda *a:{}),(m.e.planner,'recheck',lambda *a:None),(m.e,'verify_candidate_release',lambda *a:release),(m.c,'reserve',lambda:None),(m.c,'run',run),(m.c,'Rehearsal',Drill),(m.c,'private_file',lambda p,r:p.write_bytes(r)),(m,'protect',lambda p:p.mkdir(parents=True)),(m,'cached_identity',lambda *a:None),(m,'load',lambda *a:NS(transform=lambda action,key,raw:raw)),(driver,'get',api)]
    for obj,name,value in patches:stack.enter_context(patch.object(obj,name,value))
    try:drill=driver.run(config,hashlib.sha256(raw).hexdigest())
    finally:
