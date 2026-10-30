@@ -100,6 +100,30 @@ def recovery_binding(proof, inventory, snapshot, now, max_age):
             'newRecoveryPerformed':False,'operationalBackupVerified':False}
 
 
+def verify_candidate_release(config,revision,inventory,report):
+    require(config['revision']==revision and config['repository']=='automaster5013/AgentTrust')
+    report['stage']='signed-delivery'
+    directory,identity,records = delivery.validate(pathlib.Path(config['bundle']),revision,config['checksumsSha256'],config['repository'])
+    require({row['name'] for row in records} == planner.ALL_IMAGES)
+    delivery.Verifier(directory,True,pathlib.Path(config['trustedRoot']) if config.get('trustedRoot') else None).verify(records,identity,config['repository'],revision)
+    require(delivery.validate(directory,revision,config['checksumsSha256'],config['repository']) == (directory,identity,records))
+    report['signedReleaseVerified']=True
+    receipt = delivery.json_bytes(anchored_file(config['receipt'],config['receiptSha256'],65536))
+    plan=planner.receipt_plan(receipt,revision,inventory,config['consoleProfile'])
+    require(receipt['sourceChecksumsSha256'] == config['checksumsSha256'])
+    require({r['name']:r['source'] for r in receipt['images']} == {r['name']:r['reference'] for r in records})
+    require(receipt['publicationRun']['runId'] == config['runId'] and receipt['publicationRun']['runAttempt'] == config['runAttempt'])
+    report['publicationReceiptBound']=True
+    from stack_release_online import main_run, public_manifests
+    report['stage']='trusted-main-run-online'
+    report.update(main_run(revision,config['runId'],config['runAttempt']))
+    report['stage']='destination-manifest-readback'
+    checksum_map=delivery.json_bytes(anchored_file(directory/'checksums.json',config['checksumsSha256']))
+    runtime=delivery.json_bytes(anchored_file(directory/'runtime-identity.json',checksum_map['runtime-identity.json']))
+    report.update(public_manifests(receipt['images'],image_ids=runtime['imageIds']))
+    return {'directory':directory,'identity':identity,'records':records,'receipt':receipt,'plan':plan}
+
+
 def run(args, report):
     require(pathlib.Path.cwd().resolve() == ROOT)
     report['stage']='live-inventory'
@@ -123,25 +147,8 @@ def run(args, report):
     report['stage']='independent-anchors'
     config = delivery.json_bytes(anchored_file(args.evidence_config,args.expected_config_sha256))
     require(config['revision'] == args.expected_revision and config['repository'] == 'automaster5013/AgentTrust')
-    report['stage']='signed-delivery'
-    directory,identity,records = delivery.validate(pathlib.Path(config['bundle']),args.expected_revision,config['checksumsSha256'],config['repository'])
-    require({row['name'] for row in records} == planner.ALL_IMAGES)
-    delivery.Verifier(directory,True,pathlib.Path(config['trustedRoot']) if config.get('trustedRoot') else None).verify(records,identity,config['repository'],args.expected_revision)
-    require(delivery.validate(directory,args.expected_revision,config['checksumsSha256'],config['repository']) == (directory,identity,records))
-    report['signedReleaseVerified']=True
-    receipt = delivery.json_bytes(anchored_file(config['receipt'],config['receiptSha256'],65536))
-    planner.receipt_plan(receipt,args.expected_revision,inventory,config['consoleProfile'])
-    require(receipt['sourceChecksumsSha256'] == config['checksumsSha256'])
-    require({r['name']:r['source'] for r in receipt['images']} == {r['name']:r['reference'] for r in records})
-    require(receipt['publicationRun']['runId'] == config['runId'] and receipt['publicationRun']['runAttempt'] == config['runAttempt'])
-    report['publicationReceiptBound']=True
-    from stack_release_online import main_run, public_manifests
-    report['stage']='trusted-main-run-online'
-    report.update(main_run(args.expected_revision,config['runId'],config['runAttempt']))
-    report['stage']='destination-manifest-readback'
-    checksum_map=delivery.json_bytes(anchored_file(directory/'checksums.json',config['checksumsSha256']))
-    runtime=delivery.json_bytes(anchored_file(directory/'runtime-identity.json',checksum_map['runtime-identity.json']))
-    report.update(public_manifests(receipt['images'],image_ids=runtime['imageIds']))
+    release=verify_candidate_release(config,args.expected_revision,inventory,report)
+    directory,identity,records=release['directory'],release['identity'],release['records']
     report['stage']='retained-snapshot-authentication'
     snap = load('retained_snapshot','stack-coherent-snapshot-verify.py')
     crypt = load('backup_envelope','stack-backup-crypt.py')
@@ -171,6 +178,7 @@ def run(args, report):
     anchored_file(config['receipt'],config['receiptSha256'],65536)
     anchored_file(config['recoveryReport'],config['recoveryReportSha256'])
     anchored_file(args.evidence_config,args.expected_config_sha256)
+    from stack_release_online import main_run
     report.update(main_run(args.expected_revision,config['runId'],config['runAttempt']))
     report.update(completed=True,scope='signed-publication-and-retained-development-recovery-binding',
                   blockers=['target-executor',

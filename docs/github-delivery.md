@@ -739,3 +739,65 @@ This is a render rehearsal of a current-image baseline, not an isolated service
 restart/rollback rehearsal or signed candidate release evidence. Fifty-four focused
 tests passed, including refusals for helper restart loops, changed non-image
 runtime settings and changed project resources during the proposed normalization.
+
+### Signed candidate render path and recovery rehearsal contract — 2026-10-30
+
+The supply-chain/publication part of the joined verifier is now reusable as
+`verify_candidate_release`. The reconciliation CLI accepts `--candidate-config`,
+`--expected-config-sha256` and `--expected-revision` together. Its pinned private
+config uses the existing release fields (`revision`, `repository`, `bundle`,
+`checksumsSha256`, optional `trustedRoot`, `receipt`, `receiptSha256`,
+`consoleProfile`, `runId`, `runAttempt`). No backup key is required merely to render
+a candidate; no recovery or operational-backup success is inferred from that path.
+
+Before candidate rendering it compares the exact candidate source migration catalog
+to the live read-only ledger, verifies all source image/SBOM signatures, binds the
+schema-2 receipt to the exact successful main attempt, and reads public destination
+manifest/config digests. It then generates the fifteen-service digest override,
+adding image-only migration/object-init bindings to the candidate core/object-store
+images. One-shot helpers must keep `restart: no`; the fifteen runtime services keep
+`unless-stopped`. The original models may change only image and the explicit runtime
+restart policy: command, environment, mounts, ports, resources, security settings
+and project resources must remain identical in each rendered group. All three
+candidate runtime models must agree. The CLI also renders the current-image baseline
+for recovery review, rechecks artifact/config bytes and the online attempt, and
+rechecks the ledger, live inventory and existing Compose hashes afterward.
+
+This is **candidate rendering**, not candidate runtime isolation or deployment.
+Its report records `candidateRenderOnly: true`, `candidateImagesExecuted: false`,
+`backupOrRecoveryVerifiedHere: false`, and `automaticDeploymentAllowed: false`.
+Only signature-verifier tooling may use disposable verifier containers; candidate
+layers are neither pulled nor executed by the render path. Existing disk/runtime
+image drift remains reported rather than silently repaired. Fifty-five relevant
+local tests passed, including full mocked release binding, candidate digest/helper
+binding and rejection of stale helper images or non-image configuration changes.
+The real current-image render was repeated successfully; the positive signed new
+candidate path still awaits real current main publication evidence.
+
+The subsequent isolated runtime/recovery rehearsal must satisfy these concrete
+conditions before any operational transition can be reviewed:
+
+- Independently anchor the candidate bundle, publication receipt and main attempt;
+  do not select a release from a floating tag or the current PR's green tests.
+- Use only owned UUID fixture resources, no host-published ports, Docker socket,
+  operational network/volume attachments or bind mounts of operational credentials.
+  Copy only authenticated retained snapshot/config material into protected fixture
+  custody after explicit preparation. Disable paid/external providers and model
+  downloads; preserve the original keys and backup bytes. Do not use a Compose
+  render of operational configuration as a runnable fixture definition.
+- Start the fixture from the compatible current-image snapshot baseline, record
+  state fingerprints, then test the candidate against that isolated restored state.
+  Test identity/readiness, actual bounded synthetic evaluation/review, signed gates,
+  evidence/object retrieval and persistence; inconclusive or missing evidence blocks.
+- On failure stop promotion. Rehearse returning the fixture to the separately
+  captured current-image baseline with unchanged compatible schema, then verify the
+  same state fingerprints and health. An image-ID rollback alone does not prove
+  backing-store data-format compatibility; never perform schema downgrade or restore
+  into operational volumes automatically.
+- Save only redacted proof, verify fixture ownership before cleanup and prove all
+  twenty AgentTrust and twelve LogiTrack operational containers remained unchanged.
+  Do not start a writer-quiescing source backup under the current keep-running scope.
+
+No new candidate runtime fixture or target executor has been created by this change.
+A fresh compatible authenticated recovery source and a real signed main receipt are
+still missing; those are retained as unmet gates, not replaced with mocked success.

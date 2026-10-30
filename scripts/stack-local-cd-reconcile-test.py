@@ -34,6 +34,22 @@ class ReconciliationTests(unittest.TestCase):
    elif fault=='foreign':groups[2]['services'][0]='db'
    else:models[0]['services'][groups[0]['services'][0]]['image']='--privileged'
    with self.assertRaises((ValueError,KeyError)):r.compare_models(models,groups)
+ def test_candidate_override_uses_digest_images_and_matching_one_shot_helpers(self):
+  originals,_=self.fixture()
+  inventory={s:{'rollbackImageId':'sha256:'+'b'*64,'restartPolicy':'unless-stopped'} for s in set(r.planner.COMPONENTS)|r.planner.PRESERVED}
+  plan=[{'service':service,'candidate':'docker.io/automaster5013/agenttrust-'+component+'@sha256:'+'d'*64,
+         'rollbackImageId':'sha256:'+'b'*64,'restartPolicy':'unless-stopped'} for service,component in r.planner.COMPONENTS.items()]
+  override=r.candidate_review_override(plan,inventory)
+  self.assertFalse(set(override['services'])&r.planner.PRESERVED)
+  for original in originals:
+   for helper in ['stack-migrate','stack-object-init']:original['services'][helper]={'image':'fixture:old','restart':'no'}
+  rendered=copy.deepcopy(originals)
+  for model in rendered:
+   for service,fields in override['services'].items():model['services'][service].update(fields)
+  self.assertTrue(r.review_model_checks(rendered,inventory,originals,override)['nonImageSettingsPreserved'])
+  bad=copy.deepcopy(override);bad['services']['stack-migrate']['image']='fixture:stale'
+  with self.assertRaises(ValueError):r.review_model_checks(rendered,inventory,originals,bad)
+  for value in override['services'].values():self.assertNotIn('environment',value)
  def test_review_baseline_binds_runtime_and_one_shot_images_without_other_changes(self):
   models,_=self.fixture()
   inventory={s:{'rollbackImageId':'sha256:'+'b'*64,'restartPolicy':'unless-stopped'} for s in set(r.planner.COMPONENTS)|r.planner.PRESERVED}

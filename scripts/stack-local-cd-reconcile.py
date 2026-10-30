@@ -43,9 +43,12 @@ def review_baseline_override(inventory):
     return result
 
 
-def baseline_model_checks(models,inventory,originals):
+def review_model_checks(models,inventory,originals,override):
     require(isinstance(models,list) and models and len(models)==len(originals))
-    expected=review_baseline_override(inventory)['services']
+    require(set(override)=={'services'} and set(override['services'])==set(planner.COMPONENTS)|{'stack-migrate','stack-object-init'})
+    expected=override['services']
+    for helper,parent in [('stack-migrate','stack-core-api'),('stack-object-init','stack-object-store')]:
+        require(expected[helper]=={'image':expected[parent]['image']})
     for model,original in zip(models,originals):
         require(not project_resource_differences([original,model]))
         for service,fields in expected.items():
@@ -57,8 +60,20 @@ def baseline_model_checks(models,inventory,originals):
         for helper in ['stack-migrate','stack-object-init']:
             require(model['services'][helper].get('restart','no')=='no')
     # Ignore the documented restart normalization; other target fields must stay identical.
+    return {'runtimeServices':len(planner.COMPONENTS),'oneShotHelpers':2,'nonImageSettingsPreserved':True,'applied':False}
+
+
+def baseline_model_checks(models,inventory,originals):
+    review_model_checks(models,inventory,originals,review_baseline_override(inventory))
     return {'reviewBaselineImagesBound':True,'reviewBaselineRuntimeServices':len(planner.COMPONENTS),
             'reviewBaselineOneShotHelpersBound':2,'reviewBaselineApplied':False}
+
+
+def candidate_review_override(plan,inventory):
+    result=planner.candidate_override(plan,inventory)
+    for helper,parent in [('stack-migrate','stack-core-api'),('stack-object-init','stack-object-store')]:
+        result['services'][helper]={'image':result['services'][parent]['image']}
+    return result
 
 
 def project_resource_differences(models):
@@ -72,7 +87,21 @@ def project_resource_differences(models):
     return result
 
 
-def analyze(review_baseline=False):
+def render_review(groups,override):
+    work=ROOT/'work';work.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='cd-review-render-',dir=work) as directory:
+        path=pathlib.Path(directory)/'review.compose.json'
+        path.write_text(json.dumps(override),encoding='utf-8')
+        reviewed=[]
+        for group in groups:
+            args=['compose','--project-name','agenttrust']
+            for file in group['filesInOrder']:args+=['-f',file]
+            raw=planner.docker(args+['-f',str(path),'config','--no-interpolate','--no-env-resolution','--format','json'])
+            require(0<len(raw.encode())<=4194304);reviewed.append(json.loads(raw))
+        return reviewed
+
+
+def analyze(review_baseline=False,candidate=None):
     require(pathlib.Path.cwd().resolve()==ROOT)
     ids=planner.running_ids();raw_inventory=json.loads(planner.docker(['inspect',*ids]));inventory=planner.summarize(raw_inventory)
     created_references={row['Config']['Labels']['com.docker.compose.service']:row['Config']['Image'] for row in raw_inventory}
@@ -97,21 +126,37 @@ def analyze(review_baseline=False):
             image_drift[service]='cached-reference-moved' if created_references[service]==image else 'declared-image-differs-from-created-reference'
         if row['declaredRestart']!=inventory[service]['restartPolicy']:restart_overrides.append(service)
     review_summary={}
-    if review_baseline:
-        work=ROOT/'work';work.mkdir(exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix='cd-baseline-render-',dir=work) as directory:
-            override=pathlib.Path(directory)/'baseline.compose.json'
-            override.write_text(json.dumps(review_baseline_override(inventory)),encoding='utf-8')
-            reviewed=[]
-            for group in groups:
-                args=['compose','--project-name','agenttrust']
-                for file in group['filesInOrder']:args+=['-f',file]
-                raw=planner.docker(args+['-f',str(override),'config','--no-interpolate','--no-env-resolution','--format','json'])
-                require(0<len(raw.encode())<=4194304);reviewed.append(json.loads(raw))
-            review_summary=baseline_model_checks(reviewed,inventory,models)
-            _,review_differences=compare_models(reviewed,groups)
-            require(not review_differences and not project_resource_differences(reviewed))
-            review_summary['reviewBaselineModelsEqualAcrossGroups']=True
+    if review_baseline or candidate is not None:
+        reviewed=render_review(groups,review_baseline_override(inventory))
+        review_summary=baseline_model_checks(reviewed,inventory,models)
+        _,review_differences=compare_models(reviewed,groups)
+        require(not review_differences and not project_resource_differences(reviewed))
+        review_summary['reviewBaselineModelsEqualAcrossGroups']=True
+    if candidate is not None:
+        evidence_spec=importlib.util.spec_from_file_location('candidate_evidence',ROOT/'scripts/stack-local-cd-evidence.py')
+        evidence=importlib.util.module_from_spec(evidence_spec);evidence_spec.loader.exec_module(evidence)
+        config_path,config_hash,revision=candidate
+        config=evidence.delivery.json_bytes(evidence.anchored_file(config_path,config_hash))
+        ledger=evidence.live_ledger()
+        evidence.same_schema(evidence.migration_catalog(revision),ledger)
+        proof={}
+        release=evidence.verify_candidate_release(config,revision,inventory,proof)
+        override=candidate_review_override(release['plan'],inventory)
+        rendered=render_review(groups,override)
+        review_model_checks(rendered,inventory,models,override)
+        _,changes=compare_models(rendered,groups)
+        require(not changes and not project_resource_differences(rendered))
+        require(evidence.delivery.validate(release['directory'],revision,config['checksumsSha256'],config['repository']) ==
+                (release['directory'],release['identity'],release['records']))
+        evidence.anchored_file(config['receipt'],config['receiptSha256'],65536)
+        evidence.anchored_file(config_path,config_hash)
+        from stack_release_online import main_run
+        main_run(revision,config['runId'],config['runAttempt'])
+        require(evidence.live_ledger()==ledger)
+        review_summary.update(candidateSignaturesVerified=True,candidateMainRunVerified=True,
+                              candidateManifestConfigDigestsVerified=True,candidateModelsEqualAcrossGroups=True,
+                              candidateHelpersBound=True,candidateSameSchemaVerified=True,candidateImagesExecuted=False,
+                              candidateRenderOnly=True,backupOrRecoveryVerifiedHere=False)
     planner.recheck(ids,inventory,ROOT,hashes)
     return {**review_summary,'completed':True,'readOnly':True,'runtimeConfigurationGroups':len(groups),
             'groups':[{'group':i,'services':g['services'],'composeFileCount':len(g['filesInOrder'])} for i,g in enumerate(groups,1)],
@@ -120,7 +165,7 @@ def analyze(review_baseline=False):
             'imageDriftKinds':image_drift,'nonImageServiceModelsEqual':not differences,'nonImageDifferences':differences,
             'selectedCachedImageMatchesLive':image_matches,'allSelectedImagesMatchLive':all(image_matches.values()),
             'explicitRestartOverrideRequired':sorted(restart_overrides),'interpolationPerformed':False,
-            'environmentFilesResolved':False,'registryContacted':False,'imagesPulled':False,'overridesApplied':False,
+            'environmentFilesResolved':False,'registryContacted':candidate is not None,'imagesPulled':False,'overridesApplied':False,
             'actualDeploymentPerformed':False,'automaticDeploymentAllowed':False,
             'blockers':(['non-image-model-differences'] if differences or resource_differences else []) + (['declared-vs-live-image-drift'] if image_drift else []),
             'remainingChecks':['resolved-environment-and-secret-custody','init-and-migration-service-image-binding',
@@ -131,10 +176,15 @@ def analyze(review_baseline=False):
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=pathlib.Path,required=True)
     parser.add_argument('--review-baseline',action='store_true')
+    parser.add_argument('--candidate-config',type=pathlib.Path)
+    parser.add_argument('--expected-config-sha256')
+    parser.add_argument('--expected-revision')
     args=parser.parse_args();report={'completed':False,'readOnly':True,'actualDeploymentPerformed':False,'automaticDeploymentAllowed':False}
     try:
         output=args.output.resolve();require(output.is_relative_to((ROOT/'.local').resolve()) and not output.exists())
-        report=analyze(args.review_baseline)
+        require(bool(args.candidate_config)==bool(args.expected_config_sha256)==bool(args.expected_revision))
+        candidate=(args.candidate_config,args.expected_config_sha256,args.expected_revision) if args.candidate_config else None
+        report=analyze(args.review_baseline,candidate)
         output.parent.mkdir(parents=True,exist_ok=True)
         with output.open('x',encoding='utf-8') as handle:handle.write(json.dumps(report,indent=2)+'\n')
     except Exception:
