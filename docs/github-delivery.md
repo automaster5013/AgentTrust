@@ -520,3 +520,27 @@ inventory and changed migration ledger. All fail before joined completion. These
 are orchestration tests, not real cryptographic publication or recovery evidence.
 The new tests run in the existing source-security job; temporary test files remain
 inside the repository workspace.
+
+### Publication receipt bound to the exact main execution — 2026-10-30
+
+Docker Hub publication receipts now use schema version 2. Before pushing, the
+publisher requires the exact original-stack main workflow reference and positive
+GitHub run/attempt IDs from its trusted runner environment, in addition to its
+existing revision/repository/event checks. The receipt records a `publicationRun`
+object (`repository`, `workflow`, `runId`, `runAttempt`). Metadata-only plans have
+no publication origin and cannot be accepted as a published release.
+
+The local planner refuses legacy schema-1 receipts, missing/wrong workflow origins,
+non-integer or zero run IDs/attempts, and malformed source checksum anchors. The
+joined evidence verifier additionally requires the receipt run/attempt to equal
+the independently selected config run/attempt before querying GitHub. This closes
+a gap where a receipt from a different attempt of the same SHA could otherwise
+be combined with a successful online run. This is consistent metadata binding;
+the receipt hash still needs independent operator trust and does not become a
+cryptographic signature of the receipt or an authenticated artifact download.
+
+Focused offline controls cover invalid runner workflow/event/run IDs, wrong
+repository, legacy receipts and cross-attempt substitution in the full simulated
+join. Forty-two relevant tests and workflow syntax checks passed locally. There
+is still no actual Docker Hub publication or operational deployment from this
+branch, so no real receipt needed migration and no service was modified.

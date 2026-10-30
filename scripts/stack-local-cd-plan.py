@@ -43,10 +43,14 @@ def summarize(containers):
 
 def receipt_plan(receipt, revision, inventory, profile):
     require(re.fullmatch('[a-f0-9]{40}', revision) is not None)
-    require(receipt['schemaVersion'] == 1 and receipt['revision'] == revision)
+    require(type(receipt['schemaVersion']) is int and receipt['schemaVersion'] == 2 and receipt['revision'] == revision)
     for flag in ['published','destinationDigestsVerified','sourceSignaturesVerifiedHere']:
         require(receipt[flag] is True)
     require(receipt['serverDeployed'] is False)
+    origin = receipt['publicationRun']
+    require(origin['repository'] == 'automaster5013/AgentTrust' and origin['workflow'] == '.github/workflows/original-stack.yml')
+    require(type(origin['runId']) is int and origin['runId'] > 0 and type(origin['runAttempt']) is int and origin['runAttempt'] > 0)
+    require(re.fullmatch('[a-f0-9]{64}', receipt['sourceChecksumsSha256']) is not None)
     rows = receipt['images']; require(isinstance(rows, list) and len(rows) == 16)
     require({r['name'] for r in rows} == ALL_IMAGES)
     images = {}

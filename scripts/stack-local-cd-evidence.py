@@ -129,6 +129,7 @@ def run(args, report):
     planner.receipt_plan(receipt,args.expected_revision,inventory,config['consoleProfile'])
     require(receipt['sourceChecksumsSha256'] == config['checksumsSha256'])
     require({r['name']:r['source'] for r in receipt['images']} == {r['name']:r['reference'] for r in records})
+    require(receipt['publicationRun']['runId'] == config['runId'] and receipt['publicationRun']['runAttempt'] == config['runAttempt'])
     report['publicationReceiptBound']=True
     from stack_release_online import main_run, public_manifests
     report['stage']='trusted-main-run-online'

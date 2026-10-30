@@ -12,6 +12,17 @@ RECORDS = [{'name': name, 'reference': 'ghcr.io/automaster5013/agenttrust-' + na
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_publication_run_requires_original_main_workflow_and_attempt(self):
+        env = {'GITHUB_ACTIONS':'true', 'GITHUB_REF':'refs/heads/main', 'GITHUB_SHA':SHA,
+               'GITHUB_REPOSITORY':'automaster5013/AgentTrust', 'GITHUB_EVENT_NAME':'push',
+               'GITHUB_WORKFLOW_REF':'automaster5013/AgentTrust/.github/workflows/original-stack.yml@refs/heads/main',
+               'GITHUB_RUN_ID':'123', 'GITHUB_RUN_ATTEMPT':'2'}
+        self.assertEqual(hub.publication_run(env,SHA,'automaster5013/AgentTrust')['runAttempt'],2)
+        for key,value in [('GITHUB_RUN_ID',''),('GITHUB_RUN_ATTEMPT','0'),('GITHUB_RUN_ATTEMPT','01'),
+                          ('GITHUB_WORKFLOW_REF','other'),('GITHUB_EVENT_NAME','pull_request')]:
+            with self.subTest(key=key,value=value), self.assertRaises(ValueError):
+                hub.publication_run({**env,key:value},SHA,'automaster5013/AgentTrust')
+
     def test_complete_digest_mapping(self):
         rows = hub.plan(RECORDS, 'example-team', SHA)
         self.assertEqual(len(rows), 16)

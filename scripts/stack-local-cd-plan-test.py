@@ -12,13 +12,20 @@ def inventory_fixture():
          for name in sorted(set(cd.COMPONENTS)|cd.PRESERVED)]
 
 def receipt_fixture():
- return {'schemaVersion':1,'revision':REV,'published':True,'destinationDigestsVerified':True,
-         'sourceSignaturesVerifiedHere':True,'serverDeployed':False,
+ return {'schemaVersion':2,'publicationRun':{'repository':'automaster5013/AgentTrust','workflow':'.github/workflows/original-stack.yml','runId':1,'runAttempt':1},'revision':REV,'published':True,'destinationDigestsVerified':True,
+         'sourceSignaturesVerifiedHere':True,'sourceChecksumsSha256':'c'*64,'serverDeployed':False,
          'images':[{'name':n,'source':'ghcr.io/automaster5013/agenttrust-'+n+'@sha256:'+DIG,
                     'reference':'docker.io/automaster5013/agenttrust-'+n+'@sha256:'+DIG,
                     'tag':'docker.io/automaster5013/agenttrust-'+n+':'+REV} for n in sorted(cd.ALL_IMAGES)]}
 
 class PlanningTests(unittest.TestCase):
+ def test_publication_origin_and_legacy_receipts_refused(self):
+  inv=cd.summarize(inventory_fixture())
+  for key,value in [('repository','other/AgentTrust'),('workflow','other.yml'),('runId',True),('runAttempt',0)]:
+   bad=receipt_fixture();bad['publicationRun'][key]=value
+   with self.assertRaises(ValueError):cd.receipt_plan(bad,REV,inv,'development')
+  bad=receipt_fixture();bad['schemaVersion']=1
+  with self.assertRaises(ValueError):cd.receipt_plan(bad,REV,inv,'development')
  def test_inventory_and_profile_selection(self):
   inv=cd.summarize(inventory_fixture());self.assertEqual(len(inv),20)
   for profile,component in [('development','console'),('https-review','console-https')]:

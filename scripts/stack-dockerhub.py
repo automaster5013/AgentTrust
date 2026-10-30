@@ -49,6 +49,20 @@ def publish(rows, run=command):
             raise ValueError('Destination digest mismatch')
 
 
+def publication_run(env, revision, repository):
+    expected = repository + '/.github/workflows/original-stack.yml@refs/heads/main'
+    if (env.get('GITHUB_ACTIONS') != 'true' or env.get('GITHUB_REF') != 'refs/heads/main'
+        or env.get('GITHUB_SHA') != revision or env.get('GITHUB_REPOSITORY') != repository
+        or env.get('GITHUB_EVENT_NAME') not in ('push', 'workflow_dispatch')
+        or env.get('GITHUB_WORKFLOW_REF') != expected):
+        raise ValueError('Trusted main execution required')
+    for name in ['GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT']:
+        if not re.fullmatch('[1-9][0-9]{0,19}', env.get(name, '')):
+            raise ValueError('Publication run identity required')
+    return {'repository': repository, 'workflow': '.github/workflows/original-stack.yml',
+            'runId': int(env['GITHUB_RUN_ID']), 'runAttempt': int(env['GITHUB_RUN_ATTEMPT'])}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bundle', type=pathlib.Path, required=True)
@@ -64,14 +78,14 @@ def main():
             raise ValueError('Output exists')
         directory, identity, records = verification.validate(args.bundle, args.expected_revision, args.expected_checksums_sha256, args.repository)
         rows = plan(records, args.namespace, args.expected_revision)
+        provenance = None
         if args.publish:
-            if os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('GITHUB_REF') != 'refs/heads/main' or os.environ.get('GITHUB_SHA') != args.expected_revision or os.environ.get('GITHUB_REPOSITORY') != args.repository or os.environ.get('GITHUB_EVENT_NAME') not in ('push', 'workflow_dispatch'):
-                raise ValueError('Trusted main execution required')
+            provenance = publication_run(os.environ, args.expected_revision, args.repository)
             verification.Verifier(directory, True, None).verify(records, identity, args.repository, args.expected_revision)
             if verification.validate(directory, args.expected_revision, args.expected_checksums_sha256, args.repository) != (directory, identity, records):
                 raise ValueError('Bundle changed')
             publish(rows)
-        receipt = {'schemaVersion': 1, 'revision': args.expected_revision, 'sourceChecksumsSha256': args.expected_checksums_sha256,
+        receipt = {'schemaVersion': 2, 'publicationRun': provenance, 'revision': args.expected_revision, 'sourceChecksumsSha256': args.expected_checksums_sha256,
                    'images': rows, 'published': args.publish, 'destinationDigestsVerified': args.publish,
                    'sourceSignaturesVerifiedHere': args.publish, 'destinationRuntimeExecuted': False, 'serverDeployed': False}
         with args.output.open('x', encoding='utf-8') as output:

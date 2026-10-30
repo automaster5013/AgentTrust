@@ -9,7 +9,7 @@ class OrchestrationTests(unittest.TestCase):
  def exercise(self,fault=None):
   inventory={s:{'rollbackImageId':'sha256:'+DIG,'restartPolicy':'unless-stopped'} for s in set(e.planner.COMPONENTS)|e.planner.PRESERVED}
   records=[{'name':n,'reference':'ghcr.io/automaster5013/agenttrust-'+n+'@sha256:'+DIG,'digest':DIG} for n in sorted(e.planner.ALL_IMAGES)]
-  receipt={'schemaVersion':1,'revision':REV,'published':True,'destinationDigestsVerified':True,'sourceSignaturesVerifiedHere':True,
+  receipt={'schemaVersion':2,'publicationRun':{'repository':'automaster5013/AgentTrust','workflow':'.github/workflows/original-stack.yml','runId':1,'runAttempt':1},'revision':REV,'published':True,'destinationDigestsVerified':True,'sourceSignaturesVerifiedHere':True,
            'serverDeployed':False,'sourceChecksumsSha256':'c'*64,
            'images':[{'name':r['name'],'source':r['reference'],'tag':'docker.io/automaster5013/agenttrust-'+r['name']+':'+REV,
                       'reference':'docker.io/automaster5013/agenttrust-'+r['name']+'@sha256:'+DIG} for r in records]}
@@ -25,6 +25,7 @@ class OrchestrationTests(unittest.TestCase):
          'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),
          'sourceImageIds':{'stack-db':'sha256:'+DIG}}
   if fault=='receipt':receipt['images'][0]['source']='ghcr.io/other/changed@sha256:'+DIG
+  if fault=='attempt':receipt['publicationRun']['runAttempt']=2
   if fault=='stale':proof['startedAt']=(datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(days=2)).isoformat()
   snapshot={'snapshotId':'fixture-id','revision':REV,'encryptedManifestSha256':config['snapshotManifestSha256'],'authenticatedEncryptedComponents':6}
   snap=types.SimpleNamespace(verify=Mock(side_effect=lambda *a,**k:copy.deepcopy(snapshot)),bounded_file=Mock(return_value=encrypted),document=Mock(return_value={}))
@@ -68,7 +69,7 @@ class OrchestrationTests(unittest.TestCase):
     self.assertIn('first-operational-transition-review',report['blockers'])
  def test_simulated_join_keeps_deployment_disabled(self):self.exercise()
  def test_signature_and_receipt_failures(self):
-  for fault in ['signature','receipt']:
+  for fault in ['signature','receipt','attempt']:
    with self.subTest(fault=fault):self.exercise(fault)
  def test_online_and_registry_failures(self):
   for fault in ['online','registry']:
