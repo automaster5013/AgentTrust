@@ -906,3 +906,31 @@ or approve the first operating transition. Those remain required before enabling
 service automation. No branch PR was merged and no service was deployed. All twenty
 AgentTrust operational container IDs and image IDs matched the original inventory;
 AgentTrust twenty and LogiTrack twelve remained healthy.
+
+### Published worker isolated execution work — 2026-10-30
+
+`stack-isolated-worker-rehearsal.py` adds a bounded stateless worker ASGI fixture
+using the actual published digest and the captured current worker image ID. It
+verifies the signed publication, pins the candidate's cached config image ID,
+and intends to run candidate/baseline/candidate in owned disposable containers.
+Each has network `none`, no published ports, no mounts, nonroot UID 10001,
+read-only root, dropped capabilities and bounded CPU/memory/pids/tmpfs. Fixture
+authentication tokens are generated only in container tmpfs and are never printed.
+The probes use the image's real `/evaluate` ASGI API for pass/block/missing/error,
+unauthenticated rejection and caller-selected external URL refusal. No queue,
+database, stateful recovery, paid provider or operational credential is used.
+
+Actual separate published-candidate and current-baseline fixture executions both
+returned the expected results with network disabled. The initial integrated wrapper
+failed without completion; diagnostic stages and explicit UTF-8 subprocess decoding
+were added before retry. Therefore the initial wrapper result is not accepted as
+an integrated rehearsal success. The retry is tracked separately in private evidence;
+no full-stack or operational rollback claim follows from these stateless probes.
+Two fixture command boundary tests passed in addition to the previous sixty-two
+related tests. Existing source container IDs/images and services remain unchanged.
+
+The real operating deployment executor is still unimplemented. The existing cold
+recovery tool's read-only preflight passed eleven services/five stateful volumes,
+but a fresh coherent source backup would quiesce writers and is not authorized by
+the current keep-running scope. Neither a successful stateless worker probe nor
+rendering an override removes that prerequisite for an operational transition.

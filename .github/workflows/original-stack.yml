@@ -24,6 +24,7 @@ jobs:
           python3 -m unittest discover -s scripts -p test_stack_owned_fixture.py
           python3 scripts/stack-execution-profiles.py --check
           python3 scripts/stack-quality-profiles.py --check
+          python3 scripts/stack-isolated-worker-rehearsal-test.py
           python3 scripts/stack-local-cd-reconcile-test.py
           python3 scripts/stack-local-cd-orchestration-test.py
           python3 scripts/stack-release-online-test.py
