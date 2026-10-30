@@ -32,7 +32,14 @@ def summarize(containers):
         require(re.fullmatch(r'sha256:[a-f0-9]{64}', item['Image']))
         require(item['HostConfig']['RestartPolicy']['Name'] == 'unless-stopped')
         require(isinstance(labels.get('com.docker.compose.project.config_files'), str))
-        result[service] = {'containerId': item['Id'], 'rollbackImageId': item['Image'],
+        policy = {'host': {name:item['HostConfig'].get(name) for name in
+                  ('Privileged','ReadonlyRootfs','CapAdd','CapDrop','SecurityOpt','NetworkMode',
+                   'Memory','MemorySwap','MemoryReservation','NanoCpus','CpuPeriod','CpuQuota',
+                   'CpusetCpus','PidsLimit','PortBindings','PublishAllPorts','PidMode','IpcMode')},
+                  'process': {name:item['Config'].get(name) for name in
+                  ('User','WorkingDir','Entrypoint','Cmd','Healthcheck','ExposedPorts')}}
+        fingerprint = hashlib.sha256(json.dumps(policy,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        result[service] = {'runtimePolicySha256':fingerprint,'containerId': item['Id'], 'rollbackImageId': item['Image'],
                           'restartPolicy': 'unless-stopped', 'healthy': True,
                           'composeFiles': labels['com.docker.compose.project.config_files'].split(','),
                           'mounts': [{'type': m['Type'], 'destination': m['Destination'],

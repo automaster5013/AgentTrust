@@ -619,3 +619,23 @@ rehearsal. Candidate override generation has only synthetic receipt coverage bec
 no real current main Docker Hub receipt exists. Forty-seven relevant offline tests
 passed, including unexpected service/image/profile rejection and preserving two
 opposite override orderings as distinct groups.
+
+### Hot-updated runtime-policy drift — 2026-10-30
+
+Inventory summaries now include a deterministic `runtimePolicySha256` over selected
+resource, isolation, port-binding and process/health metadata. Container IDs alone
+cannot detect a hot update of memory/CPU/pid limits; these fields are now covered
+by the existing end-of-check inventory comparison as well. Selected fields include
+privilege/capability/security settings, namespace modes, resource controls, exposed
+port bindings, process user/command and healthcheck metadata. Only the fingerprint
+is persisted; raw process settings, environment values and bind-source paths are
+not printed or added to the inventory report.
+
+This checks that observed settings remain unchanged during review, not that every
+setting is secure or that secrets mounted into running processes are unchanged.
+No `docker update` or other policy mutation is performed. Tests alter six synthetic
+resource/isolation/process settings while preserving container IDs and verify the
+fingerprints change. Forty-eight relevant tests passed. The real read-only twenty-
+container inventory also passed with all service-specific Compose groups retained;
+the private observation is `runtime-policy-review-v1.json` under the existing
+`.local/dockerhub-cd-20261030` directory.

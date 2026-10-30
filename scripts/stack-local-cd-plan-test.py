@@ -20,6 +20,16 @@ def receipt_fixture():
                     'tag':'docker.io/automaster5013/agenttrust-'+n+':'+REV} for n in sorted(cd.ALL_IMAGES)]}
 
 class PlanningTests(unittest.TestCase):
+ def test_hot_updated_resources_and_security_policy_change_fingerprint(self):
+  original=inventory_fixture();before=cd.summarize(original)
+  for section,key,value in [('HostConfig','Memory',1073741824),('HostConfig','Privileged',True),
+                            ('HostConfig','CapAdd',['SYS_ADMIN']),('HostConfig','PortBindings',{'8080/tcp':[{'HostPort':'9999'}]}),
+                            ('Config','User','0'),('Config','Healthcheck',{'Test':['NONE']})]:
+   changed=copy.deepcopy(original);changed[0][section][key]=value
+   after=cd.summarize(changed);service=changed[0]['Config']['Labels']['com.docker.compose.service']
+   self.assertNotEqual(before[service]['runtimePolicySha256'],after[service]['runtimePolicySha256'])
+   self.assertEqual(before[service]['containerId'],after[service]['containerId'])
+  self.assertNotIn('Env',str(before))
  def test_review_overrides_only_set_images_and_restart(self):
   inv=cd.summarize(inventory_fixture())
   plan=cd.receipt_plan(receipt_fixture(),REV,inv,'development')
