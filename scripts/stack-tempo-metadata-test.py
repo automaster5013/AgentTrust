@@ -59,7 +59,7 @@ class MetadataControl(unittest.TestCase):
 
 
 class FullControlPath(unittest.TestCase):
- def exercise(self,missing_failure=False,changed_recovery=False):
+ def exercise(self,missing_failure=False,changed_recovery=False,launch_failure=False):
   m=control.m;source_volume='agenttrust_stack-tempo-data';fixture='00000000-0000-0000-0000-000000000099';blocks=['blocks/tenant/00000000-0000-0000-0000-'+str(i).zfill(12) for i in (10,11,12)]
   original={blocks[0]+'/meta.json':b'{}',blocks[0]+'/data.parquet':b'valid original spans'}
   for prefix in blocks[1:]:original.update({prefix+'/meta.json':b'',prefix+'/data.parquet':b'preserved affected bytes'})
@@ -73,6 +73,7 @@ class FullControlPath(unittest.TestCase):
    if args[:3]==['docker','image','inspect']:return answer([{'Id':'sha256:'+'c'*64}])
    if args[:3]==['docker','run','-d']:
     name=args[args.index('--name')+1];volume=next(v for v in args if v.startswith('type=volume,source=')).split('source=')[1].split(',')[0]
+    if launch_failure and name.endswith('-stack-tempo') and not name.endswith('-original-stack-tempo'):return NS(stdout=b'',stderr=b'logging driver validation failed',returncode=1)
     containers[name]={'Image':args[-3],'HostConfig':{'NetworkMode':'none','PortBindings':None},'Config':{'Labels':{'agenttrust.fixture':fixture}},'volume':volume};return answer()
    if args[:3]==['docker','rm','-f']:containers.pop(args[-1]);return answer()
    if args[:2]==['docker','logs']:return answer(b'fixture: unexpected end of JSON input')
@@ -125,12 +126,18 @@ class FullControlPath(unittest.TestCase):
    patches=[(control,'protected_logitrack',lambda *a:tuple((format(i,'064x'),'sha256:'+'a'*64) for i in range(1,13))),(control,'ROOT',root),(m,'session_capacity',lambda *a:None),(m.d,'live_baseline',lambda:(['source'],{}, {},{'stack-tempo':source})),(m.d,'resolved_groups',lambda *a:({},{})),(m.d,'hash_files',lambda *a:{}),(m.e.planner,'compose_hashes',lambda *a:{}),(m.e.planner,'recheck',lambda *a:None),(m.e,'verify_candidate_release',lambda *a:{'directory':release_dir,'receipt':{'images':[{'name':'tempo','reference':reference}]}}),(m.c,'reserve',lambda:None),(m.c,'run',command),(m.c,'inspect',lambda name:containers[name]),(m.c,'Rehearsal',Drill),(m.c,'private_file',lambda path,raw:path.write_bytes(raw)),(m.c,'retained_key',lambda root,path:(path,'unchanged')),(m.c,'key_unchanged',lambda *a:True),(m,'protect',lambda path:path.mkdir(parents=True)),(m,'load',lambda *a:NS(transform=lambda action,key,raw:raw)),(m,'cached_identity',lambda *a:None),(control.tempo,'get',api)]
    for obj,name,value in patches:stack.enter_context(patch.object(obj,name,value))
    drill=control.run(config);self.assertTrue(drill.report['cleaned']);self.assertEqual(volumes[source_volume],original);self.assertFalse(containers)
-   self.assertEqual(drill.report['completed'],not(missing_failure or changed_recovery));self.assertFalse(drill.report['automaticDeploymentAllowed']);self.assertFalse(drill.report['operatingMetadataRepaired'])
+   self.assertEqual(drill.report['completed'],not(missing_failure or changed_recovery or launch_failure));self.assertFalse(drill.report['automaticDeploymentAllowed']);self.assertFalse(drill.report['operatingMetadataRepaired'])
+   if launch_failure:self.assertEqual(drill.report['fixtureStartErrorCategory'],'logging');self.assertIn('encryptedStartErrorSha256',drill.report)
    if drill.report['completed']:self.assertTrue(drill.report['metadataFailureReproduced']);self.assertEqual(drill.report['matchingTraces'],1);self.assertEqual(drill.report['quarantinedOwnedBlocks'],2)
    starts=[v for v in calls if v[:3]==['docker','run','-d']]
-   for args in starts:self.assertEqual(args[args.index('--network')+1],'none');self.assertNotIn('-p',args)
+   first_candidate=next(i for i,v in enumerate(calls) if v[:3]==['docker','run','-d'] and v[v.index('--name')+1].endswith('-stack-tempo') and not v[v.index('--name')+1].endswith('-original-stack-tempo'))
+   original_stopped=next(i for i,v in enumerate(calls) if v[:3]==['docker','rm','-f'] and v[-1].endswith('-original-stack-tempo'));self.assertLess(original_stopped,first_candidate)
+   for args in starts:
+    self.assertEqual(args[args.index('--network')+1],'none');self.assertNotIn('-p',args)
+    if args[args.index('--log-driver')+1]=='local':self.assertIn('max-file=2',args);self.assertIn('max-size=1m',args)
  def test_full_positive_corrupt_quarantine_and_recovery_flow(self):self.exercise()
  def test_nonreproduced_fault_stops_before_quarantine_and_cleans(self):self.exercise(missing_failure=True)
+ def test_candidate_launch_failure_is_diagnostic_not_fault_reproduction(self):self.exercise(launch_failure=True)
  def test_changed_recovered_trace_never_promotes_cd(self):self.exercise(changed_recovery=True)
 
 if __name__=='__main__':unittest.main()

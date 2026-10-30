@@ -5,6 +5,7 @@ checks. JVM login session continuity and monitoring/model history remain exclude
 """
 import argparse,base64,datetime,hashlib,importlib.util,json,os,pathlib,secrets,sys,time,traceback,uuid
 from stack_image_identity import cached_identity
+from stack_host_capacity import require_host_capacity
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 
 def load(name,file):
@@ -204,6 +205,7 @@ def store_exercise(drill,fixture,payload):
                                            'observability history and services','local model cache and inference','legacy services','HA and production RPO/RTO'])
 
 def session_capacity(minimum_mib=2048):
+ host=require_host_capacity(minimum_mib)
  total=int(c.run(['docker','info','--format','{{.MemTotal}}']).stdout)
  # A --rm helper can exit while Docker assembles stats and yield '--'.
  # Retry the complete sample; never omit an unknown usage row from the sum.
@@ -215,7 +217,7 @@ def session_capacity(minimum_mib=2048):
  e.require(0<len(matches)<=64 and all(matches))
  used=sum(float(match[1])*{'B':1,'KiB':1024,'MiB':1048576,'GiB':1073741824}[match[2]] for match in matches)
  free=total-used;e.require(free>=minimum_mib*1048576)
- return {'dockerMemoryMiB':int(total/1048576),'reportedFreeWorkingSetMiB':int(free/1048576),'requiredFreeMiB':minimum_mib}
+ return {**host,'dockerMemoryMiB':int(total/1048576),'reportedFreeWorkingSetMiB':int(free/1048576),'requiredFreeMiB':minimum_mib}
 
 def session_exercise(drill,fixture,key,checkpoint):
  checkpoint();opened=state_probe(drill,fixture,'session-open');capsule=opened['capsule']

@@ -6,7 +6,7 @@ spec=importlib.util.spec_from_file_location('session_recovery',pathlib.Path(__fi
 class SessionRecovery(unittest.TestCase):
  def test_capacity_refuses_insufficient_headroom(self):
   for usage,allowed in ((b'5GiB / 8GiB\n',True),(b'6.5GiB / 8GiB\n',False)):
-   with patch.object(m.c,'run',side_effect=[subprocess.CompletedProcess([],0,str(8*1073741824).encode(),b''),subprocess.CompletedProcess([],0,usage,b'')]):
+   with patch.object(m,'require_host_capacity',return_value={}),patch.object(m.c,'run',side_effect=[subprocess.CompletedProcess([],0,str(8*1073741824).encode(),b''),subprocess.CompletedProcess([],0,usage,b'')]):
     if allowed:self.assertGreaterEqual(m.session_capacity()['reportedFreeWorkingSetMiB'],2048)
     else:
      with self.assertRaises(ValueError):m.session_capacity()

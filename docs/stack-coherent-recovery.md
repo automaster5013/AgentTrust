@@ -337,3 +337,35 @@ image IDs and requires their running/healthy state before fixture creation and
 at checkpoints. These are read-only inspections; no LogiTrack command can change
 its containers, source or configuration. Unknown/unhealthy protected state blocks
 the rehearsal rather than allowing recovery load to proceed.
+
+
+## Host responsiveness and memory reserve
+
+A subsequent read-only recheck found the engine and loopback applications
+responsive and all original AgentTrust 20 / LogiTrack 12 services healthy. The
+previous commit's five workflows had completed successfully. No engine restart
+or operating-service change was issued. The earlier timeout cause is not proven;
+Windows later reported only 463 MiB available with paging activity, which is a
+concrete pressure observation rather than proof of the timeout's cause.
+
+The actual metadata rehearsal reached candidate startup, then failed a command
+and cleaned all owned fixtures; it did not complete its negative/recovery control.
+Candidate launch stderr is now retained encrypted with a bounded sanitized error
+category, so a launch failure cannot be mistaken for the expected metadata 404.
+
+Windows rehearsal capacity now checks `GlobalMemoryStatusEx` before any Docker
+capacity query: 2 GiB available is required initially, with at least 1 GiB at later
+checkpoints. This complements the Docker working-set gate; free guest memory
+alone cannot certify host headroom. Unknown/insufficient host observations refuse
+new fixture work, never alter memory limits or stop other applications/services.
+See [Microsoft's physical-memory definition](https://learn.microsoft.com/windows/win32/api/sysinfoapi/ns-sysinfoapi-memorystatusex).
+
+
+The retained launch diagnostic identified a separate fixture configuration error:
+Docker rejected compression with a maximum log-file count of one. The fixture now
+uses two rotated 1 MiB files with the local driver; operating logging settings
+remain unchanged. See [Docker local logging options](https://docs.docker.com/engine/logging/drivers/local/).
+The original-image reference digests are encrypted before stopping that owned
+reader, then the candidate starts. At most one Tempo fixture runs at a time;
+source and candidate trace comparisons retain their full content checks. The
+initial 2 GiB and checkpoint 1 GiB Windows reserves are not lowered.

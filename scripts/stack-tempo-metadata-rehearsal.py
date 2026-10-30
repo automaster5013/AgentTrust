@@ -107,13 +107,20 @@ def run(config):
    checkpoint();m.e.require(path.read_bytes()==settings_bytes);drill.own_volume(volume)
    if name not in drill.containers:drill.containers.append(name)
    args=['docker','run','-d','--name',name,'--label','agenttrust.fixture='+drill.id,'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--user',drill.file_user,'--memory','512m','--cpus','1','--pids-limit','128','--tmpfs','/tmp:size=32m,mode=1777']
-   args+=['--log-driver','local','--log-opt','max-size=1m','--log-opt','max-file=1'] if logs else ['--log-driver','none']
-   m.c.run(args+['--mount','type=volume,source='+volume+',target=/var/tempo','--mount','type=bind,source='+str(copied_config)+',target=/etc/tempo.yaml,readonly',image_id,'-config.file=/etc/tempo.yaml','-target=all']);drill.wait(name,'stack-tempo')
+   args+=['--log-driver','local','--log-opt','max-size=1m','--log-opt','max-file=2'] if logs else ['--log-driver','none']
+   result=m.c.run(args+['--mount','type=volume,source='+volume+',target=/var/tempo','--mount','type=bind,source='+str(copied_config)+',target=/etc/tempo.yaml,readonly',image_id,'-config.file=/etc/tempo.yaml','-target=all'],check=False)
+   if result.returncode:
+    raw=result.stderr[:65536];cipher=crypto.transform('encrypt',key,raw);m.c.private_file(drill.directory/'fixture-start-error.aesgcm',cipher)
+    lower=raw.lower();category='resource' if any(v in lower for v in (b'memory',b'cannot allocate',b'resource temporarily unavailable')) else 'logging' if b'log' in lower else 'mount' if b'mount' in lower else 'other'
+    drill.report.update(fixtureStartFailed=True,fixtureStartExitCode=result.returncode,fixtureStartErrorCategory=category,encryptedStartErrorSha256=hashlib.sha256(cipher).hexdigest())
+   m.e.require(result.returncode==0);drill.wait(name,'stack-tempo')
    row=owned_container(drill,name);m.e.require(row['Image']==image_id and row['HostConfig']['NetworkMode']=='none' and not row['HostConfig']['PortBindings'])
   original_volume=drill.prefix+'-original';candidate_volume=drill.prefix+'-candidate';original_name=drill.prefix+'-original-stack-tempo';candidate_name=drill.prefix+'-stack-tempo'
   drill.stage('independent-original-image-positive-control');create_volume(original_volume);restore(drill,original_volume,manifest,baseline_path.parent,keys[0]);m.e.require(json.loads(m.c.run(cache.file_command(drill,original_volume,'inventory')).stdout)==good_files);start(original_name,original_volume,source['Image'])
   bounds=urllib.parse.urlencode({'start':min(b['start'] for b in selected)-1,'end':max(b['end'] for b in selected)+1});m.e.require(max(b['end'] for b in selected)-min(b['start'] for b in selected)<=7*86400-2)
   search=tempo.get(original_name,'/api/search?'+bounds+'&limit=20');m.e.require(search.get('traces'));paths=['/api/traces/'+tempo.trace_id(v['traceID'])+'?'+bounds for v in search['traces']];before={p:tempo.trace_fingerprint(tempo.get(original_name,p)) for p in paths};m.e.require(len(before)==len(paths))
+  reference_cipher=crypto.transform('encrypt',key,json.dumps({'before':before,'baselineManifestSha256':baseline['encryptedManifestSha256']}).encode());m.c.private_file(drill.directory/'positive-reference.aesgcm',reference_cipher);drill.report.update(encryptedPositiveReferenceSha256=hashlib.sha256(reference_cipher).hexdigest(),positiveTraces=len(before),positiveSpans=sum(v[1] for v in before.values()),maximumConcurrentTempoFixtures=1)
+  stop_owned(drill,original_name)
   drill.stage('published-candidate-with-exact-two-empty-original-blocks');create_volume(candidate_volume);restore(drill,candidate_volume,manifest,baseline_path.parent,keys[0]);restore(drill,candidate_volume,bad_manifest,affected,key)
   m.e.require(json.loads(m.c.run(cache.file_command(drill,candidate_volume,'inventory')).stdout)=={**good_files,**bad_files});start(candidate_name,candidate_volume,image['Id'],logs=True)
   status=None
@@ -131,7 +138,7 @@ def run(config):
   for prefix in bad_prefixes:m.e.require(source_files(prefix)=={k:v for k,v in bad_files.items() if k.startswith(prefix+'/')})
   checkpoint();payload=json.dumps({'before':before,'negative':negative,'after':after,'quarantinedSourcePrefixes':bad_prefixes,'baselineManifestSha256':baseline['encryptedManifestSha256'],'auditSha256':audit_report['encryptedAuditSha256']}).encode();cipher=crypto.transform('encrypt',key,payload);m.c.private_file(drill.directory/'comparison-evidence.aesgcm',cipher)
   drill.report.update(result,completed=True,sourceApiTraceStatus=source_status,sourceEmptyMetadataUnchanged=True,quarantinedOwnedBlocks=len(bad_prefixes),affectedFiles=len(bad_files),affectedBytes=sum(v['bytes'] for v in bad_files.values()),encryptedComparisonSha256=hashlib.sha256(cipher).hexdigest(),protectedLogitrackServices=len(logitrack),protectedLogitrackIdsAndImagesUnchanged=True,operationalContainersUnchanged=True)
- except Exception as error:drill.report.update(completed=False,errorType=type(error).__name__,failureLocations=[{'file':pathlib.Path(v.filename).name,'line':v.lineno} for v in traceback.extract_tb(error.__traceback__)])
+ except Exception as error:drill.report.update(capacityFailure=getattr(error,'capacity_failure',None),completed=False,errorType=type(error).__name__,failureLocations=[{'file':pathlib.Path(v.filename).name,'line':v.lineno} for v in traceback.extract_tb(error.__traceback__)])
  finally:
   try:checkpoint();drill.report['operationalContainersUnchanged']=True
   except Exception:drill.report.update(completed=False,operationalContainersUnchanged=False)
@@ -142,5 +149,5 @@ def main():
  parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--config',type=pathlib.Path,required=True);parser.add_argument('--expected-config-sha256',required=True);parser.add_argument('--execute',action='store_true');args=parser.parse_args()
  try:
   m.e.require(pathlib.Path.cwd().resolve()==ROOT and args.execute);drill=run(json.loads(m.e.anchored_file(args.config,args.expected_config_sha256)));print(json.dumps({'completed':drill.report['completed'],'reportPath':str(drill.directory/'summary.json'),'operatingMetadataRepaired':False,'actualDeploymentPerformed':False}));return 0 if drill.report['completed'] else 1
- except Exception as error:print(json.dumps({'completed':False,'code':'TEMPO_METADATA_REHEARSAL_REFUSED','errorType':type(error).__name__,'httpStatusCode':getattr(error,'code',None),'failureLocations':[{'file':pathlib.Path(v.filename).name,'line':v.lineno} for v in traceback.extract_tb(error.__traceback__)]}));return 1
+ except Exception as error:print(json.dumps({'completed':False,'code':'TEMPO_METADATA_REHEARSAL_REFUSED','errorType':type(error).__name__,'httpStatusCode':getattr(error,'code',None),'capacityFailure':getattr(error,'capacity_failure',None),'failureLocations':[{'file':pathlib.Path(v.filename).name,'line':v.lineno} for v in traceback.extract_tb(error.__traceback__)]}));return 1
 if __name__=='__main__':sys.exit(main())
