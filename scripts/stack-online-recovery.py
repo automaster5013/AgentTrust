@@ -205,11 +205,15 @@ def store_exercise(drill,fixture,payload):
 
 def session_capacity(minimum_mib=2048):
  total=int(c.run(['docker','info','--format','{{.MemTotal}}']).stdout)
- lines=c.run(['docker','stats','--no-stream','--format','{{.MemUsage}}']).stdout.decode().splitlines();e.require(0<len(lines)<=64)
- used=0
- for line in lines:
-  match=e.re.fullmatch(r'([0-9.]+)(B|KiB|MiB|GiB)',line.split('/')[0].strip());e.require(match is not None)
-  used+=float(match[1])*{'B':1,'KiB':1024,'MiB':1048576,'GiB':1073741824}[match[2]]
+ # A --rm helper can exit while Docker assembles stats and yield '--'.
+ # Retry the complete sample; never omit an unknown usage row from the sum.
+ matches=[]
+ for attempt in range(3):
+  lines=c.run(['docker','stats','--no-stream','--format','{{.MemUsage}}']).stdout.decode().splitlines()
+  matches=[e.re.fullmatch(r'([0-9.]+)(B|KiB|MiB|GiB)',line.split('/')[0].strip()) for line in lines]
+  if 0<len(lines)<=64 and all(matches):break
+ e.require(0<len(matches)<=64 and all(matches))
+ used=sum(float(match[1])*{'B':1,'KiB':1024,'MiB':1048576,'GiB':1073741824}[match[2]] for match in matches)
  free=total-used;e.require(free>=minimum_mib*1048576)
  return {'dockerMemoryMiB':int(total/1048576),'reportedFreeWorkingSetMiB':int(free/1048576),'requiredFreeMiB':minimum_mib}
 

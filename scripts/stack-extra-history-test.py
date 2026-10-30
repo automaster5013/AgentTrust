@@ -1,5 +1,6 @@
 """Closed-block selection and semantic trace identity, no operating service calls."""
 import contextlib,datetime,importlib.util,io,json,pathlib,tempfile,unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 def module(name,file):
@@ -34,6 +35,14 @@ class ExtraHistory(unittest.TestCase):
   output=io.StringIO()
   with patch.object(model.urllib.request,'build_opener',return_value=Opener()),contextlib.redirect_stdout(output):result=model.main()
   self.assertEqual(result,0);self.assertNotIn('private generated fixture',output.getvalue());self.assertTrue(json.loads(output.getvalue())['offlineInferenceVerified'])
+ def test_capacity_retries_entire_transient_sample_without_ignoring_usage(self):
+  result=lambda raw:SimpleNamespace(stdout=raw)
+  with patch.object(tempo.m.c,'run',side_effect=[result(b'8589934592'),result(b'-- / --\n'),result(b'4GiB / 8GiB\n')]):
+   self.assertEqual(tempo.m.session_capacity()['reportedFreeWorkingSetMiB'],4096)
+  with patch.object(tempo.m.c,'run',side_effect=[result(b'8589934592')]+[result(b'-- / --\n')]*3):
+   with self.assertRaises(ValueError):tempo.m.session_capacity()
+  with patch.object(tempo.m.c,'run',side_effect=[result(b'8589934592'),result(b'7GiB / 8GiB\n')]):
+   with self.assertRaises(ValueError):tempo.m.session_capacity()
  def test_offline_probe_refuses_redirects(self):
   with self.assertRaises(ValueError):model.RefuseRedirect().redirect_request(None,None,None,None,None,None)
  def test_trace_probe_refuses_other_services_and_unbounded_paths(self):
