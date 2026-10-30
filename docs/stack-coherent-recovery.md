@@ -143,3 +143,50 @@ database configuration still contains the database's own bootstrap credential.
 The migration image is the already recorded Core image. Schema upgrades after a
 restore require the separate migration process and the operator's controlled
 upgrade procedure.
+
+
+## Online supplemental recovery verification (2026-10-31)
+
+Operating services remain online. These opt-in tools require `--execute` but
+only create labeled disposable fixtures; they do not invoke the operating CD
+executor or relax its backup, approval, freshness or full-stack proof gates.
+Private captures and keys stay under ignored `.local`, encrypted and separated.
+A development key on the same disk is not independent backup custody.
+
+- `stack-model-cache-recovery.py` binds a signed/public candidate and copies the
+  immutable read-only model volume in authenticated 16 MiB chunks (1 GiB bound).
+  All chunks authenticate before target writes; hashes, modes and internal
+  aliases are checked. A separate verifier authenticates retained ciphertext.
+  Only the restored owned volume is used for network-disabled model startup and
+  bounded offline inference. Cache restoration alone never proves inference.
+- `stack-tempo-history-recovery.py` selects up to three closed blocks older than
+  two minutes, excludes live WAL, restores exact hashes/modes and queries the
+  published candidate. Historical trace spans must match the source readback.
+  Selection is deliberately bounded: the source contains about 6.57 GB of closed
+  blocks across 156,743 files. This is not full Tempo history or WAL recovery.
+  The read probe uses fixed loopback HTTP inside the validated target namespace,
+  without assuming the service image contains curl or wget.
+- `stack-grafana-history-recovery.py` uses native SQLite read-only online backup,
+  integrity verification and an isolated instance of the preserved source image.
+  Provisioned dashboards/datasources are reconstructed from hash-checked source
+  configuration, separately from saved SQLite rows. An empty saved dashboard
+  table must not be presented as recovered user dashboard history.
+- `stack-consistency-window.py` reads business hashes, migration ledger, pinned
+  object references and queue positions before/after exact S3 version readback.
+  The actual run verified all 774 referenced object versions, 18 business tables,
+  two stream states and zero pending work without drift. This proves observed
+  conservation over that window, not atomic snapshots across stores. Identity DB
+  alignment, unpersisted Redis memory, active telemetry WAL and interleavings
+  between reads remain outside this proof.
+
+Tests cover chunk corruption/wrong keys before writes, ordering/path/offset
+refusals, internal alias boundaries, closed-block selection, semantic trace
+identity, SQLite backup, metadata mismatch and cross-store drift. CI runs the
+new helper contracts in the pinned networkless security image. The older host
+orchestration suites require a writable repository root and run on the host.
+
+Signed Docker Hub publication, PR CI, isolated recovery and operating deployment
+are separate facts. No online supplemental report sets full-stack recovery,
+operational backup or automatic deployment to true. Prometheus/Loki recovery,
+complete telemetry WAL/history, coherent cross-store backup custody and reviewed
+operating transition remain release gates until separately evidenced.

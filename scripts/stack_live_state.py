@@ -68,15 +68,19 @@ def seed_fixture_quota(drill):
  raw=command(['docker','exec',name,'sh','-c','REDISCLI_AUTH="$(cat /run/secrets/stack-redis-token)" redis-cli --user stack-gateway --json "$@"','fixture','EVAL',script,'0',key])
  require(json.loads(raw)==3);return key
 
+def reference_rows(sql):
+ statement="BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; SELECT coalesce(json_agg(x),'[]'::json) FROM (SELECT object_key,version_id,content_sha256,content_bytes FROM stack_evidence_archives UNION ALL SELECT object_key,version_id,content_sha256,content_bytes FROM stack_campaign_archives) x; COMMIT;"
+ output=sql(statement);require(len(output)<=4194304 and output.startswith('BEGIN\nSET\n') and output.endswith('\nCOMMIT'))
+ references=json.loads(output[len('BEGIN\nSET\n'):-len('\nCOMMIT')]);require(0<len(references)<=4096)
+ return references
+
 def capture(sources,sql):
  before=queue_state('agenttrust-stack-nats-1');payload={};fingerprints={}
  for service in VOLUMES:
   raw=source_archive(sources[service],service);fingerprints[service]=archive_fingerprints(raw)
   require(archive_fingerprints(source_archive(sources[service],service))==fingerprints[service]);payload[service+'-live']=raw
  require(queue_state('agenttrust-stack-nats-1')==before)
- statement="BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; SELECT coalesce(json_agg(x),'[]'::json) FROM (SELECT object_key,version_id,content_sha256,content_bytes FROM stack_evidence_archives UNION ALL SELECT object_key,version_id,content_sha256,content_bytes FROM stack_campaign_archives) x; COMMIT;"
- output=sql(statement);require(output.startswith('BEGIN\nSET\n') and output.endswith('\nCOMMIT'))
- references=json.loads(output[len('BEGIN\nSET\n'):-len('\nCOMMIT')]);require(0<len(references)<=4096)
+ references=reference_rows(sql)
  keys=aof_keys(payload['stack-redis-live']);values=redis_values('agenttrust-stack-redis-1',keys)
  metadata={'schemaVersion':1,'queue':before,'objectReferences':references,'redisKeys':keys,'redisValues':values,'capturedAtEpoch':time.time(),'fileFingerprints':fingerprints,
            'allRedisMemoryKeysEnumerated':False,'crossStoreSnapshotAtomic':False}
