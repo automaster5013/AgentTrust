@@ -997,3 +997,76 @@ operational container recreation occurred. AgentTrust twenty and LogiTrack twelv
 remain healthy; the forty-two containers and eighteen volumes are preserved.
 Actual unattended service CD remains incomplete until compatible fresh recovery,
 full-stack rehearsal and the reviewed operating transition are satisfied.
+
+### Non-quiescing online evidence and isolated logical recovery — 2026-10-30
+
+`stack-online-recovery.py` adds a keep-running path. It verifies the published
+signed candidate, exact twenty-service live baseline, all three resolved Compose
+groups and protected source files before taking bounded online `pg_dump` archives
+of `agenttrust_stack` and `agenttrust_stack_identity`, role definitions, runtime
+configuration and business fingerprints. PostgreSQL takes an independent logical
+snapshot per database; these are explicitly not a cross-database/cross-store
+atomic snapshot. No source service is stopped, paused, recreated or restored over.
+DDL lock acquisition is bounded to five seconds. Private bytes remain in memory
+or owner-protected AES-GCM archives. A generated retained local key is kept in a
+separate owner-protected directory; no key/configuration/row content is printed
+or committed. This is local custody, not offsite or production KMS evidence.
+
+The new verifier supports a fresh process with separately pinned snapshot ID and
+encrypted manifest SHA-256, checking freshness, the exact component set, component
+hashes, authenticated decryption, source configuration/image bindings and scope.
+It refuses wrong keys, altered components and a false cross-store atomicity claim.
+The execute path invokes it before fixture startup. The retained archive from the
+actual successful run was separately verified in fresh positive/wrong-key
+processes: the wrong key produced `InvalidTag`; archive and retained key bytes
+remained unchanged. Key material was never output.
+
+Actual successful evidence is retained privately under
+`.local/stack-coherent-recovery-88e1fde3-e9cb-46f8-80c5-fa2f0773dd64`.
+Both real operating database archives restored successfully into an owned tmpfs
+PostgreSQL candidate. All eighteen business table fingerprints matched; the source
+business rows, operating container IDs/images and protected configuration remained
+unchanged. Eleven business-path services started on one new internal network with
+no published host ports or operating volume mounts. Candidate images were resolved
+through the signed manifest/config chain; preserved Redis used its captured current
+image. The restored identities completed real OIDC/PKCE authentication, role/tenant
+refusals, a new Python/NATS synthetic evaluation, manual approval, idempotent replay
+and a verified new MinIO evidence archive. All fixture containers/network and copied
+private runtime files were removed. No persistent fixture volumes were created.
+
+The first attempt reached restored service startup and equal business fingerprints
+but failed its application probe; it is not accepted as success. Diagnostics and a
+bounded asynchronous archive-read retry were added before the successful retry.
+The first attempt's precise probe failure was not retained, so it is not assigned
+a definitive cause. Both attempts preserved the original services and cleaned their
+owned fixtures.
+
+This is **partial online logical recovery**, not full operating stack recovery.
+Historical locked MinIO version IDs, JetStream queue state, Redis sessions/quotas,
+observability history/services, local model cache/inference, legacy services and
+production RPO/RTO remain excluded. Empty fixture object/queue/session stores only
+validate new work after database recovery. `fullStackRecoveryVerified` and
+`coherentOperatingBackupVerified` remain false; the existing deployment recovery
+gate rejects this evidence. The cold coherent tool still requires quiescing nine
+services and was not executed under the keep-running instruction. The real CD
+executor remains prepared but inactive until complete compatible recovery evidence
+and a reviewed transition exist; publication and successful online probes do not
+activate it. The published candidate is pinned main revision `d40cdd0`, distinct
+from these deployment-tool branch commits.
+
+Nine focused tests cover the complete mocked eleven-service restore, failure
+before application startup, owned-target boundaries, fresh archive authentication,
+wrong-key/tamper rejection and refusal by the operating recovery gate. They also
+pass inside the pinned source-security image used by CI. Together with the existing
+seventy-nine related tests, eighty-eight tests pass locally; workflow lint passes.
+
+Windows retained-key validation additionally found that Python's
+`mkdir(mode=0700)` can leave explicit Administrators/OWNER RIGHTS entries after
+inheritance removal. The new key-directory creator removes those explicit entries
+and validates the resulting owner/SYSTEM ACL before writing a key. Only the two
+newly generated online-recovery key directories were corrected; their key bytes
+were preserved. The successful retained archive then passed the existing strict
+custody validator and fresh-process authentication again. A boundary test covers
+that ordering. The focused total is ten new tests plus seventy-nine existing
+related tests (eighty-nine); the new tests pass on Windows and inside the pinned
+Linux source-security image.
