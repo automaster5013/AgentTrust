@@ -256,3 +256,29 @@ remain read-only. This mode does not repair or certify the operating Tempo API.
 Its report keeps `operatingTempoApiTraceVerified: false` and records the comparison
 mode. All retrieved trace hashes/counts are retained encrypted and bound to the
 cache manifest. Original API accessibility remains a separate transition issue.
+
+
+Actual bounded telemetry acceptance: the original-image independent source reader
+and signed candidate matched all 20 selected Tempo traces / 133 spans (three
+blocks, 12 files / 479,409 bytes). The operating API's separate 404 remains
+unresolved. Loki restored 19 persisted objects / 12,354 bytes and matched the
+bounded first 100 historical log entries against source reads before/after.
+These are sample/query and selected-file recoveries, not complete telemetry WAL
+or history recovery. Both fixtures were removed and source containers/configs
+were unchanged. The supplemental evidence index keeps automatic deployment and
+full-stack/operational-backup flags false.
+
+The read-only helper action `audit-tempo-metadata` examines bounded JSON metadata
+and records only stable empty/invalid JSON findings. Raw paths and hashes are
+retained encrypted, not committed. Audit does not repair, delete, quarantine or
+rewrite operating files, restart Tempo or claim full block/Parquet integrity.
+
+
+Read-only operating metadata audit examined 39,336 JSON files and found two stable
+empty `meta.json` files, with no oversized or changing files excluded in that run.
+The operating logs also repeated truncated-JSON polling errors. This is a concrete
+repair candidate, not proven file-to-log causality: the bounded log sample did not
+name either affected block ID. Original files were preserved. An encrypted,
+non-executable repair review records exact path/size/SHA preconditions and requires
+verified metadata provenance and isolated acceptance before separately reviewed
+operating intervention. No metadata is fabricated or applied by these tools.

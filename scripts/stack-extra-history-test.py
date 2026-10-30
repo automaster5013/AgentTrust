@@ -86,6 +86,13 @@ class ExtraHistory(unittest.TestCase):
    with self.assertRaises(ValueError):tempo.get(name,path)
    command.assert_not_called()
   with self.assertRaises(ValueError):tempo.get('agenttrust-stack-tempo-1','/api/traces/'+'a'*32+'?start=100&end=9999999999')
+ def test_metadata_audit_detects_empty_and_truncated_json_without_writing(self):
+  with tempfile.TemporaryDirectory(dir=ROOT/'.local') as temporary,patch.object(helper,'ROOT',pathlib.Path(temporary)):
+   path=pathlib.Path(temporary)/'blocks'/'tenant'/'block';path.mkdir(parents=True)
+   for name,raw in [('meta.json',b''),('meta.compacted.json',b'{'),('index.json',b'{}')]: (path/name).write_bytes(raw)
+   before={p.name:p.read_bytes() for p in path.iterdir()};proof=helper.audit_tempo_metadata()
+   self.assertEqual(proof['metadataFilesExamined'],3);self.assertEqual(len(proof['invalid']),2);self.assertEqual(sum(r['category']=='empty-json' for r in proof['invalid']),1)
+   self.assertFalse(proof['sourceWritesPerformed']);self.assertEqual(before,{p.name:p.read_bytes() for p in path.iterdir()})
  def test_offline_probe_refuses_redirects(self):
   with self.assertRaises(ValueError):model.RefuseRedirect().redirect_request(None,None,None,None,None,None)
  def test_trace_probe_refuses_other_services_and_unbounded_paths(self):

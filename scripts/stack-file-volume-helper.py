@@ -66,6 +66,21 @@ def select_prometheus():
   require(len(candidates)<=1000)
  require(candidates);return sorted(candidates,key=lambda r:r['end'],reverse=True)[:3]
 
+def audit_tempo_metadata():
+ base=ROOT/'blocks';require(base.is_dir() and not base.is_symlink());invalid=[];examined=0;oversized=0;volatile=0
+ for directory,children,names in os.walk(base,followlinks=False):
+  require(all(not pathlib.Path(directory,name).is_symlink() for name in children))
+  for name in names:
+   if name not in ('meta.json','meta.compacted.json','index.json'):continue
+   path=pathlib.Path(directory,name);require(not path.is_symlink());before=path.stat();examined+=1;require(examined<=100000)
+   if before.st_size>16*1024*1024:oversized+=1;continue
+   raw=path.read_bytes();after=path.stat()
+   if (before.st_size,before.st_mtime_ns)!=(after.st_size,after.st_mtime_ns):volatile+=1;continue
+   try:json.loads(raw)
+   except (ValueError,UnicodeError):
+    invalid.append({'path':path.relative_to(ROOT).as_posix(),'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),'category':'empty-json' if not raw else 'invalid-json'});require(len(invalid)<=1000)
+ return {'metadataFilesExamined':examined,'oversizedNotValidated':oversized,'volatileNotValidated':volatile,'invalid':invalid,'sourceWritesPerformed':False}
+
 def catalog():
  files={};total=0
  for directory,children,names in os.walk(ROOT,followlinks=False):
@@ -122,10 +137,11 @@ def sqlite_verify(raw):
  finally:database.close()
 
 def main():
- parser=argparse.ArgumentParser();parser.add_argument('action',choices=('inventory','select-blocks','select-prometheus','catalog','summary','links','link','sqlite-snapshot','sqlite-verify','read','write','finalize'));parser.add_argument('--path');parser.add_argument('--prefix');parser.add_argument('--target');parser.add_argument('--offset',type=int,default=0);parser.add_argument('--size',type=int,default=0);parser.add_argument('--mode',type=int,default=384);args=parser.parse_args()
+ parser=argparse.ArgumentParser();parser.add_argument('action',choices=('inventory','select-blocks','select-prometheus','audit-tempo-metadata','catalog','summary','links','link','sqlite-snapshot','sqlite-verify','read','write','finalize'));parser.add_argument('--path');parser.add_argument('--prefix');parser.add_argument('--target');parser.add_argument('--offset',type=int,default=0);parser.add_argument('--size',type=int,default=0);parser.add_argument('--mode',type=int,default=384);args=parser.parse_args()
  if args.action=='inventory':print(json.dumps(inventory(args.prefix),sort_keys=True));return
  if args.action=='select-prometheus':print(json.dumps(select_prometheus()));return
  if args.action=='select-blocks':print(json.dumps(select_blocks()));return
+ if args.action=='audit-tempo-metadata':print(json.dumps(audit_tempo_metadata()));return
  if args.action=='catalog':print(json.dumps(catalog(),sort_keys=True));return
  if args.action=='summary':print(json.dumps(summary(),sort_keys=True));return
  if args.action=='links':print(json.dumps(internal_links(),sort_keys=True));return
