@@ -1,6 +1,9 @@
 name: Docker Hub authentication preflight
 on:
   workflow_dispatch:
+  push:
+    branches: [codex/commercial-workspace-ux-20261026]
+    paths: [.github/workflows/dockerhub-auth-preflight.yml]
 permissions:
   contents: read
 jobs:

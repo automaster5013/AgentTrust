@@ -330,8 +330,9 @@ this installation. No secret value was retrieved or copied. Repository variables
 `DOCKERHUB_ENABLED=false` are configured. Publication remains disabled pending
 validation and main release selection.
 
-`dockerhub-auth-preflight.yml` is a dispatch-only credential check on the owned
-implementation branch or main. It performs Docker login on a hosted runner,
+`dockerhub-auth-preflight.yml` is a credential check on the owned implementation
+branch (only pushes modifying that workflow file) or manual dispatch on that
+branch/main once GitHub has registered it from the default branch. It performs Docker login on a hosted runner,
 removes its temporary credential file, and pushes/deploys nothing. Success proves
 authentication only, not repository write permissions or visibility. It consumes
 the same existing environment secret as the publication job.
