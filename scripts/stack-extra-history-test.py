@@ -43,6 +43,10 @@ class ExtraHistory(unittest.TestCase):
    with self.assertRaises(ValueError):tempo.m.session_capacity()
   with patch.object(tempo.m.c,'run',side_effect=[result(b'8589934592'),result(b'7GiB / 8GiB\n')]):
    with self.assertRaises(ValueError):tempo.m.session_capacity()
+ def test_tempo_hex_ids_restore_omitted_leading_zeroes(self):
+  self.assertEqual(tempo.trace_id('AB12'),'0'*28+'ab12')
+  for value in ('../escape','g'*32,'f'*33,''):
+   with self.assertRaises(ValueError):tempo.trace_id(value)
  def test_offline_probe_refuses_redirects(self):
   with self.assertRaises(ValueError):model.RefuseRedirect().redirect_request(None,None,None,None,None,None)
  def test_trace_probe_refuses_other_services_and_unbounded_paths(self):

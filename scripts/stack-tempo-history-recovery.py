@@ -16,6 +16,9 @@ def trace_fingerprint(frame):
  m.e.require(spans);encoded=json.dumps(sorted(spans,key=lambda row:json.dumps(row,sort_keys=True)),sort_keys=True,separators=(',',':')).encode()
  return hashlib.sha256(encoded).hexdigest(),len(spans)
 
+def trace_id(value):
+ m.e.require(isinstance(value,str) and m.e.re.fullmatch('[a-fA-F0-9]{1,32}',value));return value.lower().zfill(32)
+
 def get(name,path):
  m.e.require(name=='agenttrust-stack-tempo-1' or m.e.re.fullmatch('agenttrust-stack-coldrestore-[a-f0-9-]{36}-stack-tempo',name))
  m.e.require(path.startswith('/api/search?') or m.e.re.fullmatch('/api/traces/[a-f0-9]{32}',path))
@@ -68,9 +71,9 @@ def run(config_path,config_hash):
            '--mount','type=volume,source='+drill.target_volume+',target=/var/tempo','--mount','type=bind,source='+str(path)+',target=/etc/tempo.yaml,readonly',image['Id'],'-config.file=/etc/tempo.yaml','-target=all'])
   drill.wait(name,'stack-tempo');query=urllib.parse.urlencode({'start':min(b['start'] for b in selected)-1,'end':max(b['end'] for b in selected)+1,'limit':20});search=get(name,'/api/search?'+query);until=time.monotonic()+90
   while not search.get('traces') and time.monotonic()<until:checkpoint();time.sleep(2);search=get(name,'/api/search?'+query)
-  drill.report.update(searchResults=len(search.get('traces',[])),selectedClosedBlocks=len(selected),restoredFiles=len(files),restoredFileHashesAndModesVerified=True);matches=[]
+  drill.report.update(searchResults=len(search.get('traces',[])),traceIdLengths=sorted({len(v['traceID']) for v in search.get('traces',[])}),selectedClosedBlocks=len(selected),restoredFiles=len(files),restoredFileHashesAndModesVerified=True);matches=[]
   for row in search.get('traces',[]):
-   trace=row['traceID'];m.e.require(m.e.re.fullmatch('[a-f0-9]{32}',trace));restored=trace_fingerprint(get(name,'/api/traces/'+trace));original=trace_fingerprint(get('agenttrust-stack-tempo-1','/api/traces/'+trace))
+   trace=trace_id(row['traceID']);restored=trace_fingerprint(get(name,'/api/traces/'+trace));original=trace_fingerprint(get('agenttrust-stack-tempo-1','/api/traces/'+trace))
    if restored==original:matches.append({'sha256':restored[0],'spans':restored[1]})
   m.e.require(matches);checkpoint();drill.report.update(completed=True,selectedTempoHistoryRecoveryVerified=True,selectedClosedBlocks=len(selected),restoredFiles=len(files),selectedBytes=sum(v['bytes'] for v in files.values()),matchingHistoricalTraces=len(matches),matchingSpans=sum(v['spans'] for v in matches),sourceSelectedFilesUnchanged=True)
  except Exception as error:drill.report.update(completed=False,errorType=type(error).__name__,failureLocations=[{'file':pathlib.Path(x.filename).name,'line':x.lineno} for x in traceback.extract_tb(error.__traceback__)])
@@ -85,5 +88,5 @@ def main():
  try:
   m.e.require(pathlib.Path.cwd().resolve()==ROOT and args.execute);drill=run(args.config,args.expected_config_sha256)
   print(json.dumps({'completed':drill.report['completed'],'reportPath':str(drill.directory/'summary.json'),'fullTempoHistoryRecovered':False,'actualDeploymentPerformed':False}));return 0 if drill.report['completed'] else 1
- except Exception as error:print(json.dumps({'completed':False,'code':'TEMPO_HISTORY_RECOVERY_REFUSED','errorType':type(error).__name__}));return 1
+ except Exception as error:print(json.dumps({'completed':False,'code':'TEMPO_HISTORY_RECOVERY_REFUSED','errorType':type(error).__name__,'failureLocations':[{'file':pathlib.Path(x.filename).name,'line':x.lineno} for x in traceback.extract_tb(error.__traceback__)]}));return 1
 if __name__=='__main__':sys.exit(main())

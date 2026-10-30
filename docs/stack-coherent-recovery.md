@@ -192,3 +192,19 @@ complete telemetry WAL/history, coherent cross-store backup custody and reviewed
 operating transition remain release gates until separately evidenced.
 
 Tempo selection uses the backend query cutoff described in [Grafana polling documentation](https://grafana.com/docs/tempo/latest/configuration/polling/). Recent blocks alone can return no traces while search still targets live stores; an empty result is a failed recovery proof.
+
+
+Actual supplemental acceptance: the pinned published local-model candidate restored
+9 logical files (522,662,074 bytes), 40 authenticated chunks and one internal
+alias, passed entrypoint checksums and completed bounded offline inference
+(3 output tokens, no generated text logged). Grafana restored an integrity-checked
+online SQLite snapshot with three datasource rows and zero saved dashboard rows;
+configuration reprovisioned one dashboard and the authenticated metadata queries
+passed. Fixtures were cleaned and the original 42 containers / 18 volumes remained,
+with AgentTrust 20 and LogiTrack 12 healthy.
+
+Tempo restored three closed blocks with exact file hashes/modes and returned
+20 historical search results, but source/restored span equality did not pass.
+This remains incomplete recovery evidence. Hex IDs now normalize omitted leading
+zeroes with strict bounds; unit coverage does not establish live span equality.
+No full telemetry, atomic backup or operating CD completion is claimed.
