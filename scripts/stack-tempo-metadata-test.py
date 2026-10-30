@@ -43,6 +43,16 @@ class MetadataControl(unittest.TestCase):
    with self.assertRaises(ValueError):control.verdict(before,bad,before)
   for after in ({},{'trace':('b'*64,3)}):
    with self.assertRaises(ValueError):control.verdict(before,negative,after)
+ def test_protected_logitrack_must_have_twelve_healthy_original_identities(self):
+  ids=[format(i,'064x') for i in range(1,13)];rows=[{'Id':value,'Image':'sha256:'+'a'*64,'Config':{'Labels':{'com.docker.compose.project':'logitrack'}},'State':{'Running':True,'Health':{'Status':'healthy'}}} for value in ids]
+  with patch.object(control.m.c,'run',return_value=NS(stdout=__import__('json').dumps(rows).encode())):
+   self.assertEqual(len(control.protected_logitrack(ids)),12)
+  rows[0]['State']['Health']['Status']='unhealthy'
+  with patch.object(control.m.c,'run',return_value=NS(stdout=__import__('json').dumps(rows).encode())):
+   with self.assertRaises(ValueError):control.protected_logitrack(ids)
+  with patch.object(control.m.c,'run') as run:
+   with self.assertRaises(ValueError):control.protected_logitrack(ids[:11])
+   run.assert_not_called()
  def test_block_paths_cannot_escape_or_target_wal(self):
   for path in ('../blocks/tenant/escape','wal/tenant/00000000-0000-0000-0000-000000000001','blocks/tenant/invalid','blocks/tenant//00000000-0000-0000-0000-000000000001'):
    with self.assertRaises(ValueError):control.block_prefix(path)
@@ -112,7 +122,7 @@ class FullControlPath(unittest.TestCase):
     def volume_command(self,*args,**kwargs):pass
     def wait(self,*args):pass
     def cleanup(self):containers.clear();self.report['cleaned']=True
-   patches=[(control,'ROOT',root),(m,'session_capacity',lambda *a:None),(m.d,'live_baseline',lambda:(['source'],{}, {},{'stack-tempo':source})),(m.d,'resolved_groups',lambda *a:({},{})),(m.d,'hash_files',lambda *a:{}),(m.e.planner,'compose_hashes',lambda *a:{}),(m.e.planner,'recheck',lambda *a:None),(m.e,'verify_candidate_release',lambda *a:{'directory':release_dir,'receipt':{'images':[{'name':'tempo','reference':reference}]}}),(m.c,'reserve',lambda:None),(m.c,'run',command),(m.c,'inspect',lambda name:containers[name]),(m.c,'Rehearsal',Drill),(m.c,'private_file',lambda path,raw:path.write_bytes(raw)),(m.c,'retained_key',lambda root,path:(path,'unchanged')),(m.c,'key_unchanged',lambda *a:True),(m,'protect',lambda path:path.mkdir(parents=True)),(m,'load',lambda *a:NS(transform=lambda action,key,raw:raw)),(m,'cached_identity',lambda *a:None),(control.tempo,'get',api)]
+   patches=[(control,'protected_logitrack',lambda *a:tuple((format(i,'064x'),'sha256:'+'a'*64) for i in range(1,13))),(control,'ROOT',root),(m,'session_capacity',lambda *a:None),(m.d,'live_baseline',lambda:(['source'],{}, {},{'stack-tempo':source})),(m.d,'resolved_groups',lambda *a:({},{})),(m.d,'hash_files',lambda *a:{}),(m.e.planner,'compose_hashes',lambda *a:{}),(m.e.planner,'recheck',lambda *a:None),(m.e,'verify_candidate_release',lambda *a:{'directory':release_dir,'receipt':{'images':[{'name':'tempo','reference':reference}]}}),(m.c,'reserve',lambda:None),(m.c,'run',command),(m.c,'inspect',lambda name:containers[name]),(m.c,'Rehearsal',Drill),(m.c,'private_file',lambda path,raw:path.write_bytes(raw)),(m.c,'retained_key',lambda root,path:(path,'unchanged')),(m.c,'key_unchanged',lambda *a:True),(m,'protect',lambda path:path.mkdir(parents=True)),(m,'load',lambda *a:NS(transform=lambda action,key,raw:raw)),(m,'cached_identity',lambda *a:None),(control.tempo,'get',api)]
    for obj,name,value in patches:stack.enter_context(patch.object(obj,name,value))
    drill=control.run(config);self.assertTrue(drill.report['cleaned']);self.assertEqual(volumes[source_volume],original);self.assertFalse(containers)
    self.assertEqual(drill.report['completed'],not(missing_failure or changed_recovery));self.assertFalse(drill.report['automaticDeploymentAllowed']);self.assertFalse(drill.report['operatingMetadataRepaired'])

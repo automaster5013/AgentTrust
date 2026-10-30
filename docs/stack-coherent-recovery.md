@@ -330,3 +330,10 @@ issued. Preserve the previously verified baseline and keep deployment disabled
 until engine responsiveness and all original service identities/health are
 rechecked, then rerun the isolated control. The host regression/mocked tests and
 fresh-checkout acceptance do not substitute for that actual run.
+
+
+The metadata rehearsal also binds all twelve protected LogiTrack container IDs and
+image IDs and requires their running/healthy state before fixture creation and
+at checkpoints. These are read-only inspections; no LogiTrack command can change
+its containers, source or configuration. Unknown/unhealthy protected state blocks
+the rehearsal rather than allowing recovery load to proceed.

@@ -47,8 +47,17 @@ def restore(drill,volume,manifest,directory,key):
                 lambda name,offset,raw:m.c.run(cache.file_command(drill,volume,'write',name,offset,len(raw)),data=raw),
                 lambda name,size,mode:m.c.run(cache.file_command(drill,volume,'finalize',name,size,0,mode)))
 
+def protected_logitrack(ids=None):
+ if ids is None:ids=m.c.run(['docker','ps','-q','--filter','label=com.docker.compose.project=logitrack']).stdout.decode().split()
+ m.e.require(len(ids)==12 and len(set(ids))==12 and all(m.e.re.fullmatch('[a-f0-9]{12,64}',value) for value in ids))
+ rows=json.loads(m.c.run(['docker','inspect',*ids]).stdout);m.e.require(len(rows)==12)
+ for row in rows:
+  m.e.require(row['Config']['Labels'].get('com.docker.compose.project')=='logitrack' and row['State']['Running'] is True and row['State'].get('Health',{}).get('Status')=='healthy')
+  m.e.require(m.e.re.fullmatch('[a-f0-9]{64}',row['Id']) and m.e.re.fullmatch('sha256:[a-f0-9]{64}',row['Image']))
+ result=tuple(sorted((row['Id'],row['Image']) for row in rows));m.e.require(len({row[0] for row in result})==12);return result
+
 def run(config):
- m.session_capacity();ids,raw,inventory,by=m.d.live_baseline();hashes=m.e.planner.compose_hashes(inventory,ROOT);_,protected=m.d.resolved_groups(inventory,by,list(m.e.planner.COMPONENTS))
+ m.session_capacity();logitrack=protected_logitrack();ids,raw,inventory,by=m.d.live_baseline();hashes=m.e.planner.compose_hashes(inventory,ROOT);_,protected=m.d.resolved_groups(inventory,by,list(m.e.planner.COMPONENTS))
  source=by['stack-tempo'];mounts=[v for v in source['Mounts'] if v['Type']=='volume'];m.e.require(len(mounts)==1 and mounts[0]['Name']=='agenttrust_stack-tempo-data')
  volume=json.loads(m.c.run(['docker','volume','inspect',mounts[0]['Name']]).stdout)[0];m.e.require(volume['Labels']['com.docker.compose.project']=='agenttrust' and volume['Labels']['com.docker.compose.volume']=='stack-tempo-data');m.c.reserve()
  baseline_path=pathlib.Path(config['baselineSummary']).resolve();audit_path=pathlib.Path(config['auditSummary']).resolve()
@@ -77,7 +86,7 @@ def run(config):
                      fullStackRecoveryVerified=False,automaticDeploymentAllowed=False,actualDeploymentPerformed=False,operatingMetadataRepaired=False,affectedBlockContentsRecovered=False)
  keydir=ROOT/'.local'/('tempo-control-key-'+drill.id);m.protect(keydir);key=secrets.token_bytes(32);m.c.private_file(keydir/'key.bin',key);drill.report['retainedKeyDirectory']=str(keydir)
  def checkpoint():
-  m.e.planner.recheck(ids,inventory,ROOT,hashes);m.e.require(m.d.hash_files(protected)==protected and all(m.c.key_unchanged(*v) for v in custody));m.session_capacity(512)
+  m.e.planner.recheck(ids,inventory,ROOT,hashes);m.e.require(m.d.hash_files(protected)==protected and all(m.c.key_unchanged(*v) for v in custody) and protected_logitrack([v[0] for v in logitrack])==logitrack);m.session_capacity(512)
  def source_files(prefix):return json.loads(m.c.run(cache.file_command(drill,drill.source_volume,'inventory',prefix=prefix),timeout=120).stdout)
  def create_volume(name):
   drill.volumes.append(name);m.c.run(['docker','volume','create','--label','agenttrust.fixture='+drill.id,name]);drill.own_volume(name);drill.volume_command(name,drill.file_user,['chown',drill.file_user,'/data'],write=True,initialize=True)
@@ -121,7 +130,7 @@ def run(config):
   except ValueError as error:source_status=getattr(error,'read_failure',{}).get('statusCode');m.e.require(source_status==404)
   for prefix in bad_prefixes:m.e.require(source_files(prefix)=={k:v for k,v in bad_files.items() if k.startswith(prefix+'/')})
   checkpoint();payload=json.dumps({'before':before,'negative':negative,'after':after,'quarantinedSourcePrefixes':bad_prefixes,'baselineManifestSha256':baseline['encryptedManifestSha256'],'auditSha256':audit_report['encryptedAuditSha256']}).encode();cipher=crypto.transform('encrypt',key,payload);m.c.private_file(drill.directory/'comparison-evidence.aesgcm',cipher)
-  drill.report.update(result,completed=True,sourceApiTraceStatus=source_status,sourceEmptyMetadataUnchanged=True,quarantinedOwnedBlocks=len(bad_prefixes),affectedFiles=len(bad_files),affectedBytes=sum(v['bytes'] for v in bad_files.values()),encryptedComparisonSha256=hashlib.sha256(cipher).hexdigest(),operationalContainersUnchanged=True)
+  drill.report.update(result,completed=True,sourceApiTraceStatus=source_status,sourceEmptyMetadataUnchanged=True,quarantinedOwnedBlocks=len(bad_prefixes),affectedFiles=len(bad_files),affectedBytes=sum(v['bytes'] for v in bad_files.values()),encryptedComparisonSha256=hashlib.sha256(cipher).hexdigest(),protectedLogitrackServices=len(logitrack),protectedLogitrackIdsAndImagesUnchanged=True,operationalContainersUnchanged=True)
  except Exception as error:drill.report.update(completed=False,errorType=type(error).__name__,failureLocations=[{'file':pathlib.Path(v.filename).name,'line':v.lineno} for v in traceback.extract_tb(error.__traceback__)])
  finally:
   try:checkpoint();drill.report['operationalContainersUnchanged']=True
