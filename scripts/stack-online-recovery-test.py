@@ -72,11 +72,21 @@ class OnlineRecovery(unittest.TestCase):
    identifier='6c3b6bfc-fc5e-4caf-b67a-8ccb30231efb'
    bodies={'roles':b'-- fixture only','configuration':json.dumps({s:{'imageId':'sha256:'+'a'*64} for s in m.c.SERVICES}).encode(),
            'businessFingerprints':json.dumps({'fixture':{'rows':1,'sha256':'a'*64}}).encode(),**{db:b'PGDMP-fixture' for db in m.DATABASES}}
+   if change in ('live','live-mismatch'):
+    import io,tarfile,stack_live_state as live
+    stream=io.BytesIO()
+    with tarfile.open(fileobj=stream,mode='w:gz') as tar:
+     entry=tarfile.TarInfo('fixture');entry.size=2;tar.addfile(entry,io.BytesIO(b'ok'))
+    raw=stream.getvalue();fingerprints={name:m.c.archive_fingerprints(raw) for name in live.VOLUMES}
+    if change=='live-mismatch':fingerprints['stack-nats']['fixture']['sha256']='0'*64
+    bodies.update({name+'-live':raw for name in live.VOLUMES})
+    bodies['liveStateMetadata']=json.dumps({'schemaVersion':1,'crossStoreSnapshotAtomic':False,'fileFingerprints':fingerprints,'queue':[{}],'objectReferences':[{}]}).encode()
    descriptors={}
    for name,body in bodies.items():
     raw=crypto.transform('encrypt',key,body);(directory/(name+'.aesgcm')).write_bytes(raw);descriptors[name]=m.component(raw)
    manifest={'schemaVersion':1,'kind':'online-independent-logical','snapshotId':identifier,'createdAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),
              'components':descriptors,'sourceImageIds':{s:'sha256:'+'a'*64 for s in m.c.SERVICES},'crossDatabaseSnapshotAtomic':False,'crossStoreSnapshotAtomic':False}
+   if change in ('live','live-mismatch'):manifest['liveStateIncluded']=True
    if change=='claim':manifest['crossStoreSnapshotAtomic']=True
    encrypted=crypto.transform('encrypt',key,json.dumps(manifest).encode());(directory/'online-manifest.aesgcm').write_bytes(encrypted)
    if change=='key':key_path.write_bytes(b'x'*32)
@@ -91,5 +101,8 @@ class OnlineRecovery(unittest.TestCase):
    with self.subTest(change=change),self.assertRaises(error):self.retained_fixture(change)
  def test_false_atomicity_claim_refused(self):
   with self.assertRaises(ValueError):self.retained_fixture('claim')
+ def test_extended_live_components_authenticated(self):self.assertEqual(self.retained_fixture('live')['liveStateArchivesAuthenticated'],3)
+ def test_authenticated_manifest_cannot_hide_archive_fingerprint_mismatch(self):
+  with self.assertRaises(ValueError):self.retained_fixture('live-mismatch')
 
 if __name__=='__main__':unittest.main()

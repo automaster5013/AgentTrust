@@ -15,6 +15,7 @@ def validate_approval(approval,plan_hash,services,now):
  require(issued.tzinfo is not None and expires.tzinfo is not None)
  require(0<=(now-issued).total_seconds()<=600 and now<expires and 0<(expires-issued).total_seconds()<=1800)
  if set(services)&STATEFUL:require(approval['statefulTransitionReviewed'] is True)
+ if 'stack-core-api' in services:require(approval['allowSessionReauthentication'] is True)
 
 def owned_path(root,value):
  path=pathlib.Path(value).resolve();require(path.is_relative_to(root) and path.is_file());return str(path)

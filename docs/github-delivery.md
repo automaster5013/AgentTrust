@@ -1070,3 +1070,80 @@ custody validator and fresh-process authentication again. A boundary test covers
 that ordering. The focused total is ten new tests plus seventy-nine existing
 related tests (eighty-nine); the new tests pass on Windows and inside the pinned
 Linux source-security image.
+
+### Historical versions, durable queue and quota recovery — 2026-10-31 KST
+
+The preceding commit `89a2b1b` finished all five PR workflows successfully,
+including Original stack integration run `41051574958`. This CI result is separate
+from Docker Hub publication and operating CD activation.
+
+`stack-online-recovery.py --execute --include-live-state --state-stores-only`
+now captures bounded read-only copies of the owned MinIO, NATS and Redis volumes.
+Each source volume's exact Compose labels/name are checked, helpers have no network
+and mount the source read-only, and adjacent copies must have equal file bytes and
+modes. No writer is quiesced. Source stream/durable positions must also stay equal.
+State, source configuration, logical databases and DB-pinned version references are
+retained only in authenticated encrypted archives with a separately retained,
+owner/SYSTEM-protected local key. Fresh-process verification authenticates all
+three added archives and their file fingerprint maps. These live copies remain
+explicitly non-atomic across stores/databases and are not an operating backup claim.
+
+Actual successful evidence is private under
+`.local/stack-coherent-recovery-93cb321b-bd0a-4535-b3a1-27ef449da433`.
+Only three storage services were started in this successful run. Three new owned
+volumes were restored with exact file fingerprints before startup; original volumes
+were never restore targets. Published signed MinIO/NATS candidates and captured
+Redis image identity ran on a fresh internal network without host ports. The bounded
+queue client uses the signed published worker image, not an operating worker.
+
+- All **774 database-pinned historical object versions** returned their exact
+  original version IDs, sizes and SHA-256 values from restored MinIO. This verifies
+  DB-referenced versions, not an independently enumerated list of orphaned versions.
+  The read-only probe signs fixed-endpoint requests using the
+  [AWS SigV4 canonical request contract](https://docs.aws.amazon.com/AmazonS3/latest/developerguide/sig-v4-header-based-auth.html),
+  refuses redirects/proxies and never prints authorization headers or object bytes.
+- Both captured JetStream streams and durable consumer positions matched before
+  any fixture mutation. The source had no pending stored messages. An additional
+  opaque synthetic message was then published only into the restored empty
+  `STACK_EVALUATIONS` stream, survived a fixture NATS restart and was fetched with
+  exact bytes and durable ACK position. No source message was published/consumed.
+  This proves queue persistence/replay, not recovery of a captured business backlog.
+- Forty quota keys found in the bounded Redis incremental AOF were checked with
+  existing restricted `GET`/`TTL` permissions. All were already expired; none was
+  resurrected. A separate owned fixture quota counter survived its Redis restart
+  and later expired naturally. No source counter, ACL or configuration was changed.
+  Redis memory keys are not globally enumerated, so that coverage flag remains false.
+
+Earlier attempts are not accepted as complete proofs: a PostgreSQL multiline JSON
+framing issue and AOF parser bound were corrected; a full eleven-service attempt
+aborted when an operating health precondition failed. Its owned fixtures were
+removed, original IDs/images stayed unchanged, and all twenty operating services
+were subsequently healthy. The reduced three-store path avoids that unnecessary
+concurrent JVM load. A later queue test initially hit the normal 32 MiB reservation
+limit because the two restored streams already reserve 16 MiB each. The successful
+probe reuses the restored empty stream; it neither creates another stream nor
+raises the server's limits. Regression tests protect these boundaries.
+
+Session scope is now explicit. Current Java OIDC sessions use an in-memory registry
+and servlet sessions; Redis stores gateway quotas, not those login sessions. The
+new CD approval contract requires `allowSessionReauthentication: true` whenever
+`stack-core-api` is a target. No operating approval was generated. The isolated API
+restart/old-cookie rejection exercise remains uncompleted because the full-stack
+attempt was stopped by health protection; seamless existing-cookie continuity is
+not claimed. The previous successful eleven-service probe separately establishes
+fresh OIDC login and new evaluation after database recovery.
+
+The successful store report keeps `fullStackRecoveryVerified: false` and
+`actualDeploymentPerformed: false`. Cross-store atomic consistency, JVM session
+continuity, the API restart/re-authentication exercise, monitoring/model state and
+reviewed operating transition remain gaps. Existing deployment gates still reject
+partial online evidence; no publishing switch, scheduler, merge or operating
+container recreation was performed. All owned fixture containers, volumes, network
+and temporary copied secrets were removed. Original twenty AgentTrust and twelve
+LogiTrack services, forty-two containers and eighteen volumes remain preserved.
+
+One hundred eight related tests pass locally, including full mocked store/fault
+orchestration, exact version/hash refusal, source/foreign target refusal, TTL
+non-resurrection, durable replay against the existing stream reservation, archive
+fingerprint tampering, and explicit session re-authentication consent. New archive
+and live-state tests also run in the pinned Linux security image in CI.

@@ -7,7 +7,7 @@ NOW=datetime.datetime(2026,10,30,12,tzinfo=datetime.timezone.utc)
 class ExecutorTests(unittest.TestCase):
  def approval(self,services):
   return {'planSha256':'a'*64,'allowServiceRecreation':True,'allowSameSchemaImageRollback':True,
-          'localDevelopmentRecoveryScopeAccepted':True,'statefulTransitionReviewed':True,'services':services,
+          'localDevelopmentRecoveryScopeAccepted':True,'statefulTransitionReviewed':True,'allowSessionReauthentication':True,'services':services,
           'issuedAt':(NOW-datetime.timedelta(minutes=1)).isoformat(),'expiresAt':(NOW+datetime.timedelta(minutes=10)).isoformat()}
  def test_approval_is_explicit_fresh_and_exact_scope(self):
   services=['stack-ai-worker'];approval=self.approval(services);validate_approval(approval,'a'*64,services,NOW)
@@ -25,6 +25,9 @@ class ExecutorTests(unittest.TestCase):
    self.assertEqual(command[command.index('--pull')+1],'never')
    self.assertEqual(command[-1],'stack-core-api');self.assertNotIn('down',command)
    with self.assertRaises(ValueError):compose_apply_command(root,[paths[0]],[paths[1]],paths[2],'db')
+ def test_core_transition_requires_explicit_session_reauthentication_acknowledgement(self):
+  approval=self.approval(['stack-core-api']);approval['allowSessionReauthentication']=False
+  with self.assertRaises(ValueError):validate_approval(approval,'a'*64,['stack-core-api'],NOW)
  def test_success_uses_fixed_dependency_order(self):
   calls=[];result=transition(['stack-console','stack-core-api','stack-ai-worker'],lambda s,r:calls.append((s,r)),lambda *args:None,lambda touched:None)
   self.assertTrue(result['completed']);self.assertEqual([x[0] for x in calls],['stack-core-api','stack-ai-worker','stack-console'])
