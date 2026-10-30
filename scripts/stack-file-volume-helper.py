@@ -81,6 +81,14 @@ def audit_tempo_metadata():
     invalid.append({'path':path.relative_to(ROOT).as_posix(),'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),'category':'empty-json' if not raw else 'invalid-json'});require(len(invalid)<=1000)
  return {'metadataFilesExamined':examined,'oversizedNotValidated':oversized,'volatileNotValidated':volatile,'invalid':invalid,'sourceWritesPerformed':False}
 
+def quarantine_block(value):
+ path=path_for(value);parts=pathlib.PurePosixPath(value).parts
+ require(len(parts)==3 and parts[0]=='blocks' and re.fullmatch('[a-f0-9-]{36}',parts[2]) and path.is_dir())
+ import uuid
+ require(str(uuid.UUID(parts[2]))==parts[2]);meta=path_for(value+'/meta.json');require(meta.is_file() and meta.stat().st_size==0)
+ destination=path_for('quarantine/'+value);require(not destination.exists());destination.parent.mkdir(parents=True,exist_ok=True)
+ path.rename(destination);return {'quarantined':True,'bytesDeleted':False}
+
 def catalog():
  files={};total=0
  for directory,children,names in os.walk(ROOT,followlinks=False):
@@ -137,11 +145,12 @@ def sqlite_verify(raw):
  finally:database.close()
 
 def main():
- parser=argparse.ArgumentParser();parser.add_argument('action',choices=('inventory','select-blocks','select-prometheus','audit-tempo-metadata','catalog','summary','links','link','sqlite-snapshot','sqlite-verify','read','write','finalize'));parser.add_argument('--path');parser.add_argument('--prefix');parser.add_argument('--target');parser.add_argument('--offset',type=int,default=0);parser.add_argument('--size',type=int,default=0);parser.add_argument('--mode',type=int,default=384);args=parser.parse_args()
+ parser=argparse.ArgumentParser();parser.add_argument('action',choices=('inventory','select-blocks','select-prometheus','audit-tempo-metadata','quarantine-block','catalog','summary','links','link','sqlite-snapshot','sqlite-verify','read','write','finalize'));parser.add_argument('--path');parser.add_argument('--prefix');parser.add_argument('--target');parser.add_argument('--offset',type=int,default=0);parser.add_argument('--size',type=int,default=0);parser.add_argument('--mode',type=int,default=384);args=parser.parse_args()
  if args.action=='inventory':print(json.dumps(inventory(args.prefix),sort_keys=True));return
  if args.action=='select-prometheus':print(json.dumps(select_prometheus()));return
  if args.action=='select-blocks':print(json.dumps(select_blocks()));return
  if args.action=='audit-tempo-metadata':print(json.dumps(audit_tempo_metadata()));return
+ if args.action=='quarantine-block':print(json.dumps(quarantine_block(args.path)));return
  if args.action=='catalog':print(json.dumps(catalog(),sort_keys=True));return
  if args.action=='summary':print(json.dumps(summary(),sort_keys=True));return
  if args.action=='links':print(json.dumps(internal_links(),sort_keys=True));return

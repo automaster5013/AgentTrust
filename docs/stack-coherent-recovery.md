@@ -282,3 +282,51 @@ name either affected block ID. Original files were preserved. An encrypted,
 non-executable repair review records exact path/size/SHA preconditions and requires
 verified metadata provenance and isolated acceptance before separately reviewed
 operating intervention. No metadata is fabricated or applied by these tools.
+
+
+## Empty Tempo metadata control and owned-copy quarantine
+
+`stack-tempo-metadata-rehearsal.py --execute` consumes an independently hashed
+configuration pointing to the signed candidate, retained selected healthy block
+snapshot and encrypted source metadata audit. Both retained keys must satisfy
+custody checks and remain unchanged. Evidence age is limited to 24 hours. Current
+source image and selected file hashes must still match their retained evidence.
+The exact two empty metadata files and all adjacent affected-block bytes are
+recaptured read-only into authenticated encrypted chunks before fixture writes.
+
+The controller runs three isolated conditions: a positive original-image reader,
+a published candidate with the exact copied corrupt blocks, then the same
+candidate after those blocks are moved outside its backend directory. A healthy
+readiness endpoint alone is insufficient: the negative must return exactly 404
+for a trace that the positive reader retrieved and log truncated-JSON errors.
+After quarantine, every selected trace resource/scope/span digest must match the
+positive reader. Other HTTP errors, ordinary missing traces, mismatched content,
+changed file fingerprints or failed cleanup cannot count as a passing control.
+
+`quarantine-block` is restricted by the driver to a registered owned target volume
+and by the helper to canonical block paths with an empty regular metadata file.
+It renames the entire affected block into `/data/quarantine/blocks/...`, preserving
+bytes; existing destinations, links and path escapes are refused. Only the owned
+candidate container is removed/restarted. The operating volume is always mounted
+read-only to helpers. Operating Tempo and its original containers are never
+stopped, restarted, relabeled, edited or used as restore/quarantine targets.
+
+This demonstrates recovery of the selected healthy data after excluding corrupt
+blocks in copies. It does not reconstruct the affected blocks' missing metadata,
+recover their unknown trace contents, repair the operating API or authorize
+operating quarantine. Encrypted originals and preconditions remain available for
+review. Full-stack recovery, operating backup and automatic CD gates stay false.
+Mocked full-path tests include positive/corrupt/recovery, nonreproduced faults and
+changed restored traces, in addition to source-volume and ownership refusals.
+
+
+The first actual metadata-control attempt was refused at the initial Docker info
+resource preflight (timeout), before source inventory, candidate verification or
+fixture creation. Subsequent engine API and direct loopback 4310/4320 reads also
+timed out while Desktop status reported running. This does not establish current
+service health, an actual reproduced metadata fault or a completed quarantine
+recovery. No source modification, original-container action or engine restart was
+issued. Preserve the previously verified baseline and keep deployment disabled
+until engine responsiveness and all original service identities/health are
+rechecked, then rerun the isolated control. The host regression/mocked tests and
+fresh-checkout acceptance do not substitute for that actual run.
