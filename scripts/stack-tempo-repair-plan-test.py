@@ -10,7 +10,7 @@ def fixture():
  files={p+'/'+name:{'bytes':0,'sha256':EMPTY,'mode':384} for p in prefixes for name in ('meta.json','data.parquet','index','bloom-0')}
  before={'/api/traces/'+'a'*32+'?start=100&end=200':['b'*64,3]};negative={'ready':True,'statusCode':404,'truncatedJsonErrors':2}
  proof={'kind':'isolated-empty-tempo-metadata-control','startedAt':now.isoformat(),'completed':True,'metadataFailureReproduced':True,'ownedCopyQuarantineRecoveryVerified':True,'operationalContainersUnchanged':True,'sourceEmptyMetadataUnchanged':True,'protectedLogitrackIdsAndImagesUnchanged':True,'ownFixtureAndTemporarySecretsCleaned':True,'sourceServicesStopped':False,'operatingMetadataRepaired':False,'affectedBlockContentsRecovered':False,'automaticDeploymentAllowed':False,'actualDeploymentPerformed':False,'fullStackRecoveryVerified':False,'protectedLogitrackServices':12,'quarantinedOwnedBlocks':2,'affectedFiles':8,'affectedBytes':0,'sourceApiTraceStatus':404,'sourceImageId':'sha256:'+'c'*64,'candidateRevision':'d'*40,'candidateReference':'docker.io/automaster5013/agenttrust-tempo@sha256:'+'e'*64,'matchingTraces':1,'positiveTraces':1,'matchingSpans':3,'positiveSpans':3,'negativeControl':negative}
- comparison={'before':before,'after':copy.deepcopy(before),'negative':negative,'quarantinedSourcePrefixes':prefixes};return proof,comparison,files,now
+ comparison={'baselineManifestSha256':'f'*64,'before':before,'after':copy.deepcopy(before),'negative':negative,'quarantinedSourcePrefixes':prefixes};return proof,comparison,files,now
 
 def locations(files,states):
  result={}
@@ -77,6 +77,10 @@ class PrepareEvidence(unittest.TestCase):
    proof['retainedKeyDirectory']=str(keydir)
    for filename,hashkey,value in [('comparison-evidence.aesgcm','encryptedComparisonSha256',comparison),('affected/manifest.aesgcm','encryptedAffectedManifestSha256',manifest)]:
     raw=transform('encrypt',key,json.dumps(value).encode());(directory/filename).write_bytes(raw);proof[hashkey]=hashlib.sha256(raw).hexdigest()
+   positive={'before':copy.deepcopy(comparison['before']),'baselineManifestSha256':comparison['baselineManifestSha256']}
+   if fault=='positive-reference':positive['before']={}
+   payload=json.dumps(positive).encode();raw=transform('encrypt',key,payload);(directory/'positive-reference.aesgcm').write_bytes(raw);proof['encryptedPositiveReferenceSha256']=hashlib.sha256(raw).hexdigest()
+   payload=b'unexpected end of JSON input\n'*(1 if fault=='negative-log-count' else 2);raw=transform('encrypt',key,payload);(directory/'negative-fixture-logs.aesgcm').write_bytes(raw);proof['encryptedNegativeLogsSha256']=hashlib.sha256(raw).hexdigest()
    if fault=='cipher':
     path=directory/'comparison-evidence.aesgcm';raw=path.read_bytes();raw=bytes([raw[0]^1])+raw[1:];path.write_bytes(raw);proof['encryptedComparisonSha256']=hashlib.sha256(raw).hexdigest()
    raw=json.dumps(proof).encode()
@@ -96,6 +100,9 @@ class PrepareEvidence(unittest.TestCase):
  def test_complete_authenticated_offline_preparation(self):self.exercise()
  def test_wrong_key_and_rehashed_corrupt_cipher_precede_output_creation(self):
   for fault in ('key','cipher'):
+   with self.subTest(fault=fault):self.exercise(fault)
+ def test_positive_reference_or_negative_log_substitution_is_refused(self):
+  for fault in ('positive-reference','negative-log-count'):
    with self.subTest(fault=fault):self.exercise(fault)
  def test_wrong_anchor_and_duplicate_proof_fields_precede_output_creation(self):
   for fault in ('anchor','duplicate'):
