@@ -24,6 +24,7 @@ jobs:
           python3 -m unittest discover -s scripts -p test_stack_owned_fixture.py
           python3 scripts/stack-execution-profiles.py --check
           python3 scripts/stack-quality-profiles.py --check
+          python3 scripts/stack-local-cd-evidence-test.py
           python3 scripts/stack-local-cd-plan-test.py
           python3 scripts/stack-dockerhub-test.py
           python3 scripts/stack-delivery-verifier-test.py

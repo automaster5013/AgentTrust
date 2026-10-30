@@ -392,3 +392,74 @@ receipt was applied to the running installation, and no operational CD completio
 is claimed. Four offline test groups exercise foreign/unhealthy inventory,
 changed policies, incomplete/duplicate images, forged targets, wrong revisions
 and alternative console profiles in the existing source-security CI job.
+
+### Signed release / live schema / retained recovery evidence join — 2026-10-30
+
+`stack-local-cd-evidence.py` connects the existing supply-chain signature verifier,
+Docker Hub receipt planner and authenticated retained-snapshot verifier. It never
+runs the snapshot creation or recovery drill that stops live writers, never
+runs migrations, and never deploys. Default mode inventories the twenty healthy
+owner containers and reads Flyway history inside an explicit PostgreSQL read-only
+transaction with a five-second statement timeout. The candidate revision must
+be a full Git SHA. Every versioned SQL migration at that Git revision must match
+the live version/script/Flyway CRC32 checksum, with no pending, failed, removed or
+changed migration. This intentionally supports same-schema proposals only.
+It compares source SQL from the selected Git revision; it does not extract or
+execute migrations from an image and does not prove data-semantic compatibility.
+
+The actual `317898a` source catalog matched all **17** live applied migrations,
+with zero pending migrations. The inventory and ledger were rechecked at the end.
+Private observation: `.local/dockerhub-cd-20261030/migration-binding-v2.json`.
+This mode explicitly reports `signedReleaseVerified: false` and
+`recoveryEvidenceVerified: false`; it cannot enable CD.
+
+```powershell
+python scripts/stack-local-cd-evidence.py --expected-revision <full-git-sha> --output .local/cd-review/schema.json
+```
+
+For the joined evidence mode, add `--evidence-config <private-json-file>` and
+`--expected-config-sha256 <independently-pinned-config-sha256>`. The operator-owned
+config contains these fields (paths refer to existing retained files; it contains
+no token or key bytes):
+
+| Field | Meaning |
+| --- | --- |
+| `revision`, `repository` | Independently selected full SHA and `automaster5013/AgentTrust` |
+| `bundle`, `checksumsSha256` | Signed sixteen-image bundle directory and its independently recorded checksum-map hash |
+| `trustedRoot` | Optional separately trusted Sigstore root file; otherwise verifier allows public trust-root networking |
+| `receipt`, `receiptSha256`, `consoleProfile` | Published Docker Hub receipt, pinned raw-byte SHA-256, `development` or `https-review` |
+| `snapshot`, `snapshotId`, `snapshotRevision`, `snapshotManifestSha256` | Existing retained snapshot directory and independent identity/hash anchors |
+| `retainedKey` | Existing separately stored owner-protected key file path |
+| `recoveryReport`, `recoveryReportSha256` | Operator-trusted existing recovery report and pinned byte hash |
+| `maximumRecoveryAgeHours` | Positive maximum age, capped at 24 hours |
+
+The joined mode invokes existing cryptographic verification for every image and
+SBOM, binds the publication receipt's source references to the signed bundle and
+unchanged destination digests, and reauthenticates all encrypted snapshot
+components with the existing key-custody checks. Snapshot decryption is bounded
+in local memory using the installed cryptography library; it writes no plaintext,
+creates no recovery fixture and changes no key permissions. Signature tooling may
+use isolated transient verifier containers; it does not modify existing services.
+The historical recovery report must be complete, restored/cleaned, match the
+snapshot ID/revision/encrypted manifest hash and all eleven captured image IDs,
+match the current runtime images, and be neither stale nor future dated. Snapshot
+source SQL must also equal the candidate source catalog. Final checks repeat
+bundle, receipt, config, snapshot authentication, recovery-report bytes, inventory
+and ledger checks before reporting joined evidence completion.
+
+This does not authenticate a historical local report's truth by itself: its hash
+must be independently trusted by the operator. Source signatures do not constitute
+an online successful-main-run check, destination pull/readback, production backup
+policy or deployment approval. Successful joined checks keep
+`automaticDeploymentAllowed: false`, `operationalBackupVerified: false` and
+`newRecoveryPerformed: false` and list the remaining release/executor/operational
+review blockers. No existing backup was recreated, moved or deleted.
+
+The newest retained coherent-recovery summary found in the existing private
+records is dated 2026-10-16 and explicitly reports operational backup unverified.
+It cannot satisfy this fresh operational transition check on 2026-10-30. The
+current implementation branch also has no published Docker Hub receipt from a
+signed main release. Therefore only the real live inventory/schema path has been
+executed; the complete signed-publication/retained-recovery path has offline
+failure controls but is **not yet verified end to end** with real current release
+evidence. Existing services remain unchanged.
