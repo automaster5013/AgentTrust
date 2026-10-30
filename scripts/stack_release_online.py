@@ -58,6 +58,43 @@ def main_run(revision,run_id,attempt,fetch=get,expected_jobs=JOBS):
     return validate_run(run,jobs,revision,run_id,attempt,expected_jobs)
 
 
+def validate_publication_run(run,jobs,revision,run_id,attempt):
+    require(type(run_id) is int and run_id>0 and type(attempt) is int and attempt>0)
+    require(re.fullmatch('[a-f0-9]{40}',revision) is not None)
+    require(run['id']==run_id and run['run_attempt']==attempt and run['head_sha']==revision)
+    require(run['repository']['full_name']==REPOSITORY and run['head_repository']['full_name']==REPOSITORY)
+    require(run['head_branch'] in ('main','codex/commercial-workspace-ux-20261026'))
+    require(run['event'] in ('push','workflow_dispatch') and run['path']=='.github/workflows/dockerhub-main-mirror.yml')
+    require(run['status']=='completed' and run['conclusion']=='success')
+    require(jobs['total_count']==len(jobs['jobs'])==1)
+    job=jobs['jobs'][0]
+    require(job['name']=='publish' and job['run_id']==run_id and job['run_attempt']==attempt)
+    require(job['status']=='completed' and job['conclusion']=='success')
+    return {'publicationRunVerified':True,'publicationRunId':run_id,'publicationRunAttempt':attempt}
+
+
+def publication_run(revision,run_id,attempt,fetch=get):
+    require(type(run_id) is int and run_id>0 and type(attempt) is int and attempt>0)
+    headers={'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}
+    token=os.environ.get('GITHUB_TOKEN')
+    if token:headers['Authorization']='Bearer '+token
+    base='https://api.github.com/repos/'+REPOSITORY+'/actions/runs/'+str(run_id)
+    run=json.loads(fetch(base,headers)[0]);jobs=json.loads(fetch(base+'/attempts/'+str(attempt)+'/jobs?per_page=100',headers)[0])
+    return validate_publication_run(run,jobs,revision,run_id,attempt)
+
+
+def verify_release_runs(config,revision,receipt):
+    if receipt['schemaVersion']==2:
+        return main_run(revision,config['runId'],config['runAttempt'])
+    require(receipt['schemaVersion']==3)
+    source=receipt['sourceRun'];origin=receipt['publicationRun']
+    require(source['runId']==config['sourceRunId'] and source['runAttempt']==config['sourceRunAttempt'])
+    require(origin['runId']==config['runId'] and origin['runAttempt']==config['runAttempt'])
+    result=main_run(revision,config['sourceRunId'],config['sourceRunAttempt'],expected_jobs=JOBS-{'Publish verified stack to Docker Hub'})
+    result.update(publication_run(config['publicationRevision'],config['runId'],config['runAttempt']))
+    return result
+
+
 def public_manifests(rows,fetch=get,image_ids=None):
     require(isinstance(rows,list) and len(rows)==16 and len({r['name'] for r in rows})==16)
     if image_ids is not None:

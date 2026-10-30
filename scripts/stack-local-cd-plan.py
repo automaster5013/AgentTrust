@@ -51,12 +51,19 @@ def summarize(containers):
 def receipt_plan(receipt, revision, inventory, profile):
     require(profile in ('development','https-review'))
     require(re.fullmatch('[a-f0-9]{40}', revision) is not None)
-    require(type(receipt['schemaVersion']) is int and receipt['schemaVersion'] == 2 and receipt['revision'] == revision)
+    require(type(receipt['schemaVersion']) is int and receipt['schemaVersion'] in (2,3) and receipt['revision'] == revision)
     for flag in ['published','destinationDigestsVerified','sourceSignaturesVerifiedHere']:
         require(receipt[flag] is True)
     require(receipt['serverDeployed'] is False)
     origin = receipt['publicationRun']
-    require(origin['repository'] == 'automaster5013/AgentTrust' and origin['workflow'] == '.github/workflows/original-stack.yml')
+    require(origin['repository'] == 'automaster5013/AgentTrust')
+    if receipt['schemaVersion']==2:
+        require(origin['workflow']=='.github/workflows/original-stack.yml')
+    else:
+        require(origin['workflow']=='.github/workflows/dockerhub-main-mirror.yml')
+        require(origin['ref'] in ('refs/heads/main','refs/heads/codex/commercial-workspace-ux-20261026'))
+        source=receipt['sourceRun']
+        require(type(source['runId']) is int and source['runId']>0 and type(source['runAttempt']) is int and source['runAttempt']>0)
     require(type(origin['runId']) is int and origin['runId'] > 0 and type(origin['runAttempt']) is int and origin['runAttempt'] > 0)
     require(re.fullmatch('[a-f0-9]{64}', receipt['sourceChecksumsSha256']) is not None)
     rows = receipt['images']; require(isinstance(rows, list) and len(rows) == 16)

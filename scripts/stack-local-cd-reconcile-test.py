@@ -44,7 +44,7 @@ class ReconciliationTests(unittest.TestCase):
   plan=[{'service':service,'candidate':'docker.io/automaster5013/agenttrust-'+component+'@sha256:'+'d'*64,
          'rollbackImageId':'sha256:'+'b'*64,'restartPolicy':'unless-stopped'} for service,component in r.planner.COMPONENTS.items()]
   config={'checksumsSha256':'c'*64,'repository':'automaster5013/AgentTrust','receipt':'fixture-receipt','receiptSha256':'e'*64,'runId':1,'runAttempt':1}
-  release={'directory':pathlib.Path('fixture-bundle'),'identity':'identity','records':[],'plan':plan}
+  release={'directory':pathlib.Path('fixture-bundle'),'identity':'identity','records':[],'plan':plan,'receipt':{'schemaVersion':2}}
   ledger=[{'fixture':'ledger'}]
   evidence=types.SimpleNamespace(anchored_file=Mock(return_value=json.dumps(config).encode()),
       delivery=types.SimpleNamespace(json_bytes=json.loads,validate=Mock(return_value=(release['directory'],'identity',[]))),

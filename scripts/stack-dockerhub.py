@@ -45,7 +45,8 @@ def publish(rows, run=command):
         run(['push', row['tag']])
         run(['pull', row['reference']])
         refs = json.loads(run(['image', 'inspect', row['tag'], '--format', '{{json .RepoDigests}}']))
-        if row['reference'] not in refs:
+        # Docker's canonical Docker Hub RepoDigests often omit the docker.io prefix.
+        if row['reference'].removeprefix('docker.io/') not in {ref.removeprefix('docker.io/') for ref in refs}:
             raise ValueError('Destination digest mismatch')
 
 

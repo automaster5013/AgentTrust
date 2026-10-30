@@ -155,8 +155,8 @@ def analyze(review_baseline=False,candidate=None):
                 (release['directory'],release['identity'],release['records']))
         evidence.anchored_file(config['receipt'],config['receiptSha256'],65536)
         evidence.anchored_file(config_path,config_hash)
-        from stack_release_online import main_run
-        main_run(revision,config['runId'],config['runAttempt'])
+        from stack_release_online import verify_release_runs
+        verify_release_runs(config,revision,release['receipt'])
         require(evidence.live_ledger()==ledger)
         review_summary.update(candidateSignaturesVerified=True,candidateMainRunVerified=True,
                               candidateManifestConfigDigestsVerified=True,candidateModelsEqualAcrossGroups=True,

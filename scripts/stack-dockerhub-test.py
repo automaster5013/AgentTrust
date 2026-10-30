@@ -49,6 +49,7 @@ class DeliveryTests(unittest.TestCase):
             return json.dumps([row['reference']]) if args[0] == 'image' else ''
         hub.publish([row], run)
         self.assertEqual([call[0] for call in calls], ['pull', 'tag', 'push', 'pull', 'image'])
+        hub.publish([row], lambda args: json.dumps([row['reference'].removeprefix('docker.io/')]) if args[0]=='image' else '')
         with self.assertRaises(ValueError):
             hub.publish([row], lambda args: '[]' if args[0] == 'image' else '')
 

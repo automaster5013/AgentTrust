@@ -114,9 +114,9 @@ def verify_candidate_release(config,revision,inventory,report):
     require({r['name']:r['source'] for r in receipt['images']} == {r['name']:r['reference'] for r in records})
     require(receipt['publicationRun']['runId'] == config['runId'] and receipt['publicationRun']['runAttempt'] == config['runAttempt'])
     report['publicationReceiptBound']=True
-    from stack_release_online import main_run, public_manifests
+    from stack_release_online import verify_release_runs, public_manifests
     report['stage']='trusted-main-run-online'
-    report.update(main_run(revision,config['runId'],config['runAttempt']))
+    report.update(verify_release_runs(config,revision,receipt))
     report['stage']='destination-manifest-readback'
     checksum_map=delivery.json_bytes(anchored_file(directory/'checksums.json',config['checksumsSha256']))
     runtime=delivery.json_bytes(anchored_file(directory/'runtime-identity.json',checksum_map['runtime-identity.json']))
@@ -178,8 +178,8 @@ def run(args, report):
     anchored_file(config['receipt'],config['receiptSha256'],65536)
     anchored_file(config['recoveryReport'],config['recoveryReportSha256'])
     anchored_file(args.evidence_config,args.expected_config_sha256)
-    from stack_release_online import main_run
-    report.update(main_run(args.expected_revision,config['runId'],config['runAttempt']))
+    from stack_release_online import verify_release_runs
+    report.update(verify_release_runs(config,args.expected_revision,release['receipt']))
     report.update(completed=True,scope='signed-publication-and-retained-development-recovery-binding',
                   blockers=['target-executor',
                             'operational-backup-policy','first-operational-transition-review'] + (['per-service-runtime-reconciliation'] if len(runtime_groups)>1 else []))

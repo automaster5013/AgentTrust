@@ -1,4 +1,5 @@
 name: Publish pinned signed main to Docker Hub
+# Docker Hub canonical references may omit docker.io; exact digest readback is required.
 on:
   workflow_dispatch:
   push:
