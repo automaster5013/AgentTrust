@@ -463,3 +463,40 @@ signed main release. Therefore only the real live inventory/schema path has been
 executed; the complete signed-publication/retained-recovery path has offline
 failure controls but is **not yet verified end to end** with real current release
 evidence. Existing services remain unchanged.
+
+### Online main-run and public manifest binding — 2026-10-30
+
+The joined `stack-local-cd-evidence.py` path now also calls `stack_release_online`.
+Add independently selected integer `runId` and `runAttempt` to the private evidence
+config. The GitHub API run must belong to the owner repository and main branch,
+use the original-stack workflow and a push/manual event, match the exact candidate
+SHA and attempt, and be completed/successful. All five required jobs, including
+Docker Hub publication, must be successful in that same attempt; skipped,
+duplicate, missing or extra jobs are refused. The run is rechecked after all
+local evidence checks. `GITHUB_TOKEN` may supply existing read credentials via
+the process environment; the verifier never obtains tokens from files, expands
+permissions, prints them or writes them. Public GitHub reads can be anonymous.
+The exact current PR run was read and correctly refused as a trusted main release.
+
+After signed-bundle/receipt binding, all sixteen destination manifests are fetched
+anonymously from the public Docker Hub registry using repository-scoped pull
+bearer tokens. The exact manifest bytes must hash to the signed source digest and
+the registry digest response header must agree. Only supported schema-2 OCI/Docker
+manifest media types are allowed. HTTPS origins are fixed, redirects are refused,
+responses are bounded to 1 MiB (tokens 64 KiB) and requests have 30-second timeouts.
+No Docker Hub account token is used for this public-read step, and no layer blobs,
+local images or runtime containers are created by these HTTP checks.
+
+This is manifest availability/integrity readback, not a full image pull, executable
+runtime acceptance or continuous availability guarantee. The signed source bundle
+continues to carry the original runtime/security evidence. The joined report still
+refuses automatic deployment and keeps operational backup/executor/first-transition
+review blockers. The full positive path still awaits a real signed main publication
+and fresh retained recovery evidence; no synthetic success is substituted.
+
+References: [GitHub workflow-run API](https://docs.github.com/en/rest/actions/workflow-runs)
+and [Docker Registry API](https://docs.docker.com/reference/api/registry/latest/).
+Four new offline test groups exercise wrong branch/event/SHA/attempt/workflow,
+failed/skipped/duplicate/incomplete jobs, modified manifest bytes/digest headers,
+foreign namespaces and untrusted network origins. These execute in the existing
+source-security CI job before signature/publishing work.

@@ -130,6 +130,11 @@ def run(args, report):
     require(receipt['sourceChecksumsSha256'] == config['checksumsSha256'])
     require({r['name']:r['source'] for r in receipt['images']} == {r['name']:r['reference'] for r in records})
     report['publicationReceiptBound']=True
+    from stack_release_online import main_run, public_manifests
+    report['stage']='trusted-main-run-online'
+    report.update(main_run(args.expected_revision,config['runId'],config['runAttempt']))
+    report['stage']='destination-manifest-readback'
+    report.update(public_manifests(receipt['images']))
     report['stage']='retained-snapshot-authentication'
     snap = load('retained_snapshot','stack-coherent-snapshot-verify.py')
     crypt = load('backup_envelope','stack-backup-crypt.py')
@@ -159,8 +164,9 @@ def run(args, report):
     anchored_file(config['receipt'],config['receiptSha256'],65536)
     anchored_file(config['recoveryReport'],config['recoveryReportSha256'])
     anchored_file(args.evidence_config,args.expected_config_sha256)
+    report.update(main_run(args.expected_revision,config['runId'],config['runAttempt']))
     report.update(completed=True,scope='signed-publication-and-retained-development-recovery-binding',
-                  blockers=['trusted-main-run-online-check','destination-registry-readback','target-executor',
+                  blockers=['target-executor',
                             'operational-backup-policy','first-operational-transition-review'])
 
 
