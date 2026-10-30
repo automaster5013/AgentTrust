@@ -223,9 +223,10 @@ The current head, WAL and wbl are excluded. Source admin APIs are not enabled or
 called. See [Prometheus storage backup guidance](https://prometheus.io/docs/prometheus/latest/storage/).
 
 `stack-loki-history-recovery.py` captures only a bounded file set observed unchanged
-before/after copying, including its existing local persisted state. It starts only
+before/after copying from persisted chunks and shipped index objects. Active
+index files, compactor state and live WAL are excluded. It starts only
 an owned restored volume and compares at most 100 historical `service_name` log
-entries against source reads before/after. Empty history, changed timestamps/text,
+entries older than three hours against source reads before/after. Empty history, changed timestamps/text,
 partial/error responses and source file drift fail verification. A stable read
 window is not an atomic snapshot; recent in-memory logs and live WAL completeness
 remain unproved. The tool never flushes or stops source writers. Loki filenames
@@ -244,3 +245,14 @@ restore/readback, source drift before startup and a changed query result. Both
 negative paths clean owned fixtures and keep full-stack/deployment gates false.
 Release readback retries only transient 502/503/504 responses, at most three
 attempts; auth and rate-limit errors are never bypassed.
+
+
+The operating Tempo API returned 404 for a trace that the restored selected blocks
+could retrieve. `--isolated-source-reader` explicitly compares against a separate
+instance of the pinned original operating image, with an independent fresh copy
+of the selected original files (not the encrypted restore volume). Both readers
+are portless and network-disabled; original volume mounts used by copy helpers
+remain read-only. This mode does not repair or certify the operating Tempo API.
+Its report keeps `operatingTempoApiTraceVerified: false` and records the comparison
+mode. All retrieved trace hashes/counts are retained encrypted and bound to the
+cache manifest. Original API accessibility remains a separate transition issue.

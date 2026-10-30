@@ -33,12 +33,12 @@ def run(config_path,config_hash):
  keydir=ROOT/'.local'/('loki-block-key-'+drill.id);m.protect(keydir);key=secrets.token_bytes(32);m.c.private_file(keydir/'key.bin',key);drill.report['retainedKeyDirectory']=str(keydir);crypto=m.load('loki_block_crypto','stack-backup-crypt.py')
  def checkpoint():m.e.planner.recheck(ids,inventory,ROOT,hashes);m.e.require(m.d.hash_files(protected)==protected);m.session_capacity(512)
  try:
-  drill.stage('capture-source-files-with-before-after-drift-checks')
-  end=int(time.time())-900;start=end-7*86400;before=log_fingerprint(get('agenttrust-stack-loki-1',start,end));files=json.loads(m.c.run(cache.file_command(drill,drill.source_volume,'inventory'),timeout=120).stdout)
+  drill.stage('capture-persisted-chunks-and-index-without-active-wal')
+  end=int(time.time())-3*3600;start=end-7*86400;before=log_fingerprint(get('agenttrust-stack-loki-1',start,end));files=json.loads(m.c.run(cache.file_command(drill,drill.source_volume,'inventory',prefix='chunks'),timeout=120).stdout)
   m.e.require(sum(row['bytes'] for row in files.values())<=chunks.LIMIT)
   def read(name,offset,size):checkpoint();return m.c.run(cache.file_command(drill,drill.source_volume,'read',name,offset,size),timeout=120).stdout
   manifest=chunks.capture(files,read,lambda raw:crypto.transform('encrypt',key,raw),lambda name,cipher:m.c.private_file(drill.directory/name,cipher))
-  manifest.update(kind='bounded-file-cache',component='loki-stable-file-observation',queryWindow={'start':start,'end':end,'source':before},candidateRevision=config['revision'],candidateReference=reference,sourceImageId=source['Image'])
+  manifest.update(kind='bounded-file-cache',component='loki-persisted-chunks-and-index-selection',queryWindow={'start':start,'end':end,'source':before},candidateRevision=config['revision'],candidateReference=reference,sourceImageId=source['Image'])
   cipher=crypto.transform('encrypt',key,json.dumps(manifest).encode());m.c.private_file(drill.directory/'blocks-manifest.aesgcm',cipher);drill.report['encryptedManifestSha256']=hashlib.sha256(cipher).hexdigest()
   decoded=json.loads(crypto.transform('decrypt',key,m.e.anchored_file(drill.directory/'blocks-manifest.aesgcm',drill.report['encryptedManifestSha256'],limit=8*1024*1024)));chunks.validate(decoded)
   drill.stage('restore-observed-files-only')
@@ -51,7 +51,7 @@ def run(config_path,config_hash):
                  lambda name,offset,raw:m.c.run(cache.file_command(drill,drill.target_volume,'write',name,offset,len(raw)),data=raw),
                  lambda name,size,mode:m.c.run(cache.file_command(drill,drill.target_volume,'finalize',name,size,0,mode)))
   m.e.require(json.loads(m.c.run(cache.file_command(drill,drill.target_volume,'inventory')).stdout)==files)
-  m.e.require(json.loads(m.c.run(cache.file_command(drill,drill.source_volume,'inventory')).stdout)==files)
+  m.e.require({k:v for k,v in json.loads(m.c.run(cache.file_command(drill,drill.source_volume,'inventory',prefix='chunks')).stdout).items() if k in files}==files)
   checkpoint();drill.stage('published-loki-query-of-restored-history');settings=next(v for v in source['Mounts'] if v['Type']=='bind' and v['Destination']=='/etc/loki.yaml')
   source_path=pathlib.Path(normalized_host_path(settings['Source']));m.e.require(source_path.is_file() and source_path.resolve().is_relative_to(ROOT))
   path=drill.directory/'loki.yaml';m.c.private_file(path,source_path.read_bytes());path.chmod(0o444);drill.private.append(path)
@@ -60,8 +60,8 @@ def run(config_path,config_hash):
            '--user',drill.file_user,'--memory','512m','--cpus','1','--pids-limit','128','--tmpfs','/tmp:size=32m,mode=1777',
            '--mount','type=volume,source='+drill.target_volume+',target=/var/loki','--mount','type=bind,source='+str(path)+',target=/etc/loki.yaml,readonly',image['Id'],*source['Config']['Cmd']])
   drill.wait(name,'stack-loki');restored=log_fingerprint(get(name,start,end));after=log_fingerprint(get('agenttrust-stack-loki-1',start,end));m.e.require(restored==after==before)
-  m.e.require(json.loads(m.c.run(cache.file_command(drill,drill.source_volume,'inventory')).stdout)==files);checkpoint()
-  drill.report.update(completed=True,boundedLokiHistoryRecoveryVerified=True,restoredFiles=len(files),selectedBytes=sum(v['bytes'] for v in files.values()),matchingLogEntries=restored[1],sourceFilesUnchanged=True,queryLimit=100,allLokiHistoryCompared=False,stableObservationOnly=True)
+  m.e.require({k:v for k,v in json.loads(m.c.run(cache.file_command(drill,drill.source_volume,'inventory',prefix='chunks')).stdout).items() if k in files}==files);checkpoint()
+  drill.report.update(completed=True,boundedLokiHistoryRecoveryVerified=True,restoredFiles=len(files),selectedBytes=sum(v['bytes'] for v in files.values()),matchingLogEntries=restored[1],selectedSourceFilesUnchanged=True,activeIndexRecovered=False,queryLimit=100,allLokiHistoryCompared=False,stableObservationOnly=True)
 
  except Exception as error:drill.report.update(completed=False,errorType=type(error).__name__,failureLocations=[{'file':pathlib.Path(x.filename).name,'line':x.lineno} for x in traceback.extract_tb(error.__traceback__)])
  finally:

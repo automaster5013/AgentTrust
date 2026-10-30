@@ -76,6 +76,16 @@ class ExtraHistory(unittest.TestCase):
   original=tempo.trace_fingerprint(frame({'name':'one'},{'droppedAttributesCount':0}))
   self.assertNotEqual(original,tempo.trace_fingerprint(frame({'name':'two'},{'droppedAttributesCount':0})))
   self.assertNotEqual(original,tempo.trace_fingerprint(frame({'name':'one'},{'droppedAttributesCount':1})))
+ def test_original_reader_requires_fixture_identity_and_uses_only_loopback_namespace(self):
+  identity='00000000-0000-0000-0000-000000000001';name='agenttrust-stack-coldrestore-'+identity+'-original-stack-tempo';path='/api/traces/'+'a'*32+'?start=100&end=200'
+  row={'Id':'reader','HostConfig':{'NetworkMode':'none'},'Config':{'Labels':{'agenttrust.fixture':identity}}}
+  with patch.object(tempo.m.c,'inspect',return_value=row),patch.object(tempo.m.c,'run',return_value=SimpleNamespace(stdout=b'{}',returncode=0)) as command:
+   self.assertEqual(tempo.get(name,path),{});args=command.call_args[0][0];self.assertEqual(args[args.index('--network')+1],'container:reader');self.assertFalse(any('type=volume' in v for v in args))
+  row['Config']['Labels']['agenttrust.fixture']='other'
+  with patch.object(tempo.m.c,'inspect',return_value=row),patch.object(tempo.m.c,'run') as command:
+   with self.assertRaises(ValueError):tempo.get(name,path)
+   command.assert_not_called()
+  with self.assertRaises(ValueError):tempo.get('agenttrust-stack-tempo-1','/api/traces/'+'a'*32+'?start=100&end=9999999999')
  def test_offline_probe_refuses_redirects(self):
   with self.assertRaises(ValueError):model.RefuseRedirect().redirect_request(None,None,None,None,None,None)
  def test_trace_probe_refuses_other_services_and_unbounded_paths(self):

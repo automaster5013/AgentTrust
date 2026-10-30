@@ -21,17 +21,19 @@ def trace_id(value):
  m.e.require(isinstance(value,str) and m.e.re.fullmatch('[a-fA-F0-9]{1,32}',value));return value.lower().zfill(32)
 
 def get(name,path):
- m.e.require(name=='agenttrust-stack-tempo-1' or m.e.re.fullmatch('agenttrust-stack-coldrestore-[a-f0-9-]{36}-stack-tempo',name))
- m.e.require(path.startswith('/api/search?') or m.e.re.fullmatch(r'/api/traces/[a-f0-9]{32}\?start=\d+&end=\d+',path))
+ match=m.e.re.fullmatch('agenttrust-stack-coldrestore-([a-f0-9-]{36})-(?:original-)?stack-tempo',name)
+ m.e.require(name=='agenttrust-stack-tempo-1' or match)
+ m.e.require(m.e.re.fullmatch(r'/api/search\?start=\d+&end=\d+&limit=20',path) or m.e.re.fullmatch(r'/api/traces/[a-f0-9]{32}\?start=\d+&end=\d+',path))
+ bounds=urllib.parse.parse_qs(urllib.parse.urlsplit(path).query);start,end=int(bounds['start'][0]),int(bounds['end'][0]);m.e.require(0<start<end<time.time() and end-start<=7*86400)
  row=m.c.inspect(name)
- if name!='agenttrust-stack-tempo-1':m.e.require(row['HostConfig']['NetworkMode']=='none' and row['Config']['Labels'].get('agenttrust.fixture')==name.removeprefix('agenttrust-stack-coldrestore-').removesuffix('-stack-tempo'))
+ if name!='agenttrust-stack-tempo-1':m.e.require(row['HostConfig']['NetworkMode']=='none' and row['Config']['Labels'].get('agenttrust.fixture')==match[1])
  else:m.e.require(row['Config']['Labels'].get('com.docker.compose.project')=='agenttrust' and row['Config']['Labels'].get('com.docker.compose.service')=='stack-tempo')
  result=m.c.run(['docker','run','--rm','--log-driver','none','--network','container:'+row['Id'],'--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--memory','192m','--pids-limit','32','--mount','type=bind,source='+str(ROOT/'scripts/stack-tempo-read-probe.py')+',target=/probe.py,readonly','agenttrust-security:local','python','/probe.py',path],timeout=20,check=False)
  if result.returncode:
-  failure=json.loads(result.stdout).get('readError',{});error=ValueError('Tempo read refused');error.read_failure={**failure,'sourceRead':name=='agenttrust-stack-tempo-1'};raise error
+  failure=json.loads(result.stdout).get('readError',{});error=ValueError('Tempo read refused');error.read_failure={**failure,'sourceRead':name=='agenttrust-stack-tempo-1' or name.endswith('-original-stack-tempo')};raise error
  m.e.require(0<len(result.stdout)<=2097152);return json.loads(result.stdout)
 
-def run(config_path,config_hash):
+def run(config_path,config_hash,source_reader=False):
  m.session_capacity();ids,raw,inventory,by_service=m.d.live_baseline();hashes=m.e.planner.compose_hashes(inventory,ROOT)
  _,protected=m.d.resolved_groups(inventory,by_service,list(m.e.planner.COMPONENTS));source=by_service['stack-tempo']
  mounts=[v for v in source['Mounts'] if v['Type']=='volume'];m.e.require(len(mounts)==1 and mounts[0]['Name']=='agenttrust_stack-tempo-data')
@@ -72,16 +74,40 @@ def run(config_path,config_hash):
   m.c.run(['docker','run','-d','--name',name,'--log-driver','none','--label','agenttrust.fixture='+drill.id,'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true',
            '--user',drill.file_user,'--memory','512m','--cpus','1','--pids-limit','128','--tmpfs','/tmp:size=32m,mode=1777',
            '--mount','type=volume,source='+drill.target_volume+',target=/var/tempo','--mount','type=bind,source='+str(path)+',target=/etc/tempo.yaml,readonly',image['Id'],'-config.file=/etc/tempo.yaml','-target=all'])
+  comparison_source='agenttrust-stack-tempo-1'
+  drill.report.update(originalSourceComparisonMode='operating-api',operatingTempoApiTraceVerified=False)
+  if source_reader:
+   drill.stage('independent-source-file-copy-for-original-image-reader');original_target=drill.target_volume;reader_volume=drill.prefix+'-original-tempo'
+   drill.volumes.append(reader_volume);m.c.run(['docker','volume','create','--label','agenttrust.fixture='+drill.id,reader_volume]);drill.own_volume(reader_volume)
+   drill.volume_command(reader_volume,drill.file_user,['chown',drill.file_user,'/data'],write=True,initialize=True)
+   try:
+    drill.target_volume=reader_volume
+    for filename,row in files.items():
+     offset=0
+     while offset<row['bytes']:
+      size=min(chunks.CHUNK,row['bytes']-offset);payload=m.c.run(cache.file_command(drill,drill.source_volume,'read',filename,offset,size),timeout=120).stdout
+      m.e.require(len(payload)==size);m.c.run(cache.file_command(drill,reader_volume,'write',filename,offset,len(payload)),data=payload);offset+=len(payload)
+     if row['bytes']==0:m.c.run(cache.file_command(drill,reader_volume,'write',filename,0,0),data=b'')
+     m.c.run(cache.file_command(drill,reader_volume,'finalize',filename,row['bytes'],0,row['mode']))
+    m.e.require(json.loads(m.c.run(cache.file_command(drill,reader_volume,'inventory')).stdout)==files)
+    for block in selected:m.e.require(json.loads(m.c.run(cache.file_command(drill,drill.source_volume,'inventory',prefix=block['prefix'])).stdout)=={p:v for p,v in files.items() if p.startswith(block['prefix']+'/')})
+   finally:drill.target_volume=original_target
+   checkpoint();comparison_source=drill.prefix+'-original-stack-tempo';drill.containers.append(comparison_source)
+   m.c.run(['docker','run','-d','--name',comparison_source,'--log-driver','none','--label','agenttrust.fixture='+drill.id,'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true',
+            '--user',drill.file_user,'--memory','512m','--cpus','1','--pids-limit','128','--tmpfs','/tmp:size=32m,mode=1777',
+            '--mount','type=volume,source='+reader_volume+',target=/var/tempo','--mount','type=bind,source='+str(path)+',target=/etc/tempo.yaml,readonly',source['Image'],'-config.file=/etc/tempo.yaml','-target=all'])
+   drill.wait(comparison_source,'stack-tempo');m.e.require(m.c.inspect(comparison_source)['Image']==source['Image'])
+   drill.report.update(originalSourceComparisonMode='isolated-original-image-and-independent-source-file-copy',sourceImageId=source['Image'],independentSourceFilesMatched=True)
   drill.wait(name,'stack-tempo');query=urllib.parse.urlencode({'start':min(b['start'] for b in selected)-1,'end':max(b['end'] for b in selected)+1,'limit':20});search=get(name,'/api/search?'+query);until=time.monotonic()+90
   while not search.get('traces') and time.monotonic()<until:checkpoint();time.sleep(2);search=get(name,'/api/search?'+query)
   drill.report.update(searchResults=len(search.get('traces',[])),traceIdLengths=sorted({len(v['traceID']) for v in search.get('traces',[])}),selectedClosedBlocks=len(selected),restoredFiles=len(files),restoredFileHashesAndModesVerified=True);matches=[]
   for row in search.get('traces',[]):
    trace=trace_id(row['traceID']);bounds=urllib.parse.urlencode({'start':min(b['start'] for b in selected)-1,'end':max(b['end'] for b in selected)+1});path='/api/traces/'+trace+'?'+bounds
    drill.stage('read-restored-trace-content');restored=trace_fingerprint(get(name,path))
-   drill.stage('read-original-trace-content');original=trace_fingerprint(get('agenttrust-stack-tempo-1',path))
+   drill.stage('read-original-trace-content');original=trace_fingerprint(get(comparison_source,path))
    m.e.require(restored==original)
    if restored==original:matches.append({'sha256':restored[0],'spans':restored[1]})
-  m.e.require(matches and len(matches)==len(search['traces']));checkpoint();drill.report.update(completed=True,selectedTempoHistoryRecoveryVerified=True,selectedClosedBlocks=len(selected),restoredFiles=len(files),selectedBytes=sum(v['bytes'] for v in files.values()),matchingHistoricalTraces=len(matches),matchingSpans=sum(v['spans'] for v in matches),sourceSelectedFilesUnchanged=True)
+  m.e.require(matches and len(matches)==len(search['traces']));checkpoint();m.c.private_file(drill.directory/'trace-comparisons.aesgcm',crypto.transform('encrypt',key,json.dumps({'cacheManifestSha256':drill.report['encryptedManifestSha256'],'matches':matches,'comparisonMode':drill.report['originalSourceComparisonMode']}).encode()));drill.report['encryptedTraceComparisonsSha256']=hashlib.sha256((drill.directory/'trace-comparisons.aesgcm').read_bytes()).hexdigest();drill.report.update(operatingTempoApiTraceVerified=not source_reader,completed=True,selectedTempoHistoryRecoveryVerified=True,selectedClosedBlocks=len(selected),restoredFiles=len(files),selectedBytes=sum(v['bytes'] for v in files.values()),matchingHistoricalTraces=len(matches),matchingSpans=sum(v['spans'] for v in matches),sourceSelectedFilesUnchanged=True)
  except Exception as error:drill.report.update(tempoReadFailure=getattr(error,'read_failure',None),completed=False,errorType=type(error).__name__,failureLocations=[{'file':pathlib.Path(x.filename).name,'line':x.lineno} for x in traceback.extract_tb(error.__traceback__)])
  finally:
   try:checkpoint();drill.report['operationalContainersUnchanged']=True
@@ -90,9 +116,9 @@ def run(config_path,config_hash):
  return drill
 
 def main():
- parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--config',type=pathlib.Path,required=True);parser.add_argument('--expected-config-sha256',required=True);parser.add_argument('--execute',action='store_true');args=parser.parse_args()
+ parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--config',type=pathlib.Path,required=True);parser.add_argument('--expected-config-sha256',required=True);parser.add_argument('--execute',action='store_true');parser.add_argument('--isolated-source-reader',action='store_true');args=parser.parse_args()
  try:
-  m.e.require(pathlib.Path.cwd().resolve()==ROOT and args.execute);drill=run(args.config,args.expected_config_sha256)
+  m.e.require(pathlib.Path.cwd().resolve()==ROOT and args.execute);drill=run(args.config,args.expected_config_sha256,args.isolated_source_reader)
   print(json.dumps({'completed':drill.report['completed'],'reportPath':str(drill.directory/'summary.json'),'fullTempoHistoryRecovered':False,'actualDeploymentPerformed':False}));return 0 if drill.report['completed'] else 1
  except Exception as error:print(json.dumps({'completed':False,'code':'TEMPO_HISTORY_RECOVERY_REFUSED','errorType':type(error).__name__,'httpStatusCode':getattr(error,'code',None),'failureLocations':[{'file':pathlib.Path(x.filename).name,'line':x.lineno} for x in traceback.extract_tb(error.__traceback__)]}));return 1
 if __name__=='__main__':sys.exit(main())

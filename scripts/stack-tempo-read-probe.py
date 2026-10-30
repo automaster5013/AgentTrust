@@ -1,10 +1,11 @@
 """Fixed loopback read-only Tempo API requests; no proxies or redirects."""
-import json,re,sys,urllib.error,urllib.request
+import json,re,sys,time,urllib.error,urllib.parse,urllib.request
 class RefuseRedirect(urllib.request.HTTPRedirectHandler):
  def redirect_request(self,*args,**kwargs):raise ValueError('Tempo redirect refused')
 def main():
  path=sys.argv[1]
  assert re.fullmatch(r'/api/search\?start=\d+&end=\d+&limit=20',path) or re.fullmatch(r'/api/traces/[a-f0-9]{32}\?start=\d+&end=\d+',path)
+ bounds=urllib.parse.parse_qs(urllib.parse.urlsplit(path).query);start,end=int(bounds['start'][0]),int(bounds['end'][0]);assert 0<start<end<time.time() and end-start<=7*86400
  opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),RefuseRedirect())
  request=urllib.request.Request('http://127.0.0.1:3200'+path,headers={'Accept':'application/json'})
  with opener.open(request,timeout=8) as response:
