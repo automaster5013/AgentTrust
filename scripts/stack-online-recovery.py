@@ -137,15 +137,17 @@ def state_probe(drill,fixture,phase,input_value=None):
  args=['docker','run','--rm','--log-driver','none','--name',name,'--label','agenttrust.fixture='+drill.id,'--network',drill.prefix,
        '--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--tmpfs','/tmp:size=32m,mode=1777','--memory','256m','--cpus','1','--pids-limit','64',
        '--mount','type=bind,source='+str(ROOT/'scripts')+',target=/scripts,readonly']
- for destination in ('/run/secrets/stack-demo-credentials','/run/secrets/stack-minio-user','/run/secrets/stack-minio-password'):
-  if phase=='historical' and destination.endswith('stack-demo-credentials'):continue
+ destinations=('/run/secrets/stack-minio-user','/run/secrets/stack-minio-password') if phase=='historical' else ('/run/secrets/stack-demo-credentials',)
+ for destination in destinations:
   target='/credentials.json' if destination.endswith('stack-demo-credentials') else destination
   args+=['--mount','type=bind,source='+corefiles[destination]+',target='+target+',readonly']
  if input_value is not None:
   path=drill.directory/('state-input-'+phase+'.json');c.private_file(path,json.dumps(input_value).encode());path.chmod(0o444);drill.private.append(path)
   args+=['--mount','type=bind,source='+str(path)+',target=/state-input.json,readonly']
  result=c.run(args+[tools,'python','/scripts/stack-stateful-recovery-probe.py','--phase',phase],timeout=300,check=False)
- proof=json.loads(result.stdout);e.require(result.returncode==0 and proof['completed']);return proof
+ proof=json.loads(result.stdout)
+ if result.returncode or not proof.get('completed'):drill.report['stateProbeFailure']={k:proof[k] for k in ('phase','errorType','completed') if k in proof}
+ e.require(result.returncode==0 and proof['completed']);return proof
 
 def owned_runtime(drill,service,action):
  e.require(service in ('stack-nats','stack-ai-worker','stack-core-api','stack-redis') and action in ('stop','start','restart'))
@@ -201,8 +203,31 @@ def store_exercise(drill,fixture,payload):
                      excludedFromRecovery=['cross-store atomic consistency','JVM login session continuity','API restart reauthentication exercise',
                                            'observability history and services','local model cache and inference','legacy services','HA and production RPO/RTO'])
 
-def run(config_path,config_hash,execute,include_live_state=False,stores_only=False):
+def session_capacity(minimum_mib=2048):
+ total=int(c.run(['docker','info','--format','{{.MemTotal}}']).stdout)
+ lines=c.run(['docker','stats','--no-stream','--format','{{.MemUsage}}']).stdout.decode().splitlines();e.require(0<len(lines)<=64)
+ used=0
+ for line in lines:
+  match=e.re.fullmatch(r'([0-9.]+)(B|KiB|MiB|GiB)',line.split('/')[0].strip());e.require(match is not None)
+  used+=float(match[1])*{'B':1,'KiB':1024,'MiB':1048576,'GiB':1073741824}[match[2]]
+ free=total-used;e.require(free>=minimum_mib*1048576)
+ return {'dockerMemoryMiB':int(total/1048576),'reportedFreeWorkingSetMiB':int(free/1048576),'requiredFreeMiB':minimum_mib}
+
+def session_exercise(drill,fixture,key,checkpoint):
+ checkpoint();opened=state_probe(drill,fixture,'session-open');capsule=opened['capsule']
+ crypto=load('session_only_envelope','stack-backup-crypt.py');c.private_file(drill.directory/'fixture-session.aesgcm',crypto.transform('encrypt',key,json.dumps(capsule).encode()))
+ drill.report['preRestartSessionProof']=state_probe(drill,fixture,'session-check',capsule)
+ before=c.inspect(drill.prefix+'-stack-core-api');checkpoint();owned_runtime(drill,'stack-core-api','restart');checkpoint()
+ after=c.inspect(drill.prefix+'-stack-core-api');e.require(before['Id']==after['Id'] and before['Image']==after['Image'] and before['State']['StartedAt']!=after['State']['StartedAt'])
+ drill.report['sessionRestartProof']=state_probe(drill,fixture,'reauth',capsule);checkpoint()
+ drill.report.update(apiRestartReauthenticationVerified=True,sessionReauthenticationRequired=True,existingSessionContinuityVerified=False,fixtureApiIdAndImagePreserved=True,
+                     excludedFromRecovery=['cross-database and cross-store atomic consistency','JVM login session continuity','gateway and queue/storage paths in this phase',
+                                           'observability history and services','local model cache and inference','legacy services','HA and production RPO/RTO'])
+
+def run(config_path,config_hash,execute,include_live_state=False,stores_only=False,session_only=False):
  e.require(not stores_only or (execute and include_live_state))
+ e.require(not session_only or (execute and not stores_only and not include_live_state))
+ capacity=session_capacity() if session_only else None
  ids,raw,inventory,by_service=d.live_baseline();hashes=e.planner.compose_hashes(inventory,ROOT)
  _,protected=d.resolved_groups(inventory,by_service,list(e.planner.COMPONENTS))
  config=e.delivery.json_bytes(e.anchored_file(config_path,config_hash));release=e.verify_candidate_release(config,config['revision'],inventory,{})
@@ -211,6 +236,7 @@ def run(config_path,config_hash,execute,include_live_state=False,stores_only=Fal
                      historicalObjectVersionsRestored=False,queueAndSessionStateRestored=False,actualDeploymentPerformed=False,sourceServicesStopped=False,
                      excludedFromRecovery=['historical MinIO object versions','JetStream queue state','Redis sessions and quotas',
                                            'observability history and services','local model cache and inference','legacy services','HA and production RPO/RTO'])
+ if session_only:drill.report['sessionCapacityPreflight']=capacity
  if not execute:
   drill.report.update(completed=True,readOnly=True);drill.save();return drill
  crypto=load('online_envelope','stack-backup-crypt.py');keydir=ROOT/'.local'/('online-recovery-key-'+drill.id);protect(keydir)
@@ -248,6 +274,7 @@ def run(config_path,config_hash,execute,include_live_state=False,stores_only=Fal
   fixture=json.loads(payload['configuration']);runtime=json.loads((release['directory']/'runtime-identity.json').read_bytes())['imageIds']
   for service in c.SERVICES:
    if stores_only and service not in ('stack-nats','stack-redis','stack-object-store','stack-ai-worker'):continue
+   if session_only and service not in ('stack-db','stack-identity','stack-core-api','stack-console'):continue
    if service not in e.planner.COMPONENTS:continue
    name=e.planner.COMPONENTS[service];ref=next(row['reference'] for row in release['receipt']['images'] if row['name']==name)
    c.run(['docker','pull',ref],timeout=600);image=json.loads(c.run(['docker','image','inspect',ref]).stdout)[0];cached_identity(image,ref,runtime[name]);fixture[service]['imageId']=image['Id']
@@ -256,7 +283,17 @@ def run(config_path,config_hash,execute,include_live_state=False,stores_only=Fal
   for name in ('stack-minio-user','stack-minio-password'):fixture['stack-object-store']['files'].append(dict(corefiles['/run/secrets/'+name]))
   def checkpoint():
    e.planner.recheck(ids,inventory,ROOT,hashes);e.require(d.hash_files(protected)==protected)
-  drill.stage('isolated-logical-restore-and-candidate-startup');restore(drill,fixture,payload,checkpoint,('stack-nats','stack-redis','stack-object-store') if stores_only else None)
+   if session_only:session_capacity(512)
+  selected=('stack-nats','stack-redis','stack-object-store') if stores_only else None
+  if session_only:
+   session_capacity();selected=('stack-db','stack-identity','stack-core-api','stack-console')
+   fixture['stack-console']['env']=[v for v in fixture['stack-console']['env'] if not v.startswith('CORE_API_URL=')]+['CORE_API_URL=http://stack-core-api:8080']
+   drill.report['fixtureRoutingOverride']={'stack-console':{'CORE_API_URL':'http://stack-core-api:8080'}}
+  drill.stage('isolated-logical-restore-and-candidate-startup');restore(drill,fixture,payload,checkpoint,selected)
+  if session_only:
+   drill.stage('isolated-api-restart-and-session-reauthentication');session_exercise(drill,fixture,key,checkpoint);e.require(c.fingerprint()==before)
+   drill.report.update(completed=True,businessStackServicesStarted=4,operatingDatabaseLogicalRestoreVerified=True,operatingBusinessRowsUnchanged=True)
+   return drill
   if stores_only:
    drill.stage('isolated-three-store-history-and-replay');store_exercise(drill,fixture,payload);checkpoint();e.require(c.fingerprint()==before)
    drill.report.update(completed=True,businessStackServicesStarted=3,operatingDatabaseLogicalRestoreVerified=False,operatingBusinessRowsUnchanged=True)
@@ -291,12 +328,12 @@ def run(config_path,config_hash,execute,include_live_state=False,stores_only=Fal
 
 def main():
  p=argparse.ArgumentParser(description=__doc__);p.add_argument('--config',type=pathlib.Path);p.add_argument('--expected-config-sha256');p.add_argument('--execute',action='store_true')
- p.add_argument('--verify-snapshot',type=pathlib.Path);p.add_argument('--retained-key-file',type=pathlib.Path);p.add_argument('--expected-manifest-sha256');p.add_argument('--expected-snapshot-id');p.add_argument('--include-live-state',action='store_true');p.add_argument('--state-stores-only',action='store_true');args=p.parse_args()
+ p.add_argument('--verify-snapshot',type=pathlib.Path);p.add_argument('--retained-key-file',type=pathlib.Path);p.add_argument('--expected-manifest-sha256');p.add_argument('--expected-snapshot-id');p.add_argument('--include-live-state',action='store_true');p.add_argument('--state-stores-only',action='store_true');p.add_argument('--session-only',action='store_true');args=p.parse_args()
  try:
   if args.verify_snapshot:
    e.require(not args.execute and not args.config and pathlib.Path.cwd().resolve()==ROOT)
    print(json.dumps(verify_retained(args.verify_snapshot,args.retained_key_file,args.expected_manifest_sha256,args.expected_snapshot_id)));return 0
-  e.require(pathlib.Path.cwd().resolve()==ROOT);drill=run(args.config,args.expected_config_sha256,args.execute,args.include_live_state,args.state_stores_only)
+  e.require(pathlib.Path.cwd().resolve()==ROOT);drill=run(args.config,args.expected_config_sha256,args.execute,args.include_live_state,args.state_stores_only,args.session_only)
   print(json.dumps({'completed':drill.report['completed'],'reportPath':str(drill.directory/'summary.json'),'fullStackRecoveryVerified':False,'actualDeploymentPerformed':False}));return 0 if drill.report['completed'] else 1
  except Exception as error:
   print(json.dumps({'completed':False,'code':'ONLINE_RECOVERY_UNVERIFIED','errorType':type(error).__name__}));return 1

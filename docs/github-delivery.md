@@ -1147,3 +1147,73 @@ orchestration, exact version/hash refusal, source/foreign target refusal, TTL
 non-resurrection, durable replay against the existing stream reservation, archive
 fingerprint tampering, and explicit session re-authentication consent. New archive
 and live-state tests also run in the pinned Linux security image in CI.
+
+### Isolated API restart and joined recovery evidence — 2026-10-31 KST
+
+`stack-online-recovery.py --execute --session-only` adds a bounded four-service
+phase: restored PostgreSQL, restored Keycloak, signed API and signed console. It
+requires at least 2 GiB of reported Docker working-set headroom before startup,
+checks at least 512 MiB during checkpoints, and continues to enforce all twenty
+operating services' exact IDs/images/health and protected source configuration.
+The successful preflight reported about 3.05 GiB free in the 7.52 GiB Docker VM.
+These are local fixture guards, not production capacity or HA evidence.
+
+Only the fixture console's `CORE_API_URL` points directly at the fixture API. The
+original gateway route remains unchanged. This phase deliberately omits gateway,
+quota, queue, object storage and inference paths already covered separately; it
+must not be presented as another full-stack startup. Both real operating logical
+database archives and roles restored into owned tmpfs; all eighteen business table
+fingerprints matched before candidate startup. No source writer was quiesced.
+
+Actual successful proof is private under
+`.local/stack-coherent-recovery-fd01fe4f-4ef8-4584-9938-6f68841967c5`:
+
+- Real OIDC authorization-code/PKCE login succeeded using restored identities.
+- A separate probe process authenticated the saved fixture cookie before restart.
+- Only the owned fixture API restarted. Its ID and image stayed equal while its
+  start time changed; source/foreign targets remain refused by ownership guards.
+- The same cookie received HTTP 401 after restart. A fresh OIDC login and logout
+  succeeded. Existing-cookie continuity remains false and re-authentication remains
+  required; the earlier `allowSessionReauthentication` approval requirement stands.
+- Source business rows, original container IDs/images and protected configuration
+  remained unchanged. Four fixture containers, internal network and temporary
+  private configuration/cookie mounts were removed. No persistent fixture volume
+  was created. The capsule was retained only as authenticated ciphertext.
+
+`stack-recovery-evidence-join.py` now joins separately pinned application, store and
+session proofs against the current unchanged source. Its input is itself SHA-256
+pinned. Each phase must have exact proof and encrypted-manifest hashes, an authenticated
+retained key/archive, a matching fixture ID, candidate revision and source image
+map, complete nested subproofs, a capture timestamp inside the proof window, and
+completion/freshness within twenty-four hours. Authenticated configuration and
+business fingerprints must equal the current source, not merely another report.
+The signed publication is reverified, source state is rechecked after all phases,
+and any data/config/revision/freshness drift refuses the join.
+
+The real join passed for the earlier eleven-service evaluation proof, the
+774-version/queue/quota store proof and this API session proof. It bound twenty live
+services and eighteen business tables. Private review records are
+`phased-recovery-config-v1.json`, `phased-recovery-evidence-v1.json` and the stricter
+nested-completion contract readback under the retained publication directory.
+`phasedBusinessRecoveryEvidenceVerified` is true, while
+`fullStackRecoveryVerified`, `operationalBackupVerified`,
+`automaticDeploymentAllowed` and `actualDeploymentPerformed` remain false.
+Phased observations do not establish an atomic cross-database/cross-store point.
+
+A read-only inventory also bounds the remaining state: local model cache about
+499 MiB (runtime mounted read-only), Tempo about 6.74 GiB, Loki 312 KiB, Prometheus
+about 30.6 MiB and Grafana about 1.59 MiB. These volumes were measured through
+ownership-checked read-only helpers, not restored or copied as complete backups.
+The model/Tempo exceed the existing single-envelope/archive limits. Chunked or
+service-native consistent backup/restore is still needed for those histories;
+no large live copy, model download, source restart or asset deletion was attempted.
+The inventory explicitly marks every additional service `recoveryVerified: false`.
+
+Four session tests and eight phase-join tests cover complete mocked restart/join
+orchestration, capacity refusal, pre-restart source-health refusal, private cookie
+handling, mixed revision/image/configuration scopes, incomplete nested proofs,
+snapshot timing, post-verification data drift and refusal to promote phased evidence
+to deployment consent. Together with the previous 108 checks, 120 related tests
+pass locally. The session tests also pass in the pinned Linux security image.
+Actual operating deployment, source stop/recreation, publishing activation and
+scheduler installation remain unperformed.

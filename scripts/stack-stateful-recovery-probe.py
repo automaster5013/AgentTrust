@@ -40,7 +40,7 @@ def capsule_client(capsule):
  return value
 
 def main():
- parser=argparse.ArgumentParser();parser.add_argument('--phase',choices=('historical','admit','completion','reauth'),required=True);args=parser.parse_args()
+ parser=argparse.ArgumentParser();parser.add_argument('--phase',choices=('historical','admit','completion','reauth','session-open','session-check'),required=True);args=parser.parse_args()
  report={'completed':False,'phase':args.phase,'paidProviderCallsPerformed':False};value=None
  try:
   if args.phase=='historical':
@@ -48,6 +48,13 @@ def main():
    user=pathlib.Path('/run/secrets/stack-minio-user').read_text();password=pathlib.Path('/run/secrets/stack-minio-password').read_text()
    for row in rows:signed_object(row,user,password)
    report.update(historicalObjectVersionsVerified=len(rows),allPinnedVersionIdsAndBytesVerified=True)
+  elif args.phase=='session-open':
+   value=client();value.login('demo-admin');require(value.report.get('oidcAuthorizationCodePkceVerified') is True)
+   cookies=[c.value for c in value.jar if c.name=='AGENTTRUST_STACK_SESSION'];require(len(cookies)==1)
+   report['capsule']={'cookie':cookies[0]};report['freshOidcLoginVerified']=True;value=None
+  elif args.phase=='session-check':
+   capsule=json.loads(pathlib.Path('/state-input.json').read_bytes());value=capsule_client(capsule);require(value.request('me')['organizationId'])
+   report['oldCookieAuthenticatedBeforeRestart']=True;value=None
   elif args.phase=='admit':
    value=client();value.login('demo-admin');run=value.request('runs','POST',{'scenario':'pass','requiresApproval':True},{'Idempotency-Key':str(uuid.uuid4())})
    require(run['state']=='queued');cookies=[c.value for c in value.jar if c.name=='AGENTTRUST_STACK_SESSION'];require(len(cookies)==1)
