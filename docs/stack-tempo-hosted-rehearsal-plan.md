@@ -126,3 +126,7 @@ source run은 main의 이미지 빌드 SHA에 속하지만 게시 run은 feature
 기존 순차 제어에 더해 이전 소유 reader가 남아 있으면 다음 reader 시작을 거부한다. 파일 helper는 동기 실행하고 기존 192MiB 한도를 유지한다. 따라서 설계상 동시 실행은 Tempo 하나와 helper 하나이며 컨테이너 한도 합은 704MiB다. 이 합계는 Docker/OS 비용 또는 실제 사용량이 아니다. 세 개의 독립 파일시스템 사본과 fresh reader는 여전히 별도 실행 증거가 필요하며 이 기존 rehearsal을 그 검증의 완료로 취급하지 않는다.
 
 호스트 시작 2GiB를 4분 동안 유지하는 gate와 진행 1GiB, guest reserve 및 디스크 gate는 그대로 유지한다. 이 변경으로 기존 프로세스의 RAM이 확보됐다고 주장하지 않는다. 반복 대기/회수 없이 실제 자원 상태가 달라졌을 때만 실행 gate를 평가한다. 코드의 전 경로 모의 검증과 실제 로컬 reader의 측정 결과를 분리한다. hosted case 만료 시각도 연장하지 않는다.
+
+로컬 reader의 메모리는 새 helper 없이 `docker stats --no-stream --no-trunc`로 소유 fixture의 불변 ID 하나만 읽도록 계측했다. 준비 직후·중지 직전·완료 시점과 장기 관측 checkpoint에서 최대 20초당 한 번, 총 128개 이내로 기록한다. 각 CLI 제한은 10초이고 측정 전후 host/guest reserve, ID/image/StartedAt, fixture 소유권, OOM/restart, 512MiB 한도와 Go 환경 설정을 검증한다. 변경·누락·시간 초과·불완전한 통계는 실패로 종료하고 소유 fixture를 정리한다. 운영 컨테이너에는 stats/exec를 수행하지 않는다.
+
+`fixtureMemorySampledMaximumBytesApprox`는 CLI가 표시하는 Linux cache-adjusted 사용량의 **표본 최대 근사값**이다([Docker stats](https://docs.docker.com/reference/cli/docker/container/stats/)). 정확한 RSS, 총 cgroup 사용량, 기동 순간을 포함한 lifetime peak 또는 기존 프로필 대비 절감량이 아니다. 실제 한 개 이상의 표본이 성공해야 `fixtureMemoryUsageObserved=true`이며 `fixtureMemorySavingsMeasured=false`와 `fixtureMemoryLifetimePeakMeasured=false`는 유지한다. 모의 통계 테스트는 실제 프로필 측정으로 취급하지 않는다. 시작 reserve가 부족하면 측정을 위해서도 fixture를 만들지 않는다.

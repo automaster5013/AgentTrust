@@ -1,5 +1,5 @@
 """Metadata controls refuse source mutation and distinguish corrupt/ordinary 404s."""
-import contextlib,datetime,hashlib,importlib.util,json,pathlib,tempfile,unittest
+import contextlib,copy,datetime,hashlib,importlib.util,json,pathlib,subprocess,tempfile,unittest
 from types import SimpleNamespace as NS
 from unittest.mock import Mock,patch
 ROOT=pathlib.Path(__file__).resolve().parent.parent
@@ -9,6 +9,25 @@ helper=module('metadata_volume','stack-file-volume-helper.py');control=module('m
 PREFIX='blocks/tenant/00000000-0000-0000-0000-000000000001'
 
 class MetadataControl(unittest.TestCase):
+ def test_memory_sampling_binds_owned_identity_and_refuses_bad_stats(self):
+  name='agenttrust-stack-coldrestore-test-stack-tempo';drill=NS(prefix='agenttrust-stack-coldrestore-test',id='test',containers=[name])
+  identity=('d'*64,'sha256:'+'a'*64,'started')
+  row={'Id':identity[0],'Image':identity[1],'RestartCount':0,'State':{'Running':True,'OOMKilled':False,'StartedAt':'started'},'HostConfig':{'Memory':512*1048576},'Config':{'Labels':{'agenttrust.fixture':'test'},'Env':['GOMEMLIMIT=384MiB','GOMAXPROCS=1']}}
+  with patch.object(control.m.c,'inspect',return_value=row),patch.object(control.m.c,'run',return_value=NS(stdout=b'12.5MiB / 512MiB\n')) as run:
+   sample=control.memory_sample(drill,name,identity);self.assertEqual(sample['dockerCliCacheAdjustedUsageBytesApprox'],13107200);self.assertFalse(sample['lifetimePeakMeasured'])
+   self.assertEqual(run.call_args.args[0][-1],identity[0]);self.assertEqual(run.call_args.kwargs['timeout'],10)
+  for raw in (b'',b'0B / 0B',b'0B / 512MiB',b'NaN / 512MiB',b'513MiB / 512MiB',b'x'*257,b'1MiB / 512MiB\n1MiB / 512MiB'):
+   with patch.object(control.m.c,'inspect',return_value=row),patch.object(control.m.c,'run',return_value=NS(stdout=raw)):
+    with self.assertRaises(ValueError):control.memory_sample(drill,name,identity)
+  for mutate in (lambda r:r['State'].update(OOMKilled=True),lambda r:r['State'].update(StartedAt='restarted'),lambda r:r.update(RestartCount=1),lambda r:r['HostConfig'].update(Memory=0),lambda r:r['Config'].update(Env=['GOMEMLIMIT=384MiB','GOMEMLIMIT=1MiB','GOMAXPROCS=1'])):
+   changed=copy.deepcopy(row);mutate(changed)
+   with patch.object(control.m.c,'inspect',side_effect=[row,changed]),patch.object(control.m.c,'run',return_value=NS(stdout=b'12MiB / 512MiB')):
+    with self.assertRaises(ValueError):control.memory_sample(drill,name,identity)
+  with patch.object(control.m.c,'inspect') as inspect,patch.object(control.m.c,'run') as run:
+   with self.assertRaises(ValueError):control.memory_sample(drill,'agenttrust-stack-tempo-1',identity)
+   inspect.assert_not_called();run.assert_not_called()
+  with patch.object(control.m.c,'inspect',return_value=row),patch.object(control.m.c,'run',side_effect=subprocess.TimeoutExpired('owned stats',10)):
+   with self.assertRaises(subprocess.TimeoutExpired):control.memory_sample(drill,name,identity)
  def test_cache_miss_or_identity_mismatch_never_pulls(self):
   with patch.object(control.m.c,'run',side_effect=ValueError('cache missing')) as run,patch.object(control.m,'cached_identity') as identity:
    with self.assertRaises(ValueError):control.cached_candidate('pinned-reference','runtime')
@@ -88,7 +107,7 @@ class MetadataControl(unittest.TestCase):
 
 
 class FullControlPath(unittest.TestCase):
- def exercise(self,missing_failure=False,changed_recovery=False,launch_failure=False,hot=False,inverse_failure=False,retained=False,masked_reset=False,capacity_failure=False,protected_failure=False,other_growth=False):
+ def exercise(self,missing_failure=False,changed_recovery=False,launch_failure=False,hot=False,inverse_failure=False,retained=False,masked_reset=False,capacity_failure=False,protected_failure=False,other_growth=False,memory_failure=False):
   m=control.m;source_volume='agenttrust_stack-tempo-data';fixture='00000000-0000-0000-0000-000000000099';blocks=['blocks/tenant/00000000-0000-0000-0000-'+str(i).zfill(12) for i in (10,11,12)]
   original={blocks[0]+'/meta.json':b'{}',blocks[0]+'/data.parquet':b'valid original spans'}
   for prefix in blocks[1:]:original.update({prefix+'/meta.json':b'',prefix+'/data.parquet':b'preserved affected bytes'})
@@ -100,11 +119,14 @@ class FullControlPath(unittest.TestCase):
    if args[:3]==['docker','volume','inspect']:return answer([{'Labels':{'com.docker.compose.project':'agenttrust','com.docker.compose.volume':'stack-tempo-data'}}])
    if args[:3]==['docker','volume','create']:volumes[args[-1]]={};return answer()
    if args[:3]==['docker','image','inspect']:return answer([{'Id':'sha256:'+'c'*64}])
+   if args[:2]==['docker','stats']:
+    if memory_failure:raise subprocess.TimeoutExpired('owned stats',10)
+    self.assertEqual(args[-1],'d'*64);return answer(b'24MiB / 512MiB\n')
    if args[:3]==['docker','run','-d']:
     self.assertFalse(containers,'Tempo controls must never overlap')
     name=args[args.index('--name')+1];volume=next(v for v in args if v.startswith('type=volume,source=')).split('source=')[1].split(',')[0]
     if launch_failure and name.endswith('-stack-tempo') and not name.endswith('-original-stack-tempo'):return NS(stdout=b'',stderr=b'logging driver validation failed',returncode=1)
-    containers[name]={'Id':'d'*64,'RestartCount':0,'State':{'Running':True,'OOMKilled':False,'StartedAt':'fixture-start'},'Image':args[-3],'HostConfig':{'NetworkMode':'none','PortBindings':None},'Config':{'Labels':{'agenttrust.fixture':fixture}},'volume':volume};return answer()
+    containers[name]={'Id':'d'*64,'RestartCount':0,'State':{'Running':True,'OOMKilled':False,'StartedAt':'fixture-start'},'Image':args[-3],'HostConfig':{'Memory':512*1048576,'NetworkMode':'none','PortBindings':None},'Config':{'Env':['GOMEMLIMIT=384MiB','GOMAXPROCS=1'],'Labels':{'agenttrust.fixture':fixture}},'volume':volume};return answer()
    if args[:3]==['docker','rm','-f']:containers.pop(args[-1]);return answer()
    if args[:2]==['docker','logs']:return answer(b'fixture: unexpected end of JSON input')
    if '/helper.py' in args:
@@ -177,7 +199,9 @@ class FullControlPath(unittest.TestCase):
    patches=[(control,'require_sustained_host_capacity',lambda:{'hostSustainedMemoryVerified':True}),(control,'observe_hot',observe),(control,'protected_logitrack',lambda *a:tuple((format(i,'064x'),'sha256:'+'a'*64) for i in range(1,13))),(control,'ROOT',root),(m,'session_capacity',capacity),(m.d,'live_baseline',lambda:(['source'],{}, {},{'stack-tempo':source})),(m.d,'resolved_groups',lambda *a:({},{})),(m.d,'hash_files',lambda *a:{}),(m.e.planner,'compose_hashes',lambda *a:{}),(m.e.planner,'recheck',recheck),(m.e,'verify_candidate_release',lambda *a:{'directory':release_dir,'receipt':{'images':[{'name':'tempo','reference':reference}]}}),(m.c,'reserve',lambda:None),(m.c,'run',command),(m.c,'inspect',lambda name:containers[name]),(m.c,'Rehearsal',Drill),(m.c,'private_file',lambda path,raw:path.write_bytes(raw)),(m.c,'retained_key',lambda root,path:(path,'unchanged')),(m.c,'key_unchanged',lambda *a:True),(m,'protect',lambda path:path.mkdir(parents=True)),(m,'load',lambda *a:NS(transform=lambda action,key,raw:raw)),(m,'cached_identity',lambda *a:None),(control.tempo,'get',api)]
    for obj,name,value in patches:stack.enter_context(patch.object(obj,name,value))
    drill=control.run(config);self.assertTrue(drill.report['cleaned']);self.assertEqual(volumes[source_volume],original);self.assertFalse(containers)
-   self.assertEqual(drill.report['completed'],not(missing_failure or changed_recovery or launch_failure or inverse_failure or masked_reset or capacity_failure or protected_failure or other_growth));self.assertFalse(drill.report['automaticDeploymentAllowed']);self.assertFalse(drill.report['operatingMetadataRepaired'])
+   self.assertEqual(drill.report['completed'],not(missing_failure or changed_recovery or launch_failure or inverse_failure or masked_reset or capacity_failure or protected_failure or other_growth or memory_failure));self.assertFalse(drill.report['automaticDeploymentAllowed']);self.assertFalse(drill.report['operatingMetadataRepaired'])
+   if memory_failure:
+    self.assertFalse(drill.report['fixtureMemoryUsageObserved']);self.assertFalse(drill.report['fixtureMemorySavingsMeasured']);self.assertEqual(drill.report['errorType'],'TimeoutExpired');self.assertEqual(len([v for v in calls if v[:3]==['docker','run','-d']]),1);return
    if launch_failure:self.assertEqual(drill.report['fixtureStartErrorCategory'],'logging');self.assertIn('encryptedStartErrorSha256',drill.report)
    if drill.report['completed']:self.assertTrue(drill.report['metadataFailureReproduced']);self.assertEqual(drill.report['matchingTraces'],1);self.assertEqual(drill.report['quarantinedOwnedBlocks'],2)
    if capacity_failure:
@@ -201,7 +225,9 @@ class FullControlPath(unittest.TestCase):
     if args[args.index('--log-driver')+1]=='local':self.assertIn('max-file=2',args);self.assertIn('max-size=1m',args)
    self.assertFalse(any(args[:2]==['docker','pull'] for args in calls))
    self.assertTrue(drill.report['localCandidateCacheOnly']);self.assertFalse(drill.report['fixtureMemorySavingsMeasured'])
+   self.assertTrue(drill.report['fixtureMemoryUsageObserved']);self.assertFalse(drill.report['fixtureMemoryLifetimePeakMeasured']);self.assertEqual(drill.report['fixtureMemorySampledMaximumBytesApprox'],24*1048576)
  def test_inverse_timeout_preserves_authenticated_recovery_phase(self):self.exercise(hot=True,inverse_failure=True)
+ def test_memory_probe_failure_stops_before_candidate_and_cleans_owned_fixture(self):self.exercise(memory_failure=True)
  def test_full_warm_inverse_rejects_other_tenant_only_errors(self):self.exercise(hot=True,retained=True,other_growth=True)
  def test_full_memory_stop_keeps_independent_source_identity_verdict(self):self.exercise(hot=True,retained=True,capacity_failure=True)
  def test_full_source_identity_failure_not_misclassified_as_memory(self):self.exercise(hot=True,retained=True,protected_failure=True)

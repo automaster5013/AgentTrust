@@ -1,7 +1,7 @@
 """Reproduce empty metadata and rehearse quarantine only in owned Tempo copies.
 Never edits operating metadata, stops source writers, or enables deployment.
 """
-import argparse,datetime,hashlib,importlib.util,json,pathlib,secrets,sys,time,traceback,urllib.parse,uuid
+import argparse,datetime,decimal,hashlib,importlib.util,json,pathlib,re,secrets,sys,time,traceback,urllib.parse,uuid
 import stack_chunked_cache as chunks
 from stack_tempo_poll_evidence import counters, classify_inverse
 from stack_host_capacity import require_sustained_host_capacity
@@ -19,6 +19,31 @@ def cached_candidate(reference,runtime):
  image=json.loads(m.c.run(['docker','image','inspect',reference]).stdout)[0]
  m.cached_identity(image,reference,runtime)
  return image
+
+def memory_sample(drill,name,expected):
+ # One bounded CLI read, no helper/exec/cgroup writes or operating-container stats.
+ def bound():
+  row=owned_container(drill,name)
+  identity=(row['Id'],row['Image'],row['State']['StartedAt'])
+  m.e.require(identity==expected and re.fullmatch('[a-f0-9]{64}',identity[0]))
+  m.e.require(row['State']['Running'] is True and row['State'].get('OOMKilled') is False and row['RestartCount']==0)
+  m.e.require(row['HostConfig']['Memory']==512*1048576)
+  env=row['Config'].get('Env',[])
+  for key,value in [('GOMEMLIMIT','384MiB'),('GOMAXPROCS','1')]:
+   m.e.require([v for v in env if v.startswith(key+'=')]==[key+'='+value])
+  return identity
+ bound()
+ result=m.c.run(['docker','stats','--no-stream','--no-trunc','--format','{{.MemUsage}}',expected[0]],timeout=10)
+ m.e.require(type(result.stdout) is bytes and 0<len(result.stdout)<=256)
+ match=re.fullmatch(rb'([0-9]+(?:\.[0-9]+)?) ?(B|KiB|MiB|GiB) / ([0-9]+(?:\.[0-9]+)?) ?(B|KiB|MiB|GiB)\s*',result.stdout)
+ m.e.require(match)
+ units={b'B':1,b'KiB':1024,b'MiB':1048576,b'GiB':1073741824}
+ usage=decimal.Decimal(match[1].decode())*units[match[2]];limit=decimal.Decimal(match[3].decode())*units[match[4]]
+ m.e.require(limit==512*1048576 and 0<usage<=limit)
+ bound()
+ return {'observedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'containerId':expected[0],
+         'dockerCliCacheAdjustedUsageBytesApprox':int(usage),'containerLimitBytes':int(limit),
+         'identityAndProfilePreserved':True,'exactRssMeasured':False,'lifetimePeakMeasured':False}
 
 def fresh(report):
  created=datetime.datetime.fromisoformat(report['startedAt']);m.e.require(created.tzinfo is not None and 0<=(datetime.datetime.now(datetime.timezone.utc)-created).total_seconds()<=86400)
@@ -117,10 +142,24 @@ def run(config):
                      fullStackRecoveryVerified=False,automaticDeploymentAllowed=False,actualDeploymentPerformed=False,operatingMetadataRepaired=False,affectedBlockContentsRecovered=False,
                      localCandidateCacheOnly=True,fixtureGoMemoryLimitMiB=384,fixtureGoMaxProcs=1,fixtureMemoryLimitMiB=512,fixtureMemorySavingsMeasured=False)
  keydir=ROOT/'.local'/('tempo-control-key-'+drill.id);m.protect(keydir);key=secrets.token_bytes(32);m.c.private_file(keydir/'key.bin',key);drill.report['retainedKeyDirectory']=str(keydir)
+ active_memory={};last_memory=[None];memory_samples=[]
+ drill.report.update(fixtureMemorySamples=memory_samples,fixtureMemoryUsageObserved=False,fixtureMemoryLifetimePeakMeasured=False)
+ def sample_memory(force=False):
+  if not active_memory:return
+  now=time.monotonic()
+  if not force and last_memory[0] is not None and now-last_memory[0]<20:return
+  m.e.require(len(memory_samples)<128 and len(active_memory)==1)
+  m.session_capacity(512)
+  for name,identity in active_memory.items():memory_samples.append(memory_sample(drill,name,identity))
+  m.session_capacity(512)
+  last_memory[0]=time.monotonic();drill.report.update(fixtureMemoryUsageObserved=True,
+    fixtureMemorySampledMaximumBytesApprox=max(v['dockerCliCacheAdjustedUsageBytesApprox'] for v in memory_samples))
+ def stop_reader(name):
+  sample_memory(True);stop_owned(drill,name);active_memory.pop(name)
  def protected_checkpoint():
   m.e.planner.recheck(ids,inventory,ROOT,hashes);m.e.require(m.d.hash_files(protected)==protected and all(m.c.key_unchanged(*v) for v in custody) and protected_logitrack([v[0] for v in logitrack])==logitrack)
  def checkpoint():
-  protected_checkpoint();m.session_capacity(512)
+  protected_checkpoint();m.session_capacity(512);sample_memory()
  def source_files(prefix):return json.loads(m.c.run(cache.file_command(drill,drill.source_volume,'inventory',prefix=prefix),timeout=120).stdout)
  def create_volume(name):
   drill.volumes.append(name);m.c.run(['docker','volume','create','--label','agenttrust.fixture='+drill.id,name]);drill.own_volume(name);drill.volume_command(name,drill.file_user,['chown',drill.file_user,'/data'],write=True,initialize=True)
@@ -154,12 +193,13 @@ def run(config):
     drill.report.update(fixtureStartFailed=True,fixtureStartExitCode=result.returncode,fixtureStartErrorCategory=category,encryptedStartErrorSha256=hashlib.sha256(cipher).hexdigest())
    m.e.require(result.returncode==0);drill.wait(name,'stack-tempo')
    row=owned_container(drill,name);m.e.require(row['Image']==image_id and row['HostConfig']['NetworkMode']=='none' and not row['HostConfig']['PortBindings'])
+   m.e.require(not active_memory);active_memory[name]=(row['Id'],row['Image'],row['State']['StartedAt']);sample_memory(True)
   original_volume=drill.prefix+'-original';candidate_volume=drill.prefix+'-candidate';original_name=drill.prefix+'-original-stack-tempo';candidate_name=drill.prefix+'-stack-tempo'
   drill.stage('independent-original-image-positive-control');create_volume(original_volume);restore(drill,original_volume,manifest,baseline_path.parent,keys[0]);m.e.require(json.loads(m.c.run(cache.file_command(drill,original_volume,'inventory')).stdout)==good_files);start(original_name,original_volume,source['Image'])
   bounds=urllib.parse.urlencode({'start':min(b['start'] for b in selected)-1,'end':max(b['end'] for b in selected)+1});m.e.require(max(b['end'] for b in selected)-min(b['start'] for b in selected)<=7*86400-2)
   search=tempo.get(original_name,'/api/search?'+bounds+'&limit=20');m.e.require(search.get('traces'));paths=['/api/traces/'+tempo.trace_id(v['traceID'])+'?'+bounds for v in search['traces']];before={p:tempo.trace_fingerprint(tempo.get(original_name,p)) for p in paths};m.e.require(len(before)==len(paths))
   reference_cipher=crypto.transform('encrypt',key,json.dumps({'before':before,'baselineManifestSha256':baseline['encryptedManifestSha256']}).encode());m.c.private_file(drill.directory/'positive-reference.aesgcm',reference_cipher);drill.report.update(encryptedPositiveReferenceSha256=hashlib.sha256(reference_cipher).hexdigest(),positiveTraces=len(before),positiveSpans=sum(v[1] for v in before.values()),maximumConcurrentTempoFixtures=1)
-  stop_owned(drill,original_name)
+  stop_reader(original_name)
   drill.stage('published-candidate-with-exact-two-empty-original-blocks');create_volume(candidate_volume);restore(drill,candidate_volume,manifest,baseline_path.parent,keys[0]);restore(drill,candidate_volume,bad_manifest,affected,key)
   m.e.require(json.loads(m.c.run(cache.file_command(drill,candidate_volume,'inventory')).stdout)=={**good_files,**bad_files});start(candidate_name,candidate_volume,image['Id'],logs=True)
   status=None
@@ -170,7 +210,7 @@ def run(config):
   cipher=crypto.transform('encrypt',key,log_bytes);m.c.private_file(drill.directory/'negative-fixture-logs.aesgcm',cipher);drill.report.update(negativeControl=negative,encryptedNegativeLogsSha256=hashlib.sha256(cipher).hexdigest())
   hot=config.get('hotPolling',False);m.e.require(type(hot) is bool);identity=hot_identity(drill,candidate_name) if hot else None
   drill.stage('quarantine-only-owned-copies-preserving-all-affected-bytes');drill.target_volume=candidate_volume
-  if not hot:stop_owned(drill,candidate_name)
+  if not hot:stop_reader(candidate_name)
   for prefix in bad_prefixes:quarantine_owned(drill,candidate_volume,prefix,{k:v for k,v in bad_files.items() if k.startswith(prefix+'/')})
   if not hot:start(candidate_name,candidate_volume,image['Id'])
   def recovered():
@@ -212,7 +252,7 @@ def run(config):
   try:tempo.get('agenttrust-stack-tempo-1',paths[0])
   except ValueError as error:source_status=getattr(error,'read_failure',{}).get('statusCode');m.e.require(source_status==404)
   for prefix in bad_prefixes:m.e.require(source_files(prefix)=={k:v for k,v in bad_files.items() if k.startswith(prefix+'/')})
-  checkpoint();payload=json.dumps({'before':before,'negative':negative,'after':after,'quarantinedSourcePrefixes':bad_prefixes,'baselineManifestSha256':baseline['encryptedManifestSha256'],'auditSha256':audit_report['encryptedAuditSha256'],'hotPolling':hot_evidence,'inverseMetricSamples':({'tenant':metric_tenant,'before':inverse_metrics,**inverse_metric_samples} if hot else {})}).encode();cipher=crypto.transform('encrypt',key,payload);m.c.private_file(drill.directory/'comparison-evidence.aesgcm',cipher)
+  checkpoint();sample_memory(True);payload=json.dumps({'before':before,'negative':negative,'after':after,'quarantinedSourcePrefixes':bad_prefixes,'baselineManifestSha256':baseline['encryptedManifestSha256'],'auditSha256':audit_report['encryptedAuditSha256'],'hotPolling':hot_evidence,'inverseMetricSamples':({'tenant':metric_tenant,'before':inverse_metrics,**inverse_metric_samples} if hot else {})}).encode();cipher=crypto.transform('encrypt',key,payload);m.c.private_file(drill.directory/'comparison-evidence.aesgcm',cipher)
   drill.report.update(result,completed=True,sourceApiTraceStatus=source_status,sourceEmptyMetadataUnchanged=True,quarantinedOwnedBlocks=len(bad_prefixes),affectedFiles=len(bad_files),affectedBytes=sum(v['bytes'] for v in bad_files.values()),encryptedComparisonSha256=hashlib.sha256(cipher).hexdigest(),protectedLogitrackServices=len(logitrack),protectedLogitrackIdsAndImagesUnchanged=True,operationalContainersUnchanged=True)
  except Exception as error:drill.report.update(capacityFailure=getattr(error,'capacity_failure',None),completed=False,errorType=type(error).__name__,failureLocations=[{'file':pathlib.Path(v.filename).name,'line':v.lineno} for v in traceback.extract_tb(error.__traceback__)])
  finally:
