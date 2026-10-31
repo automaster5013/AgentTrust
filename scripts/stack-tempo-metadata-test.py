@@ -92,9 +92,17 @@ class MetadataControl(unittest.TestCase):
   for after in ({},{'trace':('b'*64,3)}):
    with self.assertRaises(ValueError):control.verdict(before,negative,after)
  def test_protected_logitrack_must_have_twelve_healthy_original_identities(self):
-  ids=[format(i,'064x') for i in range(1,13)];rows=[{'Id':value,'Image':'sha256:'+'a'*64,'Config':{'Labels':{'com.docker.compose.project':'logitrack'}},'State':{'Running':True,'Health':{'Status':'healthy'}}} for value in ids]
+  ids=[format(i,'064x') for i in range(1,13)];rows=[{'Id':value,'Image':'sha256:'+'a'*64,'Config':{'Labels':{'com.docker.compose.project':'logitrack'}},'State':{'Running':True,'StartedAt':'2026-10-30T00:00:00Z','Health':{'Status':'healthy'}}} for value in ids]
   with patch.object(control.m.c,'run',return_value=NS(stdout=__import__('json').dumps(rows).encode())):
-   self.assertEqual(len(control.protected_logitrack(ids)),12)
+   baseline=control.protected_logitrack(ids);self.assertEqual(len(baseline),12)
+  rows[0]['State']['StartedAt']='2026-10-31T00:00:00Z'
+  with patch.object(control.m.c,'run',return_value=NS(stdout=json.dumps(rows).encode())):
+   self.assertNotEqual(control.protected_logitrack(ids),baseline)
+  for invalid in (None,'','2026-10-31T00:00:00'):
+   rows[0]['State']['StartedAt']=invalid
+   with patch.object(control.m.c,'run',return_value=NS(stdout=json.dumps(rows).encode())):
+    with self.assertRaises(ValueError):control.protected_logitrack(ids)
+  rows[0]['State']['StartedAt']='2026-10-31T00:00:00Z'
   rows[0]['State']['Health']['Status']='unhealthy'
   with patch.object(control.m.c,'run',return_value=NS(stdout=__import__('json').dumps(rows).encode())):
    with self.assertRaises(ValueError):control.protected_logitrack(ids)
@@ -107,7 +115,7 @@ class MetadataControl(unittest.TestCase):
 
 
 class FullControlPath(unittest.TestCase):
- def exercise(self,missing_failure=False,changed_recovery=False,launch_failure=False,hot=False,inverse_failure=False,retained=False,masked_reset=False,capacity_failure=False,protected_failure=False,other_growth=False,memory_failure=False):
+ def exercise(self,missing_failure=False,changed_recovery=False,launch_failure=False,hot=False,inverse_failure=False,retained=False,masked_reset=False,capacity_failure=False,protected_failure=False,other_growth=False,memory_failure=False,logitrack_restart=False):
   m=control.m;source_volume='agenttrust_stack-tempo-data';fixture='00000000-0000-0000-0000-000000000099';blocks=['blocks/tenant/00000000-0000-0000-0000-'+str(i).zfill(12) for i in (10,11,12)]
   original={blocks[0]+'/meta.json':b'{}',blocks[0]+'/data.parquet':b'valid original spans'}
   for prefix in blocks[1:]:original.update({prefix+'/meta.json':b'',prefix+'/data.parquet':b'preserved affected bytes'})
@@ -153,6 +161,8 @@ class FullControlPath(unittest.TestCase):
     error=ValueError('Synthetic host reserve exhausted');error.capacity_failure={'hostMemoryAvailableMiB':1016,'hostMemoryRequiredMiB':1024};raise error
   def recheck(*args):
    if protected_failure and source_checked[0]:raise ValueError('Synthetic source identity change')
+  def protected_logitrack(*args):
+   return tuple((format(i,'064x'),'sha256:'+'a'*64,'2026-10-31T00:00:00Z' if logitrack_restart and source_checked[0] and i==1 else '2026-10-30T00:00:00Z') for i in range(1,13))
   original_observe=control.observe_hot
   def observe(drill,name,checkpoint,condition,timeout=900):
    if other_growth and condition.__name__=='corrupt_again':
@@ -196,18 +206,18 @@ class FullControlPath(unittest.TestCase):
     def volume_command(self,*args,**kwargs):pass
     def wait(self,*args):pass
     def cleanup(self):containers.clear();self.report['cleaned']=True
-   patches=[(control,'require_sustained_host_capacity',lambda:{'hostSustainedMemoryVerified':True}),(control,'observe_hot',observe),(control,'protected_logitrack',lambda *a:tuple((format(i,'064x'),'sha256:'+'a'*64) for i in range(1,13))),(control,'ROOT',root),(m,'session_capacity',capacity),(m.d,'live_baseline',lambda:(['source'],{}, {},{'stack-tempo':source})),(m.d,'resolved_groups',lambda *a:({},{})),(m.d,'hash_files',lambda *a:{}),(m.e.planner,'compose_hashes',lambda *a:{}),(m.e.planner,'recheck',recheck),(m.e,'verify_candidate_release',lambda *a:{'directory':release_dir,'receipt':{'images':[{'name':'tempo','reference':reference}]}}),(m.c,'reserve',lambda:None),(m.c,'run',command),(m.c,'inspect',lambda name:containers[name]),(m.c,'Rehearsal',Drill),(m.c,'private_file',lambda path,raw:path.write_bytes(raw)),(m.c,'retained_key',lambda root,path:(path,'unchanged')),(m.c,'key_unchanged',lambda *a:True),(m,'protect',lambda path:path.mkdir(parents=True)),(m,'load',lambda *a:NS(transform=lambda action,key,raw:raw)),(m,'cached_identity',lambda *a:None),(control.tempo,'get',api)]
+   patches=[(control,'require_sustained_host_capacity',lambda:{'hostSustainedMemoryVerified':True}),(control,'observe_hot',observe),(control,'protected_logitrack',protected_logitrack),(control,'ROOT',root),(m,'session_capacity',capacity),(m.d,'live_baseline',lambda:(['source'],{}, {},{'stack-tempo':source})),(m.d,'resolved_groups',lambda *a:({},{})),(m.d,'hash_files',lambda *a:{}),(m.e.planner,'compose_hashes',lambda *a:{}),(m.e.planner,'recheck',recheck),(m.e,'verify_candidate_release',lambda *a:{'directory':release_dir,'receipt':{'images':[{'name':'tempo','reference':reference}]}}),(m.c,'reserve',lambda:None),(m.c,'run',command),(m.c,'inspect',lambda name:containers[name]),(m.c,'Rehearsal',Drill),(m.c,'private_file',lambda path,raw:path.write_bytes(raw)),(m.c,'retained_key',lambda root,path:(path,'unchanged')),(m.c,'key_unchanged',lambda *a:True),(m,'protect',lambda path:path.mkdir(parents=True)),(m,'load',lambda *a:NS(transform=lambda action,key,raw:raw)),(m,'cached_identity',lambda *a:None),(control.tempo,'get',api)]
    for obj,name,value in patches:stack.enter_context(patch.object(obj,name,value))
    drill=control.run(config);self.assertTrue(drill.report['cleaned']);self.assertEqual(volumes[source_volume],original);self.assertFalse(containers)
-   self.assertEqual(drill.report['completed'],not(missing_failure or changed_recovery or launch_failure or inverse_failure or masked_reset or capacity_failure or protected_failure or other_growth or memory_failure));self.assertFalse(drill.report['automaticDeploymentAllowed']);self.assertFalse(drill.report['operatingMetadataRepaired'])
+   self.assertEqual(drill.report['completed'],not(missing_failure or changed_recovery or launch_failure or inverse_failure or masked_reset or capacity_failure or protected_failure or other_growth or memory_failure or logitrack_restart));self.assertFalse(drill.report['automaticDeploymentAllowed']);self.assertFalse(drill.report['operatingMetadataRepaired'])
    if memory_failure:
     self.assertFalse(drill.report['fixtureMemoryUsageObserved']);self.assertFalse(drill.report['fixtureMemorySavingsMeasured']);self.assertEqual(drill.report['errorType'],'TimeoutExpired');self.assertEqual(len([v for v in calls if v[:3]==['docker','run','-d']]),1);return
    if launch_failure:self.assertEqual(drill.report['fixtureStartErrorCategory'],'logging');self.assertIn('encryptedStartErrorSha256',drill.report)
    if drill.report['completed']:self.assertTrue(drill.report['metadataFailureReproduced']);self.assertEqual(drill.report['matchingTraces'],1);self.assertEqual(drill.report['quarantinedOwnedBlocks'],2)
    if capacity_failure:
     self.assertTrue(drill.report['operationalContainersUnchanged']);self.assertFalse(drill.report['finalCapacityCheckPassed']);self.assertEqual(drill.report['finalCapacityFailure']['hostMemoryAvailableMiB'],1016)
-   if protected_failure:
-    self.assertFalse(drill.report['operationalContainersUnchanged']);self.assertTrue(drill.report['finalCapacityCheckPassed'])
+   if protected_failure or logitrack_restart:
+    self.assertFalse(drill.report['operationalContainersUnchanged']);self.assertFalse(drill.report['protectedLogitrackStartedAtUnchanged']);self.assertTrue(drill.report['finalCapacityCheckPassed'])
    if other_growth:self.assertEqual(drill.report['errorType'],'ValueError')
    if inverse_failure or masked_reset or other_growth:
     self.assertTrue(drill.report['restartFreeApplyVerified']);self.assertFalse(drill.report['restartFreeRollbackVerified']);self.assertTrue(drill.report['inverseNamespaceFilesVerified']);self.assertIn('encryptedHotRecoveryPhaseSha256',drill.report)
@@ -226,6 +236,7 @@ class FullControlPath(unittest.TestCase):
    self.assertFalse(any(args[:2]==['docker','pull'] for args in calls))
    self.assertTrue(drill.report['localCandidateCacheOnly']);self.assertFalse(drill.report['fixtureMemorySavingsMeasured'])
    self.assertTrue(drill.report['fixtureMemoryUsageObserved']);self.assertFalse(drill.report['fixtureMemoryLifetimePeakMeasured']);self.assertEqual(drill.report['fixtureMemorySampledMaximumBytesApprox'],24*1048576)
+ def test_logitrack_restart_with_same_id_and_image_stops_and_cleans(self):self.exercise(hot=True,retained=True,logitrack_restart=True)
  def test_inverse_timeout_preserves_authenticated_recovery_phase(self):self.exercise(hot=True,inverse_failure=True)
  def test_memory_probe_failure_stops_before_candidate_and_cleans_owned_fixture(self):self.exercise(memory_failure=True)
  def test_full_warm_inverse_rejects_other_tenant_only_errors(self):self.exercise(hot=True,retained=True,other_growth=True)

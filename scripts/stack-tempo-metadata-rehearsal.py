@@ -110,7 +110,8 @@ def protected_logitrack(ids=None):
  for row in rows:
   m.e.require(row['Config']['Labels'].get('com.docker.compose.project')=='logitrack' and row['State']['Running'] is True and row['State'].get('Health',{}).get('Status')=='healthy')
   m.e.require(m.e.re.fullmatch('[a-f0-9]{64}',row['Id']) and m.e.re.fullmatch('sha256:[a-f0-9]{64}',row['Image']))
- result=tuple(sorted((row['Id'],row['Image']) for row in rows));m.e.require(len({row[0] for row in result})==12);return result
+  started=row['State'].get('StartedAt');m.e.require(isinstance(started,str) and datetime.datetime.fromisoformat(started).tzinfo is not None)
+ result=tuple(sorted((row['Id'],row['Image'],row['State']['StartedAt']) for row in rows));m.e.require(len({row[0] for row in result})==12);return result
 
 def run(config):
  host_window=require_sustained_host_capacity();m.session_capacity();logitrack=protected_logitrack();ids,raw,inventory,by=m.d.live_baseline();hashes=m.e.planner.compose_hashes(inventory,ROOT);_,protected=m.d.resolved_groups(inventory,by,list(m.e.planner.COMPONENTS))
@@ -140,7 +141,7 @@ def run(config):
  drill=m.c.Rehearsal({'stack-tempo':source});drill.crypto=crypto;drill.source_volume=mounts[0]['Name'];drill.target_volume=drill.prefix+'-candidate';drill.file_user=source['Config']['User'];drill.tools=json.loads(m.c.run(['docker','image','inspect','agenttrust-security:local']).stdout)[0]['Id']
  drill.report.update(hostMemoryWindow=host_window,kind='isolated-empty-tempo-metadata-control',candidateRevision=candidate['revision'],candidateReference=reference,sourceImageId=source['Image'],sourceServicesStopped=False,
                      fullStackRecoveryVerified=False,automaticDeploymentAllowed=False,actualDeploymentPerformed=False,operatingMetadataRepaired=False,affectedBlockContentsRecovered=False,
-                     localCandidateCacheOnly=True,fixtureGoMemoryLimitMiB=384,fixtureGoMaxProcs=1,fixtureMemoryLimitMiB=512,fixtureMemorySavingsMeasured=False)
+                     localCandidateCacheOnly=True,fixtureGoMemoryLimitMiB=384,fixtureGoMaxProcs=1,fixtureMemoryLimitMiB=512,fixtureMemorySavingsMeasured=False,protectedLogitrackStartedAtUnchanged=False)
  keydir=ROOT/'.local'/('tempo-control-key-'+drill.id);m.protect(keydir);key=secrets.token_bytes(32);m.c.private_file(keydir/'key.bin',key);drill.report['retainedKeyDirectory']=str(keydir)
  active_memory={};last_memory=[None];memory_samples=[]
  drill.report.update(fixtureMemorySamples=memory_samples,fixtureMemoryUsageObserved=False,fixtureMemoryLifetimePeakMeasured=False)
@@ -253,11 +254,11 @@ def run(config):
   except ValueError as error:source_status=getattr(error,'read_failure',{}).get('statusCode');m.e.require(source_status==404)
   for prefix in bad_prefixes:m.e.require(source_files(prefix)=={k:v for k,v in bad_files.items() if k.startswith(prefix+'/')})
   checkpoint();sample_memory(True);payload=json.dumps({'before':before,'negative':negative,'after':after,'quarantinedSourcePrefixes':bad_prefixes,'baselineManifestSha256':baseline['encryptedManifestSha256'],'auditSha256':audit_report['encryptedAuditSha256'],'hotPolling':hot_evidence,'inverseMetricSamples':({'tenant':metric_tenant,'before':inverse_metrics,**inverse_metric_samples} if hot else {})}).encode();cipher=crypto.transform('encrypt',key,payload);m.c.private_file(drill.directory/'comparison-evidence.aesgcm',cipher)
-  drill.report.update(result,completed=True,sourceApiTraceStatus=source_status,sourceEmptyMetadataUnchanged=True,quarantinedOwnedBlocks=len(bad_prefixes),affectedFiles=len(bad_files),affectedBytes=sum(v['bytes'] for v in bad_files.values()),encryptedComparisonSha256=hashlib.sha256(cipher).hexdigest(),protectedLogitrackServices=len(logitrack),protectedLogitrackIdsAndImagesUnchanged=True,operationalContainersUnchanged=True)
+  drill.report.update(result,completed=True,sourceApiTraceStatus=source_status,sourceEmptyMetadataUnchanged=True,quarantinedOwnedBlocks=len(bad_prefixes),affectedFiles=len(bad_files),affectedBytes=sum(v['bytes'] for v in bad_files.values()),encryptedComparisonSha256=hashlib.sha256(cipher).hexdigest(),protectedLogitrackServices=len(logitrack),protectedLogitrackIdsAndImagesUnchanged=True,protectedLogitrackStartedAtUnchanged=True,operationalContainersUnchanged=True)
  except Exception as error:drill.report.update(capacityFailure=getattr(error,'capacity_failure',None),completed=False,errorType=type(error).__name__,failureLocations=[{'file':pathlib.Path(v.filename).name,'line':v.lineno} for v in traceback.extract_tb(error.__traceback__)])
  finally:
-  try:protected_checkpoint();drill.report['operationalContainersUnchanged']=True
-  except Exception:drill.report.update(completed=False,operationalContainersUnchanged=False)
+  try:protected_checkpoint();drill.report.update(operationalContainersUnchanged=True,protectedLogitrackStartedAtUnchanged=True)
+  except Exception:drill.report.update(completed=False,operationalContainersUnchanged=False,protectedLogitrackStartedAtUnchanged=False)
   try:m.session_capacity(512);drill.report['finalCapacityCheckPassed']=True
   except Exception as error:drill.report.update(completed=False,finalCapacityCheckPassed=False,finalCapacityFailure=getattr(error,'capacity_failure',None))
   drill.cleanup()
