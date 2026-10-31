@@ -134,6 +134,18 @@ test('workspace management terminates another own browser app session without en
  }finally{try{await logout(second)}finally{await context.close()}}
 });
 
+if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true')test('legacy Core return keeps unsupported management unavailable without fabricating success',async({page})=>{
+ await login(page,'demo-admin');const management=page.locator('#management');
+ await page.getByRole('navigation',{name:'워크스페이스 탐색',exact:true}).getByRole('link',{name:'프로젝트·계정 관리',exact:true}).click();
+ const project=page.waitForResponse(r=>new URL(r.url()).pathname==='/backend/workspace/project'&&r.request().method()==='GET');
+ await management.getByRole('button',{name:'프로젝트 설정 조회',exact:true}).click();expect((await project).status()).toBe(404);
+ await expect(management.getByRole('status')).toContainText('요청을 완료하지 못했습니다.');await expect(management.getByLabel('프로젝트 이름',{exact:true})).toHaveCount(0);
+ const keys=page.waitForResponse(r=>new URL(r.url()).pathname==='/backend/workspace/access-keys'&&r.request().method()==='GET');
+ await management.getByRole('button',{name:'접근 키 목록 조회',exact:true}).click();expect((await keys).status()).toBe(404);
+ await expect(management.getByRole('status')).toContainText('요청을 완료하지 못했습니다.');await expect(management.getByLabel('한 번만 표시되는 접근 키',{exact:true})).toHaveCount(0);
+ expect((await page.request.get('/backend/me')).status()).toBe(200);phase('previous Core management absence is explicit; no settings or credentials are invented; fresh authenticated browser remains scoped');
+});
+
 test('project home keeps failed statistics unknown and binds retry counts to the displayed response',async({page})=>{
  await login(page,'demo-viewer',async()=>{await page.route('**/backend/runs',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({code:'SYNTHETIC_UNAVAILABLE'})}))});
  const home=page.locator('#overview');await expect(home).toContainText('평가 목록을 확인하지 못했습니다.');await expect(home.locator('dd')).toHaveText(['미확인','미확인','미확인','미확인']);

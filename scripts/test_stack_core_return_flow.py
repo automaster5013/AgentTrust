@@ -1,0 +1,82 @@
+import copy
+import pathlib
+import types
+import unittest
+from unittest.mock import patch
+import stack_ci_return_guard as guard
+from stack_core_return_flow import preserved, verify
+
+
+class FlowTest(unittest.TestCase):
+    def fixture(self, fail=None):
+        state = {'ledger': 'ledger-v18', 'tables': {
+            'stack_runs': ['historical-run'], 'stack_project_settings': ['settings'],
+            'stack_access_keys': ['key'], 'stack_access_key_revocations': ['revoked']}}
+        events = []
+        def switch(mode):
+            events.append('switch-' + mode)
+            if fail == 'switch-' + mode: raise RuntimeError('SWITCH_FAILED')
+        def api(mode):
+            events.append('api-' + mode)
+            state['tables']['stack_runs'].append('new-' + mode)
+            if fail == 'api-' + mode: raise RuntimeError('API_FAILED')
+        def browser():
+            events.append('browser')
+            if fail == 'browser': raise RuntimeError('BROWSER_FAILED')
+            if fail == 'revocation-loss': state['tables']['stack_access_key_revocations'].clear()
+            if fail == 'ledger-drift': state['ledger'] = 'changed'
+        return events, lambda: verify(switch, api, browser, lambda: copy.deepcopy(state))
+
+    def test_real_control_flow_requires_previous_http_browser_and_candidate_http(self):
+        events, run = self.fixture(); result = run()
+        self.assertEqual(events, ['switch-previous', 'api-previous', 'browser', 'switch-candidate', 'api-candidate'])
+        self.assertTrue(result['completed'])
+        for flag in ('allPossibleApiRoutesVerified', 'operatingRecoveryVerified', 'actualDeploymentPerformed',
+                     'automaticDeploymentAllowed', 'healthyRollbackGuaranteed'):
+            self.assertIs(result[flag], False)
+
+    def test_failed_or_partial_previous_switch_still_restores_candidate(self):
+        for fault in ('switch-previous', 'api-previous', 'browser'):
+            events, run = self.fixture(fault)
+            with self.subTest(fault=fault), self.assertRaises(RuntimeError): run()
+            self.assertEqual(events[-1], 'switch-candidate')
+            self.assertNotIn('api-candidate', events)
+
+    def test_schema_or_revocation_loss_is_not_healthy_return(self):
+        for fault in ('ledger-drift', 'revocation-loss'):
+            events, run = self.fixture(fault)
+            with self.subTest(fault=fault), self.assertRaises(AssertionError): run()
+            self.assertEqual(events[-1], 'switch-candidate')
+
+    def test_candidate_restore_failure_never_reports_success(self):
+        events, run = self.fixture('switch-candidate')
+        with self.assertRaises(RuntimeError): run()
+        self.assertNotIn('api-candidate', events)
+
+    def test_candidate_api_failure_after_restore_is_incomplete(self):
+        events, run = self.fixture('api-candidate')
+        with self.assertRaises(RuntimeError): run()
+        self.assertEqual(events[-2:], ['switch-candidate', 'api-candidate'])
+
+    def test_fingerprints_allow_new_business_rows_but_not_replaced_or_deleted_rows(self):
+        before = {'ledger': 'same', 'tables': {'stack_runs': ['a', 'a']}}
+        preserved(before, {'ledger': 'same', 'tables': {'stack_runs': ['a', 'a', 'b']}})
+        with self.assertRaises(AssertionError):
+            preserved(before, {'ledger': 'same', 'tables': {'stack_runs': ['a', 'b']}})
+
+    def test_hosted_guard_requires_exact_workspace_repository_and_nonroot_hosted_runner(self):
+        root = pathlib.Path(__file__).resolve().parent.parent
+        env = {'CI': 'true', 'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'github-hosted',
+               'GITHUB_REPOSITORY': 'automaster5013/AgentTrust', 'GITHUB_WORKSPACE': str(root)}
+        with patch.object(guard, 'os', types.SimpleNamespace(name='posix', getuid=lambda: 1000, environ=env)):
+            guard.require_hosted(root, env)
+            for name, value in [('CI', 'false'), ('RUNNER_ENVIRONMENT', 'self-hosted'),
+                                ('GITHUB_REPOSITORY', 'other/repo'), ('GITHUB_WORKSPACE', str(root.parent))]:
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    guard.require_hosted(root, dict(env, **{name: value}))
+        with patch.object(guard, 'os', types.SimpleNamespace(name='posix', getuid=lambda: 0, environ=env)):
+            with self.assertRaises(ValueError): guard.require_hosted(root, env)
+
+
+if __name__ == '__main__':
+    unittest.main()

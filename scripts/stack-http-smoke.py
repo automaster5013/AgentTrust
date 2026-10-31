@@ -1,6 +1,9 @@
 """Real HTTP contract checks against isolated Spring/PostgreSQL stack. Never prints credentials."""
 import argparse,concurrent.futures,http.cookiejar,json,pathlib,urllib.request,urllib.error,urllib.parse,uuid,datetime,time
-p=argparse.ArgumentParser();p.add_argument('--base',default='http://127.0.0.1:4321');p.add_argument('--credentials',default='.local/stack/demo-credentials.json');args=p.parse_args();assert args.base in ['http://127.0.0.1:4321','http://127.0.0.1:4320'];base=args.base;prefix='/backend/' if base.endswith('4320') else '/api/'
+p=argparse.ArgumentParser();p.add_argument('--base',default='http://127.0.0.1:4321');p.add_argument('--credentials',default='.local/stack/demo-credentials.json');p.add_argument('--legacy-core-return',action='store_true');args=p.parse_args();assert args.base in ['http://127.0.0.1:4321','http://127.0.0.1:4320'];base=args.base;prefix='/backend/' if base.endswith('4320') else '/api/'
+if args.legacy_core_return:
+ from stack_ci_return_guard import require_hosted
+ require_hosted(pathlib.Path(__file__).resolve().parent.parent)
 credentials=json.loads(pathlib.Path(args.credentials).read_text(encoding='utf-8'));policy=json.loads(pathlib.Path('services/core-api/src/main/resources/policy-metadata.json').read_text(encoding='utf-8'))['agenttrust']['policy'];report={'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'base':base,'synthetic':True,'legacyDatabaseWrites':False,'serverDeployed':False,'completed':False,'checks':[],'ownSessionsLoggedOut':False};clients=[];stage='initialize'
 from stack_test_client import StackClient
 class Client(StackClient):
@@ -15,42 +18,49 @@ def completed(client,record):
 try:
  stage='anonymous';anonymous=Client();anonymous.request('me',expected=401);anonymous.request('runs','POST',{'scenario':'pass','requiresApproval':True},headers={'Idempotency-Key':'unauthorized-test'},expected=403);check('anonymous and missing CSRF refused')
  stage='login';admin=Client();admin.login('demo-admin');editor=Client();editor.login('demo-editor');viewer=Client();viewer.login('demo-viewer');other=Client();other.login('other-admin');check('four authenticated identities retain tenant and role')
- stage='workspace-management'
- project=admin.request('workspace/project');assert project['organizationId']==admin.request('me')['organizationId'] and project['deploymentAuthority'] is False
- editor.request('workspace/project','POST',{'expectedRevision':project['revision'],'name':'Forbidden','description':''},expected=403)
- viewer.request('workspace/access-keys',expected=403)
- updated=admin.request('workspace/project','POST',{'expectedRevision':project['revision'],'name':'Synthetic project','description':'Isolated CI management contract'})
- assert updated['revision']==project['revision']+1 and updated['name']=='Synthetic project'
- admin.request('workspace/project','POST',{'expectedRevision':project['revision'],'name':'Stale','description':''},expected=409)
- assert other.request('workspace/project')['name']!='Synthetic project'
- key_id=str(uuid.uuid4());issued=admin.request('workspace/access-keys','POST',{'id':key_id,'name':'Synthetic metadata read','days':1});secret=issued['token']
- assert issued['key']['id']==key_id and issued['key']['scope']=='project-metadata-read' and issued['deploymentAuthority'] is False
- page=admin.request('workspace/access-keys');assert any(row['id']==key_id for row in page['entries']) and 'token' not in page and all('token' not in row and 'secret_hash' not in row for row in page['entries'])
- def key_read(token,expected):
-  request=urllib.request.Request('http://127.0.0.1:4321/api/access-key/project',headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
-  class NoKeyRedirect(urllib.request.HTTPRedirectHandler):
-   def redirect_request(self,*args,**kwargs):raise ValueError('Key redirect refused')
-  opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoKeyRedirect())
-  try:response=opener.open(request,timeout=10)
-  except urllib.error.HTTPError as error:response=error
+ if args.legacy_core_return:
+  stage='legacy-management-unavailable'
+  for resource in ['project','access-keys','sessions']:admin.request('workspace/'+resource,expected=404)
+  admin.request('workspace/project','POST',{'expectedRevision':0,'name':'Not applied','description':''},expected=404)
+  report['managementApiSupported']=False
+  check('previous Core refuses unsupported management paths without changing V18 records')
+ else:
+  stage='workspace-management'
+  project=admin.request('workspace/project');assert project['organizationId']==admin.request('me')['organizationId'] and project['deploymentAuthority'] is False
+  editor.request('workspace/project','POST',{'expectedRevision':project['revision'],'name':'Forbidden','description':''},expected=403)
+  viewer.request('workspace/access-keys',expected=403)
+  updated=admin.request('workspace/project','POST',{'expectedRevision':project['revision'],'name':'Synthetic project','description':'Isolated CI management contract'})
+  assert updated['revision']==project['revision']+1 and updated['name']=='Synthetic project'
+  admin.request('workspace/project','POST',{'expectedRevision':project['revision'],'name':'Stale','description':''},expected=409)
+  assert other.request('workspace/project')['name']!='Synthetic project'
+  key_id=str(uuid.uuid4());issued=admin.request('workspace/access-keys','POST',{'id':key_id,'name':'Synthetic metadata read','days':1});secret=issued['token']
+  assert issued['key']['id']==key_id and issued['key']['scope']=='project-metadata-read' and issued['deploymentAuthority'] is False
+  page=admin.request('workspace/access-keys');assert any(row['id']==key_id for row in page['entries']) and 'token' not in page and all('token' not in row and 'secret_hash' not in row for row in page['entries'])
+  def key_read(token,expected):
+   request=urllib.request.Request('http://127.0.0.1:4321/api/access-key/project',headers={'Authorization':'Bearer '+token,'Accept':'application/json'})
+   class NoKeyRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,*args,**kwargs):raise ValueError('Key redirect refused')
+   opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoKeyRedirect())
+   try:response=opener.open(request,timeout=10)
+   except urllib.error.HTTPError as error:response=error
+   try:
+    assert response.status==expected;raw=response.read(16385);assert len(raw)<=16384
+    return json.loads(raw) if expected==200 else None
+   finally:response.close()
   try:
-   assert response.status==expected;raw=response.read(16385);assert len(raw)<=16384
-   return json.loads(raw) if expected==200 else None
-  finally:response.close()
- try:
-  assert key_read(secret,200)['projectId']==project['projectId'];key_read(secret[:-1]+('a' if secret[-1]!='a' else 'b'),401)
-  other.request('workspace/access-keys/'+key_id+'/revoke','POST',{},expected=404)
- finally:admin.request('workspace/access-keys/'+key_id+'/revoke','POST',{})
- key_read(secret,401)
- own_sessions=admin.request('workspace/sessions');current=next(row for row in own_sessions['entries'] if row['current']);assert own_sessions['actorId']==admin.request('me')['actorId'] and own_sessions['coverage']=='current-core-instance-observed-app-sessions'
- admin.request('workspace/sessions/'+current['handle']+'/revoke','POST',{},expected=409)
- other.request('workspace/sessions/'+current['handle']+'/revoke','POST',{},expected=404)
- before_handles={row['handle'] for row in own_sessions['entries']};second=Client();second.login('demo-admin')
- try:
-  tracked=admin.request('workspace/sessions');added=[row for row in tracked['entries'] if row['handle'] not in before_handles and not row['current']];assert len(added)==1
-  admin.request('workspace/sessions/'+added[0]['handle']+'/revoke','POST',{});second.request('me',expected=401);assert admin.request('me')['role']=='admin'
- finally:second.logout()
- check('workspace settings CAS role and tenant boundaries, hashed one-time keys actual stateless read and revocation, current and foreign session refusal')
+   assert key_read(secret,200)['projectId']==project['projectId'];key_read(secret[:-1]+('a' if secret[-1]!='a' else 'b'),401)
+   other.request('workspace/access-keys/'+key_id+'/revoke','POST',{},expected=404)
+  finally:admin.request('workspace/access-keys/'+key_id+'/revoke','POST',{})
+  key_read(secret,401)
+  own_sessions=admin.request('workspace/sessions');current=next(row for row in own_sessions['entries'] if row['current']);assert own_sessions['actorId']==admin.request('me')['actorId'] and own_sessions['coverage']=='current-core-instance-observed-app-sessions'
+  admin.request('workspace/sessions/'+current['handle']+'/revoke','POST',{},expected=409)
+  other.request('workspace/sessions/'+current['handle']+'/revoke','POST',{},expected=404)
+  before_handles={row['handle'] for row in own_sessions['entries']};second=Client();second.login('demo-admin')
+  try:
+   tracked=admin.request('workspace/sessions');added=[row for row in tracked['entries'] if row['handle'] not in before_handles and not row['current']];assert len(added)==1
+   admin.request('workspace/sessions/'+added[0]['handle']+'/revoke','POST',{});second.request('me',expected=401);assert admin.request('me')['role']=='admin'
+  finally:second.logout()
+  check('workspace settings CAS role and tenant boundaries, hashed one-time keys actual stateless read and revocation, current and foreign session refusal')
  stage='evaluation';records={}
  for scenario,decision,state in [('pass','pass','succeeded'),('block','block','succeeded'),('missing_evidence','inconclusive','succeeded'),('error','inconclusive','failed')]:
   r=admin.request('runs','POST',{'scenario':scenario,'requiresApproval':True},{'Idempotency-Key':str(uuid.uuid4())});r=completed(admin,r);assert r['decision']==decision and r['state']==state and r['result']['executionEngine']=='python-synthetic';g=admin.request('runs/'+r['id']+'/gate');assert not g['deploymentAllowed'] and not g['signed'] and g['policyEngine']=='opa-rego' and g['policyStatus']=='evaluated' and g['policyVersion']==policy['version'] and g['policyDigest']==policy['digest'];records[scenario]=r

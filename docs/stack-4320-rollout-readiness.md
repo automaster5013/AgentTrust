@@ -47,3 +47,16 @@
 이전 이미지는 고정 공개 registry digest와 source label을 대조하지만 이 시험에서 서명을 재검증한 것은 아니다. `baselineSignatureVerified=false`이며 새 서명된 배포 후보로 사용하지 않는다. 이전 Core의 전체 HTTP 기능이나 브라우저 복귀를 실행하는 시험은 아니므로 `oldFullApiBusinessFlowVerified=false`, `healthyRollbackGuaranteed=false`를 유지한다.
 
 Full-path 모의/실패 테스트 7개, Python 문법·actionlint는 로컬 통과했다. 기존 행 변경·철회 기록 소실·잘못된 baseline·migration 재적용·이전 역할 실패를 거부한다. 실제 격리 전환 결과는 새 CI에서 별도로 확인하며, 실행 전에는 성공으로 표시하지 않는다.
+
+
+## 이전 Core HTTP·브라우저 복귀 검증 경로
+
+`stack-core-return-smoke.py --execute`는 현재 PC와 self-hosted runner에서 실행을 거부한다. 비 root GitHub-hosted runner, 정확한 repository/workspace와 compose 경로를 확인한 일회성 합성 스택에만 연결한다. 기존 회귀 데이터와 V18 스키마를 가진 CI Core만 고정 이전 이미지로 교체한다. 운영 자료·기존 PC 서비스·현재 대화에는 연결하지 않는다.
+
+이전 Core에서 직접 API와 4320 BFF의 HTTP 회귀를 실행하고, 관리 시나리오를 제외한 기존 브라우저 회귀와 관리 API 부재(404)의 명시적 표시를 추가로 확인한다. 후보에만 있는 관리 기능을 이전 Core의 지원 기능으로 간주하지 않는다. 이전 Core에서 새 키/설정이 정상 생성됐다고 표시해서도 안 된다.
+
+시도 중 예외·부분 교체·API/브라우저 실패가 발생해도 `finally`에서 동일 후보 Core의 복원을 시도한다. 그 뒤 후보의 새 관리 기능을 포함한 HTTP 검사를 재실행한다. 이전 migrator·DB down migration·ledger 변경은 실행하지 않는다. 기존 모든 행의 해시 다중집합이 유지되고 새 시험 행만 추가될 수 있는지, 이전 Core 실행 동안 관리 테이블은 정확히 같은지, 스키마 ledger와 Core 외 CI 컨테이너 ID/image/StartedAt이 보존되는지 확인한다. 행 본문·쿠키·키·환경 비밀값은 보고하지 않는다.
+
+시험은 30분의 주 작업 한도와 별도의 최대 5분 후보 복원 한도를 사용한다. 실제 광범위 HTTP/브라우저 회귀가 통과해도 `allPossibleApiRoutesVerified=false`, `operatingRecoveryVerified=false`, `healthyRollbackGuaranteed=false`, `automaticDeploymentAllowed=false`를 유지한다. 모든 가능한 API 경로, 운영 데이터 복구와 운영 무중단 전환을 증명하는 것은 아니다. 실제 결과는 추가 CI 단계가 성공한 뒤 별도로 기록한다.
+
+로컬 확인: 복귀/복원 순서·예외 경로·행 보존·hosted guard 테스트 7개와 V17 전환 테스트 7개 통과, TypeScript·Python 문법·actionlint 통과. 기존 관리 HTTP 검사는 AST 비교로 기본 경로가 그대로 유지됨을 확인했다. 이전 Core 모드의 브라우저 시나리오 55개가 검색되었으며, 검색/모의 검증은 실제 실행 통과와 다르다. 현재 PC 실행은 Docker 작업 전에 거부됐다. 이전 `e23b02d`는 전체 integration 포함 6개 CI 최종 성공, `6091814`의 전체 최종 결과는 이 기록 시점 미확정이다.

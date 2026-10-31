@@ -40,6 +40,7 @@ jobs:
           python3 scripts/stack-local-cd-evidence-test.py
           python3 scripts/stack-local-cd-plan-test.py
           python3 -m unittest discover -s scripts -p test_stack_v18_transition_probe.py
+          python3 -m unittest discover -s scripts -p test_stack_core_return_flow.py
           python3 scripts/stack-dockerhub-main-mirror-test.py
           python3 scripts/stack-dockerhub-test.py
           python3 scripts/stack-delivery-verifier-test.py
@@ -251,6 +252,8 @@ jobs:
           path: apps/console/test-results/**/workspace-*.png
           if-no-files-found: warn
           retention-days: 7
+      - name: Verify previous Core HTTP and browser return on synthetic V18
+        run: python3 scripts/stack-core-return-smoke.py --execute
       - name: Verify persisted results after service restart
         run: |
           docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml restart stack-core-api stack-ai-worker stack-console
@@ -370,6 +373,7 @@ jobs:
             .local/stack-https-identity-*/summary.json
             .local/stack-oidc-image-config-*.json
             .local/stack-browser-*.json
+            .local/stack-core-return-*/summary.json
             apps/console/test-results/**/workspace-*.png
             .local/ui-visual/*.png
             .local/ui-visual/comparison.json
