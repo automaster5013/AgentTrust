@@ -84,3 +84,18 @@ namespace 역이동은 변경 전 위치로 돌아가는 절차다. **빈 블록
 Warm 목록 유지 판정의 오류 증가는 복구 대상 블록과 기준 블록의 같은 테넌트에 묶는다. 다른 테넌트의 오류 증가만으로 정상 트레이스 유지의 원인을 증명하지 않는다. 대상이 여러 테넌트이거나 해당 테넌트 counter가 없으면 판정 불가다. 집계 오류 증가와 대상 오류 증가를 구분하고, 테넌트 식별값은 암호화된 phase·비교 증거에만 기록한다. 다른 테넌트만 증가하는 전체 warm 경로가 성공으로 승격되지 않는지 모의 검증한다.
 
 새 Tempo 격리 실행의 시작에는 Windows 호스트의 4분 안정 관측을 코드에서 강제한다. 20초 간격 13회 모두 2,048MiB 이상이고 단조 시계로 최소 240초가 지나야 한다. 한 번이라도 하한 미달이거나 관측 실패·시간 부족이면 Docker 조회·소스 관측 전에 거부한다. 우회 CLI 옵션은 없다. 성공한 창의 최저 여유·샘플 수·경과 시간은 실험 요약에 보존하고, 이후 단계의 1,024MiB checkpoint와 Docker reserve 검사는 계속 독립적으로 적용한다. 다른 OS의 실행은 Windows 안정 관측 성공으로 표시하지 않는다.
+
+## Hosted 합성 증거를 CD 검토에 반영한 현재 상태
+
+`b6c2be166817a64842d692ce3c2a491693291abe`의 전체 integration run `41168885185`와 나머지 5개 PR workflow는 최종 성공했다. 동일 HEAD의 Tempo run `41168885193`도 실제 실행·독립 재계산·정리까지 성공했다. 이는 새 커밋 CI나 운영 CD의 성공을 선취하지 않는다.
+
+`scripts/stack_tempo_cd_readiness.py`는 내려받은 합성 summary/evidence를 신뢰한 해시에 고정한 뒤 전체 원문을 재계산하고, 검토 후보 Tempo digest 및 이미지 빌드 revision과 일치하는지 확인한다. caller는 GitHub artifact ZIP의 기대 digest와 소속 run/head를 먼저 확인해야 하며 입력 해시를 임의 JSON에서 복사한 것만으로 원격 출처가 인증되는 것은 아니다. 이 CLI는 Docker·네트워크·운영 파일 쓰기·execute 모드가 없다. 첨부 결과의 syntheticWarmEvidenceVerified만 true이며 운영 권한과 CD 허용은 항상 false다.
+
+### 배포 전 남은 필수 조건
+
+1. 32개 운영 서비스의 최신 ID/image/StartedAt/health 기준, 실제 Compose 3개 그룹과 runtime policy·후보 16개 이미지 digest/서명 결합을 재확인한다. Tempo 1개 서명 검증을 전체 후보 검증으로 대체하지 않는다.
+2. 운영 자료는 로컬 비공개 경계에 보존하고, 신선한 운영 복구 증거와 저장소 간 일관성·마이그레이션 호환·백업 및 전체 스택 격리 복구를 확인한다. 합성 데이터는 이 조건을 충족하지 않는다. 메모리 확보 반복 실험이나 쓰기 중단 백업을 재개하지 않는다.
+3. 복구 예정 상태의 별도 fresh reader가 실제 기준 trace 전체를 읽는지 검증한다. warm 역이동의 새 metadata 오류 +2와 정상 조회 유지는 이전 정상 blocklist의 유지이며 정상 롤백 판정이 아니다. 파일 역이동·운영 재시작을 자동 실패 처리로 사용하지 않는다.
+4. 위 증거를 배포 실행부의 최신 후보·설치 상태·승인에 묶고 별도 운영 변경 검토를 완료한 후에만 적용을 검토한다. 현재 operatingSourceWritesAllowed/operatingStopOrRestartAllowed/automaticRollbackAllowed/automaticDeploymentAllowed는 false다.
+
+실행 case가 만료된 이후 PR은 오프라인 테스트를 계속 실행하되 hosted Docker 실험과 독립 실행 결과 단계는 건너뛰며 job summary에 NOT EXECUTED를 기록한다. 이 통과 상태는 새 합성 증거가 아니며, 새 실제 실험에는 별도 명시적 실행 시간 범위가 필요하다.

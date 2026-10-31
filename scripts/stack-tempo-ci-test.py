@@ -5,6 +5,7 @@ from unittest.mock import Mock,patch
 import stack_tempo_ci_release as release
 from stack_tempo_ci_release import load,extract
 from stack_tempo_ci_verdict import verify_output
+from stack_tempo_cd_readiness import review
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 h=load('hosted_rehearsal_test','stack-tempo-ci-rehearsal.py');helper=load('hosted_helper_test','stack-tempo-ci-helper.py')
 class Fake(h.Driver):
@@ -64,11 +65,15 @@ class HostedProof(unittest.TestCase):
   with tempfile.TemporaryDirectory(dir=ROOT) as tmp,contextlib.ExitStack() as stack:
    root=pathlib.Path(tmp);instances=[]
    def driver(*args):d=Fake(*args);d.mode=mode;instances.append(d);return d
-   stack.enter_context(patch.object(h,'host_guard',return_value=(root,time.time()+3600)));stack.enter_context(patch.object(h,'Driver',driver));stack.enter_context(patch.object(h,'available_mib',return_value=8192));stack.enter_context(patch.object(h,'verify',return_value={'runtimeImageId':'sha256:'+'a'*64,'sourceSignaturesVerified':True,'publicationRunsVerified':True}));stack.enter_context(patch.dict(os.environ,{'RUNNER_TEMP':str(root),'GITHUB_SHA':'f'*40}));stack.enter_context(patch.object(h.sys,'argv',['hosted','--execute']));stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+   stack.enter_context(patch.object(h,'host_guard',return_value=(root,time.time()+3600)));stack.enter_context(patch.object(h,'Driver',driver));stack.enter_context(patch.object(h,'available_mib',return_value=8192));stack.enter_context(patch.object(h,'verify',return_value={'runtimeImageId':'sha256:'+'a'*64,'sourceSignaturesVerified':True,'publicationRunsVerified':True,'verifiedImageNames':['tempo'],'allSixteenSignaturesReverified':False,'tempoReference':json.loads((ROOT/'ci/tempo-warm-case.json').read_text(encoding='utf-8'))['image'],'sourceRevision':json.loads((ROOT/'ci/tempo-warm-case.json').read_text(encoding='utf-8'))['revision']}));stack.enter_context(patch.dict(os.environ,{'RUNNER_TEMP':str(root),'GITHUB_SHA':'f'*40}));stack.enter_context(patch.object(h.sys,'argv',['hosted','--execute']));stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
    code=h.main();d=instances[0];self.assertEqual(code,0 if mode=='normal' else 1);self.assertTrue((root/'tempo-ci-output/summary.json').exists());self.assertFalse(d.models)
    summary=json.loads((root/'tempo-ci-output/summary.json').read_bytes());self.assertFalse(summary['actualCDPerformed']);self.assertFalse(summary['automaticDeploymentAllowed'])
    if mode=='normal':
-    self.assertEqual(verify_output(root/'tempo-ci-output')['matchingSpans'],133);self.assertEqual([v for v in d.events if v[0]=='start'],[['start','writer'],['start','gold'],['start','candidate']]);self.assertEqual(sum(v==['stop','candidate'] for v in d.events),0)
+    self.assertEqual(verify_output(root/'tempo-ci-output')['matchingSpans'],133);
+    output=root/'tempo-ci-output';pinned=hashlib.sha256((output/'summary.json').read_bytes()).hexdigest();evidence=summary['evidenceSha256'];attached=review(output,pinned,evidence,summary['imageReference'],summary['sourceRevision']);self.assertTrue(attached['syntheticWarmEvidenceVerified']);self.assertFalse(attached['automaticDeploymentAllowed']);self.assertFalse(attached['healthyRollbackGuaranteed'])
+    for sha,proof_sha,image,revision in [('0'*64,evidence,summary['imageReference'],summary['sourceRevision']),(pinned,'0'*64,summary['imageReference'],summary['sourceRevision']),(pinned,evidence,summary['imageReference'][:-1]+('0' if summary['imageReference'][-1]!='0' else '1'),summary['sourceRevision']),(pinned,evidence,summary['imageReference'],'f'*40)]:
+     with self.assertRaises(ValueError):review(output,sha,proof_sha,image,revision)
+    self.assertEqual([v for v in d.events if v[0]=='start'],[['start','writer'],['start','gold'],['start','candidate']]);self.assertEqual(sum(v==['stop','candidate'] for v in d.events),0)
     proof=json.loads((root/'tempo-ci-output/synthetic-evidence.json').read_bytes())
     altered=copy.deepcopy(proof);altered['inverseFrames'][format(1,'032x')]['resourceSpans'][0]['scopeSpans'][0]['spans'][0]['name']='tampered'
     raw=json.dumps(altered).encode();(root/'tempo-ci-output/synthetic-evidence.json').write_bytes(raw);summary['evidenceSha256']=hashlib.sha256(raw).hexdigest();(root/'tempo-ci-output/summary.json').write_text(json.dumps(summary))
