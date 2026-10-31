@@ -39,7 +39,7 @@ class Fake(h.Driver):
    with patch.object(helper,'http',receive):result=helper.main('push',{'start':start})
    data=self.models[container]['data'];block=data/'blocks/single-tenant/00000000-0000-0000-0000-000000000001';block.mkdir(parents=True);(block/'meta.json').write_text(json.dumps({'blockID':block.name,'totalObjects':20}));(block/'data.parquet').write_bytes(b'explicitly mocked parquet')
    return result
-  if action in ('closed','clone','inject','out','inverse','bad-files','clean'):
+  if action in ('closed','clone','inject','out','inverse','bad-files','clean','metadata'):
    with patch.object(helper,'ROOT',target),patch.object(helper,'SOURCE',source):return helper.main(action,{})
   model=self.models[container];bad=(model['data']/'blocks/single-tenant'/helper.BAD[0]).exists();warm=model['warm']
   if action=='config':return {'status':200,'text':'storage:\n  trace:\n    blocklist_poll: 5m0s\n'}
