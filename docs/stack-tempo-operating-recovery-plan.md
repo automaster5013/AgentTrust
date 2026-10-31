@@ -125,3 +125,7 @@ fresh reader 시작 조건은 아직 충족되지 않았다. 이번 단일 Windo
 ## review 요약의 시간 경계
 
 오프라인 review summary는 `createdAt`과 별도로 `sourceEvidenceStartedAt`, `evidenceExpiresAt`, `preflightMaxAgeSeconds`를 출력한다. 기존 증거가 23시간 전이면 새 review의 증거 기한은 1시간 뒤이며 생성 시각부터 24시간으로 연장되지 않는다. 24시간 검토 유효성과 실제 source 파일 관측의 300초 제한은 서로 다른 조건이다. 이 필드는 source 관측 수행이나 fresh reader 실행을 의미하지 않는다.
+
+## hot 역이동 영수증의 의미 구분
+
+로컬 metadata rehearsal의 hot 경로는 역이동 파일·identity가 확인돼도 `restartFreeRollbackVerified=false`와 `healthyRollbackGuaranteed=false`를 유지한다. 검증한 namespace 역이동 자체만 `restartFreeNamespaceInverseVerified=true`로 기록한다. 정상 blocklist가 남아 조회되는 경우와 404가 다시 나타난 경우 모두 건강한 롤백 성공으로 승격하지 않는다. 과거 영수증의 필드나 바이트를 고쳐 새 실제 실행 증거로 사용하지 않는다. 이 변경의 전체 경로 테스트는 모의 검증이며 운영 적용 또는 새 reader 실행이 아니다.

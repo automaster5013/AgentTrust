@@ -193,7 +193,7 @@ def run(config):
    inverse_result,inverse_observation=observe_hot(drill,candidate_name,checkpoint,corrupt_again)
    m.e.require(hot_identity(drill,candidate_name)==identity)
    for prefix in bad_prefixes:m.e.require(json.loads(m.c.run(cache.file_command(drill,candidate_volume,'inventory',prefix=prefix)).stdout)=={k:v for k,v in bad_files.items() if k.startswith(prefix+'/')})
-   hot_evidence={'restartFreeApplyVerified':True,'restartFreeRollbackVerified':True,'inverseReproducedKnown404':inverse_result['inverseKnown404Reproduced'],'retainedGoodBlocklistObserved':inverse_result['retainedGoodBlocklistObserved'],'inverseRuntimeResult':inverse_result,'fixtureIdentityAndStartedAtUnchanged':True,'recoveryObservation':recovery_observation,'inverseObservation':inverse_observation,'effectivePollingIntervalVerified':False,'pollingMetricsAcceptanceVerified':False}
+   hot_evidence={'restartFreeApplyVerified':True,'restartFreeRollbackVerified':False,'restartFreeNamespaceInverseVerified':True,'healthyRollbackGuaranteed':False,'inverseReproducedKnown404':inverse_result['inverseKnown404Reproduced'],'retainedGoodBlocklistObserved':inverse_result['retainedGoodBlocklistObserved'],'inverseRuntimeResult':inverse_result,'fixtureIdentityAndStartedAtUnchanged':True,'recoveryObservation':recovery_observation,'inverseObservation':inverse_observation,'effectivePollingIntervalVerified':False,'pollingMetricsAcceptanceVerified':False}
    drill.report.update(hot_evidence,kind='isolated-empty-tempo-metadata-hot-control')
 
   source_status=200

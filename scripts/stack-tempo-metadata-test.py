@@ -182,7 +182,7 @@ class FullControlPath(unittest.TestCase):
    if retained and drill.report['completed']:
     private=json.loads((drill.directory/'comparison-evidence.aesgcm').read_bytes());self.assertIn('series',private['inverseMetricSamples']['before']);self.assertIn('series',private['inverseMetricSamples']['after']);self.assertNotIn('series',json.dumps(drill.report))
    if hot and drill.report['completed']:
-    self.assertTrue(drill.report['restartFreeApplyVerified']);self.assertTrue(drill.report['restartFreeRollbackVerified']);self.assertEqual(drill.report['inverseReproducedKnown404'],not retained);self.assertEqual(drill.report['retainedGoodBlocklistObserved'],retained)
+    self.assertTrue(drill.report['restartFreeApplyVerified']);self.assertFalse(drill.report['restartFreeRollbackVerified']);self.assertTrue(drill.report['restartFreeNamespaceInverseVerified']);self.assertFalse(drill.report['healthyRollbackGuaranteed']);self.assertFalse(drill.report['automaticDeploymentAllowed']);self.assertEqual(drill.report['inverseReproducedKnown404'],not retained);self.assertEqual(drill.report['retainedGoodBlocklistObserved'],retained)
    starts=[v for v in calls if v[:3]==['docker','run','-d']]
    self.assertEqual(len(starts),2 if hot or missing_failure or launch_failure else 3)
    first_candidate=next(i for i,v in enumerate(calls) if v[:3]==['docker','run','-d'] and v[v.index('--name')+1].endswith('-stack-tempo') and not v[v.index('--name')+1].endswith('-original-stack-tempo'))
