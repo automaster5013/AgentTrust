@@ -166,7 +166,7 @@ def run(config):
   if hot:after,recovery_observation=observe_hot(drill,candidate_name,checkpoint,recovered)
   else:after=recovered()
   result=verdict(before,negative,after)
-  hot_evidence={}
+  hot_evidence={};inverse_metric_samples={}
   if hot:
    inverse_metrics=counters(tempo.get(candidate_name,'/metrics')['metrics'])
    phase={'inverseMetricsBaseline':inverse_metrics,'before':before,'after':after,'observation':recovery_observation,'identity':identity,'restartFreeApplyVerified':True,'automaticDeploymentAllowed':False}
@@ -181,7 +181,8 @@ def run(config):
     except ValueError as error:
      m.e.require(getattr(error,'read_failure',{}).get('statusCode')==404);return {'inverseKnown404Reproduced':True,'retainedGoodBlocklistObserved':False}
     found={p:tempo.trace_fingerprint(tempo.get(candidate_name,p)) for p in paths};m.e.require(found==before)
-    observation=classify_inverse(inverse_metrics,counters(tempo.get(candidate_name,'/metrics')['metrics']),True)
+    inverse_metric_samples['after']=counters(tempo.get(candidate_name,'/metrics')['metrics'])
+    observation=classify_inverse(inverse_metrics,inverse_metric_samples['after'],True)
     return observation if observation['retainedGoodBlocklistObserved'] else None
    for prefix in bad_prefixes:m.e.require(json.loads(m.c.run(cache.file_command(drill,candidate_volume,'inventory',prefix=prefix)).stdout)=={k:v for k,v in bad_files.items() if k.startswith(prefix+'/')})
    drill.report.update(inverseNamespaceFilesVerified=True);drill.stage('observe-inverse-without-restart')
@@ -195,7 +196,7 @@ def run(config):
   try:tempo.get('agenttrust-stack-tempo-1',paths[0])
   except ValueError as error:source_status=getattr(error,'read_failure',{}).get('statusCode');m.e.require(source_status==404)
   for prefix in bad_prefixes:m.e.require(source_files(prefix)=={k:v for k,v in bad_files.items() if k.startswith(prefix+'/')})
-  checkpoint();payload=json.dumps({'before':before,'negative':negative,'after':after,'quarantinedSourcePrefixes':bad_prefixes,'baselineManifestSha256':baseline['encryptedManifestSha256'],'auditSha256':audit_report['encryptedAuditSha256'],'hotPolling':hot_evidence}).encode();cipher=crypto.transform('encrypt',key,payload);m.c.private_file(drill.directory/'comparison-evidence.aesgcm',cipher)
+  checkpoint();payload=json.dumps({'before':before,'negative':negative,'after':after,'quarantinedSourcePrefixes':bad_prefixes,'baselineManifestSha256':baseline['encryptedManifestSha256'],'auditSha256':audit_report['encryptedAuditSha256'],'hotPolling':hot_evidence,'inverseMetricSamples':({'before':inverse_metrics,**inverse_metric_samples} if hot else {})}).encode();cipher=crypto.transform('encrypt',key,payload);m.c.private_file(drill.directory/'comparison-evidence.aesgcm',cipher)
   drill.report.update(result,completed=True,sourceApiTraceStatus=source_status,sourceEmptyMetadataUnchanged=True,quarantinedOwnedBlocks=len(bad_prefixes),affectedFiles=len(bad_files),affectedBytes=sum(v['bytes'] for v in bad_files.values()),encryptedComparisonSha256=hashlib.sha256(cipher).hexdigest(),protectedLogitrackServices=len(logitrack),protectedLogitrackIdsAndImagesUnchanged=True,operationalContainersUnchanged=True)
  except Exception as error:drill.report.update(capacityFailure=getattr(error,'capacity_failure',None),completed=False,errorType=type(error).__name__,failureLocations=[{'file':pathlib.Path(v.filename).name,'line':v.lineno} for v in traceback.extract_tb(error.__traceback__)])
  finally:

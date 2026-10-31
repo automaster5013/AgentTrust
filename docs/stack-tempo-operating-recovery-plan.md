@@ -76,3 +76,5 @@ namespace 역이동은 변경 전 위치로 돌아가는 절차다. **빈 블록
 데스크톱 앱 작업 집합 반환은 프로세스 종료 없이 시작 여유를 제공했지만 지속성을 보장하지 못했다. 후속 점검에서 Linux 게스트의 파일 캐시가 약 3GiB인 것을 확인하고, 커널 6.18의 `memory.reclaim`에 `512M swappiness=0`을 두 번 요청했다. 한도·autostart·WSL 설정은 변경하지 않았다. [커널 문서](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files)에 따르면 reclaim 요청은 목표보다 적거나 많이 회수할 수 있다. 게스트 내부 캐시 감소가 Windows의 지속 여유 증가를 보장하지 않으며, 실제 호스트 시계열을 기준으로 새 격리 작업 시작 여부를 판단한다. 캐시 회수의 반복 자동화나 운영 cgroup 한도 축소는 추가하지 않는다. `.wslconfig` 변경은 [WSL 재시작이 필요한 설정](https://learn.microsoft.com/en-us/windows/wsl/wsl-config)이므로 현 무중단 범위에서 적용하지 않는다.
 
 후속 실제 호스트 관측은 4분 동안 20초 간격 13회 수행했다. 여유는 1,730~2,081MiB였고 여러 번 2GiB 미만이었다. 따라서 `sustained2GiB: false`로 기록하고 새 Tempo fixture는 시작하지 않았다. 사후 원래 32개 서비스의 ID·이미지·StartedAt가 기준과 같고 모두 healthy, 컨테이너 총 42개임을 확인했다. 지표 기반 warm 역이동 경로는 전체 경로 모의 검증까지 통과했지만 추가 실제 지표 검증은 미수행이다. 이 결과를 실제 재실행 완료나 운영 CD 성공으로 간주하지 않는다.
+
+폴링 카운터는 합계뿐 아니라 개별 라벨 시리즈도 보존해 비교한다. 한 테넌트의 counter reset을 다른 테넌트의 증가가 가리는 경우도 거부한다. 시리즈 생성·소멸, 합계와 시리즈 합산의 불일치는 판정 불가다. 실제 전후 snapshot은 암호화된 비교 증거에만 포함하며 공개 요약에는 라벨 원문을 기록하지 않는다. 이 거부 조건과 실제 snapshot의 암호화 기록을 전체 warm 경로 모의 검증에 포함한다.

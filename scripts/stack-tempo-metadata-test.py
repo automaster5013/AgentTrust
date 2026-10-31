@@ -77,7 +77,7 @@ class MetadataControl(unittest.TestCase):
 
 
 class FullControlPath(unittest.TestCase):
- def exercise(self,missing_failure=False,changed_recovery=False,launch_failure=False,hot=False,inverse_failure=False,retained=False):
+ def exercise(self,missing_failure=False,changed_recovery=False,launch_failure=False,hot=False,inverse_failure=False,retained=False,masked_reset=False):
   m=control.m;source_volume='agenttrust_stack-tempo-data';fixture='00000000-0000-0000-0000-000000000099';blocks=['blocks/tenant/00000000-0000-0000-0000-'+str(i).zfill(12) for i in (10,11,12)]
   original={blocks[0]+'/meta.json':b'{}',blocks[0]+'/data.parquet':b'valid original spans'}
   for prefix in blocks[1:]:original.update({prefix+'/meta.json':b'',prefix+'/data.parquet':b'preserved affected bytes'})
@@ -122,6 +122,7 @@ class FullControlPath(unittest.TestCase):
    if name=='agenttrust-stack-tempo-1':
     error=ValueError('fixture source 404');error.read_failure={'statusCode':404};raise error
    data=volumes[containers[name]['volume']];bad=any(k.startswith('blocks/') and k.endswith('/meta.json') and not v for k,v in data.items())
+   if path=='/metrics' and masked_reset:return {'metrics':'tempodb_blocklist_poll_errors_total{tenant="a"} '+str(0 if inverse_restored[0] else 5)+'\ntempodb_blocklist_poll_errors_total{tenant="b"} '+str(8 if inverse_restored[0] else 1)+'\ntempodb_blocklist_poll_duration_seconds_count 2\n'}
    if path=='/metrics':return {'metrics':'tempodb_blocklist_poll_errors_total '+str(2 if inverse_restored[0] else 1)+'\ntempodb_blocklist_poll_duration_seconds_count 2\n'}
    if bad and not missing_failure and not (retained and inverse_restored[0]):
     error=ValueError('fixture corrupt 404');error.read_failure={'statusCode':404};raise error
@@ -154,11 +155,13 @@ class FullControlPath(unittest.TestCase):
    patches=[(control,'observe_hot',observe),(control,'protected_logitrack',lambda *a:tuple((format(i,'064x'),'sha256:'+'a'*64) for i in range(1,13))),(control,'ROOT',root),(m,'session_capacity',lambda *a:None),(m.d,'live_baseline',lambda:(['source'],{}, {},{'stack-tempo':source})),(m.d,'resolved_groups',lambda *a:({},{})),(m.d,'hash_files',lambda *a:{}),(m.e.planner,'compose_hashes',lambda *a:{}),(m.e.planner,'recheck',lambda *a:None),(m.e,'verify_candidate_release',lambda *a:{'directory':release_dir,'receipt':{'images':[{'name':'tempo','reference':reference}]}}),(m.c,'reserve',lambda:None),(m.c,'run',command),(m.c,'inspect',lambda name:containers[name]),(m.c,'Rehearsal',Drill),(m.c,'private_file',lambda path,raw:path.write_bytes(raw)),(m.c,'retained_key',lambda root,path:(path,'unchanged')),(m.c,'key_unchanged',lambda *a:True),(m,'protect',lambda path:path.mkdir(parents=True)),(m,'load',lambda *a:NS(transform=lambda action,key,raw:raw)),(m,'cached_identity',lambda *a:None),(control.tempo,'get',api)]
    for obj,name,value in patches:stack.enter_context(patch.object(obj,name,value))
    drill=control.run(config);self.assertTrue(drill.report['cleaned']);self.assertEqual(volumes[source_volume],original);self.assertFalse(containers)
-   self.assertEqual(drill.report['completed'],not(missing_failure or changed_recovery or launch_failure or inverse_failure));self.assertFalse(drill.report['automaticDeploymentAllowed']);self.assertFalse(drill.report['operatingMetadataRepaired'])
+   self.assertEqual(drill.report['completed'],not(missing_failure or changed_recovery or launch_failure or inverse_failure or masked_reset));self.assertFalse(drill.report['automaticDeploymentAllowed']);self.assertFalse(drill.report['operatingMetadataRepaired'])
    if launch_failure:self.assertEqual(drill.report['fixtureStartErrorCategory'],'logging');self.assertIn('encryptedStartErrorSha256',drill.report)
    if drill.report['completed']:self.assertTrue(drill.report['metadataFailureReproduced']);self.assertEqual(drill.report['matchingTraces'],1);self.assertEqual(drill.report['quarantinedOwnedBlocks'],2)
-   if inverse_failure:
+   if inverse_failure or masked_reset:
     self.assertTrue(drill.report['restartFreeApplyVerified']);self.assertFalse(drill.report['restartFreeRollbackVerified']);self.assertTrue(drill.report['inverseNamespaceFilesVerified']);self.assertIn('encryptedHotRecoveryPhaseSha256',drill.report)
+   if retained and drill.report['completed']:
+    private=json.loads((drill.directory/'comparison-evidence.aesgcm').read_bytes());self.assertIn('series',private['inverseMetricSamples']['before']);self.assertIn('series',private['inverseMetricSamples']['after']);self.assertNotIn('series',json.dumps(drill.report))
    if hot and drill.report['completed']:
     self.assertTrue(drill.report['restartFreeApplyVerified']);self.assertTrue(drill.report['restartFreeRollbackVerified']);self.assertEqual(drill.report['inverseReproducedKnown404'],not retained);self.assertEqual(drill.report['retainedGoodBlocklistObserved'],retained)
    starts=[v for v in calls if v[:3]==['docker','run','-d']]
@@ -169,6 +172,7 @@ class FullControlPath(unittest.TestCase):
     self.assertEqual(args[args.index('--network')+1],'none');self.assertNotIn('-p',args)
     if args[args.index('--log-driver')+1]=='local':self.assertIn('max-file=2',args);self.assertIn('max-size=1m',args)
  def test_inverse_timeout_preserves_authenticated_recovery_phase(self):self.exercise(hot=True,inverse_failure=True)
+ def test_full_warm_inverse_rejects_reset_hidden_by_other_tenant_growth(self):self.exercise(hot=True,retained=True,masked_reset=True)
  def test_full_warm_inverse_retains_traces_despite_new_poll_errors(self):self.exercise(hot=True,retained=True)
  def test_hot_full_flow_never_restarts_candidate(self):self.exercise(hot=True)
  def test_full_positive_corrupt_quarantine_and_recovery_flow(self):self.exercise()
@@ -185,6 +189,14 @@ class PollingEvidence(unittest.TestCase):
   self.assertTrue(result['retainedGoodBlocklistObserved']);self.assertFalse(result['healthyRollbackGuaranteed']);self.assertEqual(result['newSuccessfulPolls'],0)
   self.assertFalse(classify_inverse(before,before,True)['retainedGoodBlocklistObserved'])
   self.assertFalse(classify_inverse(before,after,False)['retainedGoodBlocklistObserved'])
+ def test_series_reset_and_disappearance_refuse_even_when_total_grows(self):
+  from stack_tempo_poll_evidence import counters,classify_inverse
+  old=counters('tempodb_blocklist_poll_errors_total{tenant="a"} 5\ntempodb_blocklist_poll_errors_total{tenant="b"} 1\ntempodb_blocklist_poll_duration_seconds_count 3')
+  new=counters('tempodb_blocklist_poll_errors_total{tenant="a"} 0\ntempodb_blocklist_poll_errors_total{tenant="b"} 8\ntempodb_blocklist_poll_duration_seconds_count 3')
+  self.assertGreater(new['totals']['tempodb_blocklist_poll_errors_total'],old['totals']['tempodb_blocklist_poll_errors_total'])
+  with self.assertRaises(ValueError):classify_inverse(old,new,True)
+  changed=counters('tempodb_blocklist_poll_errors_total{tenant="b"} 10\ntempodb_blocklist_poll_duration_seconds_count 3')
+  with self.assertRaises(ValueError):classify_inverse(old,changed,True)
  def test_missing_reset_nan_duplicate_or_negative_counters_refused(self):
   from stack_tempo_poll_evidence import counters,classify_inverse
   base='tempodb_blocklist_poll_errors_total 2\ntempodb_blocklist_poll_duration_seconds_count 3'
