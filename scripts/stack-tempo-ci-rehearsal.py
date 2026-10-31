@@ -90,7 +90,7 @@ class Driver:
  def traces(self,name,start):
   frame=self.helper('traces',container=name,start=start)
   if frame['status']==404:
-   self.report['lastSyntheticTraceStatus']=404;self.save();return None
+   self.report['lastSyntheticTraceStatus']=404;self.record(lastSyntheticTraceFailure=frame);return None
   need(frame['status']==200);self.last_frames=frame['traces'];return fingerprint(frame['traces'],start)
  def cleanup(self):
   ok=True
@@ -112,7 +112,7 @@ def exercise(d):
  context=json.loads(d.call(['docker','context','inspect']));need(len(context)==1 and context[0]['Endpoints']['docker']['Host']=='unix:///var/run/docker.sock')
  d.call(['docker','pull','--platform','linux/amd64',d.case['image']]);d.call(['docker','pull','--platform','linux/amd64',PYTHON]);image=json.loads(d.call(['docker','image','inspect',d.case['image']]))[0];need(image['Id']==d.report['release']['runtimeImageId']);need(d.deadline-time.time()>=1800)
  d.phase('synthetic-writer');start=int(time.time())-180;data=d.directory('writer-data');writer=d.start('writer',data);need(d.helper('push',container=writer,start=start)=={'traces':20,'spans':133});d.wait(lambda:d.helper('closed',target=data)['blocks'],300);d.stop(writer)
- d.phase('closed-block-only-golden-reader');gold_data=d.directory('gold-data');gold_manifest=d.helper('clone',target=gold_data,source=data);need(gold_manifest['walCopied'] is False);gold=d.start('gold',gold_data);before=d.wait(lambda:d.traces(gold,start),120);d.report['goldenManifestSha256']=hashlib.sha256(json.dumps(gold_manifest,sort_keys=True).encode()).hexdigest();d.stop(gold);d.record(before=before,goldenFrames=d.last_frames,boundsStart=start)
+ d.phase('closed-block-only-golden-reader');gold_data=d.directory('gold-data');gold_manifest=d.helper('clone',target=gold_data,source=data);need(gold_manifest['walCopied'] is False);gold=d.start('gold',gold_data);before=d.wait(lambda:d.traces(gold,start),360);d.report['goldenManifestSha256']=hashlib.sha256(json.dumps(gold_manifest,sort_keys=True).encode()).hexdigest();d.stop(gold);d.record(before=before,goldenFrames=d.last_frames,boundsStart=start)
  d.phase('cold-empty-metadata-control');candidate_data=d.directory('candidate-data');d.helper('clone',target=candidate_data,source=data);bad=d.helper('inject',target=candidate_data);candidate=d.start('candidate',candidate_data);identity=d.identity(candidate)
  def cold_failed():
   need(d.traces(candidate,start) is None);metrics=d.metrics(candidate,allow_missing=True)
@@ -120,7 +120,7 @@ def exercise(d):
   logs=d.logs(candidate)
   if logs['jsonErrors']<=0:return None
   d.record(coldLogs=logs,negativeRaw=d.last_metrics);return metrics
- negative=d.wait(cold_failed,120,candidate,identity);d.record(negative=negative,coldTraceStatus=404,badFiles=bad,identity=identity)
+ negative=d.wait(cold_failed,360,candidate,identity);d.record(negative=negative,coldTraceStatus=404,badFiles=bad,identity=identity)
  config=d.helper('config',container=candidate);need(config['status']==200);poll=re.findall(r'(?m)^\s*blocklist_poll:\s*(\S+)\s*$',config['text']);need(len(poll)==1 and poll[0] in ('5m','5m0s','300s'));d.report['effectivePollingSeconds']=300
  d.phase('hot-quarantine');need(d.helper('out',target=candidate_data)==bad);samples=[];stable=[]
  def recovered():

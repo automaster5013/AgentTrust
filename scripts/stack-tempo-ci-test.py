@@ -89,6 +89,9 @@ class HostedProof(unittest.TestCase):
   with patch.dict(os.environ,{'GITHUB_ACTIONS':'false'}),patch.object(h.subprocess,'run') as run:
    with self.assertRaises(ValueError):h.host_guard(case)
    run.assert_not_called()
+ def test_first_reader_observation_allows_a_full_poll(self):
+  import inspect
+  source=inspect.getsource(h.exercise);self.assertIn('d.traces(gold,start),360',source);self.assertIn('cold_failed,360',source)
  def test_real_wait_deadline_does_not_retry(self):
   with tempfile.TemporaryDirectory(dir=ROOT) as tmp,patch.object(h,'available_mib',return_value=8192),patch.object(h.time,'sleep') as sleep:
    d=h.Driver(pathlib.Path(tmp),{'revision':'f'*40,'image':'synthetic-test'},time.time()+3600)
