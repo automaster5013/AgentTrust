@@ -96,3 +96,9 @@ source run은 main의 이미지 빌드 SHA에 속하지만 게시 run은 feature
 메타데이터 읽기 실패의 실제 지표는 `tempodb_blocklist_tenant_index_errors_total{tenant=...}`다. `tempodb_blocklist_poll_errors_total{tenant=""}`는 전체 tenant 열거 실패이므로 같은 원인으로 해석하지 않는다. 하네스는 해당 tenant의 새 오류 증가, JSON 파싱 오류 로그, 성공 poll 두 회와 전역 오류 비증가, 무재시작 identity, 20개/133개 전체 의미 일치를 함께 확인한다. 기존 공통 판정기와 테스트도 이 source-backed counter 선택으로 수정했다. 과거 지표 미확보 실행은 이 변경으로 성공 승격하지 않는다.
 
 전체 경로 모의 테스트는 실제 Docker 실행 증거가 아니다. 공개 artifact redirect에서 읽기 토큰 제거, ZIP 경로·중복·symlink 거부, counter reset·다른 tenant·trace 변경·재시작·정리 실패 차단을 검사한다. 저장된 합성 원문과 해시·counter chain은 별도 verdict 모듈이 재계산한다.
+
+## 최초 hosted 실행 결과와 잔여 문제
+
+2026-10-31 run `41165508355`는 서명·게시 run 검증과 합성 writer/closed-block 생성을 통과했으나 정상 reader가 6분 동안 `404 {"metrics":{}}`를 반환해 실패했다. 오류 metadata 주입 단계 이전이며 warm 역이동 증거가 아니다. 소유 fixture 정리는 성공했다. 기존 2분 관측 제한을 6분으로 늘린 것만으로 해결되지 않았다.
+
+소스의 backend block 선택은 span 내용과 별도로 block metadata 시간 경계를 사용한다. 기존 합성 조회 범위가 span 시작 전 1초~후 5초에 한정됐던 결함을 수정해, 생성 시각도 포함하는 최대 1시간의 고정 trace-ID/blocks-only 범위로 조회한다. 이 수정의 실제 원인 해결 여부는 다음 허가 시간 범위에서 새 hosted 실행으로 확인해야 한다. cutoff를 늘리거나 만료 gate를 우회하지 않는다. 최초 case는 계속 기존 종료 시각에 만료된다.
