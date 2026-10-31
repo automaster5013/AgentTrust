@@ -962,9 +962,12 @@ if(process.env.STACK_E2E_LOCAL_MODEL==='true')test('local model provider evidenc
 test('administrator cancels a real pending evaluation and campaign through browser controls',async({page})=>{
  await login(page,'demo-admin');
  const worker='agenttrust-stack-ai-worker-1';
- const running=execFileSync('docker',['inspect',worker,'--format','{{.State.Running}}'],{encoding:'utf8',timeout:15000}).trim();expect(running).toBe('true');
+ const legacyReturn=process.env.STACK_E2E_LEGACY_CORE_RETURN==='true',witness=process.env.STACK_E2E_WORKER_PAUSE_WITNESS;let paused=false;
+ const hostedWorker=(action:'pause'|'resume')=>JSON.parse(execFileSync(process.platform==='win32'?'python':'python3',[resolve(process.cwd(),'../../scripts/stack-ci-browser-worker-pause.py'),'--execute','--action',action,'--witness',witness??''],{encoding:'utf8',timeout:75000,maxBuffer:16384}));
+ if(!legacyReturn){const running=execFileSync('docker',['inspect',worker,'--format','{{.State.Running}}'],{encoding:'utf8',timeout:15000}).trim();expect(running).toBe('true')}
  try{
-  execFileSync('docker',['stop','--time','10',worker],{timeout:25000});
+  if(legacyReturn){const frozen=hostedWorker('pause');expect(frozen.completed).toBe(true);expect(frozen.paused).toBe(true);expect(frozen.identityPreserved).toBe(true);paused=true;phase('owned hosted worker paused without replacing or restarting its process')}
+  else execFileSync('docker',['stop','--time','10',worker],{timeout:25000});
   await page.getByRole('button',{name:'평가 실행',exact:true}).click();
   await expect(page.getByLabel('평가 취소 사유',{exact:true})).toBeVisible();
   await page.getByLabel('평가 취소 사유',{exact:true}).fill('Browser synthetic cancellation');
@@ -989,7 +992,7 @@ test('administrator cancels a real pending evaluation and campaign through brows
   const saved=await (await page.request.get('/backend/campaigns/'+campaign.id)).json();expect(saved.state).toBe('failed');expect(saved.decision).toBe('inconclusive');
   expect((await (await page.request.get('/backend/campaigns/'+campaign.id+'/gate')).json()).deploymentAllowed).toBe(false);
   phase('actual browser verifies terminal cancellation and denied release for run and campaign');
- }finally{execFileSync('docker',['start',worker],{timeout:25000});phase('dedicated worker restored');}
+ }finally{if(legacyReturn){const resumed=hostedWorker('resume');expect(resumed.completed).toBe(true);if(paused){expect(resumed.restored).toBe(true);expect(resumed.identityPreserved).toBe(true)}phase('owned hosted worker unpaused with ID image and StartedAt preserved')}else{execFileSync('docker',['start',worker],{timeout:25000});phase('dedicated worker restored')}}
 });
 
 

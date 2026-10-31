@@ -44,6 +44,7 @@ def main():
 
     deadline = time.monotonic() + 1800
     restore_deadline = None
+    worker_witness = ROOT / '.local' / ('ci-worker-pause-' + str(uuid.uuid4()) + '.json')
 
     def operation_deadline():
         # Once restoration starts, HTTP/data/identity verification shares its reserve.
@@ -122,7 +123,15 @@ def main():
         def switch(mode):
             nonlocal expected_id, restore_deadline
             report['stage'] = 'switch-' + mode
-            if mode == 'candidate': restore_deadline = time.monotonic() + 300
+            if mode == 'candidate':
+                restore_deadline = time.monotonic() + 300
+                # A killed Playwright process may not run its own finally cleanup.
+                # Resume only this invocation's owned worker witness; Core restore still follows on failure.
+                try:
+                    cleanup = json.loads(run(['python3', 'scripts/stack-ci-browser-worker-pause.py', '--execute', '--action', 'resume', '--witness', str(worker_witness)]))
+                    report['workerResumeVerified'] = cleanup['completed'] is True and (cleanup.get('restored') is True or cleanup.get('noPauseWitness') is True)
+                except Exception as error:
+                    report.update(workerResumeVerified=False, workerResumeErrorType=type(error).__name__)
             observed = subprocess.run(['docker', 'inspect', 'agenttrust-stack-core-api-1'], cwd=ROOT, capture_output=True, timeout=20)
             if observed.returncode == 0:
                 current = json.loads(observed.stdout)[0]
@@ -155,7 +164,7 @@ def main():
 
         def browser():
             report['stage'] = 'previous-browser'
-            env = dict(os.environ, STACK_E2E_LEGACY_CORE_RETURN='true', STACK_E2E_QUOTA_GUARD='true')
+            env = dict(os.environ, STACK_E2E_LEGACY_CORE_RETURN='true', STACK_E2E_QUOTA_GUARD='true', STACK_E2E_WORKER_PAUSE_WITNESS=str(worker_witness))
             result = subprocess.run(['npx', 'playwright', 'test', '--grep-invert', r'(^|\s)workspace management\s'],
                                     cwd=ROOT / 'apps/console', capture_output=True, timeout=max(1, min(900, deadline-time.monotonic())), env=env)
             if result.returncode:
@@ -175,7 +184,8 @@ def main():
                 states = json.loads(run(['docker', 'inspect', *others]))
                 observation = non_core_status(others, states)
                 report['nonCoreContainerVerification'] = observation
-                assert all(observation[key] is True for key in ('sameContainerSet', 'allImagesAndStartedAtUnchanged', 'allRunning', 'allHealthy'))
+                assert all(observation[key] is True for key in ('sameContainerSet', 'allImagesAndStartedAtUnchanged', 'allRunning', 'allUnpaused', 'allHealthy'))
+                assert report.get('workerResumeVerified') is True
                 report['nonCoreContainerIdentitiesPreserved'] = True
             except Exception as error:
                 report.update(completed=False, nonCoreContainerIdentitiesPreserved=False, identityVerificationErrorType=type(error).__name__)

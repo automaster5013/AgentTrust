@@ -18,21 +18,21 @@ def non_core_status(expected, states):
                   'stack-tempo', 'stack-loki', 'stack-prometheus', 'stack-grafana', 'stack-quality-verifier'}
     identifiers = [state['Id'] for state in states]
     same_set = len(identifiers) == len(set(identifiers)) and set(identifiers) == set(expected)
-    identities = same_set; running = same_set; healthy = same_set; issues = []
+    identities = same_set; running = same_set; unpaused = same_set; healthy = same_set; issues = []
     for state in states:
         if state['Id'] not in expected: continue
         before = expected[state['Id']]
         image_same = state['Image'] == before[0]; start_same = state['State']['StartedAt'] == before[1]
-        active = state['State']['Running'] is True
+        active = state['State']['Running'] is True; not_paused = state['State'].get('Paused') is False
         health = state['State'].get('Health', {}).get('Status', 'missing')
-        identities = identities and image_same and start_same; running = running and active; healthy = healthy and health == 'healthy'
-        if not (image_same and start_same and active and health == 'healthy'):
+        identities = identities and image_same and start_same; running = running and active; unpaused = unpaused and not_paused; healthy = healthy and health == 'healthy'
+        if not (image_same and start_same and active and not_paused and health == 'healthy'):
             name = state.get('Config', {}).get('Labels', {}).get('com.docker.compose.service')
             issues.append({'service': name if name in safe_names else 'unidentified-synthetic-service',
-                           'imageUnchanged': image_same, 'startedAtUnchanged': start_same, 'running': active,
+                           'imageUnchanged': image_same, 'startedAtUnchanged': start_same, 'running': active, 'unpaused': not_paused,
                            'health': health if health in ('healthy', 'unhealthy', 'starting', 'missing') else 'unknown'})
     return {'sameContainerSet': same_set, 'allImagesAndStartedAtUnchanged': identities,
-            'allRunning': running, 'allHealthy': healthy, 'issues': issues}
+            'allRunning': running, 'allUnpaused': unpaused, 'allHealthy': healthy, 'issues': issues}
 
 
 def preserved(before, after, *, unchanged_management=False):

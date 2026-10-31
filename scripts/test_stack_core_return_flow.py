@@ -97,7 +97,7 @@ class FlowTest(unittest.TestCase):
     def test_non_core_diagnostics_distinguish_health_from_identity_without_disclosing_values(self):
         expected = {'private-container': ('private-image', 'private-start')}
         state = {'Id': 'private-container', 'Image': 'private-image',
-                 'State': {'StartedAt': 'private-start', 'Running': True, 'Health': {'Status': 'healthy'}},
+                 'State': {'StartedAt': 'private-start', 'Running': True, 'Paused': False, 'Health': {'Status': 'healthy'}},
                  'Config': {'Labels': {'com.docker.compose.service': 'stack-gateway'}}}
         self.assertTrue(non_core_status(expected, [state])['allHealthy'])
         unhealthy = copy.deepcopy(state); unhealthy['State']['Health']['Status'] = 'unhealthy'
@@ -105,6 +105,9 @@ class FlowTest(unittest.TestCase):
         self.assertTrue(status['allImagesAndStartedAtUnchanged']); self.assertFalse(status['allHealthy'])
         self.assertEqual(status['issues'][0]['service'], 'stack-gateway')
         for secret in ('private-container', 'private-image', 'private-start'): self.assertNotIn(secret, repr(status))
+        paused = copy.deepcopy(state); paused['State']['Paused'] = True
+        self.assertFalse(non_core_status(expected, [paused])['allUnpaused'])
+        self.assertTrue(non_core_status(expected, [state])['allUnpaused'])
         changed = copy.deepcopy(state); changed['State']['StartedAt'] = 'different'
         status = non_core_status(expected, [changed])
         self.assertFalse(status['allImagesAndStartedAtUnchanged']); self.assertTrue(status['allHealthy'])
@@ -112,7 +115,7 @@ class FlowTest(unittest.TestCase):
     def test_non_core_diagnostics_refuse_missing_extra_and_duplicate_container_sets(self):
         expected = {'private-container': ('private-image', 'private-start')}
         state = {'Id': 'private-container', 'Image': 'private-image',
-                 'State': {'StartedAt': 'private-start', 'Running': True, 'Health': {'Status': 'healthy'}}}
+                 'State': {'StartedAt': 'private-start', 'Running': True, 'Paused': False, 'Health': {'Status': 'healthy'}}}
         for states in ([], [state, state], [dict(state, Id='different-container')]):
             with self.subTest(count=len(states)):
                 self.assertFalse(non_core_status(expected, states)['sameContainerSet'])

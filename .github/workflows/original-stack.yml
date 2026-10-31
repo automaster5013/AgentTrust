@@ -41,6 +41,7 @@ jobs:
           python3 scripts/stack-local-cd-plan-test.py
           python3 -m unittest discover -s scripts -p test_stack_v18_transition_probe.py
           python3 -m unittest discover -s scripts -p test_stack_core_return_flow.py
+          python3 -m unittest discover -s scripts -p test_stack_ci_worker_pause.py
           python3 scripts/stack-dockerhub-main-mirror-test.py
           python3 scripts/stack-dockerhub-test.py
           python3 scripts/stack-delivery-verifier-test.py

@@ -110,3 +110,14 @@ Playwright의 전체 제목에는 파일명이 앞에 붙으므로 `--grep-inver
 두 실행 모두 비 Core 보존 검증도 AssertionError로 실패했다. 기존 요약만으로 ID/image/StartedAt 변화인지 건강 상태 문제인지 구분할 수 없으므로 원인은 미확정이다. 이를 통과로 바꾸거나 대기/재시작으로 숨기지 않는다. 후속 요약에 컨테이너 집합·이미지/시작 시각·실행·healthy 조건의 안전한 차원별 진단을 추가했다. ID·이미지 값·시각·환경 비밀은 보고하지 않는다. 기존 조건을 모두 만족해야 통과하며 누락/중복/추가 컨테이너도 거부한다. 복귀 13개·V17 전환 7개, 총 20개 로컬 테스트가 통과했다.
 
 이전 전체 브라우저 성공, 비 Core 보존 성공 및 후속 모델·전체 복구 완료는 아직 미확인이다. 실제 운영 배포·자동 CD·운영 복구·건강한 운영 rollback은 계속 false다.
+
+
+### 2bae3c1 실제 브라우저 53개 통과와 worker 보존 실패의 원인
+
+`2bae3c17773a317e3ba60047d9b4f0e5cc036260` run `41245089222`는 최종 failure다. SHA-256 검증한 안전 보고서는 이전 Core 직접 API/BFF HTTP·브라우저 53개·후보 복원 및 HTTP·기존 행/철회 기록·ledger 보존을 모두 통과했다고 기록한다. 비 Core의 컨테이너 집합과 이미지는 동일하고 모두 running/healthy였으나 `stack-ai-worker`의 StartedAt이 달라 전체 검증이 실패했다. 후속 모델·전체 복구는 skipped다.
+
+원인은 기존 `administrator cancels a real pending evaluation and campaign through browser controls` 시험이 의도적으로 worker를 stop/start하는 것이었다. 이는 worker 프로세스를 보존하는 Core 복귀 시험의 조건과 충돌한다. 이 취소 시나리오를 제외하거나 StartedAt 검사를 낮추지 않는다. 기본 후보 브라우저의 기존 stop/start를 유지하고, legacy 복귀 모드에서만 동일한 실제 대기·취소·게이트 검사를 소유한 합성 worker의 pause/unpause로 수행하도록 수정했다. 전체 legacy 검색 목록은 53개로 유지한다. 이 모드는 worker 재시작 검증을 뜻하지 않으며 기존 후보 브라우저·후속 서비스 재시작 단계의 범위와 구분한다.
+
+새 helper는 비 root GitHub-hosted guard를 Docker·witness 파일 접근 전에 검사한다. 정확한 repository/workspace/run/attempt, worker 이름·compose 소유권·설정 파일 목록과 ID/image/StartedAt을 검증한다. pause 전 0600 비공개 witness를 만들고 동일한 worker만 unpause한다. witness는 안전 artifact 수집 glob에 포함되지 않는다. 브라우저의 finally가 실행되지 않아도 Core 복원 finally에서 해당 invocation의 worker cleanup을 별도로 수행하며, cleanup 실패가 Core 복원 시도 자체를 막지 않는다. 기존 5분 복원 예산을 공유한다. 최종 비 Core 검사는 같은 집합·이미지/StartedAt·running·unpaused·healthy 및 worker cleanup 증거가 모두 참이어야 통과한다.
+
+실제 현재 PC에서 pause/unpause를 실행하지 않았다. 로컬 --execute는 Docker/파일 접근 전에 거부됐다. 모의 helper 8개(부분 pause 복구, 교차 run·소유권·시작 시각 변화·중복 witness 거부 포함), 복귀 13개와 V17 전환 7개, 총 28개 로컬 테스트·Python/TypeScript·actionlint가 통과했다. 수정된 실제 hosted 비 Core 보존과 전체 integration 성공은 새 CI에서 별도로 확인한다. 운영 적용·자동 CD·운영 복구·건강한 운영 rollback은 계속 false다.
