@@ -18,8 +18,10 @@ from stack_core_return_flow import verify
 from stack_v18_transition_probe import BASELINE_REFERENCE, BASELINE_REVISION
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-# Campaign cases execute through stack_runs; stack_campaigns has no state column.
-PENDING_RUNS_SQL = "SELECT count(*) FROM stack_runs WHERE state='queued';"
+# Admissions stay queued and immutable; completion/cancellation appends a result.
+# Campaign cases share these same run/result rows; campaigns have no state column.
+PENDING_RUNS_SQL = ("SELECT count(*) FROM stack_runs r LEFT JOIN stack_run_results c ON c.run_id=r.id "
+                    "WHERE r.state='queued' AND c.run_id IS NULL;")
 
 FILES = ['compose.stack.yaml', 'compose.stack.identity.yaml', 'compose.stack.gateway.yaml',
          'compose.stack.object.yaml', 'compose.stack.observability.yaml', 'compose.stack.signing.yaml']
@@ -73,8 +75,14 @@ def main():
     def capture():
         if restore_deadline is not None: report['stage'] = 'candidate-verification'
         quiet_deadline = min(operation_deadline(), time.monotonic() + 90)
-        while sql("BEGIN READ ONLY;SET LOCAL statement_timeout='3s';" + PENDING_RUNS_SQL + "ROLLBACK;").decode().strip() != '0':
-            if time.monotonic() >= quiet_deadline: raise ValueError('SYNTHETIC_PENDING_WORK_NOT_QUIESCENT')
+        while True:
+            pending = sql("BEGIN READ ONLY;SET LOCAL statement_timeout='3s';" + PENDING_RUNS_SQL + "ROLLBACK;").decode().strip()
+            assert re.fullmatch('[0-9]+', pending)
+            report['quietCheckPendingRuns'] = int(pending)
+            if pending == '0': break
+            if time.monotonic() >= quiet_deadline:
+                report['quietCheckFailureCode'] = 'SYNTHETIC_PENDING_WORK_NOT_QUIESCENT'
+                raise ValueError('SYNTHETIC_PENDING_WORK_NOT_QUIESCENT')
             time.sleep(2)
         tables = json.loads(sql("SELECT json_agg(tablename ORDER BY tablename) FROM pg_tables WHERE schemaname='public' AND tablename<>'flyway_schema_history';"))
         assert len(tables) == 20 and all(re.fullmatch('[a-z][a-z0-9_]{0,62}', name) for name in tables)

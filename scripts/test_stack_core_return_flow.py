@@ -89,16 +89,19 @@ class FlowTest(unittest.TestCase):
         smoke = importlib.util.module_from_spec(spec); spec.loader.exec_module(smoke)
         with sqlite3.connect(':memory:') as database:
             database.executescript("CREATE TABLE stack_runs(id TEXT PRIMARY KEY,state TEXT);"
+                                  "CREATE TABLE stack_run_results(run_id TEXT PRIMARY KEY,state TEXT);"
                                   "CREATE TABLE stack_campaigns(id TEXT PRIMARY KEY);"
                                   "CREATE TABLE stack_campaign_cases(campaign_id TEXT,run_id TEXT);"
-                                  "INSERT INTO stack_runs VALUES('standalone','queued'),('child','queued'),('finished','succeeded');"
+                                  "INSERT INTO stack_runs VALUES('standalone','queued'),('child','queued'),('finished','queued'),('failed','queued');"
+                                  "INSERT INTO stack_run_results VALUES('finished','succeeded'),('failed','failed');"
                                   "INSERT INTO stack_campaigns VALUES('campaign');"
                                   "INSERT INTO stack_campaign_cases VALUES('campaign','child');")
             self.assertEqual(database.execute(smoke.PENDING_RUNS_SQL).fetchone()[0], 2)
-            database.execute("UPDATE stack_runs SET state='succeeded' WHERE id='standalone'")
+            database.execute("INSERT INTO stack_run_results VALUES('standalone','succeeded')")
             self.assertEqual(database.execute(smoke.PENDING_RUNS_SQL).fetchone()[0], 1)
-            database.execute("UPDATE stack_runs SET state='failed' WHERE id='child'")
+            database.execute("INSERT INTO stack_run_results VALUES('child','failed')")
             self.assertEqual(database.execute(smoke.PENDING_RUNS_SQL).fetchone()[0], 0)
+            self.assertEqual(database.execute("SELECT count(*) FROM stack_runs WHERE state='queued'").fetchone()[0], 4)
 
     def test_hosted_guard_requires_exact_workspace_repository_and_nonroot_hosted_runner(self):
         root = pathlib.Path(__file__).resolve().parent.parent
