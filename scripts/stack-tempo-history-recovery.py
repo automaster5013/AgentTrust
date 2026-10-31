@@ -23,8 +23,9 @@ def trace_id(value):
 def get(name,path):
  match=m.e.re.fullmatch('agenttrust-stack-coldrestore-([a-f0-9-]{36})-(?:original-)?stack-tempo',name)
  m.e.require(name=='agenttrust-stack-tempo-1' or match)
- m.e.require(m.e.re.fullmatch(r'/api/search\?start=\d+&end=\d+&limit=20',path) or m.e.re.fullmatch(r'/api/traces/[a-f0-9]{32}\?start=\d+&end=\d+',path))
- bounds=urllib.parse.parse_qs(urllib.parse.urlsplit(path).query);start,end=int(bounds['start'][0]),int(bounds['end'][0]);m.e.require(0<start<end<time.time() and end-start<=7*86400)
+ m.e.require(path=='/metrics' or m.e.re.fullmatch(r'/api/search\?start=\d+&end=\d+&limit=20',path) or m.e.re.fullmatch(r'/api/traces/[a-f0-9]{32}\?start=\d+&end=\d+',path))
+ if path!='/metrics':
+  bounds=urllib.parse.parse_qs(urllib.parse.urlsplit(path).query);start,end=int(bounds['start'][0]),int(bounds['end'][0]);m.e.require(0<start<end<time.time() and end-start<=7*86400)
  row=m.c.inspect(name)
  if name!='agenttrust-stack-tempo-1':m.e.require(row['HostConfig']['NetworkMode']=='none' and row['Config']['Labels'].get('agenttrust.fixture')==match[1])
  else:m.e.require(row['Config']['Labels'].get('com.docker.compose.project')=='agenttrust' and row['Config']['Labels'].get('com.docker.compose.service')=='stack-tempo')

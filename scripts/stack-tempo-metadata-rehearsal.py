@@ -3,6 +3,7 @@ Never edits operating metadata, stops source writers, or enables deployment.
 """
 import argparse,datetime,hashlib,importlib.util,json,pathlib,secrets,sys,time,traceback,urllib.parse,uuid
 import stack_chunked_cache as chunks
+from stack_tempo_poll_evidence import counters, classify_inverse
 from stack_local_cd_executor import normalized_host_path
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location('metadata_tempo',ROOT/'scripts/stack-tempo-history-recovery.py');tempo=importlib.util.module_from_spec(spec);spec.loader.exec_module(tempo);m=tempo.m;cache=tempo.cache
@@ -167,7 +168,8 @@ def run(config):
   result=verdict(before,negative,after)
   hot_evidence={}
   if hot:
-   phase={'before':before,'after':after,'observation':recovery_observation,'identity':identity,'restartFreeApplyVerified':True,'automaticDeploymentAllowed':False}
+   inverse_metrics=counters(tempo.get(candidate_name,'/metrics')['metrics'])
+   phase={'inverseMetricsBaseline':inverse_metrics,'before':before,'after':after,'observation':recovery_observation,'identity':identity,'restartFreeApplyVerified':True,'automaticDeploymentAllowed':False}
    cipher=crypto.transform('encrypt',key,json.dumps(phase).encode());m.c.private_file(drill.directory/'hot-recovery-phase.aesgcm',cipher)
    drill.report.update(restartFreeApplyVerified=True,restartFreeRollbackVerified=False,encryptedHotRecoveryPhaseSha256=hashlib.sha256(cipher).hexdigest())
 
@@ -175,15 +177,18 @@ def run(config):
    m.e.require(hot_identity(drill,candidate_name)==identity);drill.stage('inverse-owned-namespace-without-restart')
    for prefix in bad_prefixes:inverse_owned(drill,candidate_volume,prefix,{k:v for k,v in bad_files.items() if k.startswith(prefix+'/')})
    def corrupt_again():
-    try:tempo.get(candidate_name,paths[0]);return None
+    try:tempo.get(candidate_name,paths[0])
     except ValueError as error:
-     m.e.require(getattr(error,'read_failure',{}).get('statusCode')==404);return True
+     m.e.require(getattr(error,'read_failure',{}).get('statusCode')==404);return {'inverseKnown404Reproduced':True,'retainedGoodBlocklistObserved':False}
+    found={p:tempo.trace_fingerprint(tempo.get(candidate_name,p)) for p in paths};m.e.require(found==before)
+    observation=classify_inverse(inverse_metrics,counters(tempo.get(candidate_name,'/metrics')['metrics']),True)
+    return observation if observation['retainedGoodBlocklistObserved'] else None
    for prefix in bad_prefixes:m.e.require(json.loads(m.c.run(cache.file_command(drill,candidate_volume,'inventory',prefix=prefix)).stdout)=={k:v for k,v in bad_files.items() if k.startswith(prefix+'/')})
    drill.report.update(inverseNamespaceFilesVerified=True);drill.stage('observe-inverse-without-restart')
-   _,inverse_observation=observe_hot(drill,candidate_name,checkpoint,corrupt_again)
+   inverse_result,inverse_observation=observe_hot(drill,candidate_name,checkpoint,corrupt_again)
    m.e.require(hot_identity(drill,candidate_name)==identity)
    for prefix in bad_prefixes:m.e.require(json.loads(m.c.run(cache.file_command(drill,candidate_volume,'inventory',prefix=prefix)).stdout)=={k:v for k,v in bad_files.items() if k.startswith(prefix+'/')})
-   hot_evidence={'restartFreeApplyVerified':True,'restartFreeRollbackVerified':True,'inverseReproducedKnown404':True,'fixtureIdentityAndStartedAtUnchanged':True,'recoveryObservation':recovery_observation,'inverseObservation':inverse_observation,'effectivePollingIntervalVerified':False,'pollingMetricsAcceptanceVerified':False}
+   hot_evidence={'restartFreeApplyVerified':True,'restartFreeRollbackVerified':True,'inverseReproducedKnown404':inverse_result['inverseKnown404Reproduced'],'retainedGoodBlocklistObserved':inverse_result['retainedGoodBlocklistObserved'],'inverseRuntimeResult':inverse_result,'fixtureIdentityAndStartedAtUnchanged':True,'recoveryObservation':recovery_observation,'inverseObservation':inverse_observation,'effectivePollingIntervalVerified':False,'pollingMetricsAcceptanceVerified':False}
    drill.report.update(hot_evidence,kind='isolated-empty-tempo-metadata-hot-control')
 
   source_status=200

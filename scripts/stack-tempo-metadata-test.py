@@ -77,11 +77,11 @@ class MetadataControl(unittest.TestCase):
 
 
 class FullControlPath(unittest.TestCase):
- def exercise(self,missing_failure=False,changed_recovery=False,launch_failure=False,hot=False,inverse_failure=False):
+ def exercise(self,missing_failure=False,changed_recovery=False,launch_failure=False,hot=False,inverse_failure=False,retained=False):
   m=control.m;source_volume='agenttrust_stack-tempo-data';fixture='00000000-0000-0000-0000-000000000099';blocks=['blocks/tenant/00000000-0000-0000-0000-'+str(i).zfill(12) for i in (10,11,12)]
   original={blocks[0]+'/meta.json':b'{}',blocks[0]+'/data.parquet':b'valid original spans'}
   for prefix in blocks[1:]:original.update({prefix+'/meta.json':b'',prefix+'/data.parquet':b'preserved affected bytes'})
-  volumes={source_volume:dict(original)};containers={};calls=[];drills=[]
+  volumes={source_volume:dict(original)};containers={};calls=[];drills=[];inverse_restored=[False]
   def rows(data,prefix=None):return {k:{'bytes':len(v),'mode':384,'sha256':hashlib.sha256(v).hexdigest()} for k,v in data.items() if prefix is None or k.startswith(prefix+'/')}
   def answer(v=b''):return NS(stdout=json.dumps(v).encode() if not isinstance(v,bytes) else v,stderr=b'',returncode=0)
   def command(args,**kwargs):
@@ -105,6 +105,7 @@ class FullControlPath(unittest.TestCase):
      assert len(data.get(path,b''))==offset;data[path]=data.get(path,b'')+kwargs['data'];return answer()
     if 'finalize' in args:assert len(data[path])==offset;return answer()
     if 'restore-quarantined-block' in args:
+     inverse_restored[0]=True
      moved={k:v for k,v in data.items() if k.startswith('quarantine/'+path+'/')}
      for key,value in moved.items():del data[key];data[key.removeprefix('quarantine/')]=value
      return answer({'restored':True,'bytesDeleted':False})
@@ -121,7 +122,8 @@ class FullControlPath(unittest.TestCase):
    if name=='agenttrust-stack-tempo-1':
     error=ValueError('fixture source 404');error.read_failure={'statusCode':404};raise error
    data=volumes[containers[name]['volume']];bad=any(k.startswith('blocks/') and k.endswith('/meta.json') and not v for k,v in data.items())
-   if bad and not missing_failure:
+   if path=='/metrics':return {'metrics':'tempodb_blocklist_poll_errors_total '+str(2 if inverse_restored[0] else 1)+'\ntempodb_blocklist_poll_duration_seconds_count 2\n'}
+   if bad and not missing_failure and not (retained and inverse_restored[0]):
     error=ValueError('fixture corrupt 404');error.read_failure={'statusCode':404};raise error
    if path.startswith('/api/search?'):return {'traces':[{'traceID':'f'*32}]}
    changed=changed_recovery and any(k.startswith('quarantine/') for k in data)
@@ -158,7 +160,7 @@ class FullControlPath(unittest.TestCase):
    if inverse_failure:
     self.assertTrue(drill.report['restartFreeApplyVerified']);self.assertFalse(drill.report['restartFreeRollbackVerified']);self.assertTrue(drill.report['inverseNamespaceFilesVerified']);self.assertIn('encryptedHotRecoveryPhaseSha256',drill.report)
    if hot and drill.report['completed']:
-    self.assertTrue(drill.report['restartFreeApplyVerified']);self.assertTrue(drill.report['restartFreeRollbackVerified']);self.assertTrue(drill.report['inverseReproducedKnown404'])
+    self.assertTrue(drill.report['restartFreeApplyVerified']);self.assertTrue(drill.report['restartFreeRollbackVerified']);self.assertEqual(drill.report['inverseReproducedKnown404'],not retained);self.assertEqual(drill.report['retainedGoodBlocklistObserved'],retained)
    starts=[v for v in calls if v[:3]==['docker','run','-d']]
    self.assertEqual(len(starts),2 if hot or missing_failure or launch_failure else 3)
    first_candidate=next(i for i,v in enumerate(calls) if v[:3]==['docker','run','-d'] and v[v.index('--name')+1].endswith('-stack-tempo') and not v[v.index('--name')+1].endswith('-original-stack-tempo'))
@@ -167,10 +169,28 @@ class FullControlPath(unittest.TestCase):
     self.assertEqual(args[args.index('--network')+1],'none');self.assertNotIn('-p',args)
     if args[args.index('--log-driver')+1]=='local':self.assertIn('max-file=2',args);self.assertIn('max-size=1m',args)
  def test_inverse_timeout_preserves_authenticated_recovery_phase(self):self.exercise(hot=True,inverse_failure=True)
+ def test_full_warm_inverse_retains_traces_despite_new_poll_errors(self):self.exercise(hot=True,retained=True)
  def test_hot_full_flow_never_restarts_candidate(self):self.exercise(hot=True)
  def test_full_positive_corrupt_quarantine_and_recovery_flow(self):self.exercise()
  def test_nonreproduced_fault_stops_before_quarantine_and_cleans(self):self.exercise(missing_failure=True)
  def test_candidate_launch_failure_is_diagnostic_not_fault_reproduction(self):self.exercise(launch_failure=True)
  def test_changed_recovered_trace_never_promotes_cd(self):self.exercise(changed_recovery=True)
+
+class PollingEvidence(unittest.TestCase):
+ def test_failure_retention_is_distinct_from_healthy_rollback(self):
+  from stack_tempo_poll_evidence import counters,classify_inverse
+  before=counters('tempodb_blocklist_poll_errors_total{tenant="test"} 2\ntempodb_blocklist_poll_duration_seconds_count 3')
+  after=counters('tempodb_blocklist_poll_errors_total{tenant="test"} 4\ntempodb_blocklist_poll_duration_seconds_count 3')
+  result=classify_inverse(before,after,True)
+  self.assertTrue(result['retainedGoodBlocklistObserved']);self.assertFalse(result['healthyRollbackGuaranteed']);self.assertEqual(result['newSuccessfulPolls'],0)
+  self.assertFalse(classify_inverse(before,before,True)['retainedGoodBlocklistObserved'])
+  self.assertFalse(classify_inverse(before,after,False)['retainedGoodBlocklistObserved'])
+ def test_missing_reset_nan_duplicate_or_negative_counters_refused(self):
+  from stack_tempo_poll_evidence import counters,classify_inverse
+  base='tempodb_blocklist_poll_errors_total 2\ntempodb_blocklist_poll_duration_seconds_count 3'
+  for text in ('',base.replace('total 2','total NaN'),base.replace('total 2','total -1'),base+'\ntempodb_blocklist_poll_errors_total 2'):
+   with self.assertRaises(ValueError):counters(text)
+  old=counters(base);new=counters(base.replace('total 2','total 1'))
+  with self.assertRaises(ValueError):classify_inverse(old,new,True)
 
 if __name__=='__main__':unittest.main()

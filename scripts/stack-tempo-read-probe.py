@@ -4,7 +4,12 @@ class RefuseRedirect(urllib.request.HTTPRedirectHandler):
  def redirect_request(self,*args,**kwargs):raise ValueError('Tempo redirect refused')
 def main():
  path=sys.argv[1]
- assert re.fullmatch(r'/api/search\?start=\d+&end=\d+&limit=20',path) or re.fullmatch(r'/api/traces/[a-f0-9]{32}\?start=\d+&end=\d+',path)
+ assert path=='/metrics' or re.fullmatch(r'/api/search\?start=\d+&end=\d+&limit=20',path) or re.fullmatch(r'/api/traces/[a-f0-9]{32}\?start=\d+&end=\d+',path)
+ if path=='/metrics':
+  opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),RefuseRedirect())
+  with opener.open('http://127.0.0.1:3200/metrics',timeout=8) as response:
+   raw=response.read(2097153);assert response.status==200 and len(raw)<=2097152
+  print(json.dumps({'metrics':raw.decode('utf-8')}));return
  bounds=urllib.parse.parse_qs(urllib.parse.urlsplit(path).query);start,end=int(bounds['start'][0]),int(bounds['end'][0]);assert 0<start<end<time.time() and end-start<=7*86400
  opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),RefuseRedirect())
  request=urllib.request.Request('http://127.0.0.1:3200'+path,headers={'Accept':'application/json'})

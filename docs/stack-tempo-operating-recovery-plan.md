@@ -64,3 +64,15 @@ namespace 역이동은 변경 전 위치로 돌아가는 절차다. **빈 블록
 같은 후보에서 빈 블록 분리 후 트레이스 20개·스팬 133개가 재시작 없이 기준과 일치했다. 역이동 뒤에도 두 블록의 정확한 파일 집합·크기·해시·권한을 확인했고, 독립 관측에서는 20개·133개가 여전히 일치했으며 RestartCount는 0이었다. 이 중간 관측은 `hot-inverse-checkpoint.aesgcm`에 암호화해 보존한다. **디렉터리 원상복귀와 조회 실패 재현은 서로 다른 판정**이다. 앞선 cold-start 404를 warm 인스턴스의 확정 동작으로 가정하지 않는다. 캐시 또는 blocklist 유지가 원인인지는 별도 지표·로그 검증이 필요하다. 운영 원본을 재시작해 가설을 확인하지 않는다.
 
 이번 역이동 관측은 호스트 여유 1,016MiB가 진행 기준 1,024MiB를 밑돌아 안전 중단됐으므로 전체 실험은 미완료다. 15분 창을 완주한 성공이나 확정적인 404 비재현으로 기록하지 않는다. 임시 자산은 정리됐고 별도 사후 관측에서 원래 32개 서비스가 healthy이며 생성·기동 시각이 실험 전임을 확인했다. 원래 컨테이너 수 42개가 유지됐다. 주 실험 요약의 `operationalContainersUnchanged: false`는 최종 checkpoint의 메모리 검사 실패로 설정된 값이며, 서비스가 변경됐다는 확증이 아니다. 별도 `post-cleanup-health.json`과 두 기록을 함께 검토한다. 앱 작업 집합 반환으로 시작 기준을 확보했지만 지속적인 여유를 보장하지 못했으므로, 다음 실험은 지속적인 호스트 여유도 확보해야 한다.
+
+## 404가 warm 역이동에서 재현되지 않은 원인 분석
+
+게시 이미지의 빌드는 `services/tempo/Dockerfile`에서 Tempo 소스 `77fc4563d1135d0ca2656709c7384c278a9c67b0`을 고정한다. 해당 [poller.go의 실패 분기](https://github.com/grafana/tempo/blob/77fc4563d1135d0ca2656709c7384c278a9c67b0/tempodb/blocklist/poller.go#L200-L206)는 테넌트 폴링 오류 시 새 목록으로 덮어쓰지 않고 `previous.Metas`와 `previous.CompactedMetas`를 유지한다. 반면 [새 readerWriter의 blocklist](https://github.com/grafana/tempo/blob/77fc4563d1135d0ca2656709c7384c278a9c67b0/tempodb/tempodb.go#L208-L217)는 비어 있다. 따라서 초기 손상 블록 때문에 첫 목록 생성이 실패한 cold 상태와 정상 목록을 한 번 확보한 warm 상태가 다르다. 이 소스 경로는 실제 격리 관측(초기 404 → 무재시작 분리 후 20개·133개 일치 → 역이동 뒤에도 20개·133개 일치)을 설명한다. 다만 이전 실험은 폴링 지표를 함께 확보하지 않았으므로 해당 실행의 실패 분기 통과까지 직접 증명한 것은 아니다.
+
+후속 검증은 404만을 요구하지 않는다. 같은 후보의 ID·이미지·StartedAt와 정확한 역이동 파일을 확인한 뒤, 새 폴링 오류 카운터 증가와 전체 기준 트레이스 일치를 함께 확인하면 `retainedGoodBlocklistObserved`로 분류한다. 이것은 디스크 손상이 해결됐거나 재시작 후에도 정상이라는 증거가 아니다. `/metrics`는 고정 loopback 읽기만 허용하고 원문을 출력하지 않는다. 누락·중복·NaN·음수·counter reset은 판정 거부다. 성공한 poll 횟수가 증가하지 않아도 실패 분기의 목록 유지는 가능하므로 두 개념을 구분한다. 전체 복구의 두 성공 poll·오류 증가 0 조건은 별도로 유지한다.
+
+## 메모리 확보의 효과와 제한
+
+데스크톱 앱 작업 집합 반환은 프로세스 종료 없이 시작 여유를 제공했지만 지속성을 보장하지 못했다. 후속 점검에서 Linux 게스트의 파일 캐시가 약 3GiB인 것을 확인하고, 커널 6.18의 `memory.reclaim`에 `512M swappiness=0`을 두 번 요청했다. 한도·autostart·WSL 설정은 변경하지 않았다. [커널 문서](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files)에 따르면 reclaim 요청은 목표보다 적거나 많이 회수할 수 있다. 게스트 내부 캐시 감소가 Windows의 지속 여유 증가를 보장하지 않으며, 실제 호스트 시계열을 기준으로 새 격리 작업 시작 여부를 판단한다. 캐시 회수의 반복 자동화나 운영 cgroup 한도 축소는 추가하지 않는다. `.wslconfig` 변경은 [WSL 재시작이 필요한 설정](https://learn.microsoft.com/en-us/windows/wsl/wsl-config)이므로 현 무중단 범위에서 적용하지 않는다.
+
+후속 실제 호스트 관측은 4분 동안 20초 간격 13회 수행했다. 여유는 1,730~2,081MiB였고 여러 번 2GiB 미만이었다. 따라서 `sustained2GiB: false`로 기록하고 새 Tempo fixture는 시작하지 않았다. 사후 원래 32개 서비스의 ID·이미지·StartedAt가 기준과 같고 모두 healthy, 컨테이너 총 42개임을 확인했다. 지표 기반 warm 역이동 경로는 전체 경로 모의 검증까지 통과했지만 추가 실제 지표 검증은 미수행이다. 이 결과를 실제 재실행 완료나 운영 CD 성공으로 간주하지 않는다.
