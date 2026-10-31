@@ -53,7 +53,7 @@ Full-path 모의/실패 테스트 7개, Python 문법·actionlint는 로컬 통�
 
 `stack-core-return-smoke.py --execute`는 현재 PC와 self-hosted runner에서 실행을 거부한다. 비 root GitHub-hosted runner, 정확한 repository/workspace와 compose 경로를 확인한 일회성 합성 스택에만 연결한다. 기존 회귀 데이터와 V18 스키마를 가진 CI Core만 고정 이전 이미지로 교체한다. 운영 자료·기존 PC 서비스·현재 대화에는 연결하지 않는다.
 
-이전 Core에서 직접 API와 4320 BFF의 HTTP 회귀를 실행하고, 관리 시나리오를 제외한 기존 브라우저 회귀와 관리 API 부재(404)의 명시적 표시를 추가로 확인한다. 후보에만 있는 관리 기능을 이전 Core의 지원 기능으로 간주하지 않는다. 이전 Core에서 새 키/설정이 정상 생성됐다고 표시해서도 안 된다.
+이전 Core에서 직접 API와 4320 BFF의 HTTP 회귀를 실행하고, 관리 시나리오를 제외한 기존 브라우저 회귀와 관리 API 미지원의 명시적 표시(고정 이전 이미지의 실제 누락 경로 응답은 정제된 500)를 추가로 확인한다. 후보에만 있는 관리 기능을 이전 Core의 지원 기능으로 간주하지 않는다. 이전 Core에서 새 키/설정이 정상 생성됐다고 표시해서도 안 된다.
 
 시도 중 예외·부분 교체·API/브라우저 실패가 발생해도 `finally`에서 동일 후보 Core의 복원을 시도한다. 그 뒤 후보의 새 관리 기능을 포함한 HTTP 검사를 재실행한다. 이전 migrator·DB down migration·ledger 변경은 실행하지 않는다. 기존 모든 행의 해시 다중집합이 유지되고 새 시험 행만 추가될 수 있는지, 이전 Core 실행 동안 관리 테이블은 정확히 같은지, 스키마 ledger와 Core 외 CI 컨테이너 ID/image/StartedAt이 보존되는지 확인한다. 행 본문·쿠키·키·환경 비밀값은 보고하지 않는다.
 
@@ -82,7 +82,7 @@ Full-path 모의/실패 테스트 7개, Python 문법·actionlint는 로컬 통�
 
 ### 실제 Playwright 목록으로 확인한 이전 Core 테스트 선택자 수정
 
-Playwright의 전체 제목에는 파일명이 앞에 붙으므로 `--grep-invert '^workspace management'`는 관리 테스트 두 개를 제외하지 못했다. `STACK_E2E_LEGACY_CORE_RETURN=true`의 실제 `--list`에서 두 관리 테스트가 포함된 55개 목록을 확인했다. 선택자를 `(^|\s)workspace management\s`로 수정한 뒤 53개/2파일을 확인했고, 두 관리 쓰기 테스트는 제외되고 이전 Core 관리 API 404 표시 테스트는 포함됨을 확인했다. 기본 후보 모드의 관리 테스트 등록·실행은 변경하지 않았다. 목록 검사는 브라우저 실행 성공의 증거가 아니며 전체 hosted 결과는 별도 확인한다.
+Playwright의 전체 제목에는 파일명이 앞에 붙으므로 `--grep-invert '^workspace management'`는 관리 테스트 두 개를 제외하지 못했다. `STACK_E2E_LEGACY_CORE_RETURN=true`의 실제 `--list`에서 두 관리 테스트가 포함된 55개 목록을 확인했다. 선택자를 `(^|\s)workspace management\s`로 수정한 뒤 53개/2파일을 확인했고, 두 관리 쓰기 테스트는 제외되고 당시 404를 기대하던 이전 Core 관리 API 부재 표시 테스트는 포함됨을 확인했다. 기본 후보 모드의 관리 테스트 등록·실행은 변경하지 않았다. 목록 검사는 브라우저 실행 성공의 증거가 아니며 전체 hosted 결과는 별도 확인한다.
 
 
 ### 불변 입장 기록과 완료 결과를 결합하는 대기 조건 수정
@@ -90,3 +90,12 @@ Playwright의 전체 제목에는 파일명이 앞에 붙으므로 `--grep-inver
 `e9da6ea`의 실제 integration run `41229013188`는 후보의 전체 브라우저 회귀까지 통과했으나, 복귀 사전 대기에서 90초 후 `ValueError`로 최종 실패했다. SHA-256 검증한 진단 artifact는 `stage=preflight`, `candidateRestored=false`이며 이전 Core 교체 전 실패다. 단순 `stack_runs.state='queued'` 조회는 불변 입장 기록을 완료 뒤에도 계속 세는 오류였다. 실제 서버의 pending 조회와 동일하게 `stack_run_results`를 LEFT JOIN하고 결과가 없는 queued 실행만 세도록 수정했다. 캠페인 하위 실행도 같은 행을 사용하므로 별도 캠페인 상태 열은 필요하지 않다.
 
 회귀 fixture는 입장 4개를 모두 queued로 보존하면서 별도 결과 행에 완료/실패를 추가한다. 기존 완료·실패는 제외하고 독립 실행과 캠페인 하위 실행의 미완료 두 개만 세며, 결과 추가 후 2→1→0을 확인했다. 대기 시간·행 보존 기준을 낮추거나 DB를 수정해 비우지 않는다. 대기 실패에는 안전한 미완료 건수와 고정 진단 코드를 남긴다. 로컬 복귀 10개·V17 전환 7개 및 Python 문법 검사가 통과했다. 실제 수정 후보의 복귀·후속 전체 integration은 별도 확인한다.
+
+
+### 실제 이전 Core 전환과 실패 뒤 후보 복원 확인
+
+`a2321ec40e1f15a1914462abbd3f0bd3ca1ce15d`의 실제 integration run `41233629185`는 수정된 대기 조건을 통과해 고정 이전 Core를 실행했다. 이전 직접 HTTP의 관리 API 부재 검사에서 기대 404 대신 500/`REQUEST_UNAVAILABLE`이 반환돼 복귀 단계는 실패했다. SHA-256 검증한 안전 요약은 `quietCheckPendingRuns=0`, `candidateRestored=true`, `candidateHttpVerified=true`, `candidateRowsPreserved=true`, `nonCoreContainerIdentitiesPreserved=true`다. 실패 뒤 동일 후보 복원과 직접 API/BFF의 관리 기능 포함 HTTP, 기존 행/ledger 및 비 Core 컨테이너 보존은 실제 확인됐다. 이전 전체 업무 HTTP·브라우저 검증 성공은 아직 아니다. 후속 모델·전체 복구는 skipped이며 전체 integration은 실패다.
+
+고정 이전 소스 `1c9374e`에는 관리 controller가 없다. `ApiErrors`의 공통 예외 처리는 누락 경로를 정제된 500으로 반환한다. 같은 의존성 Spring MVC 7.0.9의 ResourceHttpRequestHandler도 GET/POST의 리소스 부재를 method 검사 전에 처리한다. `c13650a`는 하네스의 404 가정을 고정 이미지의 정확한 500 + `{"code":"REQUEST_UNAVAILABLE"}` 계약으로 수정했다. 네 개의 미지원 관리 요청에만 적용하며, 임의 500/503/다른 code/추가 권한 필드나 정상 응답은 거부한다. 이를 관리 기능 성공으로 표시하지 않고 `managementApiSupported=false`, `previousManagementApiCompatibilityVerified=false`와 실제 상태 코드 목록을 기록한다. UI도 관리 정보를 확인할 수 없다는 메시지와 설정/키 원문 부재를 검사한다.
+
+기존 업무 HTTP와 후보 관리 HTTP의 기대값·권한·서명/hash 검사는 유지했다. AST로 기본 후보 관리 분기의 검증 의미가 같음을 확인했고, legacy 블록 밖 브라우저 소스도 동일했다. 고정 오류 응답 거부 테스트를 포함한 복귀 11개·V17 전환 7개 및 Python/TypeScript 검사가 통과했다. 수정 후 legacy 목록은 여전히 53개/2파일이다. 이 수정의 실제 hosted 이전 업무 HTTP·브라우저·후보 복원 및 후속 전체 integration은 새 실행에서 확인해야 한다. 자동 CD·운영 복구·건강한 운영 rollback 판정은 계속 false다.
