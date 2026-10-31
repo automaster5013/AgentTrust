@@ -109,3 +109,11 @@ Warm 목록 유지 판정의 오류 증가는 복구 대상 블록과 기준 블
 warm namespace 역이동 후 API 상태는 미정이다. 실제 합성 증거처럼 이전 정상 blocklist가 남아 200을 반환할 수 있으므로 namespace 상태만으로 404나 정상 롤백을 판정하지 않는다. 계획 출력은 이를 `expectedStatusAfterNamespaceReversal=null`과 별도 `expectedColdReaderStatusAfterNamespaceReversal=404`로 구분한다. 후보·trace·block metadata를 모두 포함하는 조회 범위를 쓰며 start/end 이상은 수정하거나 숨기지 않고 기록한다.
 
 실제 실행 전에는 원본/목적지 파일·경로·볼륨 라벨·해시·권한·32개 서비스 기준을 새로 확인하고, 로컬 격리 작업에 필요한 지속 2GiB/진행 1GiB 메모리 조건을 충족해야 한다. 이전 로컬 자원 제한은 해소된 것으로 간주하지 않으며 메모리 회수 대기/강제 정리 실험을 재개하지 않는다. 구체적인 자원 변경 없이는 준비 상태에 머문다. 운영 자료의 외부 업로드도 하지 않는다.
+
+## 알려진 영향 파일의 제한적 최신 재검사
+
+2026-10-31 15:38 KST, 암호화 검토에서 인증한 원본 영향 블록 2개/파일 8개에 대해 기존 Tempo 컨테이너의 읽기 전용 `docker cp ... -`로 두 차례 archive를 관측했다. 모두 0바이트이고 기존 해시·권한·파일 집합과 일치했다. 기존 source image, volume 라벨, 키 custody와 전후 보호 서비스 32개의 ID/image/StartedAt/health도 확인했다. 결과는 비공개 `.local`에 보존했다. 신규 컨테이너·exec·운영 쓰기는 없었다.
+
+`scripts/stack_tempo_source_recheck.py`는 고정 source 컨테이너/volume과 인증한 두 prefix만 사용하며 archive를 64KiB·5 entries로 제한한다. symlink/hardlink/extra/비어 있지 않은 파일·권한 변화·경로 탈출을 거부한다. 읽기 CLI timeout 시 생성한 copy 프로세스만 종료하며 source 서비스/엔진은 변경하지 않는다. 파일 간 원자성, 정상 closed-block 전체, 부모/목적지 경로, 운영 API 또는 fresh reader를 검증한 것은 아니다. 이 부분 재검사 또한 실행 직전 최대 5분 조건을 새로 충족해야 한다.
+
+fresh reader 시작 조건은 아직 충족되지 않았다. 이번 단일 Windows 관측은 2,024MiB로 시작 기준 2,048MiB 미만이었고 지속 여유도 증명되지 않았다. 추가 메모리 대기·회수 실험 없이 새 격리 작업을 보류했다. 다음 실제 reader 전에는 구체적인 자원 변화, 지속 메모리 기준, 최신 전체 source 파일/경로/목적지 관측과 복사 전후 일치 및 protected-service 기준을 함께 확보해야 한다. 알려진 빈 파일이 그대로라는 사실을 복구 완료나 CD 허용으로 해석하지 않는다.
