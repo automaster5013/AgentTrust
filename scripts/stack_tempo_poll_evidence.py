@@ -21,7 +21,8 @@ def counters(text):
  if set(result)!=set(NAMES):raise ValueError('Incomplete polling metrics')
  return {'totals':result,'series':series}
 
-def classify_inverse(before,after,traces_match):
+def classify_inverse(before,after,traces_match,tenant):
+ if not isinstance(tenant,str) or not re.fullmatch('[A-Za-z0-9_-]{1,128}',tenant):raise ValueError('Bound tenant required')
  if type(traces_match) is not bool:raise ValueError('Incomplete inverse evidence')
  for snapshot in (before,after):
   if not isinstance(snapshot,dict) or set(snapshot)!=set(('totals','series')) or set(snapshot['totals'])!=set(NAMES) or set(snapshot['series'])!=set(NAMES):raise ValueError('Incomplete inverse counters')
@@ -33,6 +34,9 @@ def classify_inverse(before,after,traces_match):
   if set(before['series'][name])!=set(after['series'][name]):raise ValueError('Counter series changed')
   if any(after['series'][name][key]<value for key,value in before['series'][name].items()):raise ValueError('Counter reset is inconclusive')
  delta={name:after['totals'][name]-before['totals'][name] for name in NAMES}
- retained=traces_match and delta[NAMES[0]]>0
- return {'retainedGoodBlocklistObserved':retained,'newPollErrors':delta[NAMES[0]],'newSuccessfulPolls':delta[NAMES[1]],
+ key=json.dumps(tenant,ensure_ascii=True)
+ if key not in before['series'][NAMES[0]] or key not in after['series'][NAMES[0]]:raise ValueError('Bound tenant counter missing')
+ bound_delta=after['series'][NAMES[0]][key]-before['series'][NAMES[0]][key]
+ retained=traces_match and bound_delta>0
+ return {'retainedGoodBlocklistObserved':retained,'newPollErrors':bound_delta,'aggregateNewPollErrors':delta[NAMES[0]],'counterScopeBound':True,'newSuccessfulPolls':delta[NAMES[1]],
          'inverseKnown404Reproduced':False,'healthyRollbackGuaranteed':False,'automaticDeploymentAllowed':False}
