@@ -112,6 +112,28 @@ test('workspace management saves scoped settings and issues and revokes a one-ti
  }
 });
 
+test('workspace management terminates another own browser app session without ending the current one',async({page,browser})=>{
+ test.skip(process.env.STACK_E2E_READ_ONLY==='true','Session termination runs only in disposable integration fixtures');
+ await login(page,'demo-admin');
+ const before=await (await page.request.get('/backend/workspace/sessions')).json();
+ const handles=new Set(before.entries.map((row:{handle:string})=>row.handle));
+ const context=await browser.newContext({baseURL:'http://127.0.0.1:4320'});
+ const second=await context.newPage();
+ try{
+  await login(second,'demo-admin');
+  const response=await page.request.get('/backend/workspace/sessions');expect(response.status()).toBe(200);
+  const snapshot=await response.json(),added=snapshot.entries.filter((row:{handle:string;current:boolean})=>!handles.has(row.handle)&&!row.current);
+  expect(added.length).toBe(1);const handle=added[0].handle;
+  const management=page.locator('#management');await page.getByRole('navigation',{name:'워크스페이스 탐색',exact:true}).getByRole('link',{name:'프로젝트·계정 관리',exact:true}).click();
+  await management.getByRole('button',{name:'내 앱 세션 조회',exact:true}).click();
+  const end=management.getByRole('button',{name:'앱 세션 '+handle+' 종료',exact:true});await expect(end).toBeVisible();await end.click();
+  await expect(management.getByRole('status')).toContainText('선택한 앱 세션을 종료했습니다.');await expect(end).toHaveCount(0);
+  expect((await second.request.get('/backend/me')).status()).toBe(401);expect((await page.request.get('/backend/me')).status()).toBe(200);
+  await expect(management.getByText(/현재 브라우저/)).toBeVisible();
+  phase('actual management UI ends only the other owned app session; current browser remains authenticated; SSO-wide revocation not claimed');
+ }finally{try{await logout(second)}finally{await context.close()}}
+});
+
 test('project home keeps failed statistics unknown and binds retry counts to the displayed response',async({page})=>{
  await login(page,'demo-viewer',async()=>{await page.route('**/backend/runs',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({code:'SYNTHETIC_UNAVAILABLE'})}))});
  const home=page.locator('#overview');await expect(home).toContainText('평가 목록을 확인하지 못했습니다.');await expect(home.locator('dd')).toHaveText(['미확인','미확인','미확인','미확인']);

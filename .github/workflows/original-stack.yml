@@ -171,6 +171,9 @@ jobs:
           path: apps/console/test-results/**/workspace-admin-*.png
           if-no-files-found: error
           retention-days: 7
+      - name: Verify actual project key and own-session management in browsers
+        working-directory: apps/console
+        run: STACK_E2E_QUOTA_GUARD=true npx playwright test --grep 'workspace management'
       - name: Verify actual TLS OIDC login in a fresh portless fixture
         run: |
           docker build -t agenttrust-security:local tools/security
