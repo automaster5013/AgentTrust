@@ -36,6 +36,10 @@ class MetadataControl(unittest.TestCase):
   with self.assertRaises(ValueError):control.cache.file_command(drill,'operating','restore-quarantined-block',PREFIX)
   with self.assertRaises(ValueError):control.inverse_owned(drill,'operating',PREFIX,{})
   drill.own_volume.assert_not_called()
+ def test_sustained_host_refusal_precedes_all_docker_or_source_observation(self):
+  with patch.object(control,'require_sustained_host_capacity',side_effect=ValueError('fixture reserve drop')),patch.object(control.m,'session_capacity') as capacity,patch.object(control.m.c,'run') as command,patch.object(control,'protected_logitrack') as protected:
+   with self.assertRaises(ValueError):control.run({})
+   capacity.assert_not_called();command.assert_not_called();protected.assert_not_called()
  def test_quarantine_source_volume_is_refused_before_tool_call(self):
   drill=NS(source_volume='operating',target_volume='owned',own_volume=Mock())
   with self.assertRaises(ValueError):control.cache.file_command(drill,'operating','quarantine-block',PREFIX)
@@ -162,7 +166,7 @@ class FullControlPath(unittest.TestCase):
     def volume_command(self,*args,**kwargs):pass
     def wait(self,*args):pass
     def cleanup(self):containers.clear();self.report['cleaned']=True
-   patches=[(control,'observe_hot',observe),(control,'protected_logitrack',lambda *a:tuple((format(i,'064x'),'sha256:'+'a'*64) for i in range(1,13))),(control,'ROOT',root),(m,'session_capacity',capacity),(m.d,'live_baseline',lambda:(['source'],{}, {},{'stack-tempo':source})),(m.d,'resolved_groups',lambda *a:({},{})),(m.d,'hash_files',lambda *a:{}),(m.e.planner,'compose_hashes',lambda *a:{}),(m.e.planner,'recheck',recheck),(m.e,'verify_candidate_release',lambda *a:{'directory':release_dir,'receipt':{'images':[{'name':'tempo','reference':reference}]}}),(m.c,'reserve',lambda:None),(m.c,'run',command),(m.c,'inspect',lambda name:containers[name]),(m.c,'Rehearsal',Drill),(m.c,'private_file',lambda path,raw:path.write_bytes(raw)),(m.c,'retained_key',lambda root,path:(path,'unchanged')),(m.c,'key_unchanged',lambda *a:True),(m,'protect',lambda path:path.mkdir(parents=True)),(m,'load',lambda *a:NS(transform=lambda action,key,raw:raw)),(m,'cached_identity',lambda *a:None),(control.tempo,'get',api)]
+   patches=[(control,'require_sustained_host_capacity',lambda:{'hostSustainedMemoryVerified':True}),(control,'observe_hot',observe),(control,'protected_logitrack',lambda *a:tuple((format(i,'064x'),'sha256:'+'a'*64) for i in range(1,13))),(control,'ROOT',root),(m,'session_capacity',capacity),(m.d,'live_baseline',lambda:(['source'],{}, {},{'stack-tempo':source})),(m.d,'resolved_groups',lambda *a:({},{})),(m.d,'hash_files',lambda *a:{}),(m.e.planner,'compose_hashes',lambda *a:{}),(m.e.planner,'recheck',recheck),(m.e,'verify_candidate_release',lambda *a:{'directory':release_dir,'receipt':{'images':[{'name':'tempo','reference':reference}]}}),(m.c,'reserve',lambda:None),(m.c,'run',command),(m.c,'inspect',lambda name:containers[name]),(m.c,'Rehearsal',Drill),(m.c,'private_file',lambda path,raw:path.write_bytes(raw)),(m.c,'retained_key',lambda root,path:(path,'unchanged')),(m.c,'key_unchanged',lambda *a:True),(m,'protect',lambda path:path.mkdir(parents=True)),(m,'load',lambda *a:NS(transform=lambda action,key,raw:raw)),(m,'cached_identity',lambda *a:None),(control.tempo,'get',api)]
    for obj,name,value in patches:stack.enter_context(patch.object(obj,name,value))
    drill=control.run(config);self.assertTrue(drill.report['cleaned']);self.assertEqual(volumes[source_volume],original);self.assertFalse(containers)
    self.assertEqual(drill.report['completed'],not(missing_failure or changed_recovery or launch_failure or inverse_failure or masked_reset or capacity_failure or protected_failure or other_growth));self.assertFalse(drill.report['automaticDeploymentAllowed']);self.assertFalse(drill.report['operatingMetadataRepaired'])

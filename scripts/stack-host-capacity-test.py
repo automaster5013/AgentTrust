@@ -23,6 +23,21 @@ class HostCapacity(unittest.TestCase):
  def test_nonwindows_does_not_claim_windows_measurement(self):
   with patch.object(host.os,'name','posix'),patch.object(host,'windows_available_mib') as probe:
    self.assertIsNone(host.require_host_capacity(2048)['hostMemoryAvailableMiB']);probe.assert_not_called()
+ def test_sustained_window_requires_all_samples_and_elapsed_time(self):
+  with patch.object(host.os,'name','nt'),patch.object(host,'windows_available_mib',return_value=2300),patch.object(host.time,'sleep') as sleep,patch.object(host.time,'monotonic',side_effect=[100,340]):
+   result=host.require_sustained_host_capacity();self.assertTrue(result['hostSustainedMemoryVerified']);self.assertEqual(result['hostMemorySamples'],13);self.assertEqual(sleep.call_count,12)
+  with patch.object(host.os,'name','nt'),patch.object(host,'windows_available_mib',return_value=2300),patch.object(host.time,'sleep'),patch.object(host.time,'monotonic',side_effect=[100,339]):
+   with self.assertRaises(ValueError):host.require_sustained_host_capacity()
+ def test_transient_reserve_is_refused_without_finishing_window(self):
+  with patch.object(host.os,'name','nt'),patch.object(host,'windows_available_mib',side_effect=[2400,2300,2047]),patch.object(host.time,'sleep') as sleep:
+   with self.assertRaises(ValueError) as caught:host.require_sustained_host_capacity()
+   self.assertEqual(caught.exception.capacity_failure['hostMemoryAvailableMiB'],2047);self.assertEqual(sleep.call_count,2)
+ def test_sustained_probe_failure_and_nonwindows_do_not_claim_success(self):
+  with patch.object(host.os,'name','nt'),patch.object(host,'windows_available_mib',side_effect=ValueError('unknown memory')),patch.object(host.time,'sleep') as sleep:
+   with self.assertRaises(ValueError):host.require_sustained_host_capacity()
+   sleep.assert_not_called()
+  with patch.object(host.os,'name','posix'),patch.object(host,'windows_available_mib') as probe:
+   self.assertFalse(host.require_sustained_host_capacity()['hostSustainedMemoryVerified']);probe.assert_not_called()
  def test_host_refusal_precedes_engine_query(self):
   with patch.object(online,'require_host_capacity',side_effect=ValueError('fixture host pressure')),patch.object(online.c,'run') as command:
    with self.assertRaises(ValueError):online.session_capacity()

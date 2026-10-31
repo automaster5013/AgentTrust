@@ -4,6 +4,7 @@ Never edits operating metadata, stops source writers, or enables deployment.
 import argparse,datetime,hashlib,importlib.util,json,pathlib,secrets,sys,time,traceback,urllib.parse,uuid
 import stack_chunked_cache as chunks
 from stack_tempo_poll_evidence import counters, classify_inverse
+from stack_host_capacity import require_sustained_host_capacity
 from stack_local_cd_executor import normalized_host_path
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location('metadata_tempo',ROOT/'scripts/stack-tempo-history-recovery.py');tempo=importlib.util.module_from_spec(spec);spec.loader.exec_module(tempo);m=tempo.m;cache=tempo.cache
@@ -81,7 +82,7 @@ def protected_logitrack(ids=None):
  result=tuple(sorted((row['Id'],row['Image']) for row in rows));m.e.require(len({row[0] for row in result})==12);return result
 
 def run(config):
- m.session_capacity();logitrack=protected_logitrack();ids,raw,inventory,by=m.d.live_baseline();hashes=m.e.planner.compose_hashes(inventory,ROOT);_,protected=m.d.resolved_groups(inventory,by,list(m.e.planner.COMPONENTS))
+ host_window=require_sustained_host_capacity();m.session_capacity();logitrack=protected_logitrack();ids,raw,inventory,by=m.d.live_baseline();hashes=m.e.planner.compose_hashes(inventory,ROOT);_,protected=m.d.resolved_groups(inventory,by,list(m.e.planner.COMPONENTS))
  source=by['stack-tempo'];mounts=[v for v in source['Mounts'] if v['Type']=='volume'];m.e.require(len(mounts)==1 and mounts[0]['Name']=='agenttrust_stack-tempo-data')
  volume=json.loads(m.c.run(['docker','volume','inspect',mounts[0]['Name']]).stdout)[0];m.e.require(volume['Labels']['com.docker.compose.project']=='agenttrust' and volume['Labels']['com.docker.compose.volume']=='stack-tempo-data');m.c.reserve()
  baseline_path=pathlib.Path(config['baselineSummary']).resolve();audit_path=pathlib.Path(config['auditSummary']).resolve()
@@ -106,7 +107,7 @@ def run(config):
  reference=next(v['reference'] for v in release['receipt']['images'] if v['name']=='tempo');m.e.require(reference==manifest['candidateReference'])
  runtime=json.loads((release['directory']/'runtime-identity.json').read_bytes())['imageIds']['tempo'];m.c.run(['docker','pull',reference],timeout=600);image=json.loads(m.c.run(['docker','image','inspect',reference]).stdout)[0];m.cached_identity(image,reference,runtime)
  drill=m.c.Rehearsal({'stack-tempo':source});drill.crypto=crypto;drill.source_volume=mounts[0]['Name'];drill.target_volume=drill.prefix+'-candidate';drill.file_user=source['Config']['User'];drill.tools=json.loads(m.c.run(['docker','image','inspect','agenttrust-security:local']).stdout)[0]['Id']
- drill.report.update(kind='isolated-empty-tempo-metadata-control',candidateRevision=candidate['revision'],candidateReference=reference,sourceImageId=source['Image'],sourceServicesStopped=False,
+ drill.report.update(hostMemoryWindow=host_window,kind='isolated-empty-tempo-metadata-control',candidateRevision=candidate['revision'],candidateReference=reference,sourceImageId=source['Image'],sourceServicesStopped=False,
                      fullStackRecoveryVerified=False,automaticDeploymentAllowed=False,actualDeploymentPerformed=False,operatingMetadataRepaired=False,affectedBlockContentsRecovered=False)
  keydir=ROOT/'.local'/('tempo-control-key-'+drill.id);m.protect(keydir);key=secrets.token_bytes(32);m.c.private_file(keydir/'key.bin',key);drill.report['retainedKeyDirectory']=str(keydir)
  def protected_checkpoint():

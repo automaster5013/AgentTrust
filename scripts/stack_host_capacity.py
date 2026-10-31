@@ -1,5 +1,5 @@
 """Read-only Windows host memory gate before adding isolated Docker workloads."""
-import ctypes,os
+import ctypes,os,time
 
 def windows_available_mib():
  class MemoryStatus(ctypes.Structure):
@@ -16,3 +16,15 @@ def require_host_capacity(minimum_mib):
  if available<required:
   error=ValueError('Insufficient Windows host memory for isolated work');error.capacity_failure={'hostMemoryAvailableMiB':available,'hostMemoryRequiredMiB':required};raise error
  return {'hostMemoryGate':'windows-globalmemorystatusex','hostMemoryAvailableMiB':available,'hostMemoryRequiredMiB':required}
+
+
+def require_sustained_host_capacity():
+ if os.name!='nt':return {'hostMemoryGate':'not-windows','hostSustainedMemoryVerified':False}
+ started=time.monotonic();values=[]
+ for index in range(13):
+  values.append(require_host_capacity(2048)['hostMemoryAvailableMiB'])
+  if index<12:time.sleep(20)
+ elapsed=time.monotonic()-started
+ if elapsed<240:raise ValueError('Host memory observation window incomplete')
+ return {'hostMemoryGate':'windows-globalmemorystatusex','hostSustainedMemoryVerified':True,
+         'hostMemoryMinimumMiB':min(values),'hostMemorySamples':len(values),'hostMemoryWindowSeconds':elapsed,'hostMemoryRequiredMiB':2048}
