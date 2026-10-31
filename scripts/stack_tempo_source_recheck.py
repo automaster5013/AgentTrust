@@ -3,17 +3,18 @@
 Uses the existing container's copy API only; no exec, helper, fixture or write.
 This is not a full source-volume/path/backup/fresh-reader verification.
 """
-import hashlib,io,json,pathlib,subprocess,tarfile,threading
+import hashlib,io,json,pathlib,re,subprocess,tarfile,threading
 from stack_tempo_repair_policy import affected_groups
 LIMIT=65536
 
 def need(value):
  if not value:raise ValueError('Read-only Tempo source recheck refused')
 
-def copy_archive(prefix):
+def copy_archive(container_id,prefix):
+ need(re.fullmatch('[a-f0-9]{64}',container_id))
  from stack_tempo_repair_policy import prefix as validate_prefix
  validate_prefix(prefix)
- proc=subprocess.Popen(['docker','cp','agenttrust-stack-tempo-1:/var/tempo/'+prefix,'-'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
+ proc=subprocess.Popen(['docker','cp',container_id+':/var/tempo/'+prefix,'-'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
  values=[]
  def read():
   try:values.append(proc.stdout.read(LIMIT+1))
@@ -37,18 +38,34 @@ def archive_rows(raw,prefix):
    name=prefix+'/'+path.name;need(name not in rows);rows[name]={'bytes':0,'sha256':hashlib.sha256(b'').hexdigest(),'mode':member.mode}
  need(len(rows)==4);return rows
 
-def recheck(source,files,read=copy_archive):
+def inspect_source(container_id):
+ need(re.fullmatch('[a-f0-9]{64}',container_id))
+ result=subprocess.run(['docker','inspect',container_id],capture_output=True,timeout=15);need(result.returncode==0 and len(result.stdout)<=2*1024*1024)
+ rows=json.loads(result.stdout);need(len(rows)==1);return rows[0]
+
+def identity(source):
+ need(re.fullmatch('[a-f0-9]{64}',source['Id']) and re.fullmatch('sha256:[a-f0-9]{64}',source['Image']))
+ need(isinstance(source['State']['StartedAt'],str) and source['State']['StartedAt'])
+ return source['Id'],source['Image'],source['State']['StartedAt']
+
+def recheck(source,files,read=None,observe=inspect_source):
  need(source['Name']=='/agenttrust-stack-tempo-1' and source['Config']['Labels']['com.docker.compose.project']=='agenttrust' and source['Config']['Labels']['com.docker.compose.service']=='stack-tempo')
  need(source['State']['Running'] is True and source['State'].get('Health',{}).get('Status')=='healthy')
  mounts=[v for v in source['Mounts'] if v['Destination']=='/var/tempo'];need(len(mounts)==1 and mounts[0]['Type']=='volume' and mounts[0]['Name']=='agenttrust_stack-tempo-data')
- groups=affected_groups(files);observations=[]
+ expected_identity=identity(source);groups=affected_groups(files);observations=[]
+ def checkpoint():
+  current=observe(source['Id']);need(identity(current)==expected_identity)
+  need(current['Name']==source['Name'] and current['Config']['Labels']==source['Config']['Labels'] and current['Mounts']==source['Mounts'])
+  need(current['State']['Running'] is True and current['State'].get('Health',{}).get('Status')=='healthy')
+ checkpoint()
+ if read is None:read=lambda prefix:copy_archive(source['Id'],prefix)
  for _ in range(2):
   current={}
   for prefix,expected in groups.items():
-   rows=archive_rows(read(prefix),prefix);need(rows==expected);current.update(rows)
+   checkpoint();rows=archive_rows(read(prefix),prefix);need(rows==expected);checkpoint();current.update(rows)
   observations.append(current)
- need(observations[0]==observations[1]==files)
- return {'knownAffectedFilesRechecked':True,'affectedBlocks':2,'affectedFiles':8,'affectedBytes':0,'twoPassManifestEquality':True,'crossFileSnapshotAtomic':False,'maxSourcePreflightAgeSeconds':300,
+ need(observations[0]==observations[1]==files);checkpoint()
+ return {'sourceIdentityBound':True,'sourceIdentityPreserved':True,'knownAffectedFilesRechecked':True,'affectedBlocks':2,'affectedFiles':8,'affectedBytes':0,'twoPassManifestEquality':True,'crossFileSnapshotAtomic':False,'maxSourcePreflightAgeSeconds':300,
   'knownAffectedManifestSha256':hashlib.sha256(json.dumps(files,sort_keys=True).encode()).hexdigest(),
   'newContainerStarted':False,'sourceWritesPerformed':False,'fullSourceManifestRechecked':False,'pathAndDestinationRechecked':False,
   'freshReaderExecuted':False,'operatingTempoRecoveryVerified':False,'automaticDeploymentAllowed':False}

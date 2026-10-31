@@ -117,3 +117,7 @@ warm namespace 역이동 후 API 상태는 미정이다. 실제 합성 증거처
 `scripts/stack_tempo_source_recheck.py`는 고정 source 컨테이너/volume과 인증한 두 prefix만 사용하며 archive를 64KiB·5 entries로 제한한다. symlink/hardlink/extra/비어 있지 않은 파일·권한 변화·경로 탈출을 거부한다. 읽기 CLI timeout 시 생성한 copy 프로세스만 종료하며 source 서비스/엔진은 변경하지 않는다. 파일 간 원자성, 정상 closed-block 전체, 부모/목적지 경로, 운영 API 또는 fresh reader를 검증한 것은 아니다. 이 부분 재검사 또한 실행 직전 최대 5분 조건을 새로 충족해야 한다.
 
 fresh reader 시작 조건은 아직 충족되지 않았다. 이번 단일 Windows 관측은 2,024MiB로 시작 기준 2,048MiB 미만이었고 지속 여유도 증명되지 않았다. 추가 메모리 대기·회수 실험 없이 새 격리 작업을 보류했다. 다음 실제 reader 전에는 구체적인 자원 변화, 지속 메모리 기준, 최신 전체 source 파일/경로/목적지 관측과 복사 전후 일치 및 protected-service 기준을 함께 확보해야 한다. 알려진 빈 파일이 그대로라는 사실을 복구 완료나 CD 허용으로 해석하지 않는다.
+
+## 읽기 대상 identity 고정
+
+읽기 전용 source 재검사는 사전 inspect의 container ID·image·StartedAt에 고정하며 copy API도 재사용될 수 있는 이름 대신 같은 불변 ID를 지정한다. 각 복사 전후와 종료 시 identity·health·mount·Compose labels를 확인한다. 이름이 다른 컨테이너에 재할당돼도 따라가지 않는다. 파일 내용이 같아도 source identity나 health가 바뀌면 성공 영수증을 만들지 않는다. 이번 강화는 전체 경로 모의 테스트로 검증했으며 새 운영 파일 재검사나 fresh reader 실행 증거가 아니다.
