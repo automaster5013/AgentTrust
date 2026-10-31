@@ -109,8 +109,10 @@ def run(config):
  drill.report.update(kind='isolated-empty-tempo-metadata-control',candidateRevision=candidate['revision'],candidateReference=reference,sourceImageId=source['Image'],sourceServicesStopped=False,
                      fullStackRecoveryVerified=False,automaticDeploymentAllowed=False,actualDeploymentPerformed=False,operatingMetadataRepaired=False,affectedBlockContentsRecovered=False)
  keydir=ROOT/'.local'/('tempo-control-key-'+drill.id);m.protect(keydir);key=secrets.token_bytes(32);m.c.private_file(keydir/'key.bin',key);drill.report['retainedKeyDirectory']=str(keydir)
+ def protected_checkpoint():
+  m.e.planner.recheck(ids,inventory,ROOT,hashes);m.e.require(m.d.hash_files(protected)==protected and all(m.c.key_unchanged(*v) for v in custody) and protected_logitrack([v[0] for v in logitrack])==logitrack)
  def checkpoint():
-  m.e.planner.recheck(ids,inventory,ROOT,hashes);m.e.require(m.d.hash_files(protected)==protected and all(m.c.key_unchanged(*v) for v in custody) and protected_logitrack([v[0] for v in logitrack])==logitrack);m.session_capacity(512)
+  protected_checkpoint();m.session_capacity(512)
  def source_files(prefix):return json.loads(m.c.run(cache.file_command(drill,drill.source_volume,'inventory',prefix=prefix),timeout=120).stdout)
  def create_volume(name):
   drill.volumes.append(name);m.c.run(['docker','volume','create','--label','agenttrust.fixture='+drill.id,name]);drill.own_volume(name);drill.volume_command(name,drill.file_user,['chown',drill.file_user,'/data'],write=True,initialize=True)
@@ -200,8 +202,10 @@ def run(config):
   drill.report.update(result,completed=True,sourceApiTraceStatus=source_status,sourceEmptyMetadataUnchanged=True,quarantinedOwnedBlocks=len(bad_prefixes),affectedFiles=len(bad_files),affectedBytes=sum(v['bytes'] for v in bad_files.values()),encryptedComparisonSha256=hashlib.sha256(cipher).hexdigest(),protectedLogitrackServices=len(logitrack),protectedLogitrackIdsAndImagesUnchanged=True,operationalContainersUnchanged=True)
  except Exception as error:drill.report.update(capacityFailure=getattr(error,'capacity_failure',None),completed=False,errorType=type(error).__name__,failureLocations=[{'file':pathlib.Path(v.filename).name,'line':v.lineno} for v in traceback.extract_tb(error.__traceback__)])
  finally:
-  try:checkpoint();drill.report['operationalContainersUnchanged']=True
+  try:protected_checkpoint();drill.report['operationalContainersUnchanged']=True
   except Exception:drill.report.update(completed=False,operationalContainersUnchanged=False)
+  try:m.session_capacity(512);drill.report['finalCapacityCheckPassed']=True
+  except Exception as error:drill.report.update(completed=False,finalCapacityCheckPassed=False,finalCapacityFailure=getattr(error,'capacity_failure',None))
   drill.cleanup()
  return drill
 
