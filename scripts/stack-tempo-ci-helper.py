@@ -76,9 +76,9 @@ def main(action,data):
  if action in ('ready','metrics','config'):
   path={'ready':'/ready','metrics':'/metrics','config':'/status/config'}[action];status,raw=http(3200,path);return {'status':status,'text':raw.decode('utf-8')}
  if action=='traces':
-  start=data['start'];need(type(start) is int and time.time()-86400<start<time.time()-10);traces={}
+  start=data['start'];need(type(start) is int and time.time()-3600<start<time.time()-10);traces={};query_end=int(time.time())+1
   for i in range(1,21):
-   trace=format(i,'032x');status,raw=http(3200,'/querier/api/traces/'+trace+'?mode=blocks&start='+str(start-1)+'&end='+str(start+5))
+   trace=format(i,'032x');status,raw=http(3200,'/querier/api/traces/'+trace+'?mode=blocks&start='+str(start-1)+'&end='+str(query_end))
    if status!=200:return {'status':status,'response':raw.decode('utf-8',errors='replace')[:4096]}
    frame=json.loads(raw);traces[trace]=frame.get('trace',frame)
   return {'status':200,'traces':traces}

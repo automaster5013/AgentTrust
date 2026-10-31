@@ -89,9 +89,14 @@ class HostedProof(unittest.TestCase):
   with patch.dict(os.environ,{'GITHUB_ACTIONS':'false'}),patch.object(h.subprocess,'run') as run:
    with self.assertRaises(ValueError):h.host_guard(case)
    run.assert_not_called()
- def test_first_reader_observation_allows_a_full_poll(self):
-  import inspect
-  source=inspect.getsource(h.exercise);self.assertIn('d.traces(gold,start),360',source);self.assertIn('cold_failed,360',source)
+ def test_backend_window_covers_ingestion_as_well_as_span_time(self):
+  import urllib.parse
+  now=int(time.time());paths=[]
+  def read(port,path,payload=None):paths.append(path);return 200,b'{}'
+  with patch.object(helper,'http',read):result=helper.main('traces',{'start':now-180})
+  self.assertEqual(len(result['traces']),20)
+  for path in paths:
+   query=urllib.parse.parse_qs(urllib.parse.urlsplit(path).query);self.assertEqual(query['mode'],['blocks']);self.assertLessEqual(int(query['start'][0]),now-180);self.assertGreaterEqual(int(query['end'][0]),now);self.assertLessEqual(int(query['end'][0])-int(query['start'][0]),3602)
  def test_real_wait_deadline_does_not_retry(self):
   with tempfile.TemporaryDirectory(dir=ROOT) as tmp,patch.object(h,'available_mib',return_value=8192),patch.object(h.time,'sleep') as sleep:
    d=h.Driver(pathlib.Path(tmp),{'revision':'f'*40,'image':'synthetic-test'},time.time()+3600)
