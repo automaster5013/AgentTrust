@@ -33,7 +33,7 @@ def http(port,path,payload=None):
    raw=response.read(2097153);need(len(raw)<=2097152);return response.status,raw
  except urllib.error.URLError as error:
   if not isinstance(error,urllib.error.HTTPError):return 503,b''
-  need(error.code in (400,404,503));return error.code,b''
+  need(error.code in (400,404,503));raw=error.read(2097153);need(len(raw)<=2097152);return error.code,raw
 def main(action,data):
  root=ROOT
  if action=='closed':return {'blocks':closed(root)}
@@ -79,7 +79,7 @@ def main(action,data):
   start=data['start'];need(type(start) is int and time.time()-86400<start<time.time()-10);traces={}
   for i in range(1,21):
    trace=format(i,'032x');status,raw=http(3200,'/querier/api/traces/'+trace+'?mode=blocks&start='+str(start-1)+'&end='+str(start+5))
-   if status!=200:return {'status':status}
+   if status!=200:return {'status':status,'response':raw.decode('utf-8',errors='replace')[:4096]}
    frame=json.loads(raw);traces[trace]=frame.get('trace',frame)
   return {'status':200,'traces':traces}
  raise ValueError('Unknown fixture operation')

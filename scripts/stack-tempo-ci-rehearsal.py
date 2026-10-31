@@ -1,5 +1,5 @@
 """Hosted-only synthetic Tempo cold/hot/inverse experiment; never operating recovery."""
-import argparse,base64,datetime,hashlib,importlib.util,json,os,pathlib,re,signal,subprocess,sys,time,uuid
+import argparse,base64,datetime,hashlib,importlib.util,json,os,pathlib,re,signal,subprocess,sys,time,traceback,uuid
 from stack_tempo_poll_evidence import counters,classify_inverse,NAMES
 from stack_tempo_ci_release import verify,load
 ROOT=pathlib.Path(__file__).resolve().parent.parent
@@ -81,7 +81,7 @@ class Driver:
   self.owned(name);args=['docker','logs','--tail','100']
   if since:args+=['--since',since]
   args.append(name);result=subprocess.run(args,capture_output=True,timeout=10);need(result.returncode==0);raw=result.stdout+result.stderr;need(len(raw)<=262144)
-  return {'jsonErrors':raw.lower().count(b'unexpected end of json input'),'sha256':hashlib.sha256(raw).hexdigest(),'capturedAt':stamp()}
+  return {'jsonErrors':raw.lower().count(b'unexpected end of json input'),'sha256':hashlib.sha256(raw).hexdigest(),'capturedAt':stamp(),'syntheticLogTail':raw.decode('utf-8',errors='replace')[-65536:]}
  def metrics(self,name,allow_missing=False):
   frame=self.helper('metrics',container=name);need(frame['status']==200)
   if allow_missing and NAMES[0] not in frame['text']:return None
@@ -89,7 +89,8 @@ class Driver:
   self.last_metrics={'globalPollErrors':int(global_errors),'capturedAt':stamp(),'lines':[line for line in frame['text'].splitlines() if any(line.startswith(key) for key in NAMES)]};return counters(frame['text'])
  def traces(self,name,start):
   frame=self.helper('traces',container=name,start=start)
-  if frame['status']==404:return None
+  if frame['status']==404:
+   self.report['lastSyntheticTraceStatus']=404;self.save();return None
   need(frame['status']==200);self.last_frames=frame['traces'];return fingerprint(frame['traces'],start)
  def cleanup(self):
   ok=True
@@ -152,7 +153,11 @@ def main():
   for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,lambda *_:(_ for _ in ()).throw(RuntimeError('Job interrupted')))
   exercise(d)
  except Exception as error:
-  if d:d.report.update(completed=False,errorType=type(error).__name__)
+  if d:
+   d.report.update(completed=False,errorType=type(error).__name__,failureLocations=[{'file':pathlib.Path(row.filename).name,'line':row.lineno} for row in traceback.extract_tb(error.__traceback__)])
+   for name in list(d.names):
+    try:d.record(failureLogs=d.logs(name))
+    except Exception:pass
   else:print(json.dumps({'completed':False,'refusedBeforeDocker':True,'errorType':type(error).__name__}));return 1
  finally:
   if d:d.cleanup()
