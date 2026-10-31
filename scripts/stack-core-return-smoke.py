@@ -60,7 +60,7 @@ def main():
             if command[:2] == ['python3', 'scripts/stack-http-smoke.py']:
                 try:
                     frame = json.loads(result.stdout.decode().splitlines()[-1])
-                    report['httpFailure'] = {key: frame.get(key) for key in ('completed','failedStage','errorType','unexpectedHttpStatus','responseCode','ownSessionsLoggedOut')}
+                    report['httpFailure'] = {'probePort': report.get('httpProbePort'), **{key: frame.get(key) for key in ('completed','failedStage','errorType','unexpectedHttpStatus','responseCode','ownSessionsLoggedOut')}}
                 except Exception: report['httpFailureSummaryUnavailable'] = True
             raise RuntimeError('CORE_RETURN_COMMAND_UNVERIFIED')
         return result.stdout
@@ -148,6 +148,10 @@ def main():
                 raw = run(command, timeout=240)
                 frames = [json.loads(line) for line in raw.decode().splitlines() if line.startswith('{')]
                 assert frames and frames[-1]['completed'] and frames[-1]['ownSessionsLoggedOut'] and frames[-1]['checks'] >= 9
+                if mode == 'previous':
+                    assert frames[-1]['managementApiSupported'] is False and frames[-1]['legacyManagementStatusCodes'] == [500] * 4
+                    report['previousManagementApiSupported'] = False
+                    report['previousManagementMissingRouteStatusCodes'] = frames[-1]['legacyManagementStatusCodes']
 
         def browser():
             report['stage'] = 'previous-browser'

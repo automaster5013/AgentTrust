@@ -6,7 +6,7 @@ import types
 import unittest
 from unittest.mock import patch
 import stack_ci_return_guard as guard
-from stack_core_return_flow import preserved, verify
+from stack_core_return_flow import pinned_legacy_management_unavailable, preserved, verify
 
 
 class FlowTest(unittest.TestCase):
@@ -83,6 +83,16 @@ class FlowTest(unittest.TestCase):
             with self.subTest(fault=fault), self.assertRaises((RuntimeError, AssertionError)): run()
             self.assertNotIn('candidateRowsPreserved', report)
             if fault == 'api-candidate': self.assertNotIn('candidateHttpVerified', report)
+
+    def test_pinned_missing_management_route_requires_exact_error_not_arbitrary_unavailability(self):
+        pinned_legacy_management_unavailable(500, {'code': 'REQUEST_UNAVAILABLE'})
+        for status, body in [(404, {'code': 'REQUEST_UNAVAILABLE'}),
+                             (200, {'code': 'REQUEST_UNAVAILABLE'}),
+                             (503, {'code': 'STORAGE_UNAVAILABLE'}),
+                             (500, {'code': 'OTHER_FAILURE'}),
+                             (500, {'code': 'REQUEST_UNAVAILABLE', 'deploymentAuthority': True})]:
+            with self.subTest(status=status, body=body), self.assertRaises(AssertionError):
+                pinned_legacy_management_unavailable(status, body)
 
     def test_quiet_query_counts_standalone_and_campaign_case_runs_without_campaign_state(self):
         spec = importlib.util.spec_from_file_location('core_return_smoke', pathlib.Path(__file__).with_name('stack-core-return-smoke.py'))

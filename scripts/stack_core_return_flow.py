@@ -3,6 +3,13 @@ from collections import Counter
 from stack_v18_transition_probe import MANAGEMENT
 
 
+
+def pinned_legacy_management_unavailable(status, body):
+    """Exact missing-route behavior of the pinned baseline, never API support."""
+    assert type(status) is int and status == 500, 'LEGACY_MISSING_ROUTE_STATUS_CHANGED'
+    assert body == {'code': 'REQUEST_UNAVAILABLE'}, 'LEGACY_MISSING_ROUTE_BODY_CHANGED'
+
+
 def preserved(before, after, *, unchanged_management=False):
     assert before['ledger'] == after['ledger'], 'SCHEMA_LEDGER_CHANGED'
     assert set(before['tables']) == set(after['tables']), 'TABLE_SET_CHANGED'
@@ -36,6 +43,7 @@ def verify(switch, api, browser, capture, *, recovery=None):
             if recovery is not None: recovery['candidateRowsPreserved'] = True
     return {'completed': True, 'previousCoreHttpSuiteVerified': True,
             'previousCoreBrowserSuiteVerified': True, 'candidateRestoredAndHttpVerified': True,
+            'previousManagementApiSupported': False, 'previousManagementApiCompatibilityVerified': False,
             'existingRowsAndRevocationsPreserved': True, 'schemaLedgerUnchanged': True,
             'allPossibleApiRoutesVerified': False, 'operatingRecoveryVerified': False,
             'actualDeploymentPerformed': False, 'automaticDeploymentAllowed': False,

@@ -20,10 +20,13 @@ try:
  stage='login';admin=Client();admin.login('demo-admin');editor=Client();editor.login('demo-editor');viewer=Client();viewer.login('demo-viewer');other=Client();other.login('other-admin');check('four authenticated identities retain tenant and role')
  if args.legacy_core_return:
   stage='legacy-management-unavailable'
-  for resource in ['project','access-keys','sessions']:admin.request('workspace/'+resource,expected=404)
-  admin.request('workspace/project','POST',{'expectedRevision':0,'name':'Not applied','description':''},expected=404)
+  from stack_core_return_flow import pinned_legacy_management_unavailable
+  report['legacyManagementStatusCodes']=[]
+  for resource in ['project','access-keys','sessions']:
+   pinned_legacy_management_unavailable(500,admin.request('workspace/'+resource,expected=500));report['legacyManagementStatusCodes'].append(500)
+  pinned_legacy_management_unavailable(500,admin.request('workspace/project','POST',{'expectedRevision':0,'name':'Not applied','description':''},expected=500));report['legacyManagementStatusCodes'].append(500)
   report['managementApiSupported']=False
-  check('previous Core refuses unsupported management paths without changing V18 records')
+  check('pinned previous Core returns exact sanitized missing-route errors; management remains unsupported')
  else:
   stage='workspace-management'
   project=admin.request('workspace/project');assert project['organizationId']==admin.request('me')['organizationId'] and project['deploymentAuthority'] is False
@@ -60,6 +63,7 @@ try:
    tracked=admin.request('workspace/sessions');added=[row for row in tracked['entries'] if row['handle'] not in before_handles and not row['current']];assert len(added)==1
    admin.request('workspace/sessions/'+added[0]['handle']+'/revoke','POST',{});second.request('me',expected=401);assert admin.request('me')['role']=='admin'
   finally:second.logout()
+  report['managementApiSupported']=True
   check('workspace settings CAS role and tenant boundaries, hashed one-time keys actual stateless read and revocation, current and foreign session refusal')
  stage='evaluation';records={}
  for scenario,decision,state in [('pass','pass','succeeded'),('block','block','succeeded'),('missing_evidence','inconclusive','succeeded'),('error','inconclusive','failed')]:
@@ -99,5 +103,5 @@ finally:
  for client in clients:
   try:client.logout()
   except Exception:cleanup=False
- report['ownSessionsLoggedOut']=cleanup and all(not c.logged for c in clients);report['finishedAt']=datetime.datetime.now(datetime.timezone.utc).isoformat();path=pathlib.Path('.local')/('stack-http-smoke-'+str(uuid.uuid4())+'.json');path.open('x',encoding='utf-8').write(json.dumps(report,indent=2)+'\n');print(json.dumps({'completed':report['completed'],'checks':len(report['checks']),'ownSessionsLoggedOut':report['ownSessionsLoggedOut'],'failedStage':report.get('failedStage'),'errorType':report.get('errorType'),'unexpectedHttpStatus':report.get('unexpectedHttpStatus'),'responseCode':report.get('responseCode'),'reportPath':str(path)}))
+ report['ownSessionsLoggedOut']=cleanup and all(not c.logged for c in clients);report['finishedAt']=datetime.datetime.now(datetime.timezone.utc).isoformat();path=pathlib.Path('.local')/('stack-http-smoke-'+str(uuid.uuid4())+'.json');path.open('x',encoding='utf-8').write(json.dumps(report,indent=2)+'\n');print(json.dumps({'completed':report['completed'],'checks':len(report['checks']),'managementApiSupported':report.get('managementApiSupported'),'legacyManagementStatusCodes':report.get('legacyManagementStatusCodes'),'ownSessionsLoggedOut':report['ownSessionsLoggedOut'],'failedStage':report.get('failedStage'),'errorType':report.get('errorType'),'unexpectedHttpStatus':report.get('unexpectedHttpStatus'),'responseCode':report.get('responseCode'),'reportPath':str(path)}))
 if not report['completed'] or not report['ownSessionsLoggedOut']:raise SystemExit(1)
