@@ -78,3 +78,8 @@ Full-path 모의/실패 테스트 7개, Python 문법·actionlint는 로컬 통�
 추가 검토에서 이전 Core 단계가 실패하면 `finally`의 후보 교체 뒤 HTTP·기존 행 보존 검사가 건너뛰어지는 공백을 로컬 회귀 테스트로 재현했다. 후보 복원·관리 기능 포함 직접 API/BFF HTTP·기존 행 및 ledger 보존 검사를 모두 `finally` 경로로 묶었다. 이전 단계가 실패하면 복원이 확인돼도 전체 시험은 계속 실패하며, 안전 보고서는 이전 실패 단계/타입과 `candidateRestored`, `candidateHttpVerified`, `candidateRowsPreserved`를 구분한다.
 
 주 작업 예산이 소진된 뒤에도 별도 5분 복원 예산이 후보 교체뿐 아니라 HTTP·행 보존·Core 외 컨테이너 ID/image/StartedAt·healthy 검증까지 적용되도록 수정했다. 복원 뒤 비 Core 상태 검사는 이전 단계 실패 시에도 수행하고, 실패하면 전체 성공을 거부한다. 로컬 복귀 흐름 테스트 10개와 V17 전환 7개가 통과했다. 이는 모의 예외 경로 검증이며, 수정 후보의 실제 hosted 결과는 별도 확인한다. 운영 복구·자동 CD·건강한 운영 rollback 허용을 뜻하지 않는다.
+
+
+### 실제 Playwright 목록으로 확인한 이전 Core 테스트 선택자 수정
+
+Playwright의 전체 제목에는 파일명이 앞에 붙으므로 `--grep-invert '^workspace management'`는 관리 테스트 두 개를 제외하지 못했다. `STACK_E2E_LEGACY_CORE_RETURN=true`의 실제 `--list`에서 두 관리 테스트가 포함된 55개 목록을 확인했다. 선택자를 `(^|\s)workspace management\s`로 수정한 뒤 53개/2파일을 확인했고, 두 관리 쓰기 테스트는 제외되고 이전 Core 관리 API 404 표시 테스트는 포함됨을 확인했다. 기본 후보 모드의 관리 테스트 등록·실행은 변경하지 않았다. 목록 검사는 브라우저 실행 성공의 증거가 아니며 전체 hosted 결과는 별도 확인한다.

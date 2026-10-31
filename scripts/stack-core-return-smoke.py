@@ -144,7 +144,7 @@ def main():
         def browser():
             report['stage'] = 'previous-browser'
             env = dict(os.environ, STACK_E2E_LEGACY_CORE_RETURN='true', STACK_E2E_QUOTA_GUARD='true')
-            result = subprocess.run(['npx', 'playwright', 'test', '--grep-invert', '^workspace management'],
+            result = subprocess.run(['npx', 'playwright', 'test', '--grep-invert', r'(^|\s)workspace management\s'],
                                     cwd=ROOT / 'apps/console', capture_output=True, timeout=max(1, min(900, deadline-time.monotonic())), env=env)
             if result.returncode:
                 report['browserProcessFailed'] = True
