@@ -39,6 +39,7 @@ jobs:
           python3 scripts/stack-release-online-test.py
           python3 scripts/stack-local-cd-evidence-test.py
           python3 scripts/stack-local-cd-plan-test.py
+          python3 -m unittest discover -s scripts -p test_stack_v18_transition_probe.py
           python3 scripts/stack-dockerhub-main-mirror-test.py
           python3 scripts/stack-dockerhub-test.py
           python3 scripts/stack-delivery-verifier-test.py
@@ -121,7 +122,7 @@ jobs:
           python3 scripts/stack-workspace-onboarding-smoke.py --allow-owned-evaluations
           python3 scripts/stack-workspace-dispatch-load.py --allow-owned-evaluations
           python3 scripts/stack-database-process-smoke.py
-          python3 scripts/stack-database-process-adversarial.py
+          python3 scripts/stack-database-process-adversarial.py --v17-transition
           python3 scripts/stack-http-smoke.py
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
           python3 scripts/stack-database-smoke.py
