@@ -1,5 +1,5 @@
 """Known-file read-only copy contracts; no daemon or operating reads."""
-import copy,hashlib,io,subprocess,tarfile,unittest
+import copy,datetime,hashlib,io,subprocess,tarfile,unittest
 from types import SimpleNamespace as NS
 from unittest.mock import Mock,patch
 import stack_tempo_source_recheck as audit
@@ -25,6 +25,23 @@ class Recheck(unittest.TestCase):
   read=Mock(side_effect=lambda p:archive(p));result=audit.recheck(SOURCE,FILES,read,lambda _:copy.deepcopy(SOURCE))
   self.assertEqual(read.call_count,4);self.assertTrue(result['twoPassManifestEquality'])
   for field in ('crossFileSnapshotAtomic','fullSourceManifestRechecked','pathAndDestinationRechecked','newContainerStarted','sourceWritesPerformed','freshReaderExecuted','operatingTempoRecoveryVerified','automaticDeploymentAllowed'):self.assertFalse(result[field])
+ def test_slow_first_copy_never_gets_a_new_fresh_timestamp(self):
+  initial=datetime.datetime(2026,10,31,tzinfo=datetime.timezone.utc);elapsed=[0]
+  def read(prefix):elapsed[0]=301;return archive(prefix)
+  with patch.object(audit,'clock',side_effect=lambda:(initial+datetime.timedelta(seconds=elapsed[0]),elapsed[0])):
+   with self.assertRaises(ValueError):audit.recheck(SOURCE,FILES,read,lambda _:copy.deepcopy(SOURCE))
+ def test_clock_jump_is_inconclusive_even_when_files_match(self):
+  initial=datetime.datetime(2026,10,31,tzinfo=datetime.timezone.utc)
+  for jump in (-1,60):
+   changed=[False]
+   def read(prefix):changed[0]=True;return archive(prefix)
+   with self.subTest(jump=jump),patch.object(audit,'clock',side_effect=lambda:(initial+datetime.timedelta(seconds=jump if changed[0] else 0),1 if changed[0] else 0)):
+    with self.assertRaises(ValueError):audit.recheck(SOURCE,FILES,read,lambda _:copy.deepcopy(SOURCE))
+ def test_expiry_is_bound_to_first_observation_not_completion(self):
+  initial=datetime.datetime(2026,10,31,tzinfo=datetime.timezone.utc);elapsed=[0]
+  def read(prefix):elapsed[0]+=10;return archive(prefix)
+  with patch.object(audit,'clock',side_effect=lambda:(initial+datetime.timedelta(seconds=elapsed[0]),elapsed[0])):result=audit.recheck(SOURCE,FILES,read,lambda _:copy.deepcopy(SOURCE))
+  self.assertEqual(result['observationDurationSeconds'],40);self.assertEqual(datetime.datetime.fromisoformat(result['observedAt']),initial+datetime.timedelta(seconds=40));self.assertEqual(datetime.datetime.fromisoformat(result['evidenceExpiresAt']),initial+datetime.timedelta(seconds=300))
  def test_drift_links_extra_bytes_and_escape_refuse(self):
   for mutation in ('mode','symlink','hardlink','extra','nonempty','traversal'):
    read=Mock(side_effect=lambda p:archive(p,mutation))

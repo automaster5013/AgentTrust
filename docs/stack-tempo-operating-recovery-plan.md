@@ -129,3 +129,7 @@ fresh reader 시작 조건은 아직 충족되지 않았다. 이번 단일 Windo
 ## hot 역이동 영수증의 의미 구분
 
 로컬 metadata rehearsal의 hot 경로는 역이동 파일·identity가 확인돼도 `restartFreeRollbackVerified=false`와 `healthyRollbackGuaranteed=false`를 유지한다. 검증한 namespace 역이동 자체만 `restartFreeNamespaceInverseVerified=true`로 기록한다. 정상 blocklist가 남아 조회되는 경우와 404가 다시 나타난 경우 모두 건강한 롤백 성공으로 승격하지 않는다. 과거 영수증의 필드나 바이트를 고쳐 새 실제 실행 증거로 사용하지 않는다. 이 변경의 전체 경로 테스트는 모의 검증이며 운영 적용 또는 새 reader 실행이 아니다.
+
+## source 재검사 전체 관측 창
+
+읽기 전용 재검사는 첫 관측부터 마지막 identity 확인까지 전체 구간을 monotonic/UTC 두 시계로 측정한다. 300초 초과·시간 역행·두 시계의 큰 불일치는 파일 해시가 같아도 판정 불가다. `sourceObservationStartedAt`, `observedAt`, `evidenceExpiresAt`, `observationDurationSeconds`를 함께 기록하며 기한은 완료 시각이 아니라 첫 관측+300초다. 후속 검토나 서비스 health 기록은 이 원본 시간 경계를 갱신하지 않는다.

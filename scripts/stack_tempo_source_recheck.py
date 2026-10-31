@@ -3,7 +3,7 @@
 Uses the existing container's copy API only; no exec, helper, fixture or write.
 This is not a full source-volume/path/backup/fresh-reader verification.
 """
-import hashlib,io,json,pathlib,re,subprocess,tarfile,threading
+import datetime,hashlib,io,json,pathlib,re,subprocess,tarfile,threading,time
 from stack_tempo_repair_policy import affected_groups
 LIMIT=65536
 
@@ -48,15 +48,22 @@ def identity(source):
  need(isinstance(source['State']['StartedAt'],str) and source['State']['StartedAt'])
  return source['Id'],source['Image'],source['State']['StartedAt']
 
+def clock():return datetime.datetime.now(datetime.timezone.utc),time.monotonic()
+
 def recheck(source,files,read=None,observe=inspect_source):
+ started_at,started_mono=clock()
+ def check_time():
+  observed_at,observed_mono=clock();elapsed=observed_mono-started_mono;wall_elapsed=(observed_at-started_at).total_seconds()
+  need(0<=elapsed<=300 and 0<=wall_elapsed<=300 and abs(wall_elapsed-elapsed)<=5)
+  return observed_at,elapsed
  need(source['Name']=='/agenttrust-stack-tempo-1' and source['Config']['Labels']['com.docker.compose.project']=='agenttrust' and source['Config']['Labels']['com.docker.compose.service']=='stack-tempo')
  need(source['State']['Running'] is True and source['State'].get('Health',{}).get('Status')=='healthy')
  mounts=[v for v in source['Mounts'] if v['Destination']=='/var/tempo'];need(len(mounts)==1 and mounts[0]['Type']=='volume' and mounts[0]['Name']=='agenttrust_stack-tempo-data')
  expected_identity=identity(source);groups=affected_groups(files);observations=[]
  def checkpoint():
-  current=observe(source['Id']);need(identity(current)==expected_identity)
+  check_time();current=observe(source['Id']);need(identity(current)==expected_identity)
   need(current['Name']==source['Name'] and current['Config']['Labels']==source['Config']['Labels'] and current['Mounts']==source['Mounts'])
-  need(current['State']['Running'] is True and current['State'].get('Health',{}).get('Status')=='healthy')
+  need(current['State']['Running'] is True and current['State'].get('Health',{}).get('Status')=='healthy');check_time()
  checkpoint()
  if read is None:read=lambda prefix:copy_archive(source['Id'],prefix)
  for _ in range(2):
@@ -64,8 +71,8 @@ def recheck(source,files,read=None,observe=inspect_source):
   for prefix,expected in groups.items():
    checkpoint();rows=archive_rows(read(prefix),prefix);need(rows==expected);checkpoint();current.update(rows)
   observations.append(current)
- need(observations[0]==observations[1]==files);checkpoint()
- return {'sourceIdentityBound':True,'sourceIdentityPreserved':True,'knownAffectedFilesRechecked':True,'affectedBlocks':2,'affectedFiles':8,'affectedBytes':0,'twoPassManifestEquality':True,'crossFileSnapshotAtomic':False,'maxSourcePreflightAgeSeconds':300,
+ need(observations[0]==observations[1]==files);checkpoint();observed_at,elapsed=check_time()
+ return {'sourceObservationStartedAt':started_at.isoformat(),'observedAt':observed_at.isoformat(),'evidenceExpiresAt':(started_at+datetime.timedelta(seconds=300)).isoformat(),'observationDurationSeconds':elapsed,'sourceIdentityBound':True,'sourceIdentityPreserved':True,'knownAffectedFilesRechecked':True,'affectedBlocks':2,'affectedFiles':8,'affectedBytes':0,'twoPassManifestEquality':True,'crossFileSnapshotAtomic':False,'maxSourcePreflightAgeSeconds':300,
   'knownAffectedManifestSha256':hashlib.sha256(json.dumps(files,sort_keys=True).encode()).hexdigest(),
   'newContainerStarted':False,'sourceWritesPerformed':False,'fullSourceManifestRechecked':False,'pathAndDestinationRechecked':False,
   'freshReaderExecuted':False,'operatingTempoRecoveryVerified':False,'automaticDeploymentAllowed':False}
