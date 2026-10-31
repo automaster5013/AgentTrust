@@ -106,3 +106,13 @@ source run은 main의 이미지 빌드 SHA에 속하지만 게시 run은 feature
 ## 2026-10-31 사용자 요청에 따른 재실행
 
 사용자가 기존 실행 기한 연장과 수정한 조회 범위의 실제 재검증을 명시적으로 요청했다. 이번 재실행 case 종료는 2026-10-31 05:11:28 UTC(14:11:28 KST)로 연장한다. 시작 33분 여유·내부 38분 상한·정리 3분·hosted 전용·합성 데이터 경계는 유지한다. 정상 reader의 블록 metadata 시간 경계와 실패 시 실제 metrics도 보존해 빈 결과의 원인을 구분한다. 재실행 성공 전에는 시간 범위 수정이나 warm 역이동이 검증됐다고 주장하지 않는다.
+
+## 실제 성공 증거: run 41167578818
+
+2026-10-31 13:28 KST에 hosted run `41167578818`이 실제 실행·정리·독립 재계산까지 성공했다. branch HEAD는 `52e1e85`, PR merge 실행 SHA는 `0625766a940ebce606b6b2bfcc8258daa6c17253`이다. artifact `13029972905`의 ZIP SHA-256은 `1e13090db497aec4531ae3b4bfaf0e39fa8a666fcaa7327f2681351000441dc9`이며 내려받은 바이트 해시와 로컬 독립 재계산도 일치했다. 공개 안전 요약은 `docs/evidence/tempo-hosted-warm-20261031.json`이다.
+
+정상 reader 블록 metadata 시작은 `04:10:35 UTC`, 합성 span 시작은 `04:09:34 UTC`, 이전 조회 종료는 `04:09:39 UTC`였다. source `tempodb.includeBlock`은 metadata 시작이 조회 종료보다 이르면 포함하므로 이전 범위는 이 블록을 제외한다. 수정한 범위에서는 같은 합성 20개 트레이스·133개 스팬이 즉시 조회됐다. 실제 metadata 종료가 시작보다 이른 값도 관측됐으므로 이를 정상 metadata로 일반화하지 않는다. 합성 시각/slack의 경계 현상이며 운영 Tempo 404와 동일 원인이라고 주장하지 않는다.
+
+무재시작 분리 복구에서 poll count 1→3, tenant metadata errors 2→2를 확인했고, warm 역이동 후 count 3→4·errors 2→4(+2), 새 JSON 오류 2개와 전체 20/133 의미 일치를 함께 확인했다. 후보 identity와 8개 역이동 파일은 보존됐고 정리는 성공했다. 이는 오류 시 이전 정상 blocklist 유지의 실제 합성 증거이며 404 재현이나 건강한 운영 롤백 보장은 아니다.
+
+히스토그램 count는 실패 poll도 포함한다. 최초 artifact의 `newSuccessfulPolls`는 실제 성공 횟수가 아니라 완료된 poll 관측 횟수였으므로 현재 필드는 `newPollCycles`로 바로잡았다. 독립 검증기는 과거 필드명을 이 의미로만 정규화하며 증거 바이트를 수정하지 않는다. 운영 복구·백업·전체 스택 복구·CD·자동 배포 허용은 계속 false다.

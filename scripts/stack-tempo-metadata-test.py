@@ -208,9 +208,14 @@ class PollingEvidence(unittest.TestCase):
   before=counters('tempodb_blocklist_tenant_index_errors_total{tenant="test"} 2\ntempodb_blocklist_poll_duration_seconds_count 3')
   after=counters('tempodb_blocklist_tenant_index_errors_total{tenant="test"} 4\ntempodb_blocklist_poll_duration_seconds_count 3')
   result=classify_inverse(before,after,True,'test')
-  self.assertTrue(result['retainedGoodBlocklistObserved']);self.assertFalse(result['healthyRollbackGuaranteed']);self.assertEqual(result['newSuccessfulPolls'],0)
+  self.assertTrue(result['retainedGoodBlocklistObserved']);self.assertFalse(result['healthyRollbackGuaranteed']);self.assertEqual(result['newPollCycles'],0)
   self.assertFalse(classify_inverse(before,before,True,'test')['retainedGoodBlocklistObserved'])
   self.assertFalse(classify_inverse(before,after,False,'test')['retainedGoodBlocklistObserved'])
+ def test_completed_failed_poll_is_not_reported_as_success(self):
+  from stack_tempo_poll_evidence import counters,classify_inverse
+  before=counters('tempodb_blocklist_tenant_index_errors_total{tenant="test"} 2\ntempodb_blocklist_poll_duration_seconds_count 3')
+  after=counters('tempodb_blocklist_tenant_index_errors_total{tenant="test"} 4\ntempodb_blocklist_poll_duration_seconds_count 4')
+  result=classify_inverse(before,after,True,'test');self.assertEqual(result['newPollCycles'],1);self.assertNotIn('newSuccessfulPolls',result);self.assertFalse(result['healthyRollbackGuaranteed'])
  def test_series_reset_and_disappearance_refuse_even_when_total_grows(self):
   from stack_tempo_poll_evidence import counters,classify_inverse
   old=counters('tempodb_blocklist_tenant_index_errors_total{tenant="a"} 5\ntempodb_blocklist_tenant_index_errors_total{tenant="b"} 1\ntempodb_blocklist_poll_duration_seconds_count 3')

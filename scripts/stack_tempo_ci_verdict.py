@@ -28,6 +28,9 @@ def verify_output(directory):
  rows=proof['inverseSamples'];need(rows and all(s['tracesMatched'] is True for s in rows))
  classify_inverse(last,proof['inverseBaseline'],True,'single-tenant');previous=proof['inverseBaseline']
  for row in rows:classify_inverse(previous,row['counters'],True,'single-tenant');previous=row['counters']
- result=classify_inverse(proof['inverseBaseline'],rows[-1]['counters'],True,'single-tenant');need(result['retainedGoodBlocklistObserved'] is True and result==proof['inverseResult'] and result['newPollErrors']==summary['newPollErrors'])
+ reported=dict(proof['inverseResult'])
+ # Legacy receipts called histogram observations successful polls; this was only a name.
+ if 'newSuccessfulPolls' in reported and 'newPollCycles' not in reported:reported['newPollCycles']=reported.pop('newSuccessfulPolls')
+ result=classify_inverse(proof['inverseBaseline'],rows[-1]['counters'],True,'single-tenant');need(result['retainedGoodBlocklistObserved'] is True and result==reported and result['newPollErrors']==summary['newPollErrors'])
  bad=proof['badFiles'];need(len(bad)==8 and all(row['bytes']==0 and row['sha256']==hashlib.sha256(b'').hexdigest() for row in bad.values()) and summary['inverseFilesPreserved'] is True)
  return {'syntheticWarmMetricProofVerified':True,'matchingTraces':20,'matchingSpans':133,'newPollErrors':result['newPollErrors'],'actualCDPerformed':False}

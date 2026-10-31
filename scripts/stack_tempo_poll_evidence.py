@@ -38,5 +38,5 @@ def classify_inverse(before,after,traces_match,tenant):
  if key not in before['series'][NAMES[0]] or key not in after['series'][NAMES[0]]:raise ValueError('Bound tenant counter missing')
  bound_delta=after['series'][NAMES[0]][key]-before['series'][NAMES[0]][key]
  retained=traces_match and bound_delta>0
- return {'retainedGoodBlocklistObserved':retained,'newPollErrors':bound_delta,'aggregateNewPollErrors':delta[NAMES[0]],'counterScopeBound':True,'errorMetric':NAMES[0],'newSuccessfulPolls':delta[NAMES[1]],
+ return {'retainedGoodBlocklistObserved':retained,'newPollErrors':bound_delta,'aggregateNewPollErrors':delta[NAMES[0]],'counterScopeBound':True,'errorMetric':NAMES[0],'newPollCycles':delta[NAMES[1]],
          'inverseKnown404Reproduced':False,'healthyRollbackGuaranteed':False,'automaticDeploymentAllowed':False}
