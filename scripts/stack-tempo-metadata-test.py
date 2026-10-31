@@ -18,6 +18,24 @@ class MetadataControl(unittest.TestCase):
    (path/'meta.json').write_bytes(b'')
    with self.assertRaises(ValueError):helper.quarantine_block(PREFIX)
    self.assertTrue(path.exists())
+ def test_inverse_move_is_no_clobber_and_preserves_bytes(self):
+  with tempfile.TemporaryDirectory(dir=ROOT) as tmp,patch.object(helper,'ROOT',pathlib.Path(tmp)):
+   root=pathlib.Path(tmp);path=root/PREFIX;path.mkdir(parents=True);(path/'meta.json').write_bytes(b'');(path/'data').write_bytes(b'preserve')
+   helper.quarantine_block(PREFIX);path.mkdir()
+   with self.assertRaises(ValueError):helper.restore_quarantined_block(PREFIX)
+   path.rmdir();self.assertTrue(helper.restore_quarantined_block(PREFIX)['restored']);self.assertEqual((path/'data').read_bytes(),b'preserve')
+ def test_hot_observation_rejects_changed_started_at(self):
+  with patch.object(control,'hot_identity',side_effect=[('id','image','one'),('id','image','two')]):
+   with self.assertRaises(ValueError):control.observe_hot(None,'fixture',lambda:None,lambda:True)
+ def test_hot_timeout_does_not_restart_or_inverse_automatically(self):
+  with patch.object(control,'hot_identity',return_value=('id','image','started')),patch.object(control.time,'monotonic',side_effect=[0,901]),patch.object(control.time,'sleep') as sleep,patch.object(control.m.c,'run') as run:
+   with self.assertRaises(ValueError):control.observe_hot(None,'fixture',lambda:None,lambda:False)
+   sleep.assert_not_called();run.assert_not_called()
+ def test_inverse_source_volume_refused(self):
+  drill=NS(source_volume='operating',target_volume='owned',own_volume=Mock())
+  with self.assertRaises(ValueError):control.cache.file_command(drill,'operating','restore-quarantined-block',PREFIX)
+  with self.assertRaises(ValueError):control.inverse_owned(drill,'operating',PREFIX,{})
+  drill.own_volume.assert_not_called()
  def test_quarantine_source_volume_is_refused_before_tool_call(self):
   drill=NS(source_volume='operating',target_volume='owned',own_volume=Mock())
   with self.assertRaises(ValueError):control.cache.file_command(drill,'operating','quarantine-block',PREFIX)
@@ -59,7 +77,7 @@ class MetadataControl(unittest.TestCase):
 
 
 class FullControlPath(unittest.TestCase):
- def exercise(self,missing_failure=False,changed_recovery=False,launch_failure=False):
+ def exercise(self,missing_failure=False,changed_recovery=False,launch_failure=False,hot=False,inverse_failure=False):
   m=control.m;source_volume='agenttrust_stack-tempo-data';fixture='00000000-0000-0000-0000-000000000099';blocks=['blocks/tenant/00000000-0000-0000-0000-'+str(i).zfill(12) for i in (10,11,12)]
   original={blocks[0]+'/meta.json':b'{}',blocks[0]+'/data.parquet':b'valid original spans'}
   for prefix in blocks[1:]:original.update({prefix+'/meta.json':b'',prefix+'/data.parquet':b'preserved affected bytes'})
@@ -74,7 +92,7 @@ class FullControlPath(unittest.TestCase):
    if args[:3]==['docker','run','-d']:
     name=args[args.index('--name')+1];volume=next(v for v in args if v.startswith('type=volume,source=')).split('source=')[1].split(',')[0]
     if launch_failure and name.endswith('-stack-tempo') and not name.endswith('-original-stack-tempo'):return NS(stdout=b'',stderr=b'logging driver validation failed',returncode=1)
-    containers[name]={'Image':args[-3],'HostConfig':{'NetworkMode':'none','PortBindings':None},'Config':{'Labels':{'agenttrust.fixture':fixture}},'volume':volume};return answer()
+    containers[name]={'Id':'d'*64,'RestartCount':0,'State':{'Running':True,'OOMKilled':False,'StartedAt':'fixture-start'},'Image':args[-3],'HostConfig':{'NetworkMode':'none','PortBindings':None},'Config':{'Labels':{'agenttrust.fixture':fixture}},'volume':volume};return answer()
    if args[:3]==['docker','rm','-f']:containers.pop(args[-1]);return answer()
    if args[:2]==['docker','logs']:return answer(b'fixture: unexpected end of JSON input')
    if '/helper.py' in args:
@@ -86,11 +104,19 @@ class FullControlPath(unittest.TestCase):
     if 'write' in args:
      assert len(data.get(path,b''))==offset;data[path]=data.get(path,b'')+kwargs['data'];return answer()
     if 'finalize' in args:assert len(data[path])==offset;return answer()
+    if 'restore-quarantined-block' in args:
+     moved={k:v for k,v in data.items() if k.startswith('quarantine/'+path+'/')}
+     for key,value in moved.items():del data[key];data[key.removeprefix('quarantine/')]=value
+     return answer({'restored':True,'bytesDeleted':False})
     if 'quarantine-block' in args:
      moved={k:v for k,v in data.items() if k.startswith(path+'/')}
      for key,value in moved.items():del data[key];data['quarantine/'+key]=value
      return answer({'quarantined':True,'bytesDeleted':False})
    return answer()
+  original_observe=control.observe_hot
+  def observe(drill,name,checkpoint,condition,timeout=900):
+   if inverse_failure and condition.__name__=='corrupt_again':raise ValueError('synthetic inverse observation timeout')
+   return original_observe(drill,name,checkpoint,condition,timeout)
   def api(name,path):
    if name=='agenttrust-stack-tempo-1':
     error=ValueError('fixture source 404');error.read_failure={'statusCode':404};raise error
@@ -110,7 +136,7 @@ class FullControlPath(unittest.TestCase):
    base_report={**common,'retainedKeyDirectory':str(local/'baseline-key'),'encryptedManifestSha256':hashlib.sha256(raw).hexdigest()}
    invalid=[{'path':v+'/meta.json','category':'empty-json','bytes':0,'sha256':hashlib.sha256(b'').hexdigest()} for v in blocks[1:]];raw=json.dumps({'invalid':invalid,'oversizedNotValidated':0,'volatileNotValidated':0}).encode();(audit_dir/'metadata-audit.aesgcm').write_bytes(raw)
    audit_report={**common,'retainedKeyDirectory':str(local/'audit-key'),'encryptedAuditSha256':hashlib.sha256(raw).hexdigest()}
-   config={}
+   config={'hotPolling':hot}
    for key,path,value in [('baselineSummary',baseline/'summary.json',base_report),('auditSummary',audit_dir/'summary.json',audit_report),('candidateConfig',local/'candidate.json',{'revision':'a'*40})]:
     raw=json.dumps(value).encode();path.write_bytes(raw);config[key]=str(path);config[key+'Sha256']=hashlib.sha256(raw).hexdigest()
    (release_dir/'runtime-identity.json').write_text(json.dumps({'imageIds':{'tempo':'sha256:'+'c'*64}}));settings=root/'tempo.yaml';settings.write_bytes(b'fixture: source config')
@@ -123,18 +149,25 @@ class FullControlPath(unittest.TestCase):
     def volume_command(self,*args,**kwargs):pass
     def wait(self,*args):pass
     def cleanup(self):containers.clear();self.report['cleaned']=True
-   patches=[(control,'protected_logitrack',lambda *a:tuple((format(i,'064x'),'sha256:'+'a'*64) for i in range(1,13))),(control,'ROOT',root),(m,'session_capacity',lambda *a:None),(m.d,'live_baseline',lambda:(['source'],{}, {},{'stack-tempo':source})),(m.d,'resolved_groups',lambda *a:({},{})),(m.d,'hash_files',lambda *a:{}),(m.e.planner,'compose_hashes',lambda *a:{}),(m.e.planner,'recheck',lambda *a:None),(m.e,'verify_candidate_release',lambda *a:{'directory':release_dir,'receipt':{'images':[{'name':'tempo','reference':reference}]}}),(m.c,'reserve',lambda:None),(m.c,'run',command),(m.c,'inspect',lambda name:containers[name]),(m.c,'Rehearsal',Drill),(m.c,'private_file',lambda path,raw:path.write_bytes(raw)),(m.c,'retained_key',lambda root,path:(path,'unchanged')),(m.c,'key_unchanged',lambda *a:True),(m,'protect',lambda path:path.mkdir(parents=True)),(m,'load',lambda *a:NS(transform=lambda action,key,raw:raw)),(m,'cached_identity',lambda *a:None),(control.tempo,'get',api)]
+   patches=[(control,'observe_hot',observe),(control,'protected_logitrack',lambda *a:tuple((format(i,'064x'),'sha256:'+'a'*64) for i in range(1,13))),(control,'ROOT',root),(m,'session_capacity',lambda *a:None),(m.d,'live_baseline',lambda:(['source'],{}, {},{'stack-tempo':source})),(m.d,'resolved_groups',lambda *a:({},{})),(m.d,'hash_files',lambda *a:{}),(m.e.planner,'compose_hashes',lambda *a:{}),(m.e.planner,'recheck',lambda *a:None),(m.e,'verify_candidate_release',lambda *a:{'directory':release_dir,'receipt':{'images':[{'name':'tempo','reference':reference}]}}),(m.c,'reserve',lambda:None),(m.c,'run',command),(m.c,'inspect',lambda name:containers[name]),(m.c,'Rehearsal',Drill),(m.c,'private_file',lambda path,raw:path.write_bytes(raw)),(m.c,'retained_key',lambda root,path:(path,'unchanged')),(m.c,'key_unchanged',lambda *a:True),(m,'protect',lambda path:path.mkdir(parents=True)),(m,'load',lambda *a:NS(transform=lambda action,key,raw:raw)),(m,'cached_identity',lambda *a:None),(control.tempo,'get',api)]
    for obj,name,value in patches:stack.enter_context(patch.object(obj,name,value))
    drill=control.run(config);self.assertTrue(drill.report['cleaned']);self.assertEqual(volumes[source_volume],original);self.assertFalse(containers)
-   self.assertEqual(drill.report['completed'],not(missing_failure or changed_recovery or launch_failure));self.assertFalse(drill.report['automaticDeploymentAllowed']);self.assertFalse(drill.report['operatingMetadataRepaired'])
+   self.assertEqual(drill.report['completed'],not(missing_failure or changed_recovery or launch_failure or inverse_failure));self.assertFalse(drill.report['automaticDeploymentAllowed']);self.assertFalse(drill.report['operatingMetadataRepaired'])
    if launch_failure:self.assertEqual(drill.report['fixtureStartErrorCategory'],'logging');self.assertIn('encryptedStartErrorSha256',drill.report)
    if drill.report['completed']:self.assertTrue(drill.report['metadataFailureReproduced']);self.assertEqual(drill.report['matchingTraces'],1);self.assertEqual(drill.report['quarantinedOwnedBlocks'],2)
+   if inverse_failure:
+    self.assertTrue(drill.report['restartFreeApplyVerified']);self.assertFalse(drill.report['restartFreeRollbackVerified']);self.assertTrue(drill.report['inverseNamespaceFilesVerified']);self.assertIn('encryptedHotRecoveryPhaseSha256',drill.report)
+   if hot and drill.report['completed']:
+    self.assertTrue(drill.report['restartFreeApplyVerified']);self.assertTrue(drill.report['restartFreeRollbackVerified']);self.assertTrue(drill.report['inverseReproducedKnown404'])
    starts=[v for v in calls if v[:3]==['docker','run','-d']]
+   self.assertEqual(len(starts),2 if hot or missing_failure or launch_failure else 3)
    first_candidate=next(i for i,v in enumerate(calls) if v[:3]==['docker','run','-d'] and v[v.index('--name')+1].endswith('-stack-tempo') and not v[v.index('--name')+1].endswith('-original-stack-tempo'))
    original_stopped=next(i for i,v in enumerate(calls) if v[:3]==['docker','rm','-f'] and v[-1].endswith('-original-stack-tempo'));self.assertLess(original_stopped,first_candidate)
    for args in starts:
     self.assertEqual(args[args.index('--network')+1],'none');self.assertNotIn('-p',args)
     if args[args.index('--log-driver')+1]=='local':self.assertIn('max-file=2',args);self.assertIn('max-size=1m',args)
+ def test_inverse_timeout_preserves_authenticated_recovery_phase(self):self.exercise(hot=True,inverse_failure=True)
+ def test_hot_full_flow_never_restarts_candidate(self):self.exercise(hot=True)
  def test_full_positive_corrupt_quarantine_and_recovery_flow(self):self.exercise()
  def test_nonreproduced_fault_stops_before_quarantine_and_cleans(self):self.exercise(missing_failure=True)
  def test_candidate_launch_failure_is_diagnostic_not_fault_reproduction(self):self.exercise(launch_failure=True)

@@ -38,6 +38,29 @@ def quarantine_owned(drill,volume,prefix,expected):
  copied=json.loads(m.c.run(cache.file_command(drill,volume,'inventory',prefix='quarantine/'+prefix)).stdout)
  m.e.require({name.removeprefix('quarantine/'):row for name,row in copied.items()}==expected)
 
+def inverse_owned(drill,volume,prefix,expected):
+ m.e.require(volume==drill.target_volume and volume!=drill.source_volume);drill.own_volume(volume);block_prefix(prefix)
+ copied=json.loads(m.c.run(cache.file_command(drill,volume,'inventory',prefix='quarantine/'+prefix)).stdout)
+ m.e.require({name.removeprefix('quarantine/'):row for name,row in copied.items()}==expected)
+ result=json.loads(m.c.run(cache.file_command(drill,volume,'restore-quarantined-block',prefix)).stdout);m.e.require(result=={'restored':True,'bytesDeleted':False})
+ m.e.require(json.loads(m.c.run(cache.file_command(drill,volume,'inventory',prefix=prefix)).stdout)==expected)
+
+
+def hot_identity(drill,name):
+ row=owned_container(drill,name);m.e.require(row['State']['Running'] is True and row['State'].get('OOMKilled') is False and row['RestartCount']==0)
+ return row['Id'],row['Image'],row['State']['StartedAt']
+
+
+def observe_hot(drill,name,checkpoint,condition,timeout=900):
+ identity=hot_identity(drill,name);deadline=time.monotonic()+timeout;attempts=0
+ while True:
+  checkpoint();m.e.require(hot_identity(drill,name)==identity);attempts+=1
+  result=condition()
+  if result:return result,{'attempts':attempts,'identityUnchanged':True,'restartPerformed':False}
+  m.e.require(time.monotonic()<deadline)
+  time.sleep(20)
+
+
 def restore(drill,volume,manifest,directory,key):
  drill.target_volume=volume;drill.own_volume(volume)
  def cipher(name):
@@ -129,14 +152,45 @@ def run(config):
   owned_container(drill,candidate_name);logs=m.c.run(['docker','logs','--tail','100',candidate_name],check=False);log_bytes=logs.stdout+logs.stderr;m.e.require(logs.returncode==0 and len(log_bytes)<=262144)
   negative={'statusCode':status,'ready':True,'truncatedJsonErrors':log_bytes.lower().count(b'unexpected end of json input')};m.e.require(negative['statusCode']==404 and negative['truncatedJsonErrors']>0)
   cipher=crypto.transform('encrypt',key,log_bytes);m.c.private_file(drill.directory/'negative-fixture-logs.aesgcm',cipher);drill.report.update(negativeControl=negative,encryptedNegativeLogsSha256=hashlib.sha256(cipher).hexdigest())
-  drill.stage('quarantine-only-owned-copies-preserving-all-affected-bytes');stop_owned(drill,candidate_name);drill.target_volume=candidate_volume
+  hot=config.get('hotPolling',False);m.e.require(type(hot) is bool);identity=hot_identity(drill,candidate_name) if hot else None
+  drill.stage('quarantine-only-owned-copies-preserving-all-affected-bytes');drill.target_volume=candidate_volume
+  if not hot:stop_owned(drill,candidate_name)
   for prefix in bad_prefixes:quarantine_owned(drill,candidate_volume,prefix,{k:v for k,v in bad_files.items() if k.startswith(prefix+'/')})
-  start(candidate_name,candidate_volume,image['Id']);after={p:tempo.trace_fingerprint(tempo.get(candidate_name,p)) for p in paths};result=verdict(before,negative,after)
+  if not hot:start(candidate_name,candidate_volume,image['Id'])
+  def recovered():
+   try:found={p:tempo.trace_fingerprint(tempo.get(candidate_name,p)) for p in paths}
+   except ValueError as error:
+    m.e.require(getattr(error,'read_failure',{}).get('statusCode')==404);return None
+   m.e.require(found==before);return found
+  if hot:after,recovery_observation=observe_hot(drill,candidate_name,checkpoint,recovered)
+  else:after=recovered()
+  result=verdict(before,negative,after)
+  hot_evidence={}
+  if hot:
+   phase={'before':before,'after':after,'observation':recovery_observation,'identity':identity,'restartFreeApplyVerified':True,'automaticDeploymentAllowed':False}
+   cipher=crypto.transform('encrypt',key,json.dumps(phase).encode());m.c.private_file(drill.directory/'hot-recovery-phase.aesgcm',cipher)
+   drill.report.update(restartFreeApplyVerified=True,restartFreeRollbackVerified=False,encryptedHotRecoveryPhaseSha256=hashlib.sha256(cipher).hexdigest())
+
+  if hot:
+   m.e.require(hot_identity(drill,candidate_name)==identity);drill.stage('inverse-owned-namespace-without-restart')
+   for prefix in bad_prefixes:inverse_owned(drill,candidate_volume,prefix,{k:v for k,v in bad_files.items() if k.startswith(prefix+'/')})
+   def corrupt_again():
+    try:tempo.get(candidate_name,paths[0]);return None
+    except ValueError as error:
+     m.e.require(getattr(error,'read_failure',{}).get('statusCode')==404);return True
+   for prefix in bad_prefixes:m.e.require(json.loads(m.c.run(cache.file_command(drill,candidate_volume,'inventory',prefix=prefix)).stdout)=={k:v for k,v in bad_files.items() if k.startswith(prefix+'/')})
+   drill.report.update(inverseNamespaceFilesVerified=True);drill.stage('observe-inverse-without-restart')
+   _,inverse_observation=observe_hot(drill,candidate_name,checkpoint,corrupt_again)
+   m.e.require(hot_identity(drill,candidate_name)==identity)
+   for prefix in bad_prefixes:m.e.require(json.loads(m.c.run(cache.file_command(drill,candidate_volume,'inventory',prefix=prefix)).stdout)=={k:v for k,v in bad_files.items() if k.startswith(prefix+'/')})
+   hot_evidence={'restartFreeApplyVerified':True,'restartFreeRollbackVerified':True,'inverseReproducedKnown404':True,'fixtureIdentityAndStartedAtUnchanged':True,'recoveryObservation':recovery_observation,'inverseObservation':inverse_observation,'effectivePollingIntervalVerified':False,'pollingMetricsAcceptanceVerified':False}
+   drill.report.update(hot_evidence,kind='isolated-empty-tempo-metadata-hot-control')
+
   source_status=200
   try:tempo.get('agenttrust-stack-tempo-1',paths[0])
   except ValueError as error:source_status=getattr(error,'read_failure',{}).get('statusCode');m.e.require(source_status==404)
   for prefix in bad_prefixes:m.e.require(source_files(prefix)=={k:v for k,v in bad_files.items() if k.startswith(prefix+'/')})
-  checkpoint();payload=json.dumps({'before':before,'negative':negative,'after':after,'quarantinedSourcePrefixes':bad_prefixes,'baselineManifestSha256':baseline['encryptedManifestSha256'],'auditSha256':audit_report['encryptedAuditSha256']}).encode();cipher=crypto.transform('encrypt',key,payload);m.c.private_file(drill.directory/'comparison-evidence.aesgcm',cipher)
+  checkpoint();payload=json.dumps({'before':before,'negative':negative,'after':after,'quarantinedSourcePrefixes':bad_prefixes,'baselineManifestSha256':baseline['encryptedManifestSha256'],'auditSha256':audit_report['encryptedAuditSha256'],'hotPolling':hot_evidence}).encode();cipher=crypto.transform('encrypt',key,payload);m.c.private_file(drill.directory/'comparison-evidence.aesgcm',cipher)
   drill.report.update(result,completed=True,sourceApiTraceStatus=source_status,sourceEmptyMetadataUnchanged=True,quarantinedOwnedBlocks=len(bad_prefixes),affectedFiles=len(bad_files),affectedBytes=sum(v['bytes'] for v in bad_files.values()),encryptedComparisonSha256=hashlib.sha256(cipher).hexdigest(),protectedLogitrackServices=len(logitrack),protectedLogitrackIdsAndImagesUnchanged=True,operationalContainersUnchanged=True)
  except Exception as error:drill.report.update(capacityFailure=getattr(error,'capacity_failure',None),completed=False,errorType=type(error).__name__,failureLocations=[{'file':pathlib.Path(v.filename).name,'line':v.lineno} for v in traceback.extract_tb(error.__traceback__)])
  finally:
