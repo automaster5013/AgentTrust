@@ -32,7 +32,7 @@ def build_review(proof,comparison,files,now):
  require(proof['matchingTraces']==proof['positiveTraces']==len(before) and proof['matchingSpans']==proof['positiveSpans']==sum(v[1] for v in before.values()))
  negative=comparison['negative'];require(negative==proof['negativeControl'] and type(negative['statusCode']) is int and type(negative['truncatedJsonErrors']) is int and negative['statusCode']==404 and negative['ready'] is True and negative['truncatedJsonErrors']>0)
  groups=affected_groups(files);require(len(comparison['quarantinedSourcePrefixes'])==2 and set(groups)==set(comparison['quarantinedSourcePrefixes']))
- return {'schemaVersion':1,'kind':'non-executable-tempo-operating-recovery-review','createdAt':now.isoformat(),'evidenceExpiresAt':(started+datetime.timedelta(hours=24)).isoformat(),
+ return {'schemaVersion':1,'kind':'non-executable-tempo-operating-recovery-review','createdAt':now.isoformat(),'sourceEvidenceStartedAt':started.isoformat(),'evidenceExpiresAt':(started+datetime.timedelta(hours=24)).isoformat(),
          'operatingSourceWritesAllowed':False,'operatingStopOrRestartAllowed':False,'automaticRollbackAllowed':False,'automaticDeploymentAllowed':False,'fullStackRecoveryVerified':False,'actualDeploymentPerformed':False,
          'sourceVolume':'agenttrust_stack-tempo-data','sourceImageId':proof['sourceImageId'],'candidateRevision':proof['candidateRevision'],'candidateReference':proof['candidateReference'],
          'sourceFilePreconditions':files,'proposedNamespaceMoves':[{'source':name,'destination':'quarantine/'+name,'overwriteAllowed':False,'deleteAllowed':False} for name in sorted(groups)],

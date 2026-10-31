@@ -121,3 +121,7 @@ fresh reader 시작 조건은 아직 충족되지 않았다. 이번 단일 Windo
 ## 읽기 대상 identity 고정
 
 읽기 전용 source 재검사는 사전 inspect의 container ID·image·StartedAt에 고정하며 copy API도 재사용될 수 있는 이름 대신 같은 불변 ID를 지정한다. 각 복사 전후와 종료 시 identity·health·mount·Compose labels를 확인한다. 이름이 다른 컨테이너에 재할당돼도 따라가지 않는다. 파일 내용이 같아도 source identity나 health가 바뀌면 성공 영수증을 만들지 않는다. 이번 강화는 전체 경로 모의 테스트로 검증했으며 새 운영 파일 재검사나 fresh reader 실행 증거가 아니다.
+
+## review 요약의 시간 경계
+
+오프라인 review summary는 `createdAt`과 별도로 `sourceEvidenceStartedAt`, `evidenceExpiresAt`, `preflightMaxAgeSeconds`를 출력한다. 기존 증거가 23시간 전이면 새 review의 증거 기한은 1시간 뒤이며 생성 시각부터 24시간으로 연장되지 않는다. 24시간 검토 유효성과 실제 source 파일 관측의 300초 제한은 서로 다른 조건이다. 이 필드는 source 관측 수행이나 fresh reader 실행을 의미하지 않는다.

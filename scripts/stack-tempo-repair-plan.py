@@ -19,7 +19,7 @@ def prepare(summary,expected,output):
  files={name:{k:v for k,v in row.items() if k!='chunks'} for name,row in manifest['files'].items()};plan=build_review(proof,comparison,files,datetime.datetime.now(datetime.timezone.utc))
  m.e.require(m.c.key_unchanged(*custody) and m.e.anchored_file(summary,expected)==proof_bytes);m.protect(output)
  cipher=crypto.transform('encrypt',key,json.dumps(plan).encode());m.c.private_file(output/'review.aesgcm',cipher)
- result={k:plan[k] for k in ('schemaVersion','kind','createdAt','matchedTraces','matchedSpans','operatingSourceWritesAllowed','operatingStopOrRestartAllowed','automaticRollbackAllowed','automaticDeploymentAllowed','restartFreeApplyVerified','restartFreeRollbackVerified','liveChecksPerformed','blockers','polling','freshReaderPreparation')}
+ result={k:plan[k] for k in ('schemaVersion','kind','createdAt','sourceEvidenceStartedAt','evidenceExpiresAt','preflightMaxAgeSeconds','matchedTraces','matchedSpans','operatingSourceWritesAllowed','operatingStopOrRestartAllowed','automaticRollbackAllowed','automaticDeploymentAllowed','restartFreeApplyVerified','restartFreeRollbackVerified','liveChecksPerformed','blockers','polling','freshReaderPreparation')}
  result.update(evidenceSummarySha256=expected,encryptedReviewSha256=hashlib.sha256(cipher).hexdigest(),keyCustodyUnchanged=m.c.key_unchanged(*custody));m.e.require(result['keyCustodyUnchanged']);m.c.private_file(output/'summary.json',json.dumps(result,indent=2).encode());return result
 
 def main():
