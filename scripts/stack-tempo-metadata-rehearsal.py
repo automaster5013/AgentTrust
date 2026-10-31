@@ -14,6 +14,12 @@ def block_prefix(value):
  m.e.require(len(parts)==3 and parts[0]=='blocks' and m.e.re.fullmatch('[A-Za-z0-9_-]{1,128}',parts[1]) and str(uuid.UUID(parts[2]))==parts[2])
  return value
 
+def cached_candidate(reference,runtime):
+ # A local drill must not add pull/unpack pressure or silently fetch missing assets.
+ image=json.loads(m.c.run(['docker','image','inspect',reference]).stdout)[0]
+ m.cached_identity(image,reference,runtime)
+ return image
+
 def fresh(report):
  created=datetime.datetime.fromisoformat(report['startedAt']);m.e.require(created.tzinfo is not None and 0<=(datetime.datetime.now(datetime.timezone.utc)-created).total_seconds()<=86400)
  m.e.require(report['completed'] is True and report['operationalContainersUnchanged'] is True and report['ownFixtureAndTemporarySecretsCleaned'] is True)
@@ -105,10 +111,11 @@ def run(config):
  candidate=json.loads(m.e.anchored_file(config['candidateConfig'],config['candidateConfigSha256']));m.e.require(candidate['revision']==manifest['candidateRevision'])
  release=m.e.verify_candidate_release(candidate,candidate['revision'],inventory,{})
  reference=next(v['reference'] for v in release['receipt']['images'] if v['name']=='tempo');m.e.require(reference==manifest['candidateReference'])
- runtime=json.loads((release['directory']/'runtime-identity.json').read_bytes())['imageIds']['tempo'];m.c.run(['docker','pull',reference],timeout=600);image=json.loads(m.c.run(['docker','image','inspect',reference]).stdout)[0];m.cached_identity(image,reference,runtime)
+ runtime=json.loads((release['directory']/'runtime-identity.json').read_bytes())['imageIds']['tempo'];image=cached_candidate(reference,runtime)
  drill=m.c.Rehearsal({'stack-tempo':source});drill.crypto=crypto;drill.source_volume=mounts[0]['Name'];drill.target_volume=drill.prefix+'-candidate';drill.file_user=source['Config']['User'];drill.tools=json.loads(m.c.run(['docker','image','inspect','agenttrust-security:local']).stdout)[0]['Id']
  drill.report.update(hostMemoryWindow=host_window,kind='isolated-empty-tempo-metadata-control',candidateRevision=candidate['revision'],candidateReference=reference,sourceImageId=source['Image'],sourceServicesStopped=False,
-                     fullStackRecoveryVerified=False,automaticDeploymentAllowed=False,actualDeploymentPerformed=False,operatingMetadataRepaired=False,affectedBlockContentsRecovered=False)
+                     fullStackRecoveryVerified=False,automaticDeploymentAllowed=False,actualDeploymentPerformed=False,operatingMetadataRepaired=False,affectedBlockContentsRecovered=False,
+                     localCandidateCacheOnly=True,fixtureGoMemoryLimitMiB=384,fixtureGoMaxProcs=1,fixtureMemoryLimitMiB=512,fixtureMemorySavingsMeasured=False)
  keydir=ROOT/'.local'/('tempo-control-key-'+drill.id);m.protect(keydir);key=secrets.token_bytes(32);m.c.private_file(keydir/'key.bin',key);drill.report['retainedKeyDirectory']=str(keydir)
  def protected_checkpoint():
   m.e.planner.recheck(ids,inventory,ROOT,hashes);m.e.require(m.d.hash_files(protected)==protected and all(m.c.key_unchanged(*v) for v in custody) and protected_logitrack([v[0] for v in logitrack])==logitrack)
@@ -132,8 +139,13 @@ def run(config):
   copied_config=drill.directory/'tempo.yaml';m.c.private_file(copied_config,settings_bytes);copied_config.chmod(0o444);drill.private.append(copied_config)
   def start(name,volume,image_id,logs=False):
    checkpoint();m.e.require(path.read_bytes()==settings_bytes);drill.own_volume(volume)
+   # All cold controls are sequential; a running old fixture must not overlap.
+   for previous in drill.containers:
+    if previous!=name:
+     result=m.c.run(['docker','ps','-q','--filter','name=^/'+previous+'$']).stdout
+     m.e.require(not result.strip())
    if name not in drill.containers:drill.containers.append(name)
-   args=['docker','run','-d','--name',name,'--label','agenttrust.fixture='+drill.id,'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--user',drill.file_user,'--memory','512m','--cpus','1','--pids-limit','128','--tmpfs','/tmp:size=32m,mode=1777']
+   args=['docker','run','-d','--name',name,'--label','agenttrust.fixture='+drill.id,'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--user',drill.file_user,'--memory','512m','--env','GOMEMLIMIT=384MiB','--env','GOMAXPROCS=1','--cpus','1','--pids-limit','128','--tmpfs','/tmp:size=32m,mode=1777']
    args+=['--log-driver','local','--log-opt','max-size=1m','--log-opt','max-file=2'] if logs else ['--log-driver','none']
    result=m.c.run(args+['--mount','type=volume,source='+volume+',target=/var/tempo','--mount','type=bind,source='+str(copied_config)+',target=/etc/tempo.yaml,readonly',image_id,'-config.file=/etc/tempo.yaml','-target=all'],check=False)
    if result.returncode:

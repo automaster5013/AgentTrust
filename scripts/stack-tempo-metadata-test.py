@@ -9,6 +9,13 @@ helper=module('metadata_volume','stack-file-volume-helper.py');control=module('m
 PREFIX='blocks/tenant/00000000-0000-0000-0000-000000000001'
 
 class MetadataControl(unittest.TestCase):
+ def test_cache_miss_or_identity_mismatch_never_pulls(self):
+  with patch.object(control.m.c,'run',side_effect=ValueError('cache missing')) as run,patch.object(control.m,'cached_identity') as identity:
+   with self.assertRaises(ValueError):control.cached_candidate('pinned-reference','runtime')
+   self.assertEqual(run.call_args.args[0],['docker','image','inspect','pinned-reference']);identity.assert_not_called()
+  with patch.object(control.m.c,'run',return_value=NS(stdout=b'[{"Id":"unexpected"}]')) as run,patch.object(control.m,'cached_identity',side_effect=ValueError('identity mismatch')):
+   with self.assertRaises(ValueError):control.cached_candidate('pinned-reference','runtime')
+   self.assertEqual(run.call_count,1)
  def test_quarantine_preserves_bytes_and_requires_empty_metadata(self):
   with tempfile.TemporaryDirectory(dir=ROOT) as tmp,patch.object(helper,'ROOT',pathlib.Path(tmp)):
    root=pathlib.Path(tmp);path=root/PREFIX;path.mkdir(parents=True);(path/'meta.json').write_bytes(b'');(path/'data.parquet').write_bytes(b'original bytes')
@@ -94,6 +101,7 @@ class FullControlPath(unittest.TestCase):
    if args[:3]==['docker','volume','create']:volumes[args[-1]]={};return answer()
    if args[:3]==['docker','image','inspect']:return answer([{'Id':'sha256:'+'c'*64}])
    if args[:3]==['docker','run','-d']:
+    self.assertFalse(containers,'Tempo controls must never overlap')
     name=args[args.index('--name')+1];volume=next(v for v in args if v.startswith('type=volume,source=')).split('source=')[1].split(',')[0]
     if launch_failure and name.endswith('-stack-tempo') and not name.endswith('-original-stack-tempo'):return NS(stdout=b'',stderr=b'logging driver validation failed',returncode=1)
     containers[name]={'Id':'d'*64,'RestartCount':0,'State':{'Running':True,'OOMKilled':False,'StartedAt':'fixture-start'},'Image':args[-3],'HostConfig':{'NetworkMode':'none','PortBindings':None},'Config':{'Labels':{'agenttrust.fixture':fixture}},'volume':volume};return answer()
@@ -189,7 +197,10 @@ class FullControlPath(unittest.TestCase):
    original_stopped=next(i for i,v in enumerate(calls) if v[:3]==['docker','rm','-f'] and v[-1].endswith('-original-stack-tempo'));self.assertLess(original_stopped,first_candidate)
    for args in starts:
     self.assertEqual(args[args.index('--network')+1],'none');self.assertNotIn('-p',args)
+    self.assertIn('GOMEMLIMIT=384MiB',args);self.assertIn('GOMAXPROCS=1',args);self.assertEqual(args[args.index('--memory')+1],'512m')
     if args[args.index('--log-driver')+1]=='local':self.assertIn('max-file=2',args);self.assertIn('max-size=1m',args)
+   self.assertFalse(any(args[:2]==['docker','pull'] for args in calls))
+   self.assertTrue(drill.report['localCandidateCacheOnly']);self.assertFalse(drill.report['fixtureMemorySavingsMeasured'])
  def test_inverse_timeout_preserves_authenticated_recovery_phase(self):self.exercise(hot=True,inverse_failure=True)
  def test_full_warm_inverse_rejects_other_tenant_only_errors(self):self.exercise(hot=True,retained=True,other_growth=True)
  def test_full_memory_stop_keeps_independent_source_identity_verdict(self):self.exercise(hot=True,retained=True,capacity_failure=True)

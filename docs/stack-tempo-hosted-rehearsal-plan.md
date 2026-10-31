@@ -116,3 +116,13 @@ source run은 main의 이미지 빌드 SHA에 속하지만 게시 run은 feature
 무재시작 분리 복구에서 poll count 1→3, tenant metadata errors 2→2를 확인했고, warm 역이동 후 count 3→4·errors 2→4(+2), 새 JSON 오류 2개와 전체 20/133 의미 일치를 함께 확인했다. 후보 identity와 8개 역이동 파일은 보존됐고 정리는 성공했다. 이는 오류 시 이전 정상 blocklist 유지의 실제 합성 증거이며 404 재현이나 건강한 운영 롤백 보장은 아니다.
 
 히스토그램 count는 실패 poll도 포함한다. 최초 artifact의 `newSuccessfulPolls`는 실제 성공 횟수가 아니라 완료된 poll 관측 횟수였으므로 현재 필드는 `newPollCycles`로 바로잡았다. 독립 검증기는 과거 필드명을 이 의미로만 정규화하며 증거 바이트를 수정하지 않는다. 운영 복구·백업·전체 스택 복구·CD·자동 배포 허용은 계속 false다.
+
+## 현재 PC의 로컬 검증 비용 축소
+
+별도 장비는 사용하지 않는다. 로컬 `stack-tempo-metadata-rehearsal.py`는 서명된 후보의 캐시 identity를 기존 검증기로 확인하고, 캐시가 없거나 불일치하면 다운로드 없이 중단한다. 매번 수행하던 pull/unpack 경로를 없애되 manifest/config digest 검증을 생략하지 않는다.
+
+소유 검증용 Tempo에만 `GOMEMLIMIT=384MiB`, `GOMAXPROCS=1`을 적용한다. 컨테이너 한도는 기존 512MiB이며 Go 외의 메모리 여유를 남기는 시험 프로필이다. GOMEMLIMIT는 RSS 상한이나 실측 절감량이 아닌 soft limit다([Go GC guide](https://go.dev/doc/gc-guide)). 작은 한도는 GC 부하를 늘릴 수 있으므로 실제 성능·OOM·의미 일치 검증 전에는 성공으로 간주하지 않는다. 운영 Tempo와 호스트/WSL 설정에는 적용하지 않는다.
+
+기존 순차 제어에 더해 이전 소유 reader가 남아 있으면 다음 reader 시작을 거부한다. 파일 helper는 동기 실행하고 기존 192MiB 한도를 유지한다. 따라서 설계상 동시 실행은 Tempo 하나와 helper 하나이며 컨테이너 한도 합은 704MiB다. 이 합계는 Docker/OS 비용 또는 실제 사용량이 아니다. 세 개의 독립 파일시스템 사본과 fresh reader는 여전히 별도 실행 증거가 필요하며 이 기존 rehearsal을 그 검증의 완료로 취급하지 않는다.
+
+호스트 시작 2GiB를 4분 동안 유지하는 gate와 진행 1GiB, guest reserve 및 디스크 gate는 그대로 유지한다. 이 변경으로 기존 프로세스의 RAM이 확보됐다고 주장하지 않는다. 반복 대기/회수 없이 실제 자원 상태가 달라졌을 때만 실행 gate를 평가한다. 코드의 전 경로 모의 검증과 실제 로컬 reader의 측정 결과를 분리한다. hosted case 만료 시각도 연장하지 않는다.
