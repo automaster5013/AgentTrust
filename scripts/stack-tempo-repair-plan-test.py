@@ -47,7 +47,7 @@ class RepairPlan(unittest.TestCase):
  def test_partial_and_full_quarantine_are_reviewable_not_automatic_healthy_rollback(self):
   _,_,files,_=fixture()
   for states,count,state in [(['quarantined','original'],1,'partial-quarantine'),(['quarantined','quarantined'],2,'quarantined')]:
-   result=assess_namespace(files,locations(files,states),True);self.assertEqual(result['state'],state);self.assertEqual(len(result['proposedReverseMoves']),count);self.assertEqual(result['expectedStatusAfterNamespaceReversal'],404);self.assertFalse(result['operatingSourceWritesAllowed']);self.assertFalse(result['healthyRecoveryGuaranteed'])
+   result=assess_namespace(files,locations(files,states),True);self.assertEqual(result['state'],state);self.assertEqual(len(result['proposedReverseMoves']),count);self.assertIsNone(result['expectedStatusAfterNamespaceReversal']);self.assertEqual(result['expectedColdReaderStatusAfterNamespaceReversal'],404);self.assertFalse(result['warmAvailabilityProvesHealthyRollback']);self.assertFalse(result['operatingSourceWritesAllowed']);self.assertFalse(result['healthyRecoveryGuaranteed'])
  def test_collision_missing_symlink_unknown_and_drift_never_propose_overwrite(self):
   _,_,files,_=fixture()
   for case in ('collision','missing','symlink','unknown','drift'):
@@ -95,7 +95,7 @@ class PrepareEvidence(unittest.TestCase):
     with self.assertRaises(ValueError):tool.prepare(summary,expected,output)
     self.assertFalse(output.exists())
    else:
-    result=tool.prepare(summary,expected,output);self.assertFalse(result['liveChecksPerformed']);self.assertFalse(result['operatingSourceWritesAllowed']);self.assertTrue(result['keyCustodyUnchanged']);self.assertTrue((output/'review.aesgcm').exists());self.assertEqual(keypath.read_bytes(),key)
+    result=tool.prepare(summary,expected,output);self.assertFalse(result['liveChecksPerformed']);self.assertFalse(result['operatingSourceWritesAllowed']);self.assertTrue(result['keyCustodyUnchanged']);self.assertTrue((output/'review.aesgcm').exists());self.assertEqual(keypath.read_bytes(),key);prep=result['freshReaderPreparation'];self.assertEqual(prep['state'],'prepared-not-executed');self.assertEqual(prep['operatingEvidenceFreshness'],'historical-only-source-files-not-rechecked');self.assertEqual([r['expectedStatus'] for r in prep['roles']],[404,200,404]);self.assertTrue(all(r['freshProcessRequired'] for r in prep['roles']));self.assertFalse(prep['sourceReadWriteMountAllowed']);self.assertFalse(prep['operatingContainerReuseAllowed']);self.assertFalse(prep['hostReserveAlreadyVerified']);self.assertEqual(prep['sourceRecheckMaxAgeSeconds'],300)
    command.assert_not_called()
  def test_complete_authenticated_offline_preparation(self):self.exercise()
  def test_wrong_key_and_rehashed_corrupt_cipher_precede_output_creation(self):

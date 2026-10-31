@@ -99,3 +99,13 @@ Warm 목록 유지 판정의 오류 증가는 복구 대상 블록과 기준 블
 4. 위 증거를 배포 실행부의 최신 후보·설치 상태·승인에 묶고 별도 운영 변경 검토를 완료한 후에만 적용을 검토한다. 현재 operatingSourceWritesAllowed/operatingStopOrRestartAllowed/automaticRollbackAllowed/automaticDeploymentAllowed는 false다.
 
 실행 case가 만료된 이후 PR은 오프라인 테스트를 계속 실행하되 hosted Docker 실험과 독립 실행 결과 단계는 건너뛰며 job summary에 NOT EXECUTED를 기록한다. 이 통과 상태는 새 합성 증거가 아니며, 새 실제 실험에는 별도 명시적 실행 시간 범위가 필요하다.
+
+## 운영 기반 증거 재인증과 fresh reader 준비
+
+보존된 운영 기반 cold-control의 암호문·positive reference·오류 로그·영향 파일 manifest를 기존 보존 review의 summary hash에 묶어 다시 인증했다. 20개 트레이스·133개 스팬과 원래 키 custody 일치를 확인했다. 신규 암호화 review와 현재 32개 서비스 identity/health 기준은 비공개 `.local`에 저장한다. 새 review 생성 시각이 원본 증거의 나이를 갱신하지 않으며, 원래 증거의 24시간 검토 기한과 별도로 실제 복사/적용 전 source 파일 재확인은 5분 이내여야 한다. 이번 작업은 source 파일 재확인·새 데이터 백업·fresh reader 실행이 아니다.
+
+준비 출력의 `freshReaderPreparation`은 독립 사본과 새 프로세스 3개 역할을 명시한다: 원본 cold 대조군(이전 증거의 예상 404), 복구 예정 상태의 cold reader(200 및 기준 trace 전체 의미 일치), 역이동 cold 대조군(이전 증거의 예상 404). 현재 원본 상태가 바뀌면 기대값을 강요하지 않고 판정 불가로 중단한다. 각 사본은 복사 전후 정확한 closed-block 파일 manifest 일치를 확인하고, live WAL은 복사하지 않는다. 운영 컨테이너 재사용·운영 볼륨 read-write mount·같은 사본을 여러 reader 상태로 재활용하는 것은 허용하지 않는다.
+
+warm namespace 역이동 후 API 상태는 미정이다. 실제 합성 증거처럼 이전 정상 blocklist가 남아 200을 반환할 수 있으므로 namespace 상태만으로 404나 정상 롤백을 판정하지 않는다. 계획 출력은 이를 `expectedStatusAfterNamespaceReversal=null`과 별도 `expectedColdReaderStatusAfterNamespaceReversal=404`로 구분한다. 후보·trace·block metadata를 모두 포함하는 조회 범위를 쓰며 start/end 이상은 수정하거나 숨기지 않고 기록한다.
+
+실제 실행 전에는 원본/목적지 파일·경로·볼륨 라벨·해시·권한·32개 서비스 기준을 새로 확인하고, 로컬 격리 작업에 필요한 지속 2GiB/진행 1GiB 메모리 조건을 충족해야 한다. 이전 로컬 자원 제한은 해소된 것으로 간주하지 않으며 메모리 회수 대기/강제 정리 실험을 재개하지 않는다. 구체적인 자원 변경 없이는 준비 상태에 머문다. 운영 자료의 외부 업로드도 하지 않는다.
