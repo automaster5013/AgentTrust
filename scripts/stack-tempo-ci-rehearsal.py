@@ -60,7 +60,7 @@ class Driver:
   args=['docker','run','--rm','-i','--name',name,'--label','agenttrust.fixture='+self.id,'--log-driver','none','--network',('container:'+self.owned(container)['Id']) if container else 'none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--user','10001:10001','--memory','192m','--cpus','1','--pids-limit','32','-e','AGENTTRUST_SYNTHETIC_HELPER=1','--mount','type=bind,source='+str(ROOT/'scripts/stack-tempo-ci-helper.py')+',target=/helper.py,readonly']
   for role,p in (('data',target),('source',source)):
    if p is not None:
-    need(p in self.data.values() and p.parent==self.root and not p.is_symlink());args+=['--mount','type=bind,source='+str(p)+',target=/'+role+(',readonly' if role=='source' or action in ('closed','bad-files') else '')]
+    need(p in self.data.values() and p.parent==self.root and not p.is_symlink());args+=['--mount','type=bind,source='+str(p)+',target=/'+role+(',readonly' if role=='source' or action in ('closed','bad-files','metadata') else '')]
   args +=[PYTHON,'python','/helper.py',action];out=json.loads(self.call(args,json.dumps({'start':start}).encode(),cleanup));need(not out.get('refused'));self.names.remove(name);return out
  def start(self,role,data):
   name=self.prefix+'-'+role;self.names.append(name)
@@ -112,7 +112,7 @@ def exercise(d):
  context=json.loads(d.call(['docker','context','inspect']));need(len(context)==1 and context[0]['Endpoints']['docker']['Host']=='unix:///var/run/docker.sock')
  d.call(['docker','pull','--platform','linux/amd64',d.case['image']]);d.call(['docker','pull','--platform','linux/amd64',PYTHON]);image=json.loads(d.call(['docker','image','inspect',d.case['image']]))[0];need(image['Id']==d.report['release']['runtimeImageId']);need(d.deadline-time.time()>=1800)
  d.phase('synthetic-writer');start=int(time.time())-180;data=d.directory('writer-data');writer=d.start('writer',data);need(d.helper('push',container=writer,start=start)=={'traces':20,'spans':133});d.wait(lambda:d.helper('closed',target=data)['blocks'],300);d.stop(writer)
- d.phase('closed-block-only-golden-reader');gold_data=d.directory('gold-data');gold_manifest=d.helper('clone',target=gold_data,source=data);need(gold_manifest['walCopied'] is False);gold=d.start('gold',gold_data);before=d.wait(lambda:d.traces(gold,start),360);d.report['goldenManifestSha256']=hashlib.sha256(json.dumps(gold_manifest,sort_keys=True).encode()).hexdigest();d.stop(gold);d.record(before=before,goldenFrames=d.last_frames,boundsStart=start)
+ d.phase('closed-block-only-golden-reader');gold_data=d.directory('gold-data');gold_manifest=d.helper('clone',target=gold_data,source=data);need(gold_manifest['walCopied'] is False);gold=d.start('gold',gold_data);d.record(goldenBlockMetadata=d.helper('metadata',target=gold_data));before=d.wait(lambda:d.traces(gold,start),360);d.report['goldenManifestSha256']=hashlib.sha256(json.dumps(gold_manifest,sort_keys=True).encode()).hexdigest();d.stop(gold);d.record(before=before,goldenFrames=d.last_frames,boundsStart=start)
  d.phase('cold-empty-metadata-control');candidate_data=d.directory('candidate-data');d.helper('clone',target=candidate_data,source=data);bad=d.helper('inject',target=candidate_data);candidate=d.start('candidate',candidate_data);identity=d.identity(candidate)
  def cold_failed():
   need(d.traces(candidate,start) is None);metrics=d.metrics(candidate,allow_missing=True)
@@ -156,7 +156,7 @@ def main():
   if d:
    d.report.update(completed=False,errorType=type(error).__name__,failureLocations=[{'file':pathlib.Path(row.filename).name,'line':row.lineno} for row in traceback.extract_tb(error.__traceback__)])
    for name in list(d.names):
-    try:d.record(failureLogs=d.logs(name))
+    try:d.record(failureLogs=d.logs(name),failureMetrics=d.helper('metrics',container=name))
     except Exception:pass
   else:print(json.dumps({'completed':False,'refusedBeforeDocker':True,'errorType':type(error).__name__}));return 1
  finally:

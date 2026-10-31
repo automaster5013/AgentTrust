@@ -37,6 +37,11 @@ def http(port,path,payload=None):
 def main(action,data):
  root=ROOT
  if action=='closed':return {'blocks':closed(root)}
+ if action=='metadata':
+  result=[]
+  for name in closed(root):
+   value=json.loads((root/'blocks/single-tenant'/name/'meta.json').read_bytes());result.append({key:value[key] for key in ('blockID','startTime','endTime','totalObjects') if key in value})
+  return {'blocks':result}
  if action=='clone':
   source=SOURCE;blocks=closed(source);need(blocks and not (root/'blocks').exists())
   for name in blocks:shutil.copytree(source/'blocks/single-tenant'/name,root/'blocks/single-tenant'/name)
