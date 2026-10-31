@@ -10,6 +10,31 @@ def pinned_legacy_management_unavailable(status, body):
     assert body == {'code': 'REQUEST_UNAVAILABLE'}, 'LEGACY_MISSING_ROUTE_BODY_CHANGED'
 
 
+
+def non_core_status(expected, states):
+    """Safe dimensions only: never publish container/image IDs or timestamps."""
+    safe_names = {'stack-db', 'stack-redis', 'stack-policy', 'stack-ai-worker', 'stack-console',
+                  'stack-nats', 'stack-identity', 'stack-gateway', 'stack-object-store', 'stack-otel',
+                  'stack-tempo', 'stack-loki', 'stack-prometheus', 'stack-grafana', 'stack-quality-verifier'}
+    identifiers = [state['Id'] for state in states]
+    same_set = len(identifiers) == len(set(identifiers)) and set(identifiers) == set(expected)
+    identities = same_set; running = same_set; healthy = same_set; issues = []
+    for state in states:
+        if state['Id'] not in expected: continue
+        before = expected[state['Id']]
+        image_same = state['Image'] == before[0]; start_same = state['State']['StartedAt'] == before[1]
+        active = state['State']['Running'] is True
+        health = state['State'].get('Health', {}).get('Status', 'missing')
+        identities = identities and image_same and start_same; running = running and active; healthy = healthy and health == 'healthy'
+        if not (image_same and start_same and active and health == 'healthy'):
+            name = state.get('Config', {}).get('Labels', {}).get('com.docker.compose.service')
+            issues.append({'service': name if name in safe_names else 'unidentified-synthetic-service',
+                           'imageUnchanged': image_same, 'startedAtUnchanged': start_same, 'running': active,
+                           'health': health if health in ('healthy', 'unhealthy', 'starting', 'missing') else 'unknown'})
+    return {'sameContainerSet': same_set, 'allImagesAndStartedAtUnchanged': identities,
+            'allRunning': running, 'allHealthy': healthy, 'issues': issues}
+
+
 def preserved(before, after, *, unchanged_management=False):
     assert before['ledger'] == after['ledger'], 'SCHEMA_LEDGER_CHANGED'
     assert set(before['tables']) == set(after['tables']), 'TABLE_SET_CHANGED'

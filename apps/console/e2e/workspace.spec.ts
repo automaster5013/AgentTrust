@@ -138,10 +138,13 @@ if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true')test('legacy Core return ke
  await login(page,'demo-admin');const management=page.locator('#management');
  await page.getByRole('navigation',{name:'워크스페이스 탐색',exact:true}).getByRole('link',{name:'프로젝트·계정 관리',exact:true}).click();
  const project=page.waitForResponse(r=>new URL(r.url()).pathname==='/backend/workspace/project'&&r.request().method()==='GET');
- await management.getByRole('button',{name:'프로젝트 설정 조회',exact:true}).click();const projectError=await project;expect(projectError.status()).toBe(500);expect(await projectError.json()).toEqual({code:'REQUEST_UNAVAILABLE'});
+ await management.getByRole('button',{name:'프로젝트 설정 조회',exact:true}).click();const projectError=await project;expect(projectError.status()).toBe(500);
+ // The UI cancels error bodies; verify bytes through a separate scoped read.
+ const projectContract=await page.request.get('/backend/workspace/project');expect(projectContract.status()).toBe(500);expect(await projectContract.json()).toEqual({code:'REQUEST_UNAVAILABLE'});
  await expect(management.getByRole('status')).toContainText('현재 프로젝트의 관리 정보를 확인하지 못했습니다. 다시 조회하세요.');await expect(management.getByLabel('프로젝트 이름',{exact:true})).toHaveCount(0);
  const keys=page.waitForResponse(r=>new URL(r.url()).pathname==='/backend/workspace/access-keys'&&r.request().method()==='GET');
- await management.getByRole('button',{name:'접근 키 목록 조회',exact:true}).click();const keysError=await keys;expect(keysError.status()).toBe(500);expect(await keysError.json()).toEqual({code:'REQUEST_UNAVAILABLE'});
+ await management.getByRole('button',{name:'접근 키 목록 조회',exact:true}).click();const keysError=await keys;expect(keysError.status()).toBe(500);
+ const keysContract=await page.request.get('/backend/workspace/access-keys');expect(keysContract.status()).toBe(500);expect(await keysContract.json()).toEqual({code:'REQUEST_UNAVAILABLE'});
  await expect(management.getByRole('status')).toContainText('현재 프로젝트의 관리 정보를 확인하지 못했습니다. 다시 조회하세요.');await expect(management.getByLabel('한 번만 표시되는 접근 키',{exact:true})).toHaveCount(0);
  expect((await page.request.get('/backend/me')).status()).toBe(200);phase('pinned previous Core returns sanitized500 for missing management routes; UI remains unavailable; no settings or credentials are invented; fresh authenticated browser remains scoped');
 });

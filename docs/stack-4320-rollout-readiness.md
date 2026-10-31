@@ -1,10 +1,10 @@
 # 4320 통합 화면·관리 기능 적용 준비
 
-2026-11-01 KST. 검토 대상 소스는 `e23b02de5f2609d960a622b0e17e5d3dc9ea76a2`다. 이 문서는 실행 명령/승인서가 아니다. 운영 배포·게시·DB 변경·컨테이너 교체는 수행하지 않았다.
+2026-11-01 KST. 통합 관리 기능의 초기 기준 소스는 `e23b02de5f2609d960a622b0e17e5d3dc9ea76a2`다. 이후 복귀 하네스의 실제 결과는 아래 revision별 기록을 따른다. 이 문서는 실행 명령/승인서가 아니다. 운영 배포·게시·DB 변경·컨테이너 교체는 수행하지 않았다.
 
 ## 확인된 현재 상태
 
-- 최종 플랫폼은 4320이며 4310은 보존한다. 현재 AgentTrust 20개와 LogiTrack 12개는 healthy다. ID/image/StartedAt은 비공개 읽기 전용 기준선에 고정했다.
+- 최종 플랫폼은 4320이며 4310은 보존한다. 보호 대상 AgentTrust 20개와 LogiTrack 12개의 상태·ID/image/StartedAt은 관측 시점에 묶인 비공개 읽기 전용 기준선으로 관리한다. CI 결과나 과거 관측은 현재 PC의 건강 상태·신원 일치 검사를 대신하지 않는다.
 - 현재 Console/Gateway의 이미지 source revision은 `d40cdd063f7f711fdd513d231ec2da2473796619`, Core는 `1c9374edc0cd6cbb03f164099ce6d74e0f5fd782`다. 이 값은 inspect label이며, 새 후보 서명 검증을 대신하지 않는다. 실행 중 이미지가 모두 같은 source commit이라고 가정하지 않는다.
 - 운영 Flyway 이력은 V17/18개 public 테이블이다. 후보의 V1~V17 script/checksum이 운영 이력과 모두 일치했다. V18 관리 테이블 3개는 없다. 관측은 실행 직전 다시 확보해야 하며 영구적인 적용 허가가 아니다.
 - V18 파일 SHA-256: `8ad970c7e5f5e6a784ee201322567658f167a316f7d3acbf35661b1a7f78e061`, Flyway checksum: `1490751471`.
@@ -99,3 +99,14 @@ Playwright의 전체 제목에는 파일명이 앞에 붙으므로 `--grep-inver
 고정 이전 소스 `1c9374e`에는 관리 controller가 없다. `ApiErrors`의 공통 예외 처리는 누락 경로를 정제된 500으로 반환한다. 같은 의존성 Spring MVC 7.0.9의 ResourceHttpRequestHandler도 GET/POST의 리소스 부재를 method 검사 전에 처리한다. `c13650a`는 하네스의 404 가정을 고정 이미지의 정확한 500 + `{"code":"REQUEST_UNAVAILABLE"}` 계약으로 수정했다. 네 개의 미지원 관리 요청에만 적용하며, 임의 500/503/다른 code/추가 권한 필드나 정상 응답은 거부한다. 이를 관리 기능 성공으로 표시하지 않고 `managementApiSupported=false`, `previousManagementApiCompatibilityVerified=false`와 실제 상태 코드 목록을 기록한다. UI도 관리 정보를 확인할 수 없다는 메시지와 설정/키 원문 부재를 검사한다.
 
 기존 업무 HTTP와 후보 관리 HTTP의 기대값·권한·서명/hash 검사는 유지했다. AST로 기본 후보 관리 분기의 검증 의미가 같음을 확인했고, legacy 블록 밖 브라우저 소스도 동일했다. 고정 오류 응답 거부 테스트를 포함한 복귀 11개·V17 전환 7개 및 Python/TypeScript 검사가 통과했다. 수정 후 legacy 목록은 여전히 53개/2파일이다. 이 수정의 실제 hosted 이전 업무 HTTP·브라우저·후보 복원 및 후속 전체 integration은 새 실행에서 확인해야 한다. 자동 CD·운영 복구·건강한 운영 rollback 판정은 계속 false다.
+
+
+### 이전 업무 HTTP 통과·브라우저 52/53과 취소된 오류 본문 검사 수정
+
+`c13650a` run `41239127671`와 `3372f96` run `41239170356`은 전체 integration 최종 failure다. SHA-256 검증한 artifact에서 이전 Core의 직접 4321·BFF 4320 업무 HTTP가 모두 completed/본인 세션 정리 성공이고, 고정 관리 미지원 응답 네 건은 각각 500임을 확인했다. 후보 복원 뒤 두 경로의 관리 기능 포함 HTTP와 기존 행/ledger 보존도 통과했다. 이전 브라우저는 두 실행 모두 53개 중 기존 52개 통과, 추가한 관리 부재 검사 1개 실패다.
+
+실패는 UI가 오류 응답 본문을 의도적으로 취소한 뒤 Playwright `response.json()`이 본문을 다시 읽으려 한 시험 오류다. 실제 UI 요청의 500 상태·오류 메시지·설정/키 원문 부재 검사를 유지하고, 정확한 JSON 오류 본문은 같은 세션 APIRequestContext의 별도 읽기 요청으로 검증하도록 수정했다. production UI의 본문 취소나 HTTP 오류 계약은 변경하지 않았다. 로컬 TypeScript와 Python 검사가 통과했으며 실제 수정 후 브라우저 실행은 새 CI에서 확인한다.
+
+두 실행 모두 비 Core 보존 검증도 AssertionError로 실패했다. 기존 요약만으로 ID/image/StartedAt 변화인지 건강 상태 문제인지 구분할 수 없으므로 원인은 미확정이다. 이를 통과로 바꾸거나 대기/재시작으로 숨기지 않는다. 후속 요약에 컨테이너 집합·이미지/시작 시각·실행·healthy 조건의 안전한 차원별 진단을 추가했다. ID·이미지 값·시각·환경 비밀은 보고하지 않는다. 기존 조건을 모두 만족해야 통과하며 누락/중복/추가 컨테이너도 거부한다. 복귀 13개·V17 전환 7개, 총 20개 로컬 테스트가 통과했다.
+
+이전 전체 브라우저 성공, 비 Core 보존 성공 및 후속 모델·전체 복구 완료는 아직 미확인이다. 실제 운영 배포·자동 CD·운영 복구·건강한 운영 rollback은 계속 false다.

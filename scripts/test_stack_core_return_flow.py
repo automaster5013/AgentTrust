@@ -6,7 +6,7 @@ import types
 import unittest
 from unittest.mock import patch
 import stack_ci_return_guard as guard
-from stack_core_return_flow import pinned_legacy_management_unavailable, preserved, verify
+from stack_core_return_flow import non_core_status, pinned_legacy_management_unavailable, preserved, verify
 
 
 class FlowTest(unittest.TestCase):
@@ -93,6 +93,29 @@ class FlowTest(unittest.TestCase):
                              (500, {'code': 'REQUEST_UNAVAILABLE', 'deploymentAuthority': True})]:
             with self.subTest(status=status, body=body), self.assertRaises(AssertionError):
                 pinned_legacy_management_unavailable(status, body)
+
+    def test_non_core_diagnostics_distinguish_health_from_identity_without_disclosing_values(self):
+        expected = {'private-container': ('private-image', 'private-start')}
+        state = {'Id': 'private-container', 'Image': 'private-image',
+                 'State': {'StartedAt': 'private-start', 'Running': True, 'Health': {'Status': 'healthy'}},
+                 'Config': {'Labels': {'com.docker.compose.service': 'stack-gateway'}}}
+        self.assertTrue(non_core_status(expected, [state])['allHealthy'])
+        unhealthy = copy.deepcopy(state); unhealthy['State']['Health']['Status'] = 'unhealthy'
+        status = non_core_status(expected, [unhealthy])
+        self.assertTrue(status['allImagesAndStartedAtUnchanged']); self.assertFalse(status['allHealthy'])
+        self.assertEqual(status['issues'][0]['service'], 'stack-gateway')
+        for secret in ('private-container', 'private-image', 'private-start'): self.assertNotIn(secret, repr(status))
+        changed = copy.deepcopy(state); changed['State']['StartedAt'] = 'different'
+        status = non_core_status(expected, [changed])
+        self.assertFalse(status['allImagesAndStartedAtUnchanged']); self.assertTrue(status['allHealthy'])
+
+    def test_non_core_diagnostics_refuse_missing_extra_and_duplicate_container_sets(self):
+        expected = {'private-container': ('private-image', 'private-start')}
+        state = {'Id': 'private-container', 'Image': 'private-image',
+                 'State': {'StartedAt': 'private-start', 'Running': True, 'Health': {'Status': 'healthy'}}}
+        for states in ([], [state, state], [dict(state, Id='different-container')]):
+            with self.subTest(count=len(states)):
+                self.assertFalse(non_core_status(expected, states)['sameContainerSet'])
 
     def test_quiet_query_counts_standalone_and_campaign_case_runs_without_campaign_state(self):
         spec = importlib.util.spec_from_file_location('core_return_smoke', pathlib.Path(__file__).with_name('stack-core-return-smoke.py'))

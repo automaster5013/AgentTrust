@@ -14,7 +14,7 @@ import subprocess
 import uuid
 import time
 from stack_ci_return_guard import require_hosted
-from stack_core_return_flow import verify
+from stack_core_return_flow import non_core_status, verify
 from stack_v18_transition_probe import BASELINE_REFERENCE, BASELINE_REVISION
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -173,9 +173,9 @@ def main():
         if report['candidateRestored']:
             try:
                 states = json.loads(run(['docker', 'inspect', *others]))
-                assert {state['Id'] for state in states} == set(others)
-                for state in states:
-                    assert (state['Image'], state['State']['StartedAt']) == others[state['Id']] and state['State']['Running'] and state['State']['Health']['Status'] == 'healthy'
+                observation = non_core_status(others, states)
+                report['nonCoreContainerVerification'] = observation
+                assert all(observation[key] is True for key in ('sameContainerSet', 'allImagesAndStartedAtUnchanged', 'allRunning', 'allHealthy'))
                 report['nonCoreContainerIdentitiesPreserved'] = True
             except Exception as error:
                 report.update(completed=False, nonCoreContainerIdentitiesPreserved=False, identityVerificationErrorType=type(error).__name__)
