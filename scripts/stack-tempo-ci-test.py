@@ -69,7 +69,11 @@ class HostedProof(unittest.TestCase):
    summary=json.loads((root/'tempo-ci-output/summary.json').read_bytes());self.assertFalse(summary['actualCDPerformed']);self.assertFalse(summary['automaticDeploymentAllowed'])
    if mode=='normal':
     self.assertEqual(verify_output(root/'tempo-ci-output')['matchingSpans'],133);self.assertEqual([v for v in d.events if v[0]=='start'],[['start','writer'],['start','gold'],['start','candidate']]);self.assertEqual(sum(v==['stop','candidate'] for v in d.events),0)
-    proof=json.loads((root/'tempo-ci-output/synthetic-evidence.json').read_bytes());proof['inverseSamples'][-1]['counters']['series']['tempodb_blocklist_tenant_index_errors_total']['"single-tenant"']=0
+    proof=json.loads((root/'tempo-ci-output/synthetic-evidence.json').read_bytes())
+    altered=copy.deepcopy(proof);altered['inverseFrames'][format(1,'032x')]['resourceSpans'][0]['scopeSpans'][0]['spans'][0]['name']='tampered'
+    raw=json.dumps(altered).encode();(root/'tempo-ci-output/synthetic-evidence.json').write_bytes(raw);summary['evidenceSha256']=hashlib.sha256(raw).hexdigest();(root/'tempo-ci-output/summary.json').write_text(json.dumps(summary))
+    with self.assertRaises(ValueError):verify_output(root/'tempo-ci-output')
+    proof['inverseSamples'][-1]['counters']['series']['tempodb_blocklist_tenant_index_errors_total']['"single-tenant"']=0
     raw=json.dumps(proof).encode();(root/'tempo-ci-output/synthetic-evidence.json').write_bytes(raw);summary['evidenceSha256']=hashlib.sha256(raw).hexdigest();(root/'tempo-ci-output/summary.json').write_text(json.dumps(summary))
     with self.assertRaises(ValueError):verify_output(root/'tempo-ci-output')
    else:
