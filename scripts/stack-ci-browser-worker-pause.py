@@ -67,6 +67,11 @@ def perform(action, witness, root, command, environment=None, journal=None):
     assert ticket['runId'] == env['GITHUB_RUN_ID'] and ticket['runAttempt'] == env['GITHUB_RUN_ATTEMPT']
     assert ticket['pauseAttempted'] is True and type(ticket['resumed']) is bool
     state = inspect(); assert owned(state, root) == ticket['identity']
+    if ticket['resumed'] is True:
+        # A completed witness may verify cleanup, never release a later pause.
+        assert state['State'].get('Paused') is False
+        return {'completed': True, 'executed': False, 'noPauseWitness': False,
+                'restored': True, 'identityPreserved': True, 'alreadyRestored': True}
     if state['State'].get('Paused') is True:
         journal.update(mutationMayHaveStarted=True, stage='resume-command')
         command(['docker', 'unpause', state['Id']])

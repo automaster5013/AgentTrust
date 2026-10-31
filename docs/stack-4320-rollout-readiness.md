@@ -121,3 +121,6 @@ Playwright의 전체 제목에는 파일명이 앞에 붙으므로 `--grep-inver
 새 helper는 비 root GitHub-hosted guard를 Docker·witness 파일 접근 전에 검사한다. 정확한 repository/workspace/run/attempt, worker 이름·compose 소유권·설정 파일 목록과 ID/image/StartedAt을 검증한다. pause 전 0600 비공개 witness를 만들고 동일한 worker만 unpause한다. witness는 안전 artifact 수집 glob에 포함되지 않는다. 브라우저의 finally가 실행되지 않아도 Core 복원 finally에서 해당 invocation의 worker cleanup을 별도로 수행하며, cleanup 실패가 Core 복원 시도 자체를 막지 않는다. 기존 5분 복원 예산을 공유한다. 최종 비 Core 검사는 같은 집합·이미지/StartedAt·running·unpaused·healthy 및 worker cleanup 증거가 모두 참이어야 통과한다.
 
 실제 현재 PC에서 pause/unpause를 실행하지 않았다. 로컬 --execute는 Docker/파일 접근 전에 거부됐다. 모의 helper 8개(부분 pause 복구, 교차 run·소유권·시작 시각 변화·중복 witness 거부 포함), 복귀 13개와 V17 전환 7개, 총 28개 로컬 테스트·Python/TypeScript·actionlint가 통과했다. 수정된 실제 hosted 비 Core 보존과 전체 integration 성공은 새 CI에서 별도로 확인한다. 운영 적용·자동 CD·운영 복구·건강한 운영 rollback은 계속 false다.
+
+
+완료된 worker witness의 재사용 경계도 모의 실패로 확인했다. 이미 unpause 완료된 witness는 현재 동일 identity가 unpaused 상태인지 읽기 전용으로 확인할 수 있지만, 나중에 다른 원인으로 paused가 되면 이를 해제하지 않고 거부한다. 해당 거부 테스트를 추가한 helper 9개와 기존 복귀 13개·V17 전환 7개, 총 29개 로컬 테스트가 통과했다. 이 보강은 기존 healthy·ID/image/StartedAt·unpaused 조건을 완화하지 않는다.

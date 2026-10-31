@@ -86,6 +86,12 @@ class WorkerPauseTest(unittest.TestCase):
         with self.assertRaises(AssertionError): self.invoke(fixture, 'resume')
         self.assertEqual(fixture[4], [])
 
+    def test_completed_witness_cannot_unpause_a_later_unowned_pause(self):
+        fixture = self.fixture(); self.invoke(fixture, 'pause'); self.invoke(fixture, 'resume')
+        fixture[3]['State']['Paused'] = True; fixture[4].clear()
+        with self.assertRaises(AssertionError): self.invoke(fixture, 'resume')
+        self.assertFalse(any(c[1] == 'unpause' for c in fixture[4]))
+
     def test_missing_witness_cleanup_has_no_docker_operation(self):
         fixture = self.fixture(); result = self.invoke(fixture, 'resume')
         self.assertTrue(result['noPauseWitness']); self.assertFalse(result['executed']); self.assertEqual(fixture[4], [])
