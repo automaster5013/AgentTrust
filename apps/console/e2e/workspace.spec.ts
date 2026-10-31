@@ -96,17 +96,26 @@ if(process.env.STACK_E2E_ADMIN_CAPTURE==='true')test('administrator actual revie
  phase('actual demo-admin pass form,1440x960 and390x960,keyboard Enter gate/review navigation and focused targets,keyboard decision-reason-save order,empty required reason blocks submission and focuses reason without writes,no horizontal overflow,read-only503 basis disables save then actual recovery,block and inconclusive have no approval form or review link and never allow release; zero business writes; masked areas not visually assessed');
 });
 
+test('project home keeps failed statistics unknown and binds retry counts to the displayed response',async({page})=>{
+ await login(page,'demo-viewer',async()=>{await page.route('**/backend/runs',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({code:'SYNTHETIC_UNAVAILABLE'})}))});
+ const home=page.locator('#overview');await expect(home).toContainText('평가 목록을 확인하지 못했습니다.');await expect(home.locator('dd')).toHaveText(['미확인','미확인','미확인','미확인']);
+ await page.unroute('**/backend/runs');const loaded=page.waitForResponse(response=>new URL(response.url()).pathname==='/backend/runs'&&response.request().method()==='GET');
+ await page.getByRole('button',{name:'최근 평가 다시 조회',exact:true}).click();const response=await loaded;expect(response.status()).toBe(200);const rows=await response.json() as {decision:string}[];
+ await expect(home.locator('dd')).toHaveText([rows.length,rows.filter(r=>r.decision==='pass').length,rows.filter(r=>r.decision==='block').length,rows.filter(r=>r.decision==='inconclusive').length].map(String));await expect(home).not.toContainText('새 평가 준비');await logout(page);
+});
+
 test('workspace navigation and responsive layout keep review tasks reachable without writes',async({page})=>{
  await login(page,'demo-viewer');
  const navigation=page.getByRole('navigation',{name:'워크스페이스 탐색',exact:true});
- for(const [name,target] of [['평가 실행·조회','evaluations'],['버전·캠페인','campaigns'],['준비 상태·사용량','operations'],['이력·감사','history']]){
+ await expect(page.getByRole('heading',{name:'프로젝트 홈',exact:true})).toBeVisible();await expect(page.locator('#overview')).toContainText('프로젝트 전체 통계가 아닙니다.');await expect(page.locator('#overview')).not.toContainText('새 평가 준비');
+ for(const [name,target] of [['프로젝트 홈','overview'],['평가 실행·조회','evaluations'],['버전·캠페인','campaigns'],['준비 상태·사용량','operations'],['이력·감사','history'],['플랫폼 지원 범위','platform']]){
   const link=navigation.getByRole('link',{name,exact:true});await expect(link).toHaveAttribute('href','#'+target);await link.click();await expect(page.locator('#'+target)).toBeVisible();
  }
 
  const originalViewport=page.viewportSize()??{width:1280,height:960};
  for(const width of [640,320]){
   await page.setViewportSize({width,height:960});
-  const names=['평가 실행·조회','버전·캠페인','준비 상태·사용량','이력·감사'];
+  const names=['프로젝트 홈','평가 실행·조회','버전·캠페인','준비 상태·사용량','이력·감사','플랫폼 지원 범위'];
   await navigation.getByRole('link',{name:names[0],exact:true}).focus();
   for(let index=0;index<names.length;index++){
    const link=navigation.getByRole('link',{name:names[index],exact:true});

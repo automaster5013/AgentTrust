@@ -209,3 +209,34 @@ footer{display:flex;justify-content:space-between;align-items:flex-start;gap:20p
 @media(max-width:800px){main{padding:0 20px}header{min-height:82px;padding:19px 0;margin-bottom:20px}.intro{grid-template-columns:1fr;gap:18px}.intro h1{font-size:28px}.grid{grid-template-columns:1fr}.card{padding:22px}.decision-guide{max-width:none}.decision-summary .decision-next-action{grid-template-columns:1fr;gap:4px}.nav-copy strong{font-size:12px}.workspace-nav a{padding:8px 12px}.scope span{font-size:10px}}
 @media(max-width:480px){main{padding:0 14px}header{gap:12px}.brand{font-size:21px;gap:9px}.brand::before{width:30px;height:35px;font-size:21px;border-radius:9px}.brand span{display:none}.account{font-size:11px;max-width:54%;gap:6px}.account button{padding:6px 10px;min-height:44px}.intro h1{font-size:25px;letter-spacing:-.8px}.card{padding:18px;border-radius:12px}.decision-summary{grid-template-columns:1fr}.decision-summary>div{padding:16px}.decision-summary dd{font-size:19px}.decision-next-action dd{font-size:13px}.evaluation-id-lookup{padding:16px}.evaluation-id-lookup>button{width:100%}.review-panel{padding:16px}.review-panel>button.primary{width:100%;min-width:0}footer{display:block}footer strong{display:block;margin-bottom:7px}footer span{display:block}}
 @media(prefers-reduced-motion:reduce){.workspace-nav a,input,select,textarea{transition:none}}
+
+/* The 4320 application keeps one project scope across every sidebar destination. */
+.workspace-layout{grid-template-columns:232px minmax(0,1fr);gap:28px}
+.workspace-nav{padding:18px 12px 22px;border-radius:16px;background:#123e37;color:#e9f5ef;max-height:calc(100dvh - 48px);overflow-y:auto}
+.workspace-nav .nav-heading{display:flex;flex-direction:column;gap:3px;color:#d5ebe1;padding:4px 12px;margin:0 0 20px;letter-spacing:0}
+.nav-heading strong{font-size:20px;color:#fff}.nav-heading span{font-size:11px;font-weight:400}
+.workspace-nav a{color:#d9e9e3;min-height:66px;flex-shrink:0}
+.workspace-nav a:hover,.workspace-nav a:focus-visible{background:#24574c;color:#fff;border-color:#427564}
+.workspace-nav a:focus-visible{outline-color:#9ee8d5}
+.workspace-nav a[aria-current=location]{background:#e7f4ed;color:#124c3c;border-color:#b9ddca;box-shadow:inset 3px 0 #40a782}
+.workspace-nav .nav-note{color:#c5dcd1;border-color:#42665b;font-size:11px}
+#overview,#platform{scroll-margin-top:24px}
+.workspace-overview{margin-bottom:28px;padding:25px;background:#fff;border:1px solid var(--line);border-radius:16px}
+.workspace-overview h2{margin:0}.workspace-overview>.title{align-items:flex-start}
+.workspace-edition{display:inline-flex;padding:5px 10px;border:1px solid #c9dfd3;border-radius:20px;background:#f0f7f3;color:#225d45;font-size:11px;font-weight:650}
+.overview-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:22px 0 12px}
+.overview-metrics>div{padding:17px 14px;border:1px solid var(--line);border-radius:10px;background:#f8fbf9;min-width:0}
+.overview-metrics dt{font-size:12px;color:var(--muted)}.overview-metrics dd{font-size:27px;line-height:1.5;font-weight:700;margin:6px 0 0;overflow-wrap:anywhere}
+.overview-caption{font-size:12px;line-height:1.8}
+.overview-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}
+.overview-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 15px;border:1px solid #c1d2c8;border-radius:8px;text-decoration:none;color:#215641;font-size:12px;font-weight:650}
+.overview-actions a:hover{background:#edf7f0}.overview-actions a.overview-primary{background:#17674e;color:#fff;border-color:#17674e}
+.overview-actions a.overview-primary:hover{background:#104b38}
+.platform-scope h3{margin-top:0}.platform-scope-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:22px}
+.platform-scope-grid>div{padding:20px;border:1px solid var(--line);border-radius:10px;background:#f8faf9;min-width:0}
+.platform-scope-grid ul{padding-left:19px;color:var(--muted)}.platform-scope-grid li+li{margin-top:8px}
+.scope-boundary{padding-top:18px;border-top:1px solid var(--line);margin-bottom:0;font-size:12px}
+@media(max-width:1100px){.workspace-layout{display:block}.workspace-nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-radius:12px;padding:8px;max-height:none;overflow:visible;margin-bottom:22px}.workspace-nav .nav-heading,.workspace-nav .nav-note{display:none}.workspace-nav a{min-height:48px;justify-content:center;text-align:center;padding:8px;min-width:0}}
+@media(max-width:800px){.overview-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.platform-scope-grid{grid-template-columns:1fr;gap:12px}.workspace-overview{padding:20px}.overview-actions a{flex:1 1 auto}}
+@media(max-width:600px){.workspace-nav{grid-template-columns:repeat(2,minmax(0,1fr));position:static}}
+@media(max-width:480px){.overview-metrics{gap:8px}.overview-metrics>div{padding:13px 10px}.overview-metrics dd{font-size:23px}.workspace-overview{padding:17px}.platform-scope-grid>div{padding:16px}.workspace-edition{font-size:10px}}
