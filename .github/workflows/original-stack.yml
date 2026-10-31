@@ -21,8 +21,26 @@ jobs:
           fetch-depth: 0
       - name: Build pinned source security tools
         run: |
+          python3 -m unittest discover -s scripts -p test_stack_owned_fixture.py
           python3 scripts/stack-execution-profiles.py --check
           python3 scripts/stack-quality-profiles.py --check
+          python3 scripts/stack-observability-orchestration-test.py
+          python3 scripts/stack-tempo-metadata-test.py
+          python3 scripts/stack-host-capacity-test.py
+          python3 scripts/stack-tempo-repair-plan-test.py
+          python3 scripts/stack-tempo-source-recheck-test.py
+          python3 scripts/stack-local-cd-executor-test.py
+          python3 scripts/stack-store-queue-probe-test.py
+          python3 scripts/stack-recovery-evidence-join-test.py
+          python3 scripts/stack-isolated-database-rehearsal-test.py
+          python3 scripts/stack-isolated-worker-rehearsal-test.py
+          python3 scripts/stack-local-cd-reconcile-test.py
+          python3 scripts/stack-local-cd-orchestration-test.py
+          python3 scripts/stack-release-online-test.py
+          python3 scripts/stack-local-cd-evidence-test.py
+          python3 scripts/stack-local-cd-plan-test.py
+          python3 scripts/stack-dockerhub-main-mirror-test.py
+          python3 scripts/stack-dockerhub-test.py
           python3 scripts/stack-delivery-verifier-test.py
           python3 scripts/stack-https-release-profile-test.py
           python3 scripts/stack-delivery-offline-test.py
@@ -45,6 +63,13 @@ jobs:
           python3 scripts/stack-recovery-load-contract-test.py
           python3 scripts/stack-coherent-orchestration-test.py
           docker build -t agenttrust-security:local tools/security
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --tmpfs /.local:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-online-recovery-test.py
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --tmpfs /.local:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-live-state-test.py
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --tmpfs /.local:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-session-recovery-test.py
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --tmpfs /.local:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-grafana-history-test.py
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --tmpfs /.local:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-consistency-window-test.py
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --tmpfs /.local:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-extra-history-test.py
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --tmpfs /.local:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-chunked-cache-test.py
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-backup-crypt-test.py
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-https-fixture-certificates-test.py
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --memory 128m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-backup-tar-test.py
@@ -146,6 +171,9 @@ jobs:
           path: apps/console/test-results/**/workspace-admin-*.png
           if-no-files-found: error
           retention-days: 7
+      - name: Verify actual project key and own-session management in browsers
+        working-directory: apps/console
+        run: STACK_E2E_QUOTA_GUARD=true npx playwright test --grep 'workspace management'
       - name: Verify actual TLS OIDC login in a fresh portless fixture
         run: |
           docker build -t agenttrust-security:local tools/security
@@ -684,3 +712,56 @@ jobs:
       - name: Remove only ephemeral signer credential
         if: always()
         run: python3 -c "from pathlib import Path; p=Path('.local/stack-signing-credentials/config.json'); p.unlink(missing_ok=True)"
+  dockerhub:
+    name: Publish verified stack to Docker Hub
+    needs: security-images
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.DOCKERHUB_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: AgentTrust-dockerhub
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: original-stack-security-delivery-${{ github.sha }}
+          path: stack-security-delivery
+      - name: Build existing pinned verification tools
+        run: docker build -t agenttrust-security:local tools/security
+      - name: Authenticate ephemeral registry clients
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          HUB_TOKEN: ${{ secrets.AUTOMASTER5013_AGENTTRUST }}
+          HUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
+        shell: bash
+        run: |
+          test -n "$HUB_USERNAME" && test -n "$HUB_TOKEN" && test -n "$HUB_NAMESPACE"
+          export DOCKER_CONFIG="$RUNNER_TEMP/dockerhub-config"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG" >> "$GITHUB_ENV"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          printf '%s' "$HUB_TOKEN" | docker login docker.io --username "$HUB_USERNAME" --password-stdin
+      - name: Verify source signatures and mirror all sixteen exact images
+        env:
+          HUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
+        shell: bash
+        run: |
+          CHECKSUMS_SHA256=$(sha256sum stack-security-delivery/checksums.json | cut -d ' ' -f 1)
+          python3 scripts/stack-dockerhub.py --bundle stack-security-delivery --expected-revision "$GITHUB_SHA" --expected-checksums-sha256 "$CHECKSUMS_SHA256" --repository "$GITHUB_REPOSITORY" --namespace "$HUB_NAMESPACE" --publish --output stack-security-delivery/dockerhub-receipt.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: original-stack-dockerhub-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: stack-security-delivery/dockerhub-receipt.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove ephemeral registry login files
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/dockerhub-config/config.json"

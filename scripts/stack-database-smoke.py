@@ -65,9 +65,30 @@ try:
      RAISE EXCEPTION 'Missing scoped run accepted';
    EXCEPTION WHEN foreign_key_violation THEN NULL; END;
  END $$;
+ DO $$
+ DECLARE item TEXT; own_key UUID := gen_random_uuid(); next_revision BIGINT;
+ BEGIN
+  FOREACH item IN ARRAY ARRAY['stack_project_settings','stack_access_keys','stack_access_key_revocations'] LOOP
+   IF NOT (SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid=item::regclass) THEN RAISE EXCEPTION 'Workspace RLS missing'; END IF;
+   IF has_table_privilege(current_user,item,'UPDATE') OR has_table_privilege(current_user,item,'DELETE') THEN RAISE EXCEPTION 'Workspace mutation privilege widened'; END IF;
+  END LOOP;
+  SELECT COALESCE(max(revision),0)+1 INTO next_revision FROM stack_project_settings;
+  INSERT INTO stack_project_settings(organization_id,project_id,revision,actor_id,name,description) VALUES('{own['organizationId']}','{own['projectId']}',next_revision,'{own['actorId']}','Synthetic rollback test','');
+  INSERT INTO stack_access_keys(id,organization_id,project_id,actor_id,name,secret_hash,expires_at) VALUES(own_key,'{own['organizationId']}','{own['projectId']}','{own['actorId']}','Synthetic key',repeat('a',64),now()+interval '1 day');
+  BEGIN
+   INSERT INTO stack_project_settings(organization_id,project_id,revision,actor_id,name,description) VALUES('{foreign['organizationId']}','{foreign['projectId']}',1,'{own['actorId']}','Forbidden','');
+   RAISE EXCEPTION 'Foreign project settings permitted';
+  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  BEGIN
+   INSERT INTO stack_access_key_revocations(key_id,organization_id,project_id,actor_id) VALUES(own_key,'{foreign['organizationId']}','{foreign['projectId']}','{own['actorId']}');
+   RAISE EXCEPTION 'Foreign key revocation permitted';
+  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  INSERT INTO stack_access_key_revocations(key_id,organization_id,project_id,actor_id) VALUES(own_key,'{own['organizationId']}','{own['projectId']}','{own['actorId']}');
+  BEGIN DELETE FROM stack_access_keys WHERE id=own_key; RAISE EXCEPTION 'Key deletion permitted'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ END $$;
  ROLLBACK;
  """
  run(['docker','exec','-i','agenttrust-stack-db-1','psql','-U','agenttrust_stack','-d','agenttrust_stack','-v','ON_ERROR_STOP=1'],input=sql)
- print(json.dumps({'completed':True,'database':'agenttrust_stack','checks':['RLS foreign rows invisible','result update refused','run deletion refused','cross-scope insert refused','scoped review foreign key enforced','archive scope and immutable metadata enforced','vector RLS and immutable metadata enforced'],'testWritesRolledBack':True,'legacyDatabaseChanged':False}))
+ print(json.dumps({'completed':True,'database':'agenttrust_stack','checks':['workspace RLS forced, append-only grants and cross-scope management refusal','RLS foreign rows invisible','result update refused','run deletion refused','cross-scope insert refused','scoped review foreign key enforced','archive scope and immutable metadata enforced','vector RLS and immutable metadata enforced'],'testWritesRolledBack':True,'legacyDatabaseChanged':False}))
 except Exception:
  print(json.dumps({'completed':False,'code':'DATABASE_BOUNDARY_UNVERIFIED'}));raise SystemExit(1)

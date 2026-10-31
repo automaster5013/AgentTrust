@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "asOf": "2026-10-28",
+  "target": "existing4310 JavaScript product",
+  "status": "documents-finalized-video-review-deferred-incomplete",
+  "files": [
+    {
+      "path": "docs/portfolio-4310-overview.md",
+      "bytes": 2755,
+      "sha256": "d243f264365cf91fa8cfede2adf751a0da0e36e3590d86dde110178c531ab840",
+      "contentReview": "text reviewed; no credentials, raw records or new-stack media included"
+    },
+    {
+      "path": "docs/portfolio-4310-verification.md",
+      "bytes": 2621,
+      "sha256": "04d1ea1753b75d10e74af31f07e67e594d1ff3455144a7b3ea7b36460e31f734",
+      "contentReview": "text reviewed; no credentials, raw records or new-stack media included"
+    }
+  ],
+  "media": {
+    "video": "deferred; no accepted actual video",
+    "captions": "deferred; no accepted actual captions",
+    "rule": "Add actual4310 video/captions only after content, timing and exposure review."
+  },
+  "packageComplete": false,
+  "published": false,
+  "fileListFinalized": true,
+  "submissionScope": "Documents only; actual video will be created later according to destination requirements. Criterion 3 remains incomplete and deferred."
+}

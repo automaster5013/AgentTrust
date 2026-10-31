@@ -143,3 +143,232 @@ database configuration still contains the database's own bootstrap credential.
 The migration image is the already recorded Core image. Schema upgrades after a
 restore require the separate migration process and the operator's controlled
 upgrade procedure.
+
+
+## Online supplemental recovery verification (2026-10-31)
+
+Operating services remain online. These opt-in tools require `--execute` but
+only create labeled disposable fixtures; they do not invoke the operating CD
+executor or relax its backup, approval, freshness or full-stack proof gates.
+Private captures and keys stay under ignored `.local`, encrypted and separated.
+A development key on the same disk is not independent backup custody.
+
+- `stack-model-cache-recovery.py` binds a signed/public candidate and copies the
+  immutable read-only model volume in authenticated 16 MiB chunks (1 GiB bound).
+  All chunks authenticate before target writes; hashes, modes and internal
+  aliases are checked. A separate verifier authenticates retained ciphertext.
+  Only the restored owned volume is used for network-disabled model startup and
+  bounded offline inference. Cache restoration alone never proves inference.
+- `stack-tempo-history-recovery.py` selects up to three closed blocks older than
+  twenty minutes (beyond the default recent/live-only search window), excludes live WAL, restores exact hashes/modes and queries the
+  published candidate. Historical trace spans must match the source readback.
+  Selection is deliberately bounded: the source contains about 6.57 GB of closed
+  blocks across 156,743 files. This is not full Tempo history or WAL recovery.
+  The read probe uses fixed loopback HTTP inside the validated target namespace,
+  without assuming the service image contains curl or wget.
+- `stack-grafana-history-recovery.py` uses native SQLite read-only online backup,
+  integrity verification and an isolated instance of the preserved source image.
+  Provisioned dashboards/datasources are reconstructed from hash-checked source
+  configuration, separately from saved SQLite rows. An empty saved dashboard
+  table must not be presented as recovered user dashboard history.
+- `stack-consistency-window.py` reads business hashes, migration ledger, pinned
+  object references and queue positions before/after exact S3 version readback.
+  The actual run verified all 774 referenced object versions, 18 business tables,
+  two stream states and zero pending work without drift. This proves observed
+  conservation over that window, not atomic snapshots across stores. Identity DB
+  alignment, unpersisted Redis memory, active telemetry WAL and interleavings
+  between reads remain outside this proof.
+
+Tests cover chunk corruption/wrong keys before writes, ordering/path/offset
+refusals, internal alias boundaries, closed-block selection, semantic trace
+identity, SQLite backup, metadata mismatch and cross-store drift. CI runs the
+new helper contracts in the pinned networkless security image. The older host
+orchestration suites require a writable repository root and run on the host.
+
+Signed Docker Hub publication, PR CI, isolated recovery and operating deployment
+are separate facts. No online supplemental report sets full-stack recovery,
+operational backup or automatic deployment to true. Prometheus/Loki recovery,
+complete telemetry WAL/history, coherent cross-store backup custody and reviewed
+operating transition remain release gates until separately evidenced.
+
+Tempo selection uses the backend query cutoff described in [Grafana polling documentation](https://grafana.com/docs/tempo/latest/configuration/polling/). Recent blocks alone can return no traces while search still targets live stores; an empty result is a failed recovery proof.
+
+
+Actual supplemental acceptance: the pinned published local-model candidate restored
+9 logical files (522,662,074 bytes), 40 authenticated chunks and one internal
+alias, passed entrypoint checksums and completed bounded offline inference
+(3 output tokens, no generated text logged). Grafana restored an integrity-checked
+online SQLite snapshot with three datasource rows and zero saved dashboard rows;
+configuration reprovisioned one dashboard and the authenticated metadata queries
+passed. Fixtures were cleaned and the original 42 containers / 18 volumes remained,
+with AgentTrust 20 and LogiTrack 12 healthy.
+
+Tempo restored three closed blocks with exact file hashes/modes and returned
+20 historical search results, but source/restored span equality did not pass.
+This remains incomplete recovery evidence. Hex IDs now normalize omitted leading
+zeroes with strict bounds; unit coverage does not establish live span equality.
+No full telemetry, atomic backup or operating CD completion is claimed.
+
+
+## Historical telemetry source comparisons (2026-10-31)
+
+`stack-prometheus-history-recovery.py` selects up to three nonempty closed ULID
+blocks, authenticates encrypted chunks, restores exact file hashes/modes into an
+owned volume and starts the signed published Prometheus image without network or
+host ports. It compares the fixed `up{job="agenttrust-otel"}` historical query in
+each block against source reads taken before and after recovery. The actual run
+restored 12 files / 1,747,050 bytes and matched all 33 samples across three windows.
+This is selected closed-block and query evidence, not complete metrics coverage.
+The current head, WAL and wbl are excluded. Source admin APIs are not enabled or
+called. See [Prometheus storage backup guidance](https://prometheus.io/docs/prometheus/latest/storage/).
+
+`stack-loki-history-recovery.py` captures only a bounded file set observed unchanged
+before/after copying from persisted chunks and shipped index objects. Active
+index files, compactor state and live WAL are excluded. It starts only
+an owned restored volume and compares at most 100 historical `service_name` log
+entries older than three hours against source reads before/after. Empty history, changed timestamps/text,
+partial/error responses and source file drift fail verification. A stable read
+window is not an atomic snapshot; recent in-memory logs and live WAL completeness
+remain unproved. The tool never flushes or stops source writers. Loki filenames
+with base64 `=` padding are accepted as canonical relative paths; traversal and
+external links remain rejected. See [Loki WAL semantics](https://grafana.com/docs/loki/latest/operations/storage/wal/).
+
+Tempo comparisons normalize bounded hex IDs with omitted leading zeroes, then use
+the selected blocks' time bounds for both original and restored trace reads.
+Resource metadata, scope metadata and every span field participate in the digest;
+all selected search results must match, rather than accepting a single match.
+Read failures record a sanitized status and source/fixture role without raw traces.
+See [Tempo trace query bounds](https://grafana.com/docs/tempo/latest/api_docs/).
+
+Mocked full-path orchestration tests exercise command construction, complete
+restore/readback, source drift before startup and a changed query result. Both
+negative paths clean owned fixtures and keep full-stack/deployment gates false.
+Release readback retries only transient 502/503/504 responses, at most three
+attempts; auth and rate-limit errors are never bypassed.
+
+
+The operating Tempo API returned 404 for a trace that the restored selected blocks
+could retrieve. `--isolated-source-reader` explicitly compares against a separate
+instance of the pinned original operating image, with an independent fresh copy
+of the selected original files (not the encrypted restore volume). Both readers
+are portless and network-disabled; original volume mounts used by copy helpers
+remain read-only. This mode does not repair or certify the operating Tempo API.
+Its report keeps `operatingTempoApiTraceVerified: false` and records the comparison
+mode. All retrieved trace hashes/counts are retained encrypted and bound to the
+cache manifest. Original API accessibility remains a separate transition issue.
+
+
+Actual bounded telemetry acceptance: the original-image independent source reader
+and signed candidate matched all 20 selected Tempo traces / 133 spans (three
+blocks, 12 files / 479,409 bytes). The operating API's separate 404 remains
+unresolved. Loki restored 19 persisted objects / 12,354 bytes and matched the
+bounded first 100 historical log entries against source reads before/after.
+These are sample/query and selected-file recoveries, not complete telemetry WAL
+or history recovery. Both fixtures were removed and source containers/configs
+were unchanged. The supplemental evidence index keeps automatic deployment and
+full-stack/operational-backup flags false.
+
+The read-only helper action `audit-tempo-metadata` examines bounded JSON metadata
+and records only stable empty/invalid JSON findings. Raw paths and hashes are
+retained encrypted, not committed. Audit does not repair, delete, quarantine or
+rewrite operating files, restart Tempo or claim full block/Parquet integrity.
+
+
+Read-only operating metadata audit examined 39,336 JSON files and found two stable
+empty `meta.json` files, with no oversized or changing files excluded in that run.
+The operating logs also repeated truncated-JSON polling errors. This is a concrete
+repair candidate, not proven file-to-log causality: the bounded log sample did not
+name either affected block ID. Original files were preserved. An encrypted,
+non-executable repair review records exact path/size/SHA preconditions and requires
+verified metadata provenance and isolated acceptance before separately reviewed
+operating intervention. No metadata is fabricated or applied by these tools.
+
+
+## Empty Tempo metadata control and owned-copy quarantine
+
+`stack-tempo-metadata-rehearsal.py --execute` consumes an independently hashed
+configuration pointing to the signed candidate, retained selected healthy block
+snapshot and encrypted source metadata audit. Both retained keys must satisfy
+custody checks and remain unchanged. Evidence age is limited to 24 hours. Current
+source image and selected file hashes must still match their retained evidence.
+The exact two empty metadata files and all adjacent affected-block bytes are
+recaptured read-only into authenticated encrypted chunks before fixture writes.
+
+The controller runs three isolated conditions: a positive original-image reader,
+a published candidate with the exact copied corrupt blocks, then the same
+candidate after those blocks are moved outside its backend directory. A healthy
+readiness endpoint alone is insufficient: the negative must return exactly 404
+for a trace that the positive reader retrieved and log truncated-JSON errors.
+After quarantine, every selected trace resource/scope/span digest must match the
+positive reader. Other HTTP errors, ordinary missing traces, mismatched content,
+changed file fingerprints or failed cleanup cannot count as a passing control.
+
+`quarantine-block` is restricted by the driver to a registered owned target volume
+and by the helper to canonical block paths with an empty regular metadata file.
+It renames the entire affected block into `/data/quarantine/blocks/...`, preserving
+bytes; existing destinations, links and path escapes are refused. Only the owned
+candidate container is removed/restarted. The operating volume is always mounted
+read-only to helpers. Operating Tempo and its original containers are never
+stopped, restarted, relabeled, edited or used as restore/quarantine targets.
+
+This demonstrates recovery of the selected healthy data after excluding corrupt
+blocks in copies. It does not reconstruct the affected blocks' missing metadata,
+recover their unknown trace contents, repair the operating API or authorize
+operating quarantine. Encrypted originals and preconditions remain available for
+review. Full-stack recovery, operating backup and automatic CD gates stay false.
+Mocked full-path tests include positive/corrupt/recovery, nonreproduced faults and
+changed restored traces, in addition to source-volume and ownership refusals.
+
+
+The first actual metadata-control attempt was refused at the initial Docker info
+resource preflight (timeout), before source inventory, candidate verification or
+fixture creation. Subsequent engine API and direct loopback 4310/4320 reads also
+timed out while Desktop status reported running. This does not establish current
+service health, an actual reproduced metadata fault or a completed quarantine
+recovery. No source modification, original-container action or engine restart was
+issued. Preserve the previously verified baseline and keep deployment disabled
+until engine responsiveness and all original service identities/health are
+rechecked, then rerun the isolated control. The host regression/mocked tests and
+fresh-checkout acceptance do not substitute for that actual run.
+
+
+The metadata rehearsal also binds all twelve protected LogiTrack container IDs and
+image IDs and requires their running/healthy state before fixture creation and
+at checkpoints. These are read-only inspections; no LogiTrack command can change
+its containers, source or configuration. Unknown/unhealthy protected state blocks
+the rehearsal rather than allowing recovery load to proceed.
+
+
+## Host responsiveness and memory reserve
+
+A subsequent read-only recheck found the engine and loopback applications
+responsive and all original AgentTrust 20 / LogiTrack 12 services healthy. The
+previous commit's five workflows had completed successfully. No engine restart
+or operating-service change was issued. The earlier timeout cause is not proven;
+Windows later reported only 463 MiB available with paging activity, which is a
+concrete pressure observation rather than proof of the timeout's cause.
+
+The actual metadata rehearsal reached candidate startup, then failed a command
+and cleaned all owned fixtures; it did not complete its negative/recovery control.
+Candidate launch stderr is now retained encrypted with a bounded sanitized error
+category, so a launch failure cannot be mistaken for the expected metadata 404.
+
+Windows rehearsal capacity now checks `GlobalMemoryStatusEx` before any Docker
+capacity query: 2 GiB available is required initially, with at least 1 GiB at later
+checkpoints. This complements the Docker working-set gate; free guest memory
+alone cannot certify host headroom. Unknown/insufficient host observations refuse
+new fixture work, never alter memory limits or stop other applications/services.
+See [Microsoft's physical-memory definition](https://learn.microsoft.com/windows/win32/api/sysinfoapi/ns-sysinfoapi-memorystatusex).
+
+
+The retained launch diagnostic identified a separate fixture configuration error:
+Docker rejected compression with a maximum log-file count of one. The fixture now
+uses two rotated 1 MiB files with the local driver; operating logging settings
+remain unchanged. See [Docker local logging options](https://docs.docker.com/engine/logging/drivers/local/).
+The original-image reference digests are encrypted before stopping that owned
+reader, then the candidate starts. At most one Tempo fixture runs at a time;
+source and candidate trace comparisons retain their full content checks. The
+initial 2 GiB and checkpoint 1 GiB Windows reserves are not lowered.
+
+
+운영 Tempo에 대한 단계별 조건·판정·원상복귀 경계는 [운영 복구 검토 계획](stack-tempo-operating-recovery-plan.md)을 따른다. 기존 격리 성공에서 사용한 후보 재기동은 운영 무재시작 복구 증거와 구분한다.

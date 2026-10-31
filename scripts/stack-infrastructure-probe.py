@@ -27,11 +27,14 @@ def ci_isolation(original,infrastructure):
   assert workflow['concurrency']=={'group':prefix+'-${{ github.ref }}-${{ github.sha }}','cancel-in-progress':False}
   assert all(job['runs-on']=='ubuntu-latest' for job in workflow['jobs'].values())
   uploads=[step['with']['name'] for job in workflow['jobs'].values() for step in job['steps'] if str(step.get('uses','')).startswith('actions/upload-artifact@')]
-  assert uploads and all(name.endswith('-${{ github.sha }}') for name in uploads)
- jobs=original['jobs'];assert set(jobs)=={'security-source','integration','images','security-images'}
- for name,parent in [('integration','security-source'),('images','integration'),('security-images','images')]:
+  assert uploads and all(name.endswith('-${{ github.sha }}') or name == 'original-stack-dockerhub-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}' for name in uploads)
+ jobs=original['jobs'];assert set(jobs)=={'security-source','integration','images','security-images','dockerhub'}
+ for name,parent in [('integration','security-source'),('images','integration'),('security-images','images'),('dockerhub','security-images')]:
   value=jobs[name]['needs'];assert set(value if isinstance(value,list) else [value])=={parent}
  for name in ['images','security-images']:assert jobs[name]['if']=="github.event_name != 'pull_request' && github.ref == 'refs/heads/main'"
+ assert jobs['dockerhub']['if']=="github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.DOCKERHUB_ENABLED == 'true'"
+ assert jobs['dockerhub']['environment']=='AgentTrust-dockerhub'
+ assert jobs['dockerhub']['permissions']=={'contents':'read','actions':'read','packages':'read'}
  lines=[line.strip() for job in jobs.values() for step in job['steps'] for line in step.get('run','').splitlines()]
  assert [line for line in lines if line.startswith('docker push ')]==['docker push "$image"']
  assert [line for line in lines if line.startswith('image=')]==['image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/agenttrust-$service:$GITHUB_SHA"']
