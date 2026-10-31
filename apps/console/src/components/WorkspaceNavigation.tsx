@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useState} from 'react';
-const sections=[{id:'overview',label:'프로젝트 홈',description:'현재 프로젝트 한눈에',number:'01'},{id:'evaluations',label:'평가 실행·조회',description:'실행과 근거 확인',number:'02'},{id:'campaigns',label:'버전·캠페인',description:'기준과 회귀 분석',number:'03'},{id:'operations',label:'준비 상태·사용량',description:'실행 전 상태 확인',number:'04'},{id:'history',label:'이력·감사',description:'과거 기록과 추적',number:'05'},{id:'platform',label:'플랫폼 지원 범위',description:'기존 자료와 이전 상태',number:'06'}] as const;
+const sections=[{id:'overview',label:'프로젝트 홈',description:'현재 프로젝트 한눈에',number:'01'},{id:'evaluations',label:'평가 실행·조회',description:'실행과 근거 확인',number:'02'},{id:'campaigns',label:'버전·캠페인',description:'기준과 회귀 분석',number:'03'},{id:'operations',label:'준비 상태·사용량',description:'실행 전 상태 확인',number:'04'},{id:'history',label:'이력·감사',description:'과거 기록과 추적',number:'05'},{id:'management',label:'프로젝트·계정 관리',description:'설정·조회 키·내 앱 세션',number:'06'},{id:'platform',label:'플랫폼 지원 범위',description:'기존 자료와 이전 상태',number:'07'}] as const;
 export default function WorkspaceNavigation(){
  const [active,setActive]=useState<string>('overview');
  useEffect(()=>{

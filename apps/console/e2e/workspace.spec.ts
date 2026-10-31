@@ -96,6 +96,22 @@ if(process.env.STACK_E2E_ADMIN_CAPTURE==='true')test('administrator actual revie
  phase('actual demo-admin pass form,1440x960 and390x960,keyboard Enter gate/review navigation and focused targets,keyboard decision-reason-save order,empty required reason blocks submission and focuses reason without writes,no horizontal overflow,read-only503 basis disables save then actual recovery,block and inconclusive have no approval form or review link and never allow release; zero business writes; masked areas not visually assessed');
 });
 
+test('workspace management saves scoped settings and issues and revokes a one-time metadata key',async({page})=>{
+ test.skip(process.env.STACK_E2E_READ_ONLY==='true','Management writes run only in disposable integration fixtures');
+ await login(page,'demo-admin');let issuedId:string|null=null;
+ try{
+  const management=page.locator('#management');await page.getByRole('navigation',{name:'워크스페이스 탐색',exact:true}).getByRole('link',{name:'프로젝트·계정 관리',exact:true}).click();
+  await management.getByRole('button',{name:'프로젝트 설정 조회',exact:true}).click();const projectName='Browser project '+randomUUID().slice(0,8);await management.getByLabel('프로젝트 이름',{exact:true}).fill(projectName);await management.getByLabel('프로젝트 설명',{exact:true}).fill('Disposable integration management check');await management.getByRole('button',{name:'프로젝트 설정 저장',exact:true}).click();await expect(management.getByRole('status')).toContainText('현재 프로젝트 설정을 저장했습니다.');
+  const stored=await (await page.request.get('/backend/workspace/project')).json();expect(stored.name).toBe(projectName);expect(stored.deploymentAuthority).toBe(false);
+  const keyName='Browser metadata '+randomUUID().slice(0,8);await management.getByLabel('키 이름',{exact:true}).fill(keyName);await management.getByLabel('유효 기간(일)',{exact:true}).fill('1');await management.getByRole('button',{name:'조회 전용 키 발급',exact:true}).click();await expect(management.getByRole('status')).toContainText('조회 전용 키를 발급했습니다.');const secretField=management.getByLabel('한 번만 표시되는 접근 키',{exact:true});expect(/^at1\.[a-f0-9-]{36}\.[a-f0-9-]{36}\.[a-f0-9-]{36}\.[a-f0-9]{64}$/.test(await secretField.inputValue())).toBe(true);
+  await management.getByRole('button',{name:'접근 키 원문 숨기기',exact:true}).click();await expect(secretField).toHaveCount(0);await management.getByRole('button',{name:'접근 키 목록 조회',exact:true}).click();const listed=await (await page.request.get('/backend/workspace/access-keys')).json();issuedId=listed.entries.find((entry:{name:string})=>entry.name===keyName).id;
+  await management.getByRole('button',{name:'접근 키 '+issuedId+' 철회',exact:true}).click();await expect(management.getByRole('status')).toContainText('선택한 접근 키의 철회를 확인했습니다.');issuedId=null;
+  await management.getByRole('button',{name:'내 앱 세션 조회',exact:true}).click();await expect(management.getByText(/현재 브라우저/)).toBeVisible();await expect(management.getByText('Keycloak SSO 전체 목록은 아닙니다.',{exact:false})).toBeVisible();
+ }finally{
+  if(issuedId){const token=(await (await page.request.get('/backend/csrf')).json()).token;await page.request.post('/backend/workspace/access-keys/'+issuedId+'/revoke',{headers:{'X-CSRF-TOKEN':token,Origin:'http://127.0.0.1:4320'},data:{}})}await logout(page);
+ }
+});
+
 test('project home keeps failed statistics unknown and binds retry counts to the displayed response',async({page})=>{
  await login(page,'demo-viewer',async()=>{await page.route('**/backend/runs',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({code:'SYNTHETIC_UNAVAILABLE'})}))});
  const home=page.locator('#overview');await expect(home).toContainText('평가 목록을 확인하지 못했습니다.');await expect(home.locator('dd')).toHaveText(['미확인','미확인','미확인','미확인']);
@@ -108,14 +124,14 @@ test('workspace navigation and responsive layout keep review tasks reachable wit
  await login(page,'demo-viewer');
  const navigation=page.getByRole('navigation',{name:'워크스페이스 탐색',exact:true});
  await expect(page.getByRole('heading',{name:'프로젝트 홈',exact:true})).toBeVisible();await expect(page.locator('#overview')).toContainText('프로젝트 전체 통계가 아닙니다.');await expect(page.locator('#overview')).not.toContainText('새 평가 준비');
- for(const [name,target] of [['프로젝트 홈','overview'],['평가 실행·조회','evaluations'],['버전·캠페인','campaigns'],['준비 상태·사용량','operations'],['이력·감사','history'],['플랫폼 지원 범위','platform']]){
+ for(const [name,target] of [['프로젝트 홈','overview'],['평가 실행·조회','evaluations'],['버전·캠페인','campaigns'],['준비 상태·사용량','operations'],['이력·감사','history'],['프로젝트·계정 관리','management'],['플랫폼 지원 범위','platform']]){
   const link=navigation.getByRole('link',{name,exact:true});await expect(link).toHaveAttribute('href','#'+target);await link.click();await expect(page.locator('#'+target)).toBeVisible();
  }
 
  const originalViewport=page.viewportSize()??{width:1280,height:960};
  for(const width of [640,320]){
   await page.setViewportSize({width,height:960});
-  const names=['프로젝트 홈','평가 실행·조회','버전·캠페인','준비 상태·사용량','이력·감사','플랫폼 지원 범위'];
+  const names=['프로젝트 홈','평가 실행·조회','버전·캠페인','준비 상태·사용량','이력·감사','프로젝트·계정 관리','플랫폼 지원 범위'];
   await navigation.getByRole('link',{name:names[0],exact:true}).focus();
   for(let index=0;index<names.length;index++){
    const link=navigation.getByRole('link',{name:names[index],exact:true});
