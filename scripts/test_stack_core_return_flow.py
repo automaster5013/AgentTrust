@@ -1,4 +1,6 @@
 import copy
+import importlib.util
+import sqlite3
 import pathlib
 import types
 import unittest
@@ -63,6 +65,22 @@ class FlowTest(unittest.TestCase):
         preserved(before, {'ledger': 'same', 'tables': {'stack_runs': ['a', 'a', 'b']}})
         with self.assertRaises(AssertionError):
             preserved(before, {'ledger': 'same', 'tables': {'stack_runs': ['a', 'b']}})
+
+    def test_quiet_query_counts_standalone_and_campaign_case_runs_without_campaign_state(self):
+        spec = importlib.util.spec_from_file_location('core_return_smoke', pathlib.Path(__file__).with_name('stack-core-return-smoke.py'))
+        smoke = importlib.util.module_from_spec(spec); spec.loader.exec_module(smoke)
+        with sqlite3.connect(':memory:') as database:
+            database.executescript("CREATE TABLE stack_runs(id TEXT PRIMARY KEY,state TEXT);"
+                                  "CREATE TABLE stack_campaigns(id TEXT PRIMARY KEY);"
+                                  "CREATE TABLE stack_campaign_cases(campaign_id TEXT,run_id TEXT);"
+                                  "INSERT INTO stack_runs VALUES('standalone','queued'),('child','queued'),('finished','succeeded');"
+                                  "INSERT INTO stack_campaigns VALUES('campaign');"
+                                  "INSERT INTO stack_campaign_cases VALUES('campaign','child');")
+            self.assertEqual(database.execute(smoke.PENDING_RUNS_SQL).fetchone()[0], 2)
+            database.execute("UPDATE stack_runs SET state='succeeded' WHERE id='standalone'")
+            self.assertEqual(database.execute(smoke.PENDING_RUNS_SQL).fetchone()[0], 1)
+            database.execute("UPDATE stack_runs SET state='failed' WHERE id='child'")
+            self.assertEqual(database.execute(smoke.PENDING_RUNS_SQL).fetchone()[0], 0)
 
     def test_hosted_guard_requires_exact_workspace_repository_and_nonroot_hosted_runner(self):
         root = pathlib.Path(__file__).resolve().parent.parent

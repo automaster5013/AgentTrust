@@ -18,6 +18,9 @@ from stack_core_return_flow import verify
 from stack_v18_transition_probe import BASELINE_REFERENCE, BASELINE_REVISION
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+# Campaign cases execute through stack_runs; stack_campaigns has no state column.
+PENDING_RUNS_SQL = "SELECT count(*) FROM stack_runs WHERE state='queued';"
+
 FILES = ['compose.stack.yaml', 'compose.stack.identity.yaml', 'compose.stack.gateway.yaml',
          'compose.stack.object.yaml', 'compose.stack.observability.yaml', 'compose.stack.signing.yaml']
 
@@ -65,7 +68,7 @@ def main():
 
     def capture():
         quiet_deadline = min(deadline, time.monotonic() + 90)
-        while sql("BEGIN READ ONLY;SELECT (SELECT count(*) FROM stack_runs WHERE state='queued')+(SELECT count(*) FROM stack_campaigns WHERE state='queued');ROLLBACK;").decode().strip() != '0':
+        while sql("BEGIN READ ONLY;SET LOCAL statement_timeout='3s';" + PENDING_RUNS_SQL + "ROLLBACK;").decode().strip() != '0':
             if time.monotonic() >= quiet_deadline: raise ValueError('SYNTHETIC_PENDING_WORK_NOT_QUIESCENT')
             time.sleep(2)
         tables = json.loads(sql("SELECT json_agg(tablename ORDER BY tablename) FROM pg_tables WHERE schemaname='public' AND tablename<>'flyway_schema_history';"))

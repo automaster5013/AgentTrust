@@ -60,3 +60,14 @@ Full-path 모의/실패 테스트 7개, Python 문법·actionlint는 로컬 통�
 시험은 30분의 주 작업 한도와 별도의 최대 5분 후보 복원 한도를 사용한다. 실제 광범위 HTTP/브라우저 회귀가 통과해도 `allPossibleApiRoutesVerified=false`, `operatingRecoveryVerified=false`, `healthyRollbackGuaranteed=false`, `automaticDeploymentAllowed=false`를 유지한다. 모든 가능한 API 경로, 운영 데이터 복구와 운영 무중단 전환을 증명하는 것은 아니다. 실제 결과는 추가 CI 단계가 성공한 뒤 별도로 기록한다.
 
 로컬 확인: 복귀/복원 순서·예외 경로·행 보존·hosted guard 테스트 7개와 V17 전환 테스트 7개 통과, TypeScript·Python 문법·actionlint 통과. 기존 관리 HTTP 검사는 AST 비교로 기본 경로가 그대로 유지됨을 확인했다. 이전 Core 모드의 브라우저 시나리오 55개가 검색되었으며, 검색/모의 검증은 실제 실행 통과와 다르다. 현재 PC 실행은 Docker 작업 전에 거부됐다. 이전 `e23b02d`는 전체 integration 포함 6개 CI 최종 성공, `6091814`의 전체 최종 결과는 이 기록 시점 미확정이다.
+
+
+## 2026-11-01 실제 CI 확인과 첫 복귀 하네스 수정
+
+`609181416ae4a1863425e5789dfdbf6aea2f1993`의 integration run `41220871612`는 최종 success다. 실제 V17→V18 전환, 관리 브라우저, TLS OIDC, 전체 브라우저 회귀, 고정 모델, DB/MinIO/전체 일관 암호화 복구 및 정리가 모두 통과했다. 다른 5개 PR workflow도 최종 success이며 이미지·publication job은 skipped다.
+
+`61eb96e8c947c6f13bf6673ca2d3439a66b840c5`의 integration run `41224504494`는 최종 failure다. 후보의 전체 브라우저 회귀까지 통과했으나 새 이전 Core 복귀 단계는 사전 대기 SQL에서 종료 코드 3으로 실패했다. `stack_campaigns`에는 `state` 열이 없는데 이를 조회한 하네스 오류다. 이전 Core 교체 전의 실패이므로 실제 이전 Core HTTP·브라우저 복귀 또는 후보 복원 성공의 증거가 아니다. 이후 모델·전체 복구 단계는 skipped, 격리 서비스 정리는 success다.
+
+대기 SQL을 모든 독립 실행 및 캠페인 하위 실행이 저장되는 `stack_runs`의 queued 행수로 수정했다. 캠페인 자체에 상태 열을 추가하거나 운영 스키마를 변경하지 않는다. 상태 열 없는 캠페인과 queued/완료/실패 하위 실행을 가진 메모리 DB에서 실제 SELECT를 실행하는 회귀 테스트를 추가했다. 복귀 흐름 8개와 V17 전환 7개, 총 15개 로컬 테스트 및 Python 문법 검사가 통과했다. 수정된 실제 hosted 복귀 결과는 별도 CI에서 확인해야 한다.
+
+현재 PC의 보호 대상 32개는 읽기 전용 inspect에서 모두 healthy이며 비공개 기준선의 ID/image/StartedAt과 일치했다. 운영 배포·migration·publication·자동 CD·운영 복구 검증은 수행하지 않았다. 기존 보류 gate는 그대로 유지한다.
