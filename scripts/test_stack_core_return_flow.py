@@ -10,7 +10,7 @@ from stack_core_return_flow import preserved, verify
 
 
 class FlowTest(unittest.TestCase):
-    def fixture(self, fail=None):
+    def fixture(self, fail=None, recovery=None):
         state = {'ledger': 'ledger-v18', 'tables': {
             'stack_runs': ['historical-run'], 'stack_project_settings': ['settings'],
             'stack_access_keys': ['key'], 'stack_access_key_revocations': ['revoked']}}
@@ -27,7 +27,7 @@ class FlowTest(unittest.TestCase):
             if fail == 'browser': raise RuntimeError('BROWSER_FAILED')
             if fail == 'revocation-loss': state['tables']['stack_access_key_revocations'].clear()
             if fail == 'ledger-drift': state['ledger'] = 'changed'
-        return events, lambda: verify(switch, api, browser, lambda: copy.deepcopy(state))
+        return events, lambda: verify(switch, api, browser, lambda: copy.deepcopy(state), recovery=recovery)
 
     def test_real_control_flow_requires_previous_http_browser_and_candidate_http(self):
         events, run = self.fixture(); result = run()
@@ -41,14 +41,13 @@ class FlowTest(unittest.TestCase):
         for fault in ('switch-previous', 'api-previous', 'browser'):
             events, run = self.fixture(fault)
             with self.subTest(fault=fault), self.assertRaises(RuntimeError): run()
-            self.assertEqual(events[-1], 'switch-candidate')
-            self.assertNotIn('api-candidate', events)
+            self.assertEqual(events[-2:], ['switch-candidate', 'api-candidate'])
 
     def test_schema_or_revocation_loss_is_not_healthy_return(self):
         for fault in ('ledger-drift', 'revocation-loss'):
             events, run = self.fixture(fault)
             with self.subTest(fault=fault), self.assertRaises(AssertionError): run()
-            self.assertEqual(events[-1], 'switch-candidate')
+            self.assertEqual(events[-2:], ['switch-candidate', 'api-candidate'])
 
     def test_candidate_restore_failure_never_reports_success(self):
         events, run = self.fixture('switch-candidate')
@@ -65,6 +64,25 @@ class FlowTest(unittest.TestCase):
         preserved(before, {'ledger': 'same', 'tables': {'stack_runs': ['a', 'a', 'b']}})
         with self.assertRaises(AssertionError):
             preserved(before, {'ledger': 'same', 'tables': {'stack_runs': ['a', 'b']}})
+
+    def test_previous_failure_stays_failed_after_verified_candidate_recovery(self):
+        report = {'stage': 'previous-http'}
+        events, run = self.fixture('api-previous', recovery=report)
+        with self.assertRaises(RuntimeError): run()
+        self.assertEqual(events[-2:], ['switch-candidate', 'api-candidate'])
+        self.assertEqual(report['previousAttemptFailureType'], 'RuntimeError')
+        self.assertEqual(report['previousAttemptFailureStage'], 'previous-http')
+        self.assertTrue(report['candidateHttpVerified'])
+        self.assertTrue(report['candidateRowsPreserved'])
+        self.assertNotIn('completed', report)
+
+    def test_recovery_never_reports_preservation_after_candidate_http_or_data_failure(self):
+        for fault in ('api-candidate', 'revocation-loss', 'ledger-drift'):
+            report = {}
+            _, run = self.fixture(fault, recovery=report)
+            with self.subTest(fault=fault), self.assertRaises((RuntimeError, AssertionError)): run()
+            self.assertNotIn('candidateRowsPreserved', report)
+            if fault == 'api-candidate': self.assertNotIn('candidateHttpVerified', report)
 
     def test_quiet_query_counts_standalone_and_campaign_case_runs_without_campaign_state(self):
         spec = importlib.util.spec_from_file_location('core_return_smoke', pathlib.Path(__file__).with_name('stack-core-return-smoke.py'))

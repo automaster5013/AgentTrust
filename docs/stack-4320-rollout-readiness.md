@@ -71,3 +71,10 @@ Full-path 모의/실패 테스트 7개, Python 문법·actionlint는 로컬 통�
 대기 SQL을 모든 독립 실행 및 캠페인 하위 실행이 저장되는 `stack_runs`의 queued 행수로 수정했다. 캠페인 자체에 상태 열을 추가하거나 운영 스키마를 변경하지 않는다. 상태 열 없는 캠페인과 queued/완료/실패 하위 실행을 가진 메모리 DB에서 실제 SELECT를 실행하는 회귀 테스트를 추가했다. 복귀 흐름 8개와 V17 전환 7개, 총 15개 로컬 테스트 및 Python 문법 검사가 통과했다. 수정된 실제 hosted 복귀 결과는 별도 CI에서 확인해야 한다.
 
 현재 PC의 보호 대상 32개는 읽기 전용 inspect에서 모두 healthy이며 비공개 기준선의 ID/image/StartedAt과 일치했다. 운영 배포·migration·publication·자동 CD·운영 복구 검증은 수행하지 않았다. 기존 보류 gate는 그대로 유지한다.
+
+
+### 실패 후 후보 복원 검증의 예외 경로 보완
+
+추가 검토에서 이전 Core 단계가 실패하면 `finally`의 후보 교체 뒤 HTTP·기존 행 보존 검사가 건너뛰어지는 공백을 로컬 회귀 테스트로 재현했다. 후보 복원·관리 기능 포함 직접 API/BFF HTTP·기존 행 및 ledger 보존 검사를 모두 `finally` 경로로 묶었다. 이전 단계가 실패하면 복원이 확인돼도 전체 시험은 계속 실패하며, 안전 보고서는 이전 실패 단계/타입과 `candidateRestored`, `candidateHttpVerified`, `candidateRowsPreserved`를 구분한다.
+
+주 작업 예산이 소진된 뒤에도 별도 5분 복원 예산이 후보 교체뿐 아니라 HTTP·행 보존·Core 외 컨테이너 ID/image/StartedAt·healthy 검증까지 적용되도록 수정했다. 복원 뒤 비 Core 상태 검사는 이전 단계 실패 시에도 수행하고, 실패하면 전체 성공을 거부한다. 로컬 복귀 흐름 테스트 10개와 V17 전환 7개가 통과했다. 이는 모의 예외 경로 검증이며, 수정 후보의 실제 hosted 결과는 별도 확인한다. 운영 복구·자동 CD·건강한 운영 rollback 허용을 뜻하지 않는다.

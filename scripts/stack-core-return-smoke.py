@@ -38,13 +38,17 @@ def main():
     report = {'completed': False, 'startedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(),
               'synthetic': True, 'actualDeploymentPerformed': False, 'operatingRecoveryVerified': False,
               'baselineSignatureVerified': False, 'healthyRollbackGuaranteed': False,
-              'candidateRestored': False, 'credentialsRecorded': False, 'stage': 'preflight'}
+              'candidateRestored': False, 'candidateHttpVerified': False, 'candidateRowsPreserved': False, 'credentialsRecorded': False, 'stage': 'preflight'}
 
     deadline = time.monotonic() + 1800
     restore_deadline = None
 
+    def operation_deadline():
+        # Once restoration starts, HTTP/data/identity verification shares its reserve.
+        return restore_deadline if restore_deadline is not None else deadline
+
     def run(command, *, data=None, timeout=60, env=None):
-        limit = restore_deadline if report['stage'] == 'switch-candidate' and restore_deadline else deadline
+        limit = operation_deadline()
         remaining = limit - time.monotonic()
         if remaining <= 0: raise TimeoutError('CORE_RETURN_BUDGET_EXPIRED')
         result = subprocess.run(command, cwd=ROOT, input=data, capture_output=True, timeout=min(timeout, remaining), env=env)
@@ -67,7 +71,8 @@ def main():
                     'agenttrust_stack', '-d', 'agenttrust_stack', '-At', '-v', 'ON_ERROR_STOP=1'], data=query.encode())
 
     def capture():
-        quiet_deadline = min(deadline, time.monotonic() + 90)
+        if restore_deadline is not None: report['stage'] = 'candidate-verification'
+        quiet_deadline = min(operation_deadline(), time.monotonic() + 90)
         while sql("BEGIN READ ONLY;SET LOCAL statement_timeout='3s';" + PENDING_RUNS_SQL + "ROLLBACK;").decode().strip() != '0':
             if time.monotonic() >= quiet_deadline: raise ValueError('SYNTHETIC_PENDING_WORK_NOT_QUIESCENT')
             time.sleep(2)
@@ -148,14 +153,20 @@ def main():
             assert frames and frames[-1]['completed'] and frames[-1]['tests'] >= 50 and not frames[-1]['failed']
             report['previousBrowserTests'] = frames[-1]['tests']
 
-        report['proof'] = verify(switch, api, browser, capture)
-        for identifier, expected in others.items():
-            state = inspect(identifier)
-            assert (state['Image'], state['State']['StartedAt']) == expected and state['State']['Running'] and state['State']['Health']['Status'] == 'healthy'
-        report.update(completed=True, stage='completed', nonCoreContainerIdentitiesPreserved=True)
+        report['proof'] = verify(switch, api, browser, capture, recovery=report)
+        report.update(completed=True, stage='completed')
     except Exception as error:
         report.update(completed=False, errorType=type(error).__name__, code='CORE_RETURN_UNVERIFIED')
     finally:
+        if report['candidateRestored']:
+            try:
+                states = json.loads(run(['docker', 'inspect', *others]))
+                assert {state['Id'] for state in states} == set(others)
+                for state in states:
+                    assert (state['Image'], state['State']['StartedAt']) == others[state['Id']] and state['State']['Running'] and state['State']['Health']['Status'] == 'healthy'
+                report['nonCoreContainerIdentitiesPreserved'] = True
+            except Exception as error:
+                report.update(completed=False, nonCoreContainerIdentitiesPreserved=False, identityVerificationErrorType=type(error).__name__)
         report['finishedAt'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         (directory / 'summary.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
         print(json.dumps(report))

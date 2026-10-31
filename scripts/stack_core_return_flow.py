@@ -12,7 +12,7 @@ def preserved(before, after, *, unchanged_management=False):
             assert Counter(rows) == Counter(after['tables'][table]), 'MANAGEMENT_ROWS_CHANGED'
 
 
-def verify(switch, api, browser, capture):
+def verify(switch, api, browser, capture, *, recovery=None):
     before = capture()
     assert MANAGEMENT <= before['tables'].keys()
     attempted = False
@@ -22,11 +22,18 @@ def verify(switch, api, browser, capture):
         api('previous')
         browser()
         preserved(before, capture(), unchanged_management=True)
+    except Exception as error:
+        if recovery is not None:
+            recovery['previousAttemptFailureType'] = type(error).__name__
+            recovery['previousAttemptFailureStage'] = recovery.get('stage', 'previous-attempt')
+        raise
     finally:
         if attempted:
             switch('candidate')
-    api('candidate')
-    preserved(before, capture())
+            api('candidate')
+            if recovery is not None: recovery['candidateHttpVerified'] = True
+            preserved(before, capture())
+            if recovery is not None: recovery['candidateRowsPreserved'] = True
     return {'completed': True, 'previousCoreHttpSuiteVerified': True,
             'previousCoreBrowserSuiteVerified': True, 'candidateRestoredAndHttpVerified': True,
             'existingRowsAndRevocationsPreserved': True, 'schemaLedgerUnchanged': True,
