@@ -135,9 +135,9 @@ class FullControlPath(unittest.TestCase):
     source_checked[0]=True
     error=ValueError('fixture source 404');error.read_failure={'statusCode':404};raise error
    data=volumes[containers[name]['volume']];bad=any(k.startswith('blocks/') and k.endswith('/meta.json') and not v for k,v in data.items())
-   if path=='/metrics' and other_growth:return {'metrics':'tempodb_blocklist_poll_errors_total{tenant="tenant"} 1\ntempodb_blocklist_poll_errors_total{tenant="other"} '+str(2 if inverse_restored[0] else 1)+'\ntempodb_blocklist_poll_duration_seconds_count 2\n'}
-   if path=='/metrics' and masked_reset:return {'metrics':'tempodb_blocklist_poll_errors_total{tenant="a"} '+str(0 if inverse_restored[0] else 5)+'\ntempodb_blocklist_poll_errors_total{tenant="b"} '+str(8 if inverse_restored[0] else 1)+'\ntempodb_blocklist_poll_duration_seconds_count 2\n'}
-   if path=='/metrics':return {'metrics':'tempodb_blocklist_poll_errors_total{tenant="tenant"} '+str(2 if inverse_restored[0] else 1)+'\ntempodb_blocklist_poll_duration_seconds_count 2\n'}
+   if path=='/metrics' and other_growth:return {'metrics':'tempodb_blocklist_tenant_index_errors_total{tenant="tenant"} 1\ntempodb_blocklist_tenant_index_errors_total{tenant="other"} '+str(2 if inverse_restored[0] else 1)+'\ntempodb_blocklist_poll_duration_seconds_count 2\n'}
+   if path=='/metrics' and masked_reset:return {'metrics':'tempodb_blocklist_tenant_index_errors_total{tenant="a"} '+str(0 if inverse_restored[0] else 5)+'\ntempodb_blocklist_tenant_index_errors_total{tenant="b"} '+str(8 if inverse_restored[0] else 1)+'\ntempodb_blocklist_poll_duration_seconds_count 2\n'}
+   if path=='/metrics':return {'metrics':'tempodb_blocklist_tenant_index_errors_total{tenant="tenant"} '+str(2 if inverse_restored[0] else 1)+'\ntempodb_blocklist_poll_duration_seconds_count 2\n'}
    if bad and not missing_failure and not (retained and inverse_restored[0]):
     error=ValueError('fixture corrupt 404');error.read_failure={'statusCode':404};raise error
    if path.startswith('/api/search?'):return {'traces':[{'traceID':'f'*32}]}
@@ -205,30 +205,30 @@ class FullControlPath(unittest.TestCase):
 class PollingEvidence(unittest.TestCase):
  def test_failure_retention_is_distinct_from_healthy_rollback(self):
   from stack_tempo_poll_evidence import counters,classify_inverse
-  before=counters('tempodb_blocklist_poll_errors_total{tenant="test"} 2\ntempodb_blocklist_poll_duration_seconds_count 3')
-  after=counters('tempodb_blocklist_poll_errors_total{tenant="test"} 4\ntempodb_blocklist_poll_duration_seconds_count 3')
+  before=counters('tempodb_blocklist_tenant_index_errors_total{tenant="test"} 2\ntempodb_blocklist_poll_duration_seconds_count 3')
+  after=counters('tempodb_blocklist_tenant_index_errors_total{tenant="test"} 4\ntempodb_blocklist_poll_duration_seconds_count 3')
   result=classify_inverse(before,after,True,'test')
   self.assertTrue(result['retainedGoodBlocklistObserved']);self.assertFalse(result['healthyRollbackGuaranteed']);self.assertEqual(result['newSuccessfulPolls'],0)
   self.assertFalse(classify_inverse(before,before,True,'test')['retainedGoodBlocklistObserved'])
   self.assertFalse(classify_inverse(before,after,False,'test')['retainedGoodBlocklistObserved'])
  def test_series_reset_and_disappearance_refuse_even_when_total_grows(self):
   from stack_tempo_poll_evidence import counters,classify_inverse
-  old=counters('tempodb_blocklist_poll_errors_total{tenant="a"} 5\ntempodb_blocklist_poll_errors_total{tenant="b"} 1\ntempodb_blocklist_poll_duration_seconds_count 3')
-  new=counters('tempodb_blocklist_poll_errors_total{tenant="a"} 0\ntempodb_blocklist_poll_errors_total{tenant="b"} 8\ntempodb_blocklist_poll_duration_seconds_count 3')
-  self.assertGreater(new['totals']['tempodb_blocklist_poll_errors_total'],old['totals']['tempodb_blocklist_poll_errors_total'])
+  old=counters('tempodb_blocklist_tenant_index_errors_total{tenant="a"} 5\ntempodb_blocklist_tenant_index_errors_total{tenant="b"} 1\ntempodb_blocklist_poll_duration_seconds_count 3')
+  new=counters('tempodb_blocklist_tenant_index_errors_total{tenant="a"} 0\ntempodb_blocklist_tenant_index_errors_total{tenant="b"} 8\ntempodb_blocklist_poll_duration_seconds_count 3')
+  self.assertGreater(new['totals']['tempodb_blocklist_tenant_index_errors_total'],old['totals']['tempodb_blocklist_tenant_index_errors_total'])
   with self.assertRaises(ValueError):classify_inverse(old,new,True,'a')
-  changed=counters('tempodb_blocklist_poll_errors_total{tenant="b"} 10\ntempodb_blocklist_poll_duration_seconds_count 3')
+  changed=counters('tempodb_blocklist_tenant_index_errors_total{tenant="b"} 10\ntempodb_blocklist_poll_duration_seconds_count 3')
   with self.assertRaises(ValueError):classify_inverse(old,changed,True,'a')
  def test_unrelated_tenant_increase_cannot_prove_bound_retention(self):
   from stack_tempo_poll_evidence import counters,classify_inverse
-  before=counters('tempodb_blocklist_poll_errors_total{tenant="test"} 1\ntempodb_blocklist_poll_errors_total{tenant="other"} 1\ntempodb_blocklist_poll_duration_seconds_count 3')
-  after=counters('tempodb_blocklist_poll_errors_total{tenant="test"} 1\ntempodb_blocklist_poll_errors_total{tenant="other"} 2\ntempodb_blocklist_poll_duration_seconds_count 3')
+  before=counters('tempodb_blocklist_tenant_index_errors_total{tenant="test"} 1\ntempodb_blocklist_tenant_index_errors_total{tenant="other"} 1\ntempodb_blocklist_poll_duration_seconds_count 3')
+  after=counters('tempodb_blocklist_tenant_index_errors_total{tenant="test"} 1\ntempodb_blocklist_tenant_index_errors_total{tenant="other"} 2\ntempodb_blocklist_poll_duration_seconds_count 3')
   result=classify_inverse(before,after,True,'test');self.assertFalse(result['retainedGoodBlocklistObserved']);self.assertEqual(result['newPollErrors'],0);self.assertEqual(result['aggregateNewPollErrors'],1)
   with self.assertRaises(ValueError):classify_inverse(before,after,True,'missing')
  def test_missing_reset_nan_duplicate_or_negative_counters_refused(self):
   from stack_tempo_poll_evidence import counters,classify_inverse
-  base='tempodb_blocklist_poll_errors_total 2\ntempodb_blocklist_poll_duration_seconds_count 3'
-  for text in ('',base.replace('total 2','total NaN'),base.replace('total 2','total -1'),base+'\ntempodb_blocklist_poll_errors_total 2'):
+  base='tempodb_blocklist_tenant_index_errors_total 2\ntempodb_blocklist_poll_duration_seconds_count 3'
+  for text in ('',base.replace('total 2','total NaN'),base.replace('total 2','total -1'),base+'\ntempodb_blocklist_tenant_index_errors_total 2'):
    with self.assertRaises(ValueError):counters(text)
   old=counters(base);new=counters(base.replace('total 2','total 1'))
   with self.assertRaises(ValueError):classify_inverse(old,new,True,'a')

@@ -1,7 +1,7 @@
 """Distinguish failed warm polling from a successful repair; no Docker operations."""
 import json,math,re
 
-NAMES=('tempodb_blocklist_poll_errors_total','tempodb_blocklist_poll_duration_seconds_count')
+NAMES=('tempodb_blocklist_tenant_index_errors_total','tempodb_blocklist_poll_duration_seconds_count')
 
 def counters(text):
  if not isinstance(text,str) or len(text)>2097152:raise ValueError('Bounded metrics required')
@@ -38,5 +38,5 @@ def classify_inverse(before,after,traces_match,tenant):
  if key not in before['series'][NAMES[0]] or key not in after['series'][NAMES[0]]:raise ValueError('Bound tenant counter missing')
  bound_delta=after['series'][NAMES[0]][key]-before['series'][NAMES[0]][key]
  retained=traces_match and bound_delta>0
- return {'retainedGoodBlocklistObserved':retained,'newPollErrors':bound_delta,'aggregateNewPollErrors':delta[NAMES[0]],'counterScopeBound':True,'newSuccessfulPolls':delta[NAMES[1]],
+ return {'retainedGoodBlocklistObserved':retained,'newPollErrors':bound_delta,'aggregateNewPollErrors':delta[NAMES[0]],'counterScopeBound':True,'errorMetric':NAMES[0],'newSuccessfulPolls':delta[NAMES[1]],
          'inverseKnown404Reproduced':False,'healthyRollbackGuaranteed':False,'automaticDeploymentAllowed':False}
