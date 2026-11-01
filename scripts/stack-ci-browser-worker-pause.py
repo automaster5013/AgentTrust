@@ -1,5 +1,6 @@
 """Pause only an owned disposable hosted worker without changing its process identity."""
 import argparse
+import contextlib
 import json
 import os
 import pathlib
@@ -25,6 +26,31 @@ def owned(state, root):
     return {key: state[key] for key in ('Id', 'Image')} | {'StartedAt': state['State']['StartedAt']}
 
 
+@contextlib.contextmanager
+def witness_lock(path):
+    # OS-owned advisory locks release if a helper exits or is killed. A stale
+    # lock file is harmless; deleting/replacing it could split the lock domain.
+    lock_path = path.with_name(path.name + '.lock')
+    assert not lock_path.is_symlink()
+    descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0)
+                         | getattr(os, 'O_BINARY', 0), 0o600)
+    with os.fdopen(descriptor, 'r+b', buffering=0) as handle:
+        if os.name == 'posix':
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try: yield
+            finally: fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        else:
+            # Windows is used only by mocked unit tests; require_hosted refuses
+            # real helper execution before reaching this function.
+            import msvcrt
+            if os.fstat(handle.fileno()).st_size == 0: handle.write(b'\0')
+            handle.seek(0); msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            try: yield
+            finally:
+                handle.seek(0); msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+
+
 def perform(action, witness, root, command, environment=None, journal=None):
     # This guard precedes Docker, witness inspection/creation and private file reads.
     env = os.environ if environment is None else environment
@@ -40,56 +66,58 @@ def perform(action, witness, root, command, environment=None, journal=None):
     assert local.is_dir() and not local.is_symlink() and not path.is_symlink()
     assert re.fullmatch(r'ci-worker-pause-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.json', path.name)
 
-    def inspect():
-        journal['stage'] = 'owned-worker-inspection'
-        states = json.loads(command(['docker', 'inspect', WORKER]))
-        assert len(states) == 1
-        return states[0]
+    journal['stage'] = 'witness-lock'
+    with witness_lock(path):
+        def inspect():
+            journal['stage'] = 'owned-worker-inspection'
+            states = json.loads(command(['docker', 'inspect', WORKER]))
+            assert len(states) == 1
+            return states[0]
 
-    def create_ticket(ticket):
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(descriptor, 'w', encoding='utf-8') as handle: handle.write(json.dumps(ticket) + '\n')
+        def create_ticket(ticket):
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, 'w', encoding='utf-8') as handle: handle.write(json.dumps(ticket) + '\n')
 
-    if action == 'resume' and not path.exists():
-        # Revoke this invocation before a delayed child can acquire its pause witness.
-        journal['stage'] = 'witness-close'
-        create_ticket({'schemaVersion': 1, 'root': str(root.resolve()), 'runId': env['GITHUB_RUN_ID'],
-                       'runAttempt': env['GITHUB_RUN_ATTEMPT'], 'identity': None, 'pauseAttempted': False, 'resumed': True})
-        return {'completed': True, 'executed': True, 'noPauseWitness': True, 'restored': False,
-                'witnessClosed': True, 'containerMutationPerformed': False}
-    if action == 'pause':
-        assert not path.exists()
-        state = inspect(); identity = owned(state, root)
-        assert state['State'].get('Paused') is False and state['State'].get('Health', {}).get('Status') == 'healthy'
-        ticket = {'schemaVersion': 1, 'root': str(root.resolve()), 'runId': env['GITHUB_RUN_ID'],
-                  'runAttempt': env['GITHUB_RUN_ATTEMPT'], 'identity': identity, 'pauseAttempted': True, 'resumed': False}
-        create_ticket(ticket)
-        journal.update(mutationMayHaveStarted=True, stage='pause-command')
-        command(['docker', 'pause', identity['Id']])
-        state = inspect(); assert owned(state, root) == identity and state['State'].get('Paused') is True
-        return {'completed': True, 'executed': True, 'paused': True, 'identityPreserved': True, 'restored': False}
-    assert path.is_file() and 0 < path.stat().st_size <= 8192
-    ticket = json.loads(path.read_text(encoding='utf-8'))
-    assert set(ticket) == {'schemaVersion', 'root', 'runId', 'runAttempt', 'identity', 'pauseAttempted', 'resumed'}
-    assert ticket['schemaVersion'] == 1 and ticket['root'] == str(root.resolve())
-    assert ticket['runId'] == env['GITHUB_RUN_ID'] and ticket['runAttempt'] == env['GITHUB_RUN_ATTEMPT']
-    assert type(ticket['pauseAttempted']) is bool and type(ticket['resumed']) is bool
-    if ticket['pauseAttempted'] is False:
-        assert ticket['resumed'] is True and ticket['identity'] is None
-        return {'completed': True, 'executed': False, 'noPauseWitness': True, 'restored': False,
-                'witnessClosed': True, 'containerMutationPerformed': False}
-    state = inspect(); assert owned(state, root) == ticket['identity']
-    if ticket['resumed'] is True:
-        # A completed witness may verify cleanup, never release a later pause.
-        assert state['State'].get('Paused') is False
-        return {'completed': True, 'executed': False, 'noPauseWitness': False,
-                'restored': True, 'identityPreserved': True, 'alreadyRestored': True}
-    if state['State'].get('Paused') is True:
-        journal.update(mutationMayHaveStarted=True, stage='resume-command')
-        command(['docker', 'unpause', state['Id']])
-    state = inspect(); assert owned(state, root) == ticket['identity'] and state['State'].get('Paused') is False
-    ticket['resumed'] = True; path.write_text(json.dumps(ticket) + '\n', encoding='utf-8')
-    return {'completed': True, 'executed': True, 'noPauseWitness': False, 'restored': True, 'identityPreserved': True}
+        if action == 'resume' and not path.exists():
+            # Revoke this invocation before a delayed child can acquire its pause witness.
+            journal['stage'] = 'witness-close'
+            create_ticket({'schemaVersion': 1, 'root': str(root.resolve()), 'runId': env['GITHUB_RUN_ID'],
+                           'runAttempt': env['GITHUB_RUN_ATTEMPT'], 'identity': None, 'pauseAttempted': False, 'resumed': True})
+            return {'completed': True, 'executed': True, 'noPauseWitness': True, 'restored': False,
+                    'witnessClosed': True, 'containerMutationPerformed': False}
+        if action == 'pause':
+            assert not path.exists()
+            state = inspect(); identity = owned(state, root)
+            assert state['State'].get('Paused') is False and state['State'].get('Health', {}).get('Status') == 'healthy'
+            ticket = {'schemaVersion': 1, 'root': str(root.resolve()), 'runId': env['GITHUB_RUN_ID'],
+                      'runAttempt': env['GITHUB_RUN_ATTEMPT'], 'identity': identity, 'pauseAttempted': True, 'resumed': False}
+            create_ticket(ticket)
+            journal.update(mutationMayHaveStarted=True, stage='pause-command')
+            command(['docker', 'pause', identity['Id']])
+            state = inspect(); assert owned(state, root) == identity and state['State'].get('Paused') is True
+            return {'completed': True, 'executed': True, 'paused': True, 'identityPreserved': True, 'restored': False}
+        assert path.is_file() and 0 < path.stat().st_size <= 8192
+        ticket = json.loads(path.read_text(encoding='utf-8'))
+        assert set(ticket) == {'schemaVersion', 'root', 'runId', 'runAttempt', 'identity', 'pauseAttempted', 'resumed'}
+        assert ticket['schemaVersion'] == 1 and ticket['root'] == str(root.resolve())
+        assert ticket['runId'] == env['GITHUB_RUN_ID'] and ticket['runAttempt'] == env['GITHUB_RUN_ATTEMPT']
+        assert type(ticket['pauseAttempted']) is bool and type(ticket['resumed']) is bool
+        if ticket['pauseAttempted'] is False:
+            assert ticket['resumed'] is True and ticket['identity'] is None
+            return {'completed': True, 'executed': False, 'noPauseWitness': True, 'restored': False,
+                    'witnessClosed': True, 'containerMutationPerformed': False}
+        state = inspect(); assert owned(state, root) == ticket['identity']
+        if ticket['resumed'] is True:
+            # A completed witness may verify cleanup, never release a later pause.
+            assert state['State'].get('Paused') is False
+            return {'completed': True, 'executed': False, 'noPauseWitness': False,
+                    'restored': True, 'identityPreserved': True, 'alreadyRestored': True}
+        if state['State'].get('Paused') is True:
+            journal.update(mutationMayHaveStarted=True, stage='resume-command')
+            command(['docker', 'unpause', state['Id']])
+        state = inspect(); assert owned(state, root) == ticket['identity'] and state['State'].get('Paused') is False
+        ticket['resumed'] = True; path.write_text(json.dumps(ticket) + '\n', encoding='utf-8')
+        return {'completed': True, 'executed': True, 'noPauseWitness': False, 'restored': True, 'identityPreserved': True}
 
 
 def main():

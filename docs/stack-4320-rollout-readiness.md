@@ -138,3 +138,12 @@ Playwright의 전체 제목에는 파일명이 앞에 붙으므로 `--grep-inver
 브라우저 자식이 늦게 시작하는 예외 경로를 모의 실행해, 아직 pause witness가 없을 때 먼저 수행된 cleanup이 같은 invocation의 뒤늦은 pause를 허용함을 재현했다. cleanup은 Docker를 호출하지 않고 해당 run/attempt의 witness를 원자적으로 닫는다. 이후 같은 witness의 pause는 Docker 접근 전에 거부되고 반복 cleanup도 파일을 덮어쓰거나 컨테이너를 변경하지 않는다. 실제 pause를 수행한 witness의 소유권·ID/image/StartedAt 검증과 복구 동작은 유지한다. 이는 정리 이후 아직 witness를 얻지 못한 요청의 권한을 닫는 범위이며 모든 자식 프로세스 종료를 증명하지 않는다.
 
 helper 10개·복귀 13개·V17 전환 7개, 총 30개 모의/로컬 테스트가 통과했다. 운영 pause/unpause·재시작·배포는 수행하지 않았다. 이 변경의 실제 hosted 결과는 새 CI에서 확인한다. 별도로 `5bc266d` run `41251330456`은 전체 integration도 최종 success이며 SHA-256 검증한 보고서에서 이전 브라우저 53개·후보 복원/HTTP·기존 행/ledger·비 Core 집합/이미지/StartedAt/running/unpaused/healthy 및 후속 합성 복구 단계의 성공을 확인했다. 운영 복구·자동 배포·건강한 운영 rollback을 뜻하지 않는다.
+
+
+### 실행 중 pause와 동시 cleanup의 직렬화
+
+추가 모의 검사에서 pause 명령이 아직 진행 중일 때 cleanup이 먼저 unpaused 상태를 읽고 완료 증표를 만드는 경합도 재현했다. 이 경우 늦게 완료된 pause 뒤에 worker가 정지 상태로 남을 수 있다. 같은 invocation의 witness 잠금을 OS 파일 잠금으로 직렬화해 소유권 검사·증표 생성·pause/unpause·최종 상태 검사가 서로 앞지르지 않게 했다. 잠금 파일을 삭제/교체해서 잠금을 분리하지 않으며 helper가 비정상 종료해도 OS가 잠금을 해제한다. 호출자의 기존 시간 제한과 실패 시 Core 복원 시도·비 Core 엄격 검사는 유지한다.
+
+동시 pause/cleanup의 선행 실패를 확인한 뒤 수정한 회귀 검사와, 별도 합성 Python 자식의 finally 없는 종료 후 잠금 재획득 검사를 포함해 helper 12개·복귀 13개·V17 전환 7개, 총 32개 로컬 테스트가 통과했다. 로컬에서는 임시 파일 잠금과 모의 Docker 명령만 사용했고 운영 컨테이너는 변경하지 않았다. 실제 GitHub-hosted 경로는 새 CI에서 확인한다.
+
+홈 화면 관찰 수정 `54c48d5b468968024144e4215ddb8872cce2f621`은 integration run `41256669497`을 포함한 6개 PR workflow가 모두 최종 success다. SHA-256 및 commit 결합을 검증한 artifact에서 후보 브라우저 54개와 이전 Core 브라우저 53개가 모두 passed이며, 두 모드에서 홈 건수·실제 취소 시나리오가 통과했다. 이전 Core HTTP·후보 복원/HTTP·기존 행/ledger·비 Core의 집합/이미지/StartedAt/running/unpaused/healthy도 모두 true다. 후속 고정 모델·DB/MinIO/일관 암호화 복구·정리는 success이며 이미지 게시 job은 skipped다. 이는 합성 CI 결과이며 운영 적용·운영 복구·건강한 운영 rollback은 계속 false다.

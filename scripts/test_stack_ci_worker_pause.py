@@ -1,8 +1,12 @@
 import copy
+import concurrent.futures
+import threading
 import importlib.util
 import json
 import os
 import pathlib
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -50,8 +54,10 @@ class WorkerPauseTest(unittest.TestCase):
 
     def test_local_guard_refuses_before_docker_or_witness_access(self):
         command = Mock()
-        with self.assertRaises(ValueError):
-            worker.perform('pause', 'not-a-witness', ROOT, command, environment={})
+        with patch.object(worker, 'witness_lock') as lock:
+            with self.assertRaises(ValueError):
+                worker.perform('pause', 'not-a-witness', ROOT, command, environment={})
+            lock.assert_not_called()
         command.assert_not_called()
 
     def test_pause_resume_and_repeated_cleanup_preserve_original_identity(self):
@@ -106,6 +112,48 @@ class WorkerPauseTest(unittest.TestCase):
         with self.assertRaises(AssertionError): self.invoke(fixture, 'pause')
         self.assertEqual(fixture[4], [])
         self.assertFalse(fixture[3]['State']['Paused'])
+
+    def test_abrupt_helper_exit_releases_os_lock(self):
+        fixture = self.fixture()
+        code = """import importlib.util, os, pathlib, sys
+sys.path.insert(0, sys.argv[1])
+spec = importlib.util.spec_from_file_location('pause_lock_child', pathlib.Path(sys.argv[1]) / 'stack-ci-browser-worker-pause.py')
+module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+with module.witness_lock(pathlib.Path(sys.argv[2])):
+    print('synthetic-lock-acquired', flush=True)
+    os._exit(0)
+"""
+        child = subprocess.run([sys.executable, '-c', code, str(ROOT / 'scripts'), str(fixture[1])],
+                               cwd=ROOT, capture_output=True, timeout=5)
+        self.assertEqual(child.returncode, 0)
+        self.assertEqual(child.stdout.strip(), b'synthetic-lock-acquired')
+        with worker.witness_lock(fixture[1]): pass
+        self.assertEqual(fixture[4], [])
+        self.assertFalse(fixture[1].exists())
+
+    def test_cleanup_waits_for_in_flight_pause_before_resuming(self):
+        fixture = list(self.fixture()); original_command = fixture[-1]
+        pause_entered = threading.Event(); release_pause = threading.Event(); cleanup_started = threading.Event()
+        def command(args):
+            if args[1] == 'pause':
+                pause_entered.set()
+                self.assertTrue(release_pause.wait(5), 'synthetic pause was not released')
+            return original_command(args)
+        fixture[-1] = command
+        def perform(action):
+            if action == 'resume': cleanup_started.set()
+            return worker.perform(action, str(fixture[1]), fixture[0], command, fixture[2])
+        with patch.object(worker, 'require_hosted'), concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            paused = pool.submit(perform, 'pause')
+            try:
+                self.assertTrue(pause_entered.wait(5))
+                resumed = pool.submit(perform, 'resume'); self.assertTrue(cleanup_started.wait(5))
+                with self.assertRaises(concurrent.futures.TimeoutError): resumed.result(timeout=0.2)
+            finally: release_pause.set()
+            self.assertTrue(paused.result(timeout=5)['paused'])
+            self.assertTrue(resumed.result(timeout=5)['restored'])
+        self.assertFalse(fixture[3]['State']['Paused'])
+        self.assertEqual([c[1] for c in fixture[4] if c[1] != 'inspect'], ['pause', 'unpause'])
 
     def test_existing_witness_is_not_overwritten_for_second_pause(self):
         fixture = self.fixture(); self.invoke(fixture, 'pause'); raw = fixture[1].read_bytes(); fixture[4].clear()
