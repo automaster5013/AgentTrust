@@ -51,6 +51,7 @@ jobs:
           python3 -m unittest discover -s scripts -p test_stack_core_return_flow.py
           python3 -m unittest discover -s scripts -p test_stack_ci_worker_pause.py
           python3 -m unittest discover -s scripts -p test_stack_ci_artifacts.py
+          python3 -m unittest discover -s scripts -p test_stack_hosted_disk.py
           python3 scripts/stack-dockerhub-main-mirror-test.py
           python3 scripts/stack-dockerhub-test.py
           python3 scripts/stack-delivery-verifier-test.py
@@ -113,6 +114,8 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Admit disposable hosted disk before integration builds
+        run: python3 scripts/stack_hosted_disk.py
       - name: Prepare separate PostgreSQL and synthetic identities
         run: |
           python3 scripts/stack-policy-metadata.py --check
