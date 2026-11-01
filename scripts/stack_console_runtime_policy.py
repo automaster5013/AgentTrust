@@ -54,7 +54,8 @@ def apply_and_recover(engine,old,plan,nonce,checkpoint,accept,record):
   if started:
    # Recover a create that succeeded remotely before the response/journal reached us.
    candidate=candidate or engine.find_owned_candidate(NAME,nonce,plan['config']['Image'])
-   record({'phase':'recovery-started','candidateId':candidate})
+   try:record({'phase':'recovery-started','candidateId':candidate})
+   except Exception:pass
    if candidate:
     engine.stop(candidate)
     for network in engine.networks(candidate):engine.disconnect(network,candidate)
@@ -62,5 +63,8 @@ def apply_and_recover(engine,old,plan,nonce,checkpoint,accept,record):
    engine.rename(old_id,NAME)
    for network,ep in plan['endpoints'].items():
     if network not in engine.networks(old_id):engine.connect(network,old_id,ep)
-   engine.start(old_id);engine.healthy(old_id);engine.verify_original(old_id,old);record({'phase':'original-restored','originalId':old_id});checkpoint(False)
+   engine.start(old_id);engine.healthy(old_id);engine.verify_original(old_id,old)
+   try:record({'phase':'original-restored','originalId':old_id})
+   except Exception:pass
+   checkpoint(False)
   raise

@@ -47,6 +47,12 @@ class RuntimePolicyTest(unittest.TestCase):
    if calls>1:raise ValueError('synthetic checkpoint reserve failure')
   with self.assertRaises(ValueError):apply_and_recover(e,{'Id':'old'},self.plan(),'a'*12,capacity,lambda cid:None,journal.append)
   self.assertTrue(e.rows['old']['running']);self.assertFalse(e.rows['candidate']['running']);self.assertEqual(journal[-1]['phase'],'original-restored')
+ def test_journal_disk_failure_cannot_block_restoring_the_original(self):
+  e=Engine()
+  def journal(entry):
+   if entry['phase']!='before-original-stop':raise OSError('synthetic disk-full failure')
+  with self.assertRaises(OSError):apply_and_recover(e,{'Id':'old'},self.plan(),'a'*12,lambda initial:None,lambda cid:None,journal)
+  self.assertTrue(e.rows['old']['running']);self.assertEqual(e.rows['old']['name'],NAME);self.assertEqual(e.rows['old']['networks'],{'net1','net2'})
  def fixture(self):
   cfg={'Entrypoint':['docker-entrypoint.sh'],'Cmd':['node','image-entry.mjs'],'User':'node','WorkingDir':'/app','ExposedPorts':{'3000/tcp':{}},'Healthcheck':{'Test':['CMD','node','health']},'Labels':{'dev.agenttrust.oidc.profile':'local-review','dev.agenttrust.oidc.application-origin':'http://127.0.0.1:4320','dev.agenttrust.oidc.public-issuer':'http://127.0.0.1:4322/realms/agenttrust'},'Env':['NODE_ENV=production','PATH=/bin']}
   old={'Id':'old','Name':'/'+NAME,'Image':'old-image','Config':copy.deepcopy(cfg),'HostConfig':{'Privileged':False,'ReadonlyRootfs':True,'CapDrop':['ALL'],'CapAdd':None,'SecurityOpt':['no-new-privileges:true'],'Memory':536870912,'RestartPolicy':{'Name':'unless-stopped','MaximumRetryCount':0},'PortBindings':{'3000/tcp':[{'HostIp':'127.0.0.1','HostPort':'4320'}]},'NetworkMode':'net1'},'Mounts':[],'NetworkSettings':{'Networks':{'net1':{'Aliases':['stack-console']},'net2':{'Aliases':['stack-console']}}},'State':{'Running':True,'Paused':False,'Health':{'Status':'healthy'}}}
