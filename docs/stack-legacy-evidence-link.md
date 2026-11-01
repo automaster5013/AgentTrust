@@ -82,3 +82,32 @@ node scripts/stack-legacy-catalogue.mjs catalogue.json --target-organization-id 
 성공 결과의 `records`는 단일 자료 도구의 제한된 검증 메타데이터와 각각 검증된 원래 출처 좌표(`sourceCoordinates`)다. 원래 사유·검토 의견·모델 입출력·공개키 원문·입력 파일 경로는 출력하지 않는다. 목록 지문 일치도 운영자 승인이나 현재 키 신뢰를 대신하지 않는다. `catalogueCryptographicallySigned`, `catalogueOperatorApprovalVerified`, `sourceCurrentTrustPolicyVerified`, `targetTenantAuthorityVerified`, `actorMappingPerformed`, `targetRecordImported`, `currentReviewerAuthorityVerified`, `currentReleasePermissionVerified`, `deploymentAllowed`는 계속 false다. 실제 자료 import·주체/권한 승계·운영 연결 API·현재 배포 권한은 미구현이다.
 
 Windows의 실제 CLI·원본 보존·독립 pin/좌표·읽기 총량·중복 범위·부분 출력 부재·실제 입력 폴더 교체 거부 검사를 확인했다. Linux 전용 심볼릭 링크와 공유 reader의 기존 FIFO 교체 회귀를 포함한 원격 결과는 새 소스 CI에서 확인한다. 운영 자료나 서비스에는 이 도구를 실행하지 않았다.
+
+
+## 목록 v2의 서명 참조 본문 검증
+
+목록 `schemaVersion: 2`는 각 항목의 기존 네 필드에 `bodyFile`과 독립적으로 기대한 `bodySha256` 두 필드를 필수로 추가한다. 모든 항목이 본문 모드여야 한다. CLI 인자·대상 좌표·목록 지문과 기존 v1의 메타데이터 전용 형식은 유지한다.
+
+`bodyFile`은 동일 입력 폴더의 일반 파일이며 다음 봉투를 사용한다.
+
+```json
+{
+  "schemaVersion": 1,
+  "kind": "legacy-receipt-source-bodies",
+  "bodies": {
+    "candidate": "<original run object>",
+    "baseline": "<original baseline run object, only when referenced>"
+  },
+  "review": "<original review object, only when referenced>"
+}
+```
+
+위 객체 자리에는 원래 실행/검토 JSON 객체를 넣는다. 비교 기준이 없는 기록에는 `baseline` 필드를 넣지 않는다. 원래 receipt에 review hash가 있으면 `review` 본문이 필수이고, 없는 검토를 임의로 추가하지 않는다. 본문 봉투도 최대 16MiB이며 원본 바이트 SHA-256을 먼저 확인한 뒤 같은 총 읽기 상한에 합산한다. 재직렬화로 의미가 같아도 원본 바이트 지문이 다르면 거부한다.
+
+기존 `inspectHistoricalReceipt`의 엄격한 본문 검증을 재사용한다. 원래 서명·출처 좌표·스냅샷/결과 해시·필수 후보/비교 기준 쌍을 확인하고, 서명된 내용에서 버전·규칙 근거·판정과 비교 결과를 다시 대조한다. 실행 객체의 비서명 상태·통계·버전 주석은 판정 근거로 사용하지 않는다. 본문의 원래 조직/프로젝트를 대상 좌표로 덮어쓰지 않는다. 참조된 검토 본문은 원래 signed review ID/hash·범위·실행 근거·기록 시각과 결합해야 한다.
+
+성공한 v2 출력은 `bodyEvidenceMode=linked-source-bodies`와 `bodyEvidenceEntriesVerified`를 포함한다. 각 항목의 `evidenceBodiesVerified`·`evidenceStructuresVerified`와 해당 후보/비교 기준 검증 표시가 실제 검증에 따라 true가 된다. `reviewBodyExpected`와 `reviewBodyVerified`는 구분한다. 과거 승인이 missing인 기록은 검토 검증 false와 과거 차단 상태를 유지한다. 결과 해시 등 필요한 서명 참조가 없는 자료는 본문 모드의 검증 완료 대상으로 처리하지 않으며, 기존 v1 메타데이터 전용 검사 범위를 사용할 수 있다.
+
+본문·검토 의견·원래 검토자 ID·입력 파일 경로는 출력하지 않는다. `evidenceMetadataAuthenticated=false`, `unsignedMetadataUsedForStructure=false`, `agentReexecuted=false`다. 과거 승인/반려/만료 자료의 본문이 맞더라도 현재 검토자 권한·키 신뢰 정책·현재 배포 허용·자료 import·주체/역할 승계 표시를 true로 바꾸지 않는다. 원래 모델을 실행하거나 외부 모델 API를 호출하지 않는다.
+
+Windows의 실제 v2 CLI·원본 보존·후보/비교 기준·서명은 맞지만 규칙/비교가 모순되는 자료·출처 좌표 덮어쓰기·검토 본문 누락/치환·본문 raw pin·총 읽기 상한·뒤쪽 실패의 부분 출력 부재를 합성 자료로 검증한다. Linux 심볼릭 링크와 전체 회귀의 원격 결과는 해당 소스 CI를 따른다. 실제 기존 운영 자료로 이 검사를 실행하거나 운영 데이터를 가져온 상태는 아니다.
