@@ -1293,7 +1293,13 @@ test('workspace history search finds older server-filtered evaluations and opens
   const current=await ids();expect(observed.page!.entries.every(row=>row.decision==='block')).toBe(true);releaseHeld();await heldDone;expect(await ids()).toEqual(current);await expect(region.getByLabel('전체 이력 판정',{exact:true})).toHaveValue('block');
   phase('changed conditions abort the previous request and late bytes cannot replace the current search');
   await page.setViewportSize({width:390,height:844});await region.scrollIntoViewIfNeeded();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
-  await region.screenshot({path:'test-results/workspace-history-search-mobile.png'});phase('actual authenticated mobile search controls and scrollable table fit the viewport');
+  const searchTable=region.getByRole('region',{name:'전체 평가 이력 검색 결과 표 · 좁은 화면에서 좌우로 이동',exact:true});
+  expect(await rows.evaluateAll(elements=>elements.every(row=>row.getBoundingClientRect().height<100))).toBe(true);
+  await searchTable.evaluate(element=>{element.scrollLeft=element.scrollWidth});
+  const evidenceButton=rows.first().getByRole('button');await expect(evidenceButton).toBeInViewport();
+  await evidenceButton.click();await expect(page.locator('.evidence').getByText('실행 '+current[0],{exact:true})).toBeVisible();
+  await searchTable.evaluate(element=>{element.scrollLeft=0});
+  await region.screenshot({path:'test-results/workspace-history-search-mobile.png'});phase('actual authenticated mobile search controls, compact rows and reachable evidence fit the viewport');
  }finally{releaseHeld();if(heldStarted)await heldDone;await page.unroute(pattern)}
 });
 
