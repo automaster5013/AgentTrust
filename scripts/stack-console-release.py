@@ -24,7 +24,7 @@ def main():
  require(run(['git','rev-parse','HEAD']).decode().strip()==sha)
  require(shutil.disk_usage(ROOT).free>=10*1073741824)
  memory=dict(line.split(':',1) for line in pathlib.Path('/proc/meminfo').read_text().splitlines());require(int(memory['MemAvailable'].strip().split()[0])>=4*1048576)
- directory=ROOT/'.local'/('console-release-'+str(uuid.uuid4()));directory.mkdir()
+ directory=ROOT/'.local'/('console-release-'+str(uuid.uuid4()));directory.mkdir(parents=True)
  bundle=directory/'bundle';bundle.mkdir();cache=directory/'cache';cache.mkdir();inputs=directory/'inputs';inputs.mkdir()
  temporary=cache/'tmp';temporary.mkdir()
  for p in [bundle,cache,inputs,temporary]:p.chmod(0o777)
