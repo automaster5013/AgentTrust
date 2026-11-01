@@ -1253,3 +1253,56 @@ test('viewer recovers bounded archive and similarity reads after stalled respons
  }
  phase('actual ten-second archived-byte and pgvector read deadlines release controls, refuse delayed results and recover through manual real scoped API retries; no business writes');
 });
+
+
+test('workspace history search finds older server-filtered evaluations and opens scoped evidence',async({page})=>{
+ await login(page,'demo-viewer');
+ type Observed={entries:{id:string;provider:string;scenario:string;requiresApproval:boolean;state:string;decision:string}[];nextCursor:string|null};
+ const observed:{page:Observed|null}={page:null};let corruptNext=false,holdNext=false,heldStarted=false,heldReady=false,heldCancelled=false;
+ let releaseHeld:()=>void=()=>{},finishHeld:()=>void=()=>{};
+ const heldRelease=new Promise<void>(resolve=>{releaseHeld=resolve}),heldDone=new Promise<void>(resolve=>{finishHeld=resolve});
+ const pattern='**/backend/run-history-search/**';
+ await page.route(pattern,async route=>{
+  const hold=holdNext;holdNext=false;if(hold)heldStarted=true;
+  try{
+   const upstream=await route.fetch({maxRetries:0,maxRedirects:0,timeout:10000});expect(upstream.status()).toBe(200);
+   const bytes=await upstream.body();expect(bytes.length).toBeLessThanOrEqual(1048576);
+   const frame=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)) as Observed;
+   if(hold){heldReady=true;await heldRelease}else observed.page=frame;
+   const corrupt=corruptNext;corruptNext=false;
+   await route.fulfill({response:upstream,...(corrupt?{body:JSON.stringify({...frame,organizationId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'})}:{})});
+  }catch(error){if(!(hold&&heldCancelled))throw error}finally{if(hold)finishHeld()}
+ });
+ const region=page.getByRole('region',{name:'전체 평가 이력 검색',exact:true}),rows=region.locator('[data-run-search-id]'),search=region.getByRole('button',{name:'전체 평가 이력 검색 실행',exact:true});
+ const ids=()=>rows.evaluateAll(elements=>elements.map(element=>element.getAttribute('data-run-search-id')));
+ try{
+  await search.click();await expect(rows).toHaveCount(25);const first=await ids();expect(observed.page!.entries.map(row=>row.id)).toEqual(first);
+  await region.getByRole('button',{name:'다음 전체 이력 검색 페이지',exact:true}).click();await expect(region.getByText(/전체 이력 검색 페이지 2/)).toBeVisible();
+  const older=await ids();expect(older.length).toBeGreaterThan(0);expect(older.some(id=>first.includes(id))).toBe(false);expect(older).toEqual(observed.page!.entries.map(row=>row.id));
+  await region.getByRole('button',{name:'검색 평가 근거 '+older[0]!.slice(0,8),exact:true}).click();await expect(page.locator('.evidence').getByText('실행 '+older[0],{exact:true})).toBeVisible();
+  phase('actual server search reaches older pages and opens existing scoped evidence without creating evaluations');
+  for(const [label,value] of [['시나리오','pass'],['승인 필요 설정','required'],['실행 상태','succeeded'],['판정','pass'],['공급자','synthetic']])await region.getByLabel('전체 이력 '+label,{exact:true}).selectOption(value);
+  await expect(rows).toHaveCount(0);await search.click();await expect(region.getByText(/전체 이력 검색 페이지 1/)).toBeVisible();
+  expect(await ids()).toEqual(observed.page!.entries.map(row=>row.id));expect(observed.page!.entries.length).toBeGreaterThan(0);
+  expect(observed.page!.entries.every(row=>row.scenario==='pass'&&row.requiresApproval&&row.state==='succeeded'&&row.decision==='pass'&&row.provider==='synthetic')).toBe(true);
+  phase('all five conditions match the actual server response, rather than filtering only the first 25 records');
+  corruptNext=true;await search.click();await expect(region.getByText('전체 평가 이력 검색을 확인하지 못했습니다. 현재 서버의 지원 상태나 연결을 확인하고 다시 검색해 주세요.',{exact:true})).toBeVisible();await expect(rows).toHaveCount(0);
+  phase('foreign response scope is refused without inventing empty success');
+  await region.getByRole('button',{name:'전체 이력 검색 조건 초기화',exact:true}).click();holdNext=true;await search.click();await expect.poll(()=>heldReady).toBe(true);
+  heldCancelled=true;await region.getByLabel('전체 이력 판정',{exact:true}).selectOption('block');await search.click();await expect(region.getByText(/전체 이력 검색 페이지 1/)).toBeVisible();
+  const current=await ids();expect(observed.page!.entries.every(row=>row.decision==='block')).toBe(true);releaseHeld();await heldDone;expect(await ids()).toEqual(current);await expect(region.getByLabel('전체 이력 판정',{exact:true})).toHaveValue('block');
+  phase('changed conditions abort the previous request and late bytes cannot replace the current search');
+  await page.setViewportSize({width:390,height:844});await region.scrollIntoViewIfNeeded();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+  await region.screenshot({path:'test-results/workspace-history-search-mobile.png'});phase('actual authenticated mobile search controls and scrollable table fit the viewport');
+ }finally{releaseHeld();if(heldStarted)await heldDone;await page.unroute(pattern)}
+});
+
+if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true')test('legacy Core return keeps whole-history search unavailable without inventing empty results',async({page})=>{
+ await login(page,'demo-viewer');const region=page.getByRole('region',{name:'전체 평가 이력 검색',exact:true});
+ const response=page.waitForResponse(response=>response.request().method()==='GET'&&new URL(response.url()).pathname==='/backend/run-history-search/all/all/all/all/all'&&response.status()===500);
+ await region.getByRole('button',{name:'전체 평가 이력 검색 실행',exact:true}).click();await response;
+ await expect(region.getByText('전체 평가 이력 검색을 확인하지 못했습니다. 현재 서버의 지원 상태나 연결을 확인하고 다시 검색해 주세요.',{exact:true})).toBeVisible();
+ await expect(region.locator('[data-run-search-id]')).toHaveCount(0);await expect(region.getByText('검색 조건에 맞는 평가 이력이 없습니다.',{exact:true})).toHaveCount(0);
+ const unavailable=await page.request.get('/backend/run-history-search/all/all/all/all/all');expect(unavailable.status()).toBe(500);expect(await unavailable.json()).toEqual({code:'REQUEST_UNAVAILABLE'});
+ expect((await page.request.get('/backend/me')).status()).toBe(200);phase('pinned old Core search is explicitly unavailable; existing session remains valid');
+});
