@@ -154,3 +154,12 @@ helper 10개·복귀 13개·V17 전환 7개, 총 30개 모의/로컬 테스트�
 소스 검토에서 기존 초기 목록이 `docker ps -q`여서 이미 정지한 같은 프로젝트의 컨테이너를 보호 대상에서 빠뜨릴 수 있음을 확인했다. 정지 컨테이너가 하나 섞인 합성 목록에서 그 누락을 재현한 뒤 `ps -aq --no-trunc`의 전체 목록을 수집하도록 수정했다. inspect 결과와 목록의 집합·중복·Core 포함 여부를 확인하고, 이전 이미지 pull/교체 전에 비 Core의 running·unpaused·healthy를 모두 요구한다. 정지 자산을 삭제하거나 자동 기동해서 통과시키지 않는다. 최종 ID/image/StartedAt·건강 보존 조건도 유지한다.
 
 Compose 계약의 `stack-migrate`·`stack-object-init`·`stack-observability-init`은 정상 종료된 일회성 초기화 자산으로 별도 추적한다. 이를 다시 기동하거나 healthy 실행 서비스로 계산하지 않고, 동일 ID/image/StartedAt/FinishedAt·exited·ExitCode 0·unpaused가 유지돼야 한다. 복원 후에도 전체 목록을 다시 수집하므로 새 컨테이너 추가·누락·중복도 거부한다. 초기화 자산의 상태/신원 변화·추가/누락 및 실제 정지 서비스 누락을 검사하는 6개 테스트를 추가했다. 복귀 19개·helper 12개·V17 전환 7개, 총 38개 로컬 검사를 통과했으며 현재 PC에서는 모의 목록만 사용했다. 실제 hosted 목록이 이 강화 조건을 충족하는지는 새 CI에서 확인한다. 이전 revision의 실제 성공은 해당 시점에 수집한 범위의 증거로 보존한다.
+
+
+### 전체 비 Core 보존 성공과 별도 모델 빌드의 미러 동기화 실패
+
+`48a62e350f02574cff04c6ce83e0cfe5ce72dcd9` run `41266586207`은 전체 integration 최종 failure다. SHA-256 검증한 artifact의 이전 Core HTTP·브라우저 53개·후보 복원/HTTP·기존 행/ledger·worker cleanup·실행 서비스 전체 목록/이미지/StartedAt/running/unpaused/healthy가 모두 true다. 정상 종료된 초기화 자산 3종의 초기/최종 집합·신원·종료 상태 보존도 true이고 issues가 비어 있다. 서비스 재시작·Redis 검증까지 통과했다.
+
+실패는 뒤의 고정 모델 이미지 빌드에서 Ubuntu 미러의 Packages 색인 크기가 서명된 metadata와 달라 APT가 거부한 것이다(`Mirror sync in progress`, 404/크기 불일치, exit 100). 모델·암호화 복구 단계의 성공으로 표시하지 않는다. [Ubuntu APT 계약](https://manpages.ubuntu.com/manpages/resolute/man5/apt.conf.5.html)에 따라 두 모델 빌드 stage의 색인 요청을 `Acquire::By-Hash=force`로 주소화하고 `--error-on=any`로 일부 색인 실패도 거부하도록 수정했다. base digest·모델 원본/의존성·checksum·서명 검사는 유지한다. 실제 빌드는 새 CI에서 확인한다.
+
+재실행이 기존 실패 증거를 덮어쓰거나 같은 artifact 이름과 충돌하지 않도록 source 보안/콘솔 3종/진단 artifact 이름에 run attempt를 붙였다. [upload-artifact의 동일 이름 제한](https://github.com/actions/upload-artifact/blob/main/README.md)을 따른다. 게시/배포 delivery artifact 계약과 publication gate는 변경하지 않았다. 진단 reader는 현재 attempt에 결합된 artifact 1개만 선택하며 이전 attempt의 성공/실패를 대체 증거로 쓰지 않는다. 첫 attempt의 과거 이름은 계속 읽을 수 있다. 선택·과거 증거 보존·현재 attempt 부재/중복/만료/잘못된 revision 거부 5개와 기존 HTTPS 분류 5개 로컬 검사 및 actionlint가 통과했다. 운영 빌드/배포나 로컬 Docker workload는 실행하지 않는다.
