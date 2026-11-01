@@ -33,3 +33,12 @@ MinIO 보관 근거 확인과 pgvector 유사 근거 조회에도 각 요청의 
 `stack-run-history-search-smoke.py --execute`는 비 root GitHub-hosted 합성 스택에서만 실행한다. 운영 파일/서비스에 연결하기 전에 로컬/self-hosted 환경을 거부한다. 기존 평가만 읽어 8개 조건 조합·최대 3개 페이지를 DB의 독립 조회와 대조하고, 실제 Java 응답을 TypeScript parser에 전달한다. 조회자·다른 조직·변경 조건의 커서·쓰기/임의 쿼리 거부를 검사하며 자체 로그인 세션을 정리한다. 사업 자료를 생성/변경하지 않고 유료 공급자를 호출하지 않는다.
 
 후보 브라우저는 실제 이전 페이지 열기·5개 조건 검색·외국 범위 응답 거부·조건 변경 중 지연 응답·390px 화면을 검사한다. 고정 이전 Core에는 새 API가 없으므로 새 후보 시나리오만 복귀 실행에서 제외하고, 대신 실제 미지원 응답과 빈 성공 표시 방지를 검사한다. 기존 이력·취소 시나리오는 유지한다. 실제 Java/DB/브라우저 결과는 각 revision의 CI에 결합해 판정하며, 소스나 단위 검사만으로 실제 수용 완료를 주장하지 않는다. 운영 4320에는 아직 적용하지 않았다.
+
+
+### 2026-11-01 후보 수용 기록
+
+소스 `d91cf8bbf8ab3a4333a77c5895720bdf70fc065e`의 [통합 CI 41296810609](https://github.com/automaster5013/AgentTrust/actions/runs/41296810609)가 통과했다. 해당 revision의 6개 PR workflow도 모두 success다. 실제 후보 브라우저 55개와 이전 Core 복귀 브라우저 54개가 통과했고, 검색 HTTP 검사는 8개 조건 조합·17페이지·360개 행을 PostgreSQL과 대조했다. 검색 검사는 기존 합성 행만 읽었고 유료 API를 호출하지 않았다.
+
+390px 실제 인증 화면에서 조건 변경 중 지연 응답 거부·다른 조직 응답 거부·이전 페이지의 근거 열기와 함께, 검색 행 높이 100px 미만·가로 스크롤 후 근거 버튼 접근/실제 상세 열기를 확인했다. CI 이미지의 ZIP digest를 GitHub artifact metadata와 대조한 후 화면을 검토했다. 같은 13개 행의 패널 높이는 수정 전 2,930px에서 2,108px로 줄었다. 이 치수는 해당 합성 fixture의 결과이며 모든 데이터의 고정 높이를 보장하지 않는다.
+
+복귀 검사에서는 기존 행·폐기 기록·schema ledger, 비 Core 컨테이너의 동일 집합/image/StartedAt/healthy/unpaused와 완료된 초기화 컨테이너의 동일 ID/image/StartedAt/FinishedAt/정상 종료 상태를 확인했다. 후보 Core의 HTTP와 기존 행이 복귀 후 보존됐다. 이는 GitHub-hosted 합성 스택의 결과이며, 운영 설치의 배포·복구 검증이나 모든 가능한 API의 이전 Core 호환성 증거가 아니다. 이전 Core의 신규 관리/검색 API는 계속 미지원으로 표시한다. 최신 후속 revision의 수용 여부는 그 revision의 CI에서 다시 확인한다.

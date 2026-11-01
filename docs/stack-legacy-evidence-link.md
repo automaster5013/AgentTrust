@@ -40,3 +40,6 @@ node scripts/stack-legacy-receipt-link.mjs source-receipt.json trusted-public.pe
 합성 Ed25519 통과/차단 자료로 원본 바이트·독립 설명자 지문·출처/대상·키·서명 치환·재계산 hash·부적절한 권한 필드·크기/UTF-8·일반 파일 검사를 검증한다. 실제 CLI의 성공/실패·출력 비밀 부재·세 입력 파일 보존을 검사하며, Windows junction 경로에서도 CLI가 실제 실행되도록 entry 파일의 realpath를 대조한다. 기존 서명/검사 회귀와 함께 20개 로컬 테스트가 통과했다. 원격 결과는 해당 revision의 CI를 따른다.
 
 현재는 자료 연결의 사전검사 계약과 도구다. 실제 기존 자료 연결·전체 데이터 이전·Java의 인증된 import API·불변 연결 목록·운영자 승인/폐기 정책·현재 대상 사용자 권한·브라우저 수용은 미구현이다. 실제 운영 자료로 도구를 실행하거나 서명 키를 바꾸거나 기존 자료/DB를 수정하지 않았다.
+
+
+2026-11-01 원격 확인: 소스 `d5de860925f1b27a59f5aba687c8a6a8bb2a2647`의 [Validate and deliver 41292563858](https://github.com/automaster5013/AgentTrust/actions/runs/41292563858)에서 Node 24/Linux의 실제 CLI·서명/원본 바이트 보존·심볼릭 링크 입력 거부 검사가 통과했다. 같은 revision의 [통합 CI 41292563839](https://github.com/automaster5013/AgentTrust/actions/runs/41292563839)도 통과했다. 이 결과는 합성 서명 fixture와 후보 스택에 한정한다. 실제 기존 운영 기록을 도구에 입력하거나 대상 DB에 연결/가져온 것은 아니다.
