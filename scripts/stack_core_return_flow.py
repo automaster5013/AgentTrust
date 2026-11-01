@@ -1,5 +1,6 @@
 """Failure-safe old Core return ordering; proofs remain synthetic and bounded."""
 from collections import Counter
+import json
 from stack_v18_transition_probe import MANAGEMENT
 
 
@@ -33,6 +34,50 @@ def non_core_status(expected, states):
                            'health': health if health in ('healthy', 'unhealthy', 'starting', 'missing') else 'unknown'})
     return {'sameContainerSet': same_set, 'allImagesAndStartedAtUnchanged': identities,
             'allRunning': running, 'allUnpaused': unpaused, 'allHealthy': healthy, 'issues': issues}
+
+
+INITIALIZERS = frozenset(('stack-migrate', 'stack-object-init', 'stack-observability-init'))
+
+
+def initializer_identity(state):
+    runtime = state['State']
+    return (state['Image'], runtime['StartedAt'], runtime.get('FinishedAt'), runtime.get('Status'),
+            runtime.get('ExitCode'), runtime.get('Running'), runtime.get('Paused'))
+
+
+def initializer_status(expected, states):
+    identifiers = [state['Id'] for state in states]
+    same_set = len(identifiers) == len(set(identifiers)) and set(identifiers) == set(expected)
+    identities = same_set; successful = same_set; issues = []
+    for state in states:
+        runtime = state['State']; unchanged = state['Id'] in expected and initializer_identity(state) == expected[state['Id']]
+        exited = (runtime.get('Status') == 'exited' and runtime.get('Running') is False
+                  and runtime.get('Paused') is False and type(runtime.get('ExitCode')) is int and runtime['ExitCode'] == 0)
+        identities = identities and unchanged; successful = successful and exited
+        if not (unchanged and exited):
+            service = state.get('Config', {}).get('Labels', {}).get('com.docker.compose.service')
+            issues.append({'service': service if service in INITIALIZERS else 'unidentified-synthetic-initializer',
+                           'identityAndExitStateUnchanged': unchanged, 'successfullyExited': exited})
+    return {'sameContainerSet': same_set, 'allIdentitiesAndExitStatesUnchanged': identities,
+            'allSuccessfullyExited': successful, 'issues': issues}
+
+
+def capture_non_core(command, core_id):
+    # Include stopped containers and completed one-shot initializers. Full IDs
+    # bind the listed set to inspect output; repeat enumeration after restoration.
+    identifiers = command(['docker', 'ps', '-aq', '--no-trunc', '--filter', 'label=com.docker.compose.project=agenttrust']).decode().split()
+    assert identifiers and len(identifiers) == len(set(identifiers))
+    states = json.loads(command(['docker', 'inspect', *identifiers]))
+    assert len(states) == len(identifiers) and {state['Id'] for state in states} == set(identifiers)
+    assert sum(state['Id'] == core_id for state in states) == 1
+    others = [state for state in states if state['Id'] != core_id]
+    initializers = [state for state in others if state.get('Config', {}).get('Labels', {}).get('com.docker.compose.service') in INITIALIZERS]
+    runtime = [state for state in others if state not in initializers]
+    assert len(runtime) >= 10
+    expected = {state['Id']: (state['Image'], state['State']['StartedAt']) for state in runtime}
+    completed = {state['Id']: initializer_identity(state) for state in initializers}
+    return expected, completed, runtime, initializers
+
 
 
 def preserved(before, after, *, unchanged_management=False):

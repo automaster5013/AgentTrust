@@ -14,7 +14,7 @@ import subprocess
 import uuid
 import time
 from stack_ci_return_guard import require_hosted
-from stack_core_return_flow import non_core_status, verify
+from stack_core_return_flow import INITIALIZERS, capture_non_core, initializer_status, non_core_status, verify
 from stack_v18_transition_probe import BASELINE_REFERENCE, BASELINE_REVISION
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -104,9 +104,14 @@ def main():
         assert [pathlib.Path(p).resolve() for p in labels['com.docker.compose.project.config_files'].split(',')] == [ROOT / p for p in FILES]
         assert core['State']['Running'] and core['State']['Health']['Status'] == 'healthy'
         candidate = core['Image']; assert re.fullmatch('sha256:[a-f0-9]{64}', candidate)
-        ids = run(['docker', 'ps', '-q', '--filter', 'label=com.docker.compose.project=agenttrust']).decode().split()
-        others = {v['Id']: (v['Image'], v['State']['StartedAt']) for v in json.loads(run(['docker', 'inspect', *ids])) if v['Id'] != core['Id']}
-        assert len(others) >= 10
+        others, completed_initializers, states, initializer_states = capture_non_core(run, core['Id'])
+        observation = non_core_status(others, states)
+        report['nonCorePreflightVerification'] = observation
+        assert all(observation[key] is True for key in ('sameContainerSet', 'allImagesAndStartedAtUnchanged', 'allRunning', 'allUnpaused', 'allHealthy'))
+        assert {state['Config']['Labels']['com.docker.compose.service'] for state in initializer_states} == INITIALIZERS
+        initializer_observation = initializer_status(completed_initializers, initializer_states)
+        report['nonCoreInitializerPreflightVerification'] = initializer_observation
+        assert all(initializer_observation[key] is True for key in ('sameContainerSet', 'allIdentitiesAndExitStatesUnchanged', 'allSuccessfullyExited'))
         paths = [ROOT / p for p in FILES] + [ROOT / '.local/stack/stack.env', ROOT / '.local/stack/identity.env']
         assert all(p.is_file() and not p.is_symlink() for p in paths)
         hashes = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
@@ -181,10 +186,13 @@ def main():
     finally:
         if report['candidateRestored']:
             try:
-                states = json.loads(run(['docker', 'inspect', *others]))
+                _, _, states, initializer_states = capture_non_core(run, expected_id)
                 observation = non_core_status(others, states)
                 report['nonCoreContainerVerification'] = observation
                 assert all(observation[key] is True for key in ('sameContainerSet', 'allImagesAndStartedAtUnchanged', 'allRunning', 'allUnpaused', 'allHealthy'))
+                initializer_observation = initializer_status(completed_initializers, initializer_states)
+                report['nonCoreInitializerVerification'] = initializer_observation
+                assert all(initializer_observation[key] is True for key in ('sameContainerSet', 'allIdentitiesAndExitStatesUnchanged', 'allSuccessfullyExited'))
                 assert report.get('workerResumeVerified') is True
                 report['nonCoreContainerIdentitiesPreserved'] = True
             except Exception as error:

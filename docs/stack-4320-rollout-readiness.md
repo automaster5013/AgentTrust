@@ -147,3 +147,10 @@ helper 10개·복귀 13개·V17 전환 7개, 총 30개 모의/로컬 테스트�
 동시 pause/cleanup의 선행 실패를 확인한 뒤 수정한 회귀 검사와, 별도 합성 Python 자식의 finally 없는 종료 후 잠금 재획득 검사를 포함해 helper 12개·복귀 13개·V17 전환 7개, 총 32개 로컬 테스트가 통과했다. 로컬에서는 임시 파일 잠금과 모의 Docker 명령만 사용했고 운영 컨테이너는 변경하지 않았다. 실제 GitHub-hosted 경로는 새 CI에서 확인한다.
 
 홈 화면 관찰 수정 `54c48d5b468968024144e4215ddb8872cce2f621`은 integration run `41256669497`을 포함한 6개 PR workflow가 모두 최종 success다. SHA-256 및 commit 결합을 검증한 artifact에서 후보 브라우저 54개와 이전 Core 브라우저 53개가 모두 passed이며, 두 모드에서 홈 건수·실제 취소 시나리오가 통과했다. 이전 Core HTTP·후보 복원/HTTP·기존 행/ledger·비 Core의 집합/이미지/StartedAt/running/unpaused/healthy도 모두 true다. 후속 고정 모델·DB/MinIO/일관 암호화 복구·정리는 success이며 이미지 게시 job은 skipped다. 이는 합성 CI 결과이며 운영 적용·운영 복구·건강한 운영 rollback은 계속 false다.
+
+
+### 비 Core 초기 목록의 정지 컨테이너 누락 방지
+
+소스 검토에서 기존 초기 목록이 `docker ps -q`여서 이미 정지한 같은 프로젝트의 컨테이너를 보호 대상에서 빠뜨릴 수 있음을 확인했다. 정지 컨테이너가 하나 섞인 합성 목록에서 그 누락을 재현한 뒤 `ps -aq --no-trunc`의 전체 목록을 수집하도록 수정했다. inspect 결과와 목록의 집합·중복·Core 포함 여부를 확인하고, 이전 이미지 pull/교체 전에 비 Core의 running·unpaused·healthy를 모두 요구한다. 정지 자산을 삭제하거나 자동 기동해서 통과시키지 않는다. 최종 ID/image/StartedAt·건강 보존 조건도 유지한다.
+
+Compose 계약의 `stack-migrate`·`stack-object-init`·`stack-observability-init`은 정상 종료된 일회성 초기화 자산으로 별도 추적한다. 이를 다시 기동하거나 healthy 실행 서비스로 계산하지 않고, 동일 ID/image/StartedAt/FinishedAt·exited·ExitCode 0·unpaused가 유지돼야 한다. 복원 후에도 전체 목록을 다시 수집하므로 새 컨테이너 추가·누락·중복도 거부한다. 초기화 자산의 상태/신원 변화·추가/누락 및 실제 정지 서비스 누락을 검사하는 6개 테스트를 추가했다. 복귀 19개·helper 12개·V17 전환 7개, 총 38개 로컬 검사를 통과했으며 현재 PC에서는 모의 목록만 사용했다. 실제 hosted 목록이 이 강화 조건을 충족하는지는 새 CI에서 확인한다. 이전 revision의 실제 성공은 해당 시점에 수집한 범위의 증거로 보존한다.

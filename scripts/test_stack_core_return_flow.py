@@ -1,4 +1,5 @@
 import copy
+import json
 import importlib.util
 import sqlite3
 import pathlib
@@ -6,7 +7,7 @@ import types
 import unittest
 from unittest.mock import patch
 import stack_ci_return_guard as guard
-from stack_core_return_flow import non_core_status, pinned_legacy_management_unavailable, preserved, verify
+from stack_core_return_flow import INITIALIZERS, capture_non_core, initializer_status, non_core_status, pinned_legacy_management_unavailable, preserved, verify
 
 
 class FlowTest(unittest.TestCase):
@@ -93,6 +94,73 @@ class FlowTest(unittest.TestCase):
                              (500, {'code': 'REQUEST_UNAVAILABLE', 'deploymentAuthority': True})]:
             with self.subTest(status=status, body=body), self.assertRaises(AssertionError):
                 pinned_legacy_management_unavailable(status, body)
+
+    def capture_fixture(self, stopped=False, initializers=False, extra=False):
+        states = [{'Id': format(i, '064x'), 'Image': 'synthetic-image-' + str(i),
+                   'State': {'StartedAt': 'synthetic-start', 'Running': not (stopped and i == 11),
+                             'Paused': False, 'Health': {'Status': 'healthy'}},
+                   'Config': {'Labels': {'com.docker.compose.service': 'stack-db'}}} for i in range(12)]
+        if initializers:
+            for i, service in enumerate(sorted(INITIALIZERS), start=100):
+                states.append({'Id': format(i, '064x'), 'Image': 'synthetic-initializer-image',
+                    'State': {'StartedAt': 'synthetic-start', 'FinishedAt': 'synthetic-finish', 'Status': 'exited',
+                              'ExitCode': 0, 'Running': False, 'Paused': False},
+                    'Config': {'Labels': {'com.docker.compose.service': service}}})
+        if extra:
+            state = copy.deepcopy(states[1]); state['Id'] = format(999, '064x'); states.append(state)
+        def command(args):
+            if args[:2] == ['docker', 'ps']:
+                assert args[-2:] == ['--filter', 'label=com.docker.compose.project=agenttrust']
+                selected = states if '-aq' in args else [state for state in states if state['State']['Running']]
+                return ('\n'.join(state['Id'] if '--no-trunc' in args else state['Id'][:12] for state in selected)).encode()
+            assert args[:2] == ['docker', 'inspect']
+            return json.dumps([state for state in states if state['Id'] in args[2:]]).encode()
+        return command
+
+    def test_non_core_capture_preserves_complete_healthy_inventory(self):
+        expected, _, states, _ = capture_non_core(self.capture_fixture(), format(0, '064x'))
+        status = non_core_status(expected, states)
+        self.assertEqual(len(expected), 11)
+        self.assertTrue(all(status[key] is True for key in ('sameContainerSet', 'allImagesAndStartedAtUnchanged', 'allRunning', 'allUnpaused', 'allHealthy')))
+        self.assertEqual(status['issues'], [])
+
+    def test_non_core_capture_never_omits_an_already_stopped_project_container(self):
+        expected, _, states, _ = capture_non_core(self.capture_fixture(stopped=True), format(0, '064x'))
+        status = non_core_status(expected, states)
+        self.assertIn(format(11, '064x'), expected)
+        self.assertFalse(status['allRunning'])
+        self.assertTrue(status['sameContainerSet'])
+        self.assertEqual(len(status['issues']), 1)
+        self.assertNotIn(format(11, '064x'), repr(status))
+
+    def test_completed_initializers_are_tracked_without_becoming_running_services(self):
+        expected, completed, states, initializers = capture_non_core(self.capture_fixture(initializers=True), format(0, '064x'))
+        self.assertEqual(len(expected), 11); self.assertEqual(len(completed), 3)
+        self.assertEqual({state['Config']['Labels']['com.docker.compose.service'] for state in initializers}, INITIALIZERS)
+        self.assertTrue(non_core_status(expected, states)['allHealthy'])
+        status = initializer_status(completed, initializers)
+        self.assertTrue(all(status[key] is True for key in ('sameContainerSet', 'allIdentitiesAndExitStatesUnchanged', 'allSuccessfullyExited')))
+        self.assertNotIn('synthetic-initializer-image', repr(status))
+
+    def test_initializer_must_remain_successfully_exited_with_same_identity(self):
+        _, completed, _, states = capture_non_core(self.capture_fixture(initializers=True), format(0, '064x'))
+        for field, value in [('StartedAt', 'changed-start'), ('FinishedAt', 'changed-finish'), ('ExitCode', 1),
+                             ('ExitCode', True), ('ExitCode', False), ('Running', True), ('Paused', True), ('Status', 'created')]:
+            changed = copy.deepcopy(states); changed[0]['State'][field] = value
+            with self.subTest(field=field, value=value):
+                status = initializer_status(completed, changed)
+                self.assertFalse(all(status[key] is True for key in ('sameContainerSet', 'allIdentitiesAndExitStatesUnchanged', 'allSuccessfullyExited')))
+
+    def test_fresh_project_enumeration_detects_an_added_runtime_container(self):
+        before, _, _, _ = capture_non_core(self.capture_fixture(initializers=True), format(0, '064x'))
+        _, _, after, _ = capture_non_core(self.capture_fixture(initializers=True, extra=True), format(0, '064x'))
+        self.assertFalse(non_core_status(before, after)['sameContainerSet'])
+
+    def test_initializer_missing_extra_or_duplicate_is_not_preserved(self):
+        _, completed, _, states = capture_non_core(self.capture_fixture(initializers=True), format(0, '064x'))
+        extra = copy.deepcopy(states[0]); extra['Id'] = format(999, '064x')
+        for changed in (states[:-1], states + [extra], states + [states[0]]):
+            self.assertFalse(initializer_status(completed, changed)['sameContainerSet'])
 
     def test_non_core_diagnostics_distinguish_health_from_identity_without_disclosing_values(self):
         expected = {'private-container': ('private-image', 'private-start')}
