@@ -34,6 +34,7 @@ jobs:
           python3 scripts/stack-tempo-metadata-test.py
           python3 scripts/stack-host-capacity-test.py
           python3 -m unittest discover -s scripts -p test_stack_console_release.py
+          python3 -m unittest discover -s scripts -p test_stack_console_runtime_policy.py
           python3 scripts/stack-tempo-repair-plan-test.py
           python3 scripts/stack-tempo-source-recheck-test.py
           python3 scripts/stack-local-cd-executor-test.py
