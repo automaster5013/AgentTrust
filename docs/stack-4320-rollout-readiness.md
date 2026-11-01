@@ -177,3 +177,16 @@ Compose 계약의 `stack-migrate`·`stack-object-init`·`stack-observability-ini
 별도의 단일 Console 전달 계약은 기존 16개 이미지 delivery 계약을 수정하지 않는다. `original-stack.yml`의 수동 `publish_console_only=true`와 고정 저장소/작업 브랜치에서만 전체 integration 성공 후 실행한다. 새 Console의 기존 Dockerfile·고정 의존성으로 빌드하고 일회성 격리 HTTP health·Syft SBOM·HIGH/CRITICAL 0건·정확한 registry digest·해당 workflow/ref/source SHA의 keyless 이미지/동일 SBOM 서명과 독립 소비자 검증을 결합한다. 자동 PR·push는 이 게시 작업을 실행하지 않으며 게시도 운영 교체를 수행하지 않는다. 메타데이터 검사만으로 암호 검증 성공을 주장하지 않는다.
 
 실제 적용 전에는 독립적으로 고정한 artifact/checksum/source와 로컬 서명 검증, 최신 대상 설정/마운트/키·32개 건강 상태·기존 자료/업무 fingerprint, 자원 기준 및 원래 Console을 보존하는 복귀 계획이 필요하다. 기존 일반 CD executor의 schema 거부를 우회하지 않는다. 현재 첫 관측의 Windows 여유는 1,150MiB로 2,048MiB 시작 기준 미만이며, 기준을 낮추거나 운영 서비스 중지·반복 메모리 회수 실험으로 해결하지 않는다. 소스·서명 후보 준비와 실제 운영 반영 완료를 구분한다.
+
+
+## 2026-11-02 서명된 Console 후보 수용과 로컬 메모리 거부
+
+소스 `37d70ede4bdeef656f614a353ec702e4bf133291`의 [명시적 Console 게시 실행 41335401380](https://github.com/automaster5013/AgentTrust/actions/runs/41335401380)이 최종 success다. 전체 integration과 별도 Console 게시·독립 검증이 모두 통과했다. SHA-256 및 source/run 결합을 검증한 진단 artifact에서 후보 브라우저 55개·이전 Core 브라우저 54개, 이전 Core 업무 HTTP·후보 복원/HTTP·기존 행/ledger·실행 비 Core 전체 신원/이미지/StartedAt/running/unpaused/healthy·정상 종료 초기화 자산의 신원/종료 상태 보존을 확인했다. 고정 로컬 모델과 암호화 일관 복구도 해당 합성 CI에서 통과했다. 운영 복구·전체 기능 이전·건강한 운영 rollback 완료를 뜻하지 않는다.
+
+최종 Console 이미지는 `ghcr.io/automaster5013/agenttrust-console@sha256:bc802e4ba2cd26f46a61b2b2ae17a79e48518f6f2e00dfba53aaa1f7ffa76653`다. 격리 HTTP health·Syft SBOM·새 Trivy HIGH/CRITICAL 0건·정확한 workflow/ref/source의 keyless 이미지 및 동일 SBOM 서명·독립 소비자 암호 검증을 통과했다. 전달 artifact의 API SHA-256과 외부 checksum pin도 로컬에서 대조했다. 기존 16개 이미지 계약은 유지했고 나머지 이미지 게시 job은 skipped다.
+
+초기 Console 게시 실행 `41325961083`은 Trivy 보고서 생성 전 실패했으며 게시/운영 적용은 없었다. 검사 컨테이너에서 없는 자격 증명 경로를 사용하지 않도록 하고, 쓰기 가능한 캐시·임시 경로와 제한된 오류 분류를 제공했다. 별도 사전 검사는 서명/게시 권한 없이 긴 integration과 병행하며, 성공해도 전달/배포로 취급하지 않는다. 사전 검사 작업의 누락된 상위 출력 디렉터리 생성도 수정했다. 실제 게시 작업은 계속 같은 소스의 전체 integration 성공 뒤 자체 새 검사를 수행한다.
+
+2026-11-02 04:39 KST에 서명 후보를 고정한 후 새 로컬 자원 검사를 시작했으나, 첫 Windows 측정 668MiB가 기존 시작 기준 2,048MiB에 미달해 중단됐다. 이 관측은 4분/13회 연속 검증 통과가 아니다. 앞선 4회 관측의 최저 2,033MiB 실패도 보존했다. 기준을 낮추거나 운영 서비스를 중지·재시작하거나 반복 메모리 회수 실험으로 통과시키지 않는다. 사용자가 추가 외부 메모리를 확보한 뒤 새 자원 검증이 필요하다.
+
+이 시점에는 운영 Console을 교체하거나 후보 이미지를 로컬로 pull하지 않았다. 기존 32개 정상 서비스·원래 컨테이너 자산 42개·볼륨 18개·기존 이미지와 원본 파일 9개를 보존했다. 실제 기존 OIDC 로그인·평가/현재 게이트 조회와 본인 세션 정리, OIDC 및 기존 Ed25519 게이트 공개 신뢰 정보의 읽기 전용 확인도 성공했다. 이 조회는 운영 기록 전체의 서명 검증이나 자료 import가 아니다. 독립 로컬 이미지 암호 검증·최종 설정/자료 snapshot·Console 교체·실제 운영 브라우저 수용은 자원 gate 뒤의 미수행 단계다.
