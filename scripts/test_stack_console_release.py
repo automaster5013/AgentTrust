@@ -10,6 +10,12 @@ class ConsoleReleaseTest(unittest.TestCase):
    env=self.env();env[k]=v
    with self.subTest(k=k),self.assertRaises(ValueError):context(env,ROOT,1001)
   with self.assertRaises(ValueError):context(self.env(),ROOT,0)
+ def test_nonpublishing_preflight_keeps_all_hosted_scope_guards_without_claiming_integration(self):
+  env=self.env();env['STACK_SOURCE_INTEGRATION_PASSED']='false';self.assertEqual(context(env,ROOT,1001,publication=False),SHA)
+  with self.assertRaises(ValueError):context(env,ROOT,1001,publication=True)
+  for key,value in [('GITHUB_EVENT_NAME','pull_request'),('GITHUB_REPOSITORY','other/repo'),('GITHUB_REF','refs/heads/main'),('STACK_CONSOLE_RELEASE_APPROVED','false')]:
+   bad=copy.deepcopy(env);bad[key]=value
+   with self.subTest(key=key),self.assertRaises(ValueError):context(bad,ROOT,1001,publication=False)
  def manifest(self):return {'schemaVersion':1,'kind':'single-console-delivery','revision':SHA,'repository':REPOSITORY,'ref':REF,'workflow':WORKFLOW,'runId':1,'runAttempt':1,'image':'ghcr.io/automaster5013/agenttrust-console@sha256:'+'b'*64,'imageId':'sha256:'+'c'*64,'keylessIdentity':IDENTITY,'oidcIssuer':'https://token.actions.githubusercontent.com','highCriticalFindings':0,'runtimeHttpVerified':True,'sourceIntegrationPassed':True,'oidcProfile':{'profile':'local-review','applicationOrigin':'http://127.0.0.1:4320','publicIssuer':'http://127.0.0.1:4322/realms/agenttrust'},'scope':['stack-console'],'databaseChanged':False,'actualDeploymentPerformed':False}
  def files(self):
   sbom={'bomFormat':'CycloneDX','components':[{'name':'synthetic-fixture'}]}

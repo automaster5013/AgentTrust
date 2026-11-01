@@ -396,6 +396,35 @@ jobs:
       - name: Stop isolated runner services
         if: always()
         run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml -f compose.stack.providers.yaml down
+  console-scan-preflight:
+    needs: security-source
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_console_only == true && github.repository == 'automaster5013/AgentTrust' && github.ref == 'refs/heads/codex/commercial-workspace-ux-20261026'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build pinned scanner tools without registry or signing credentials
+        run: docker build -t agenttrust-security:local tools/security
+      - name: Diagnose the exact Console image before the longer integration completes
+        env:
+          STACK_CONSOLE_RELEASE_APPROVED: 'true'
+          STACK_SOURCE_INTEGRATION_PASSED: 'false'
+        run: python3 scripts/stack-console-release.py --preflight
+      - name: Retain public preflight reports without treating them as a signed delivery
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: console-only-preflight-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          include-hidden-files: true
+          path: |
+            .local/console-release-*/bundle/console.cdx.json
+            .local/console-release-*/bundle/console.trivy.json
+          if-no-files-found: ignore
+          retention-days: 7
   console-release:
     needs: integration
     if: github.event_name == 'workflow_dispatch' && inputs.publish_console_only == true && github.repository == 'automaster5013/AgentTrust' && github.ref == 'refs/heads/codex/commercial-workspace-ux-20261026'

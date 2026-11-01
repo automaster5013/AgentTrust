@@ -28,10 +28,13 @@ def ci_isolation(original,infrastructure):
   assert all(job['runs-on']=='ubuntu-latest' for job in workflow['jobs'].values())
   uploads=[step['with']['name'] for job in workflow['jobs'].values() for step in job['steps'] if str(step.get('uses','')).startswith('actions/upload-artifact@')]
   assert uploads and all(name.endswith('-${{ github.sha }}') or name == 'original-stack-dockerhub-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}' for name in uploads)
- jobs=original['jobs'];assert set(jobs)=={'security-source','integration','console-release','images','security-images','dockerhub'}
+ jobs=original['jobs'];assert set(jobs)=={'security-source','integration','console-scan-preflight','console-release','images','security-images','dockerhub'}
  console=jobs['console-release'];assert console['needs']=='integration'
  assert console['if']=="github.event_name == 'workflow_dispatch' && inputs.publish_console_only == true && github.repository == 'automaster5013/AgentTrust' && github.ref == 'refs/heads/codex/commercial-workspace-ux-20261026'"
  assert console['permissions']=={'contents':'read','packages':'write','id-token':'write'}
+ preflight=jobs['console-scan-preflight'];assert preflight['needs']=='security-source' and preflight['if']==console['if'] and preflight['permissions']=={'contents':'read'}
+ assert any(step.get('run')=='python3 scripts/stack-console-release.py --preflight' for step in preflight['steps'])
+ assert not any('docker login' in step.get('run','') or 'stack-signing-setup' in step.get('run','') for step in preflight['steps'])
  events=original.get('on',original.get(True));assert events['workflow_dispatch']['inputs']['publish_console_only']=={'description':'Publish one signed Console candidate after full integration; never deploy','required':False,'type':'boolean','default':False}
  for name,parent in [('integration','security-source'),('images','integration'),('security-images','images'),('dockerhub','security-images')]:
   value=jobs[name]['needs'];assert set(value if isinstance(value,list) else [value])=={parent}

@@ -9,24 +9,31 @@ def phase(value):
 
 def run(args,timeout=600):
  r=subprocess.run(args,cwd=ROOT,capture_output=True,timeout=timeout)
+ if r.returncode and PHASE=='vulnerability-scan':
+  stderr=r.stderr.decode('utf-8',errors='replace').lower()
+  patterns={'unknown flag':'unsupported-flag','no space left on device':'temporary-space-exhausted','permission denied':'cache-permission-denied','unauthorized':'registry-unauthorized','toomanyrequests':'registry-rate-limit','too many requests':'registry-rate-limit','deadline exceeded':'network-deadline','timeout':'network-timeout','no such file':'input-or-cache-path-missing','failed to download vulnerability db':'vulnerability-db-download','unsupported':'unsupported-input-or-format','file exists':'cache-destination-collision','cannot allocate memory':'allocation-failed','out of memory':'out-of-memory'}
+  categories=sorted({name for text,name in patterns.items() if text in stderr});hosts=[host for host in ['ghcr.io','mirror.gcr.io','github.com','pkg-containers.githubusercontent.com'] if host in stderr]
+  print(json.dumps({'phase':'scanner-command-failure','exitCode':r.returncode,'categories':categories,'knownRegistryHosts':hosts,'stderrBytes':len(r.stderr),'rawStderrPrinted':False}),flush=True)
  require(r.returncode==0);return r.stdout
 
 def main():
- parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--publish',action='store_true');args=parser.parse_args()
- if not args.publish:print(json.dumps({'planOnly':True,'scope':['stack-console'],'actualDeploymentPerformed':False}));return 0
+ parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--publish',action='store_true');parser.add_argument('--preflight',action='store_true');args=parser.parse_args();require(not (args.publish and args.preflight))
+ if not args.publish and not args.preflight:print(json.dumps({'planOnly':True,'scope':['stack-console'],'actualDeploymentPerformed':False}));return 0
  # Guard precedes output files, credentials, Docker and registry mutations.
- sha=context(os.environ,ROOT,os.getuid() if os.name!='nt' else 0)
+ sha=context(os.environ,ROOT,os.getuid() if os.name!='nt' else 0,publication=args.publish)
  require(run(['git','rev-parse','HEAD']).decode().strip()==sha)
  require(shutil.disk_usage(ROOT).free>=10*1073741824)
  memory=dict(line.split(':',1) for line in pathlib.Path('/proc/meminfo').read_text().splitlines());require(int(memory['MemAvailable'].strip().split()[0])>=4*1048576)
  directory=ROOT/'.local'/('console-release-'+str(uuid.uuid4()));directory.mkdir()
  bundle=directory/'bundle';bundle.mkdir();cache=directory/'cache';cache.mkdir();inputs=directory/'inputs';inputs.mkdir()
- for p in [bundle,cache,inputs]:p.chmod(0o777)
+ temporary=cache/'tmp';temporary.mkdir()
+ for p in [bundle,cache,inputs,temporary]:p.chmod(0o777)
  tag='ghcr.io/automaster5013/agenttrust-console:'+sha
  fixture=None;archive=inputs/'console.tar'
  def tool(command,network='none',credentials=False,oidc=False):
-  c=['docker','run','--rm','--user',str(os.getuid())+':'+str(os.getgid()),'--network',network,'--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--tmpfs','/tmp:size=256m,mode=1777','--memory','2g','--cpus','2','--pids-limit','128','-e','HOME=/tmp','-e','DOCKER_CONFIG=/credentials','--mount','type=bind,source='+str(inputs)+',target=/in,readonly','--mount','type=bind,source='+str(bundle)+',target=/proof','--mount','type=bind,source='+str(cache)+',target=/cache']
-  if credentials:c+=['--mount','type=bind,source='+str(ROOT/'.local/stack-signing-credentials')+',target=/credentials,readonly']
+  c=['docker','run','--rm','--user',str(os.getuid())+':'+str(os.getgid()),'--network',network,'--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--tmpfs','/tmp:size=256m,mode=1777','--memory','2g','--cpus','2','--pids-limit','128','-e','HOME=/tmp','-e','XDG_CACHE_HOME=/tmp/cache','--mount','type=bind,source='+str(inputs)+',target=/in,readonly','--mount','type=bind,source='+str(bundle)+',target=/proof','--mount','type=bind,source='+str(cache)+',target=/cache']
+  if credentials:c+=['-e','DOCKER_CONFIG=/credentials','--mount','type=bind,source='+str(ROOT/'.local/stack-signing-credentials')+',target=/credentials,readonly']
+  if not credentials:c+=['-e','TMPDIR=/cache/tmp']
   if oidc:
    for key in ['ACTIONS_ID_TOKEN_REQUEST_URL','ACTIONS_ID_TOKEN_REQUEST_TOKEN','GITHUB_ACTIONS']:c+=['-e',key]
   return run(c+['agenttrust-security:local']+command)
@@ -61,6 +68,8 @@ def main():
       if all(isinstance(v,str) and len(v)<=128 and re.fullmatch(r'[A-Za-z0-9@._/+*, <>=~^-]*',v) for v in fields.values()):findings.append(fields)
     print(json.dumps({'phase':'public-package-scan-diagnostics','findings':findings[:32],'diagnosticLimitReached':len(findings)>32,'rawSecretsPrinted':False}),flush=True)
   scan=json.loads((bundle/'console.trivy.json').read_bytes());require(scan.get('SchemaVersion')==2 and all(not r.get('Vulnerabilities') for r in scan.get('Results',[])))
+  if args.preflight:
+   print(json.dumps({'completed':True,'purpose':'console-scan-preflight-only','revision':sha,'highCriticalFindings':0,'published':False,'sourceIntegrationPassed':False,'actualDeploymentPerformed':False}));return 0
   phase('publish-digest')
   run(['docker','push',tag]);published=json.loads(run(['docker','image','inspect',tag]))[0];require(published['Id']==image['Id'])
   refs=[r for r in published.get('RepoDigests',[]) if r.startswith('ghcr.io/automaster5013/agenttrust-console@sha256:')];require(len(refs)==1);reference=refs[0]

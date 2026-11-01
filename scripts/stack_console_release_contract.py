@@ -13,10 +13,11 @@ def unique(pairs):
   require(k not in value);value[k]=v
  return value
 def parse(raw):return json.loads(raw.decode('utf-8'),object_pairs_hook=unique)
-def context(env,root,uid):
+def context(env,root,uid,publication=True):
  require(uid>0 and env.get('GITHUB_ACTIONS')=='true' and env.get('RUNNER_ENVIRONMENT')=='github-hosted')
  require(env.get('GITHUB_REPOSITORY')==REPOSITORY and env.get('GITHUB_REF')==REF and env.get('GITHUB_EVENT_NAME')=='workflow_dispatch')
- require(env.get('STACK_CONSOLE_RELEASE_APPROVED')=='true' and env.get('STACK_SOURCE_INTEGRATION_PASSED')=='true' and str(root)==env.get('GITHUB_WORKSPACE'))
+ require(type(publication) is bool and env.get('STACK_CONSOLE_RELEASE_APPROVED')=='true' and str(root)==env.get('GITHUB_WORKSPACE'))
+ if publication:require(env.get('STACK_SOURCE_INTEGRATION_PASSED')=='true')
  require(re.fullmatch('[a-f0-9]{40}',env.get('GITHUB_SHA','')) is not None)
  for k in ['GITHUB_RUN_ID','GITHUB_RUN_ATTEMPT']:require(re.fullmatch('[1-9][0-9]*',env.get(k,'')) is not None)
  return env['GITHUB_SHA']
