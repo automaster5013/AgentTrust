@@ -14,7 +14,7 @@ export function parseLegacyLinkArguments(args){
 export async function readBoundedLegacyLinkFile(path,maximum){
  if(!Number.isSafeInteger(maximum)||maximum<1||maximum>receiptFileLimit)throw Error('Invalid file bound.');
  const before=await lstat(path);if(!before.isFile()||before.isSymbolicLink()||before.size>maximum)throw Error('Regular bounded file required.');
- const handle=await open(path,constants.O_RDONLY|(constants.O_NOFOLLOW??0));
+ const handle=await open(path,constants.O_RDONLY|(constants.O_NOFOLLOW??0)|(constants.O_NONBLOCK??0));
  try{
   const current=await handle.stat();if(!current.isFile()||current.dev!==before.dev||current.ino!==before.ino)throw Error('File identity changed.');
   const chunks=[];let used=0;

@@ -81,3 +81,21 @@ test('actual CLI emits safe metadata and preserves all three input files; failur
  const success=spawnSync(process.execPath,args,{cwd:resolve('.'),encoding:'utf8',timeout:8000});assert.equal(success.status,0,success.stderr);const summary=JSON.parse(success.stdout);assert.equal(summary.sourceSignatureVerified,true);assert.equal(summary.targetRecordImported,false);assert.equal(summary.deploymentAllowed,false);assert.ok(!success.stdout.includes('CONFIDENTIAL_LINK_REASON_CANARY'));assert.deepEqual(readFileSync(receipt),value.receiptBytes);assert.deepEqual(readFileSync(mapping),value.mappingBytes);assert.equal(readFileSync(key,'utf8'),publicPem);
  writeFileSync(receipt,'CONFIDENTIAL_INVALID_RECEIPT_CANARY');const failed=spawnSync(process.execPath,args,{cwd:resolve('.'),encoding:'utf8',timeout:8000});assert.equal(failed.status,2);assert.equal(failed.stdout,'');assert.ok(!failed.stderr.includes('CONFIDENTIAL_'));assert.ok(!failed.stderr.includes(directory));assert.ok(!failed.stderr.includes(publicPem));
 });
+
+
+test('regular-to-FIFO replacement cannot hang the bounded reader after its initial lstat',{skip:process.platform!=='linux',timeout:20000},t=>{
+ const directory=scratch(t),path=join(directory,'raced-input.json'),entry=new URL('../scripts/stack-legacy-receipt-link.mjs',import.meta.url).href;
+ // Patch only this disposable child's lstat: return a real regular-file stat, then
+ // replace that owned fixture with a real FIFO before the production open call.
+ const script=String.raw`
+ const fs=require('node:fs'),fsp=require('node:fs/promises'),assert=require('node:assert/strict');
+ const [path,mode,entry]=process.argv.slice(1),originalStat=fsp.lstat,originalOpen=fsp.open;
+ fsp.lstat=async file=>{const stat=await originalStat(file);if(file===path){fs.unlinkSync(path);require('node:child_process').execFileSync('mkfifo',['--',path]);fs.writeSync(1,'fifo-swapped\n');}return stat;};
+ if(mode==='blocking-control')fsp.open=(file,flags,...rest)=>originalOpen(file,flags&~fs.constants.O_NONBLOCK,...rest);
+ require('node:module').syncBuiltinESMExports();
+ (async()=>{const {readBoundedLegacyLinkFile}=await import(entry);await assert.rejects(readBoundedLegacyLinkFile(path,128),/File identity changed/);fs.writeSync(1,'fifo-refused\n');})().catch(()=>{fs.writeSync(2,'race-probe-failed\n');process.exitCode=1;});
+ `;
+ function probe(mode,timeout){rmSync(path,{force:true});writeFileSync(path,'owned synthetic input');return spawnSync(process.execPath,['--input-type=commonjs','-e',script,path,mode,entry],{cwd:resolve('.'),encoding:'utf8',timeout});}
+ const blocking=probe('blocking-control',5000);assert.equal(blocking.error?.code,'ETIMEDOUT');assert.match(blocking.stdout,/fifo-swapped/);
+ const protectedRead=probe('protected-reader',8000);assert.equal(protectedRead.status,0,protectedRead.stderr);assert.match(protectedRead.stdout,/fifo-swapped/);assert.match(protectedRead.stdout,/fifo-refused/);
+});

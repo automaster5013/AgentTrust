@@ -43,3 +43,6 @@ node scripts/stack-legacy-receipt-link.mjs source-receipt.json trusted-public.pe
 
 
 2026-11-01 원격 확인: 소스 `d5de860925f1b27a59f5aba687c8a6a8bb2a2647`의 [Validate and deliver 41292563858](https://github.com/automaster5013/AgentTrust/actions/runs/41292563858)에서 Node 24/Linux의 실제 CLI·서명/원본 바이트 보존·심볼릭 링크 입력 거부 검사가 통과했다. 같은 revision의 [통합 CI 41292563839](https://github.com/automaster5013/AgentTrust/actions/runs/41292563839)도 통과했다. 이 결과는 합성 서명 fixture와 후보 스택에 한정한다. 실제 기존 운영 기록을 도구에 입력하거나 대상 DB에 연결/가져온 것은 아니다.
+
+
+2026-11-02 경계 보완: 일반 파일의 `lstat`과 `open` 사이에 입력이 FIFO로 교체되면 이전의 read-only open은 파일 종류/신원 검사에 도달하기 전에 대기할 수 있었다. 지원 플랫폼에서 `O_NONBLOCK`을 함께 지정해 열린 핸들의 종류·신원을 즉시 거부하도록 했다. Windows에서는 해당 상수가 없어 기존 일반 파일 경로가 그대로 동작한다. Linux 회귀는 자체 임시 입력만 실제 FIFO로 바꾸며, 비차단 플래그를 제거한 별도 자식은 시간 제한으로 종료되는 선행 동작을 확인하고 수정된 읽기는 거부 후 정상 종료해야 한다. 실제 기존 자료·운영 서비스·서명 키에는 접근하지 않는다. 새 원격 검사 결과는 해당 소스 CI에서 확인한다.
