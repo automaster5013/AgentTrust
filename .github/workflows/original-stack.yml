@@ -85,7 +85,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: original-stack-source-security-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          name: original-stack-source-security-attempt-${{ github.run_attempt }}-${{ github.sha }}
           include-hidden-files: true
           path: |
             .local/stack-security-source-*/summary.json
@@ -159,7 +159,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: console-visual-before-after-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          name: console-visual-before-after-attempt-${{ github.run_attempt }}-${{ github.sha }}
           retention-days: 7
           path: |
             .local/ui-visual/*.png
@@ -171,7 +171,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: console-admin-review-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          name: console-admin-review-attempt-${{ github.run_attempt }}-${{ github.sha }}
           path: apps/console/test-results/**/workspace-admin-*.png
           if-no-files-found: error
           retention-days: 7
@@ -250,7 +250,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: console-workspace-browser-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          name: console-workspace-browser-attempt-${{ github.run_attempt }}-${{ github.sha }}
           path: apps/console/test-results/**/workspace-*.png
           if-no-files-found: warn
           retention-days: 7
@@ -313,7 +313,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: original-stack-diagnostics-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          name: original-stack-diagnostics-attempt-${{ github.run_attempt }}-${{ github.sha }}
           include-hidden-files: true
           path: |
             .local/stack-gateway-smoke-*.json

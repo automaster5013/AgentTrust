@@ -5,12 +5,14 @@ from stack_ci_artifacts import diagnostic_artifact_revision, select_diagnostic_a
 class ArtifactAttemptTest(unittest.TestCase):
     revision = 'a' * 40
     def artifact(self, attempt=None, **extra):
-        return {'name': 'original-stack-diagnostics-' + self.revision + ('' if attempt is None else '-attempt-' + str(attempt)),
+        return {'name': 'original-stack-diagnostics-' + ('' if attempt is None else 'attempt-' + str(attempt) + '-') + self.revision,
                 'expired': False, **extra}
 
     def test_legacy_first_attempt_remains_readable(self):
         item = self.artifact()
         self.assertIs(select_diagnostic_artifact([item], self.revision, 1), item)
+        previous = self.artifact(name='original-stack-diagnostics-' + self.revision + '-attempt-2')
+        self.assertIs(select_diagnostic_artifact([previous], self.revision, 2), previous)
 
     def test_current_attempt_selected_while_prior_failure_is_retained(self):
         first = self.artifact(1); second = self.artifact(2)
@@ -29,7 +31,8 @@ class ArtifactAttemptTest(unittest.TestCase):
             with self.assertRaises(AssertionError): select_diagnostic_artifact(items, self.revision, 2 if len(items)==1 else 1)
 
     def test_attempt_and_name_contract_is_strict(self):
-        for name in ('original-stack-diagnostics-' + self.revision + '-attempt-02',
+        for name in ('original-stack-diagnostics-attempt-02-' + self.revision,
+                     'original-stack-diagnostics-' + self.revision + '-attempt-02',
                      'original-stack-diagnostics-' + self.revision + '-attempt-2-extra', None):
             self.assertIsNone(diagnostic_artifact_revision(name, 2))
         for attempt in (True, 0, '2', 10000):
