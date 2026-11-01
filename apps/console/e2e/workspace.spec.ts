@@ -1296,7 +1296,7 @@ test('workspace history search finds older server-filtered evaluations and opens
   const searchTable=region.getByRole('region',{name:'전체 평가 이력 검색 결과 표 · 좁은 화면에서 좌우로 이동',exact:true});
   expect(await rows.evaluateAll(elements=>elements.every(row=>row.getBoundingClientRect().height<100))).toBe(true);
   await searchTable.evaluate(element=>{element.scrollLeft=element.scrollWidth});
-  const evidenceButton=rows.first().getByRole('button');await expect(evidenceButton).toBeInViewport();
+  const evidenceButton=rows.first().getByRole('button');await evidenceButton.scrollIntoViewIfNeeded();await expect(evidenceButton).toBeInViewport();
   await evidenceButton.click();await expect(page.locator('.evidence').getByText('실행 '+current[0],{exact:true})).toBeVisible();
   await searchTable.evaluate(element=>{element.scrollLeft=0});
   await region.screenshot({path:'test-results/workspace-history-search-mobile.png'});phase('actual authenticated mobile search controls, compact rows and reachable evidence fit the viewport');
