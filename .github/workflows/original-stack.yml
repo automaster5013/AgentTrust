@@ -441,6 +441,17 @@ jobs:
           path: .local/console-release-*/bundle/*
           if-no-files-found: error
           retention-days: 30
+      - name: Retain bounded public package scan diagnostics even on release failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: console-only-scan-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          include-hidden-files: true
+          path: |
+            .local/console-release-*/bundle/console.cdx.json
+            .local/console-release-*/bundle/console.trivy.json
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Remove only this job's temporary credentials
         if: always()
         run: |

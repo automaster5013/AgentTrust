@@ -1,5 +1,5 @@
 """Manual hosted Console-only build/scan/sign; no operating PC or business data access."""
-import argparse,hashlib,json,os,pathlib,shutil,subprocess,sys,time,uuid
+import argparse,hashlib,json,os,pathlib,re,shutil,subprocess,sys,time,uuid
 from stack_console_release_contract import context,require,REPOSITORY,REF,WORKFLOW,IDENTITY,FILES,validate
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 PHASE="admission"
@@ -49,7 +49,17 @@ def main():
   phase('sbom')
   tool(['syft','docker-archive:/in/console.tar','-o','cyclonedx-json=/proof/console.cdx.json','--quiet'])
   phase('vulnerability-scan')
-  tool(['trivy','image','--input','/in/console.tar','--cache-dir','/cache','--scanners','vuln','--severity','HIGH,CRITICAL','--format','json','--output','/proof/console.trivy.json','--exit-code','1','--timeout','8m','--no-progress','--quiet'],'bridge')
+  try:
+   tool(['trivy','image','--input','/in/console.tar','--cache-dir','/cache','--scanners','vuln','--severity','HIGH,CRITICAL','--format','json','--output','/proof/console.trivy.json','--exit-code','1','--timeout','8m','--no-progress','--quiet'],'bridge')
+  finally:
+   path=bundle/'console.trivy.json'
+   if path.is_file() and path.stat().st_size<=8388608:
+    value=json.loads(path.read_bytes());findings=[]
+    for result in value.get('Results',[]):
+     for item in result.get('Vulnerabilities') or []:
+      fields={k:item.get(k,'') for k in ['VulnerabilityID','PkgName','InstalledVersion','FixedVersion','Severity']}
+      if all(isinstance(v,str) and len(v)<=128 and re.fullmatch(r'[A-Za-z0-9@._/+*, <>=~^-]*',v) for v in fields.values()):findings.append(fields)
+    print(json.dumps({'phase':'public-package-scan-diagnostics','findings':findings[:32],'diagnosticLimitReached':len(findings)>32,'rawSecretsPrinted':False}),flush=True)
   scan=json.loads((bundle/'console.trivy.json').read_bytes());require(scan.get('SchemaVersion')==2 and all(not r.get('Vulnerabilities') for r in scan.get('Results',[])))
   phase('publish-digest')
   run(['docker','push',tag]);published=json.loads(run(['docker','image','inspect',tag]))[0];require(published['Id']==image['Id'])
