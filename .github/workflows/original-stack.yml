@@ -4,6 +4,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish_console_only:
+        description: 'Publish one signed Console candidate after full integration; never deploy'
+        required: false
+        type: boolean
+        default: false
 concurrency:
   # Hosted runners and SHA-scoped image/artifact names isolate independent revisions.
   group: original-stack-${{ github.ref }}-${{ github.sha }}
@@ -27,6 +33,7 @@ jobs:
           python3 scripts/stack-observability-orchestration-test.py
           python3 scripts/stack-tempo-metadata-test.py
           python3 scripts/stack-host-capacity-test.py
+          python3 -m unittest discover -s scripts -p test_stack_console_release.py
           python3 scripts/stack-tempo-repair-plan-test.py
           python3 scripts/stack-tempo-source-recheck-test.py
           python3 scripts/stack-local-cd-executor-test.py
@@ -388,6 +395,56 @@ jobs:
       - name: Stop isolated runner services
         if: always()
         run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml -f compose.stack.providers.yaml down
+  console-release:
+    needs: integration
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_console_only == true && github.repository == 'automaster5013/AgentTrust' && github.ref == 'refs/heads/codex/commercial-workspace-ux-20261026'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build pinned security tools for the separate Console-only delivery
+        run: docker build -t agenttrust-security:local tools/security
+      - name: Prepare ephemeral registry credentials
+        env:
+          STACK_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/stack-signing-setup.py
+      - name: Authenticate the temporary build client
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          export DOCKER_CONFIG="$RUNNER_TEMP/console-release-login"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG" >> "$GITHUB_ENV"
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Build execute scan publish and keyless-sign only the Console
+        env:
+          STACK_CONSOLE_RELEASE_APPROVED: 'true'
+          STACK_SOURCE_INTEGRATION_PASSED: ${{ needs.integration.result == 'success' && 'true' || 'false' }}
+        run: python3 scripts/stack-console-release.py --publish
+      - name: Independently verify the Console delivery bundle
+        run: |
+          BUNDLE=$(find .local -maxdepth 3 -type f -path '.local/console-release-*/bundle/checksums.json')
+          test "$(printf '%s\n' "$BUNDLE" | wc -l)" -eq 1
+          PIN=$(sha256sum "$BUNDLE" | cut -d ' ' -f 1)
+          python3 scripts/stack-console-release-verify.py --bundle "$(dirname "$BUNDLE")" --expected-revision "$GITHUB_SHA" --expected-checksums-sha256 "$PIN" --docker-tools
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: console-only-signed-delivery-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          include-hidden-files: true
+          path: .local/console-release-*/bundle/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove only this job's temporary credentials
+        if: always()
+        run: |
+          python3 -c "from pathlib import Path; Path('.local/stack-signing-credentials/config.json').unlink(missing_ok=True)"
+          rm -f "$RUNNER_TEMP/console-release-login/config.json"
   images:
     needs: integration
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

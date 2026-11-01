@@ -166,3 +166,14 @@ Compose 계약의 `stack-migrate`·`stack-object-init`·`stack-observability-ini
 
 
 `51df5ea`의 infrastructure 검사는 attempt suffix가 SHA 뒤에 와서 기존 `ci_isolation`의 SHA-last artifact 계약을 거부했다. 이 실패는 새 이름 변경에서 발생했으며 통과로 취급하지 않는다. 실제 기존 검사 함수를 로컬에서 추출해 동일 거부를 재현한 뒤, 이름을 `prefix-attempt-N-SHA` 순서로 맞췄다. 격리 validator·SHA별 concurrency·불변 이미지 게시·전체 보안 DAG·publication gate를 완화하지 않았다. 현재 이름과 과거 두 이름 형식을 reader가 엄격히 해석하며 현재 attempt 1개 선택 조건은 유지한다. 기존 격리 함수와 실제 두 workflow의 검사를 통과했고 shared artifact 변형은 계속 거부했다. 실제 infrastructure와 integration의 최종 결과는 새 CI에서 확인한다.
+
+
+## 2026-11-02 운영 Console 반영 요청과 최소 적용 경로
+
+사용자가 운영 4320 화면의 사이드바 반영과 추가 6시간 작업을 명시적으로 요청했다. 과거의 대상 컨테이너 ID 유지 제한은 이 요청에 필요한 Console 교체 범위에서 대체한다. 4310·LogiTrack·DB·기존 원본/서명·비대상 서비스의 보존 조건은 유지한다. 새 권한/현재 신뢰 정책 없이 기존 계정·세션·서명 자료를 자동 승계하지 않는다.
+
+사이드바의 첫 운영 반영은 상태 없는 `stack-console` 하나만 대상으로 준비한다. V18 migration·Core/Gateway/worker·운영 데이터·관측 저장소 변경을 이 작업에 묶지 않는다. 기존 Core/Gateway에 없는 관리/전체 검색은 지원 실패를 명시하고 성공을 꾸미지 않는다. 현재 API가 지원하는 평가·근거·현재 게이트와 실제 OIDC 로그인은 교체 후 확인해야 한다. 이 최소 경로는 위의 전체 스택/V18 배포 승인이나 복구 완료를 대신하지 않는다.
+
+별도의 단일 Console 전달 계약은 기존 16개 이미지 delivery 계약을 수정하지 않는다. `original-stack.yml`의 수동 `publish_console_only=true`와 고정 저장소/작업 브랜치에서만 전체 integration 성공 후 실행한다. 새 Console의 기존 Dockerfile·고정 의존성으로 빌드하고 일회성 격리 HTTP health·Syft SBOM·HIGH/CRITICAL 0건·정확한 registry digest·해당 workflow/ref/source SHA의 keyless 이미지/동일 SBOM 서명과 독립 소비자 검증을 결합한다. 자동 PR·push는 이 게시 작업을 실행하지 않으며 게시도 운영 교체를 수행하지 않는다. 메타데이터 검사만으로 암호 검증 성공을 주장하지 않는다.
+
+실제 적용 전에는 독립적으로 고정한 artifact/checksum/source와 로컬 서명 검증, 최신 대상 설정/마운트/키·32개 건강 상태·기존 자료/업무 fingerprint, 자원 기준 및 원래 Console을 보존하는 복귀 계획이 필요하다. 기존 일반 CD executor의 schema 거부를 우회하지 않는다. 현재 첫 관측의 Windows 여유는 1,150MiB로 2,048MiB 시작 기준 미만이며, 기준을 낮추거나 운영 서비스 중지·반복 메모리 회수 실험으로 해결하지 않는다. 소스·서명 후보 준비와 실제 운영 반영 완료를 구분한다.
