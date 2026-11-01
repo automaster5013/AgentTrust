@@ -152,9 +152,23 @@ if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true')test('legacy Core return ke
 test('project home keeps failed statistics unknown and binds retry counts to the displayed response',async({page})=>{
  await login(page,'demo-viewer',async()=>{await page.route('**/backend/runs',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({code:'SYNTHETIC_UNAVAILABLE'})}))});
  const home=page.locator('#overview');await expect(home).toContainText('평가 목록을 확인하지 못했습니다.');await expect(home.locator('dd')).toHaveText(['미확인','미확인','미확인','미확인']);
- await page.unroute('**/backend/runs');const loaded=page.waitForResponse(response=>new URL(response.url()).pathname==='/backend/runs'&&response.request().method()==='GET');
- await page.getByRole('button',{name:'최근 평가 다시 조회',exact:true}).click();const response=await loaded;expect(response.status()).toBe(200);const rows=await response.json() as {decision:string}[];
- await expect(home.locator('dd')).toHaveText([rows.length,rows.filter(r=>r.decision==='pass').length,rows.filter(r=>r.decision==='block').length,rows.filter(r=>r.decision==='inconclusive').length].map(String));await expect(home).not.toContainText('새 평가 준비');await logout(page);
+ await page.unroute('**/backend/runs');
+ const observed:{rows:{decision:string}[]|null}={rows:null};
+ // Observe the same actual retry bytes before forwarding them unchanged. The
+ // browser may release its response body after the UI consumes it; a second GET
+ // would not prove that the displayed counts bind to this specific response.
+ await page.route('**/backend/runs',async route=>{
+  const request=route.request(),url=new URL(request.url());expect(request.method()).toBe('GET');expect(url.origin).toBe('http://127.0.0.1:4320');expect(url.pathname).toBe('/backend/runs');
+  const upstream=await route.fetch({maxRetries:0,maxRedirects:0,timeout:10000});expect(upstream.status()).toBe(200);
+  const bytes=await upstream.body();expect(bytes.byteLength).toBeLessThanOrEqual(1048576);
+  const rows=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)) as {decision:string}[];expect(Array.isArray(rows)).toBe(true);expect(rows.length).toBeLessThanOrEqual(50);expect(rows.every(row=>['pass','block','inconclusive'].includes(row.decision))).toBe(true);
+  observed.rows=rows;await route.fulfill({response:upstream});
+ });
+ try{
+  const loaded=page.waitForResponse(response=>new URL(response.url()).pathname==='/backend/runs'&&response.request().method()==='GET');
+  await page.getByRole('button',{name:'최근 평가 다시 조회',exact:true}).click();const response=await loaded;expect(response.status()).toBe(200);expect(observed.rows).not.toBeNull();const rows=observed.rows!;
+  await expect(home.locator('dd')).toHaveText([rows.length,rows.filter(r=>r.decision==='pass').length,rows.filter(r=>r.decision==='block').length,rows.filter(r=>r.decision==='inconclusive').length].map(String));await expect(home).not.toContainText('새 평가 준비');phase('displayed counts bind to the same scoped retry response forwarded without byte changes; no second GET or retry');await logout(page);
+ }finally{await page.unroute('**/backend/runs')}
 });
 
 test('workspace navigation and responsive layout keep review tasks reachable without writes',async({page})=>{

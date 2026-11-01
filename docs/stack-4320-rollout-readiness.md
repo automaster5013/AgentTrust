@@ -124,3 +124,10 @@ Playwright의 전체 제목에는 파일명이 앞에 붙으므로 `--grep-inver
 
 
 완료된 worker witness의 재사용 경계도 모의 실패로 확인했다. 이미 unpause 완료된 witness는 현재 동일 identity가 unpaused 상태인지 읽기 전용으로 확인할 수 있지만, 나중에 다른 원인으로 paused가 되면 이를 해제하지 않고 거부한다. 해당 거부 테스트를 추가한 helper 9개와 기존 복귀 13개·V17 전환 7개, 총 29개 로컬 테스트가 통과했다. 이 보강은 기존 healthy·ID/image/StartedAt·unpaused 조건을 완화하지 않는다.
+
+
+### worker 보존 수정의 실제 결과와 프로젝트 홈 시험 관찰 경합
+
+`5bc266d` run `41251330456`의 이전 Core 복귀 단계는 실제 success다. 최신 `543bc26` run `41251528125`는 별도의 프로젝트 홈 브라우저 관찰 실패로 최종 failure였지만, SHA-256 검증한 보고서에서 worker cleanup과 비 Core 컨테이너 집합·이미지/StartedAt·running·unpaused·healthy가 모두 true이고 issues가 비어 있음을 확인했다. 후보 복원·HTTP·기존 행 보존도 true다. 따라서 worker stop/start 때문에 발생하던 보존 실패는 실제 검증에서 해소됐다. 운영 컨테이너나 현재 PC를 pause/unpause한 것은 아니다.
+
+`543bc26`의 실패 1개는 홈 재조회 HTTP 200 응답을 Playwright Response에서 늦게 읽는 중 `responseBodyUnavailable`이 된 시험 관찰 경합이다. 이전 실행들에서는 통과했으나 이번 실패를 재시도로 숨기지 않는다. 같은 실제 재조회 GET을 pass-through route로 관찰하고 원래 응답을 그대로 UI에 전달한 뒤, 그 응답의 판정별 건수와 실제 화면의 표시를 비교하도록 수정했다. 별도 GET으로 얻은 다른 값을 사용하지 않고 byte 변경·자동 retry·redirect를 허용하지 않는다. UI의 오류/미확인 처리·1MiB 제한·UTF-8/응답 계약은 바꾸지 않았다. 이 수정의 후보/legacy 브라우저 및 전체 integration은 새 CI에서 확인한다.
