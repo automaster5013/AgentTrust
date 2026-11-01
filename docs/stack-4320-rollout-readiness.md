@@ -131,3 +131,10 @@ Playwright의 전체 제목에는 파일명이 앞에 붙으므로 `--grep-inver
 `5bc266d` run `41251330456`의 이전 Core 복귀 단계는 실제 success다. 최신 `543bc26` run `41251528125`는 별도의 프로젝트 홈 브라우저 관찰 실패로 최종 failure였지만, SHA-256 검증한 보고서에서 worker cleanup과 비 Core 컨테이너 집합·이미지/StartedAt·running·unpaused·healthy가 모두 true이고 issues가 비어 있음을 확인했다. 후보 복원·HTTP·기존 행 보존도 true다. 따라서 worker stop/start 때문에 발생하던 보존 실패는 실제 검증에서 해소됐다. 운영 컨테이너나 현재 PC를 pause/unpause한 것은 아니다.
 
 `543bc26`의 실패 1개는 홈 재조회 HTTP 200 응답을 Playwright Response에서 늦게 읽는 중 `responseBodyUnavailable`이 된 시험 관찰 경합이다. 이전 실행들에서는 통과했으나 이번 실패를 재시도로 숨기지 않는다. 같은 실제 재조회 GET을 pass-through route로 관찰하고 원래 응답을 그대로 UI에 전달한 뒤, 그 응답의 판정별 건수와 실제 화면의 표시를 비교하도록 수정했다. 별도 GET으로 얻은 다른 값을 사용하지 않고 byte 변경·자동 retry·redirect를 허용하지 않는다. UI의 오류/미확인 처리·1MiB 제한·UTF-8/응답 계약은 바꾸지 않았다. 이 수정의 후보/legacy 브라우저 및 전체 integration은 새 CI에서 확인한다.
+
+
+### 정리 완료 후 늦은 worker pause 요청 거부
+
+브라우저 자식이 늦게 시작하는 예외 경로를 모의 실행해, 아직 pause witness가 없을 때 먼저 수행된 cleanup이 같은 invocation의 뒤늦은 pause를 허용함을 재현했다. cleanup은 Docker를 호출하지 않고 해당 run/attempt의 witness를 원자적으로 닫는다. 이후 같은 witness의 pause는 Docker 접근 전에 거부되고 반복 cleanup도 파일을 덮어쓰거나 컨테이너를 변경하지 않는다. 실제 pause를 수행한 witness의 소유권·ID/image/StartedAt 검증과 복구 동작은 유지한다. 이는 정리 이후 아직 witness를 얻지 못한 요청의 권한을 닫는 범위이며 모든 자식 프로세스 종료를 증명하지 않는다.
+
+helper 10개·복귀 13개·V17 전환 7개, 총 30개 모의/로컬 테스트가 통과했다. 운영 pause/unpause·재시작·배포는 수행하지 않았다. 이 변경의 실제 hosted 결과는 새 CI에서 확인한다. 별도로 `5bc266d` run `41251330456`은 전체 integration도 최종 success이며 SHA-256 검증한 보고서에서 이전 브라우저 53개·후보 복원/HTTP·기존 행/ledger·비 Core 집합/이미지/StartedAt/running/unpaused/healthy 및 후속 합성 복구 단계의 성공을 확인했다. 운영 복구·자동 배포·건강한 운영 rollback을 뜻하지 않는다.

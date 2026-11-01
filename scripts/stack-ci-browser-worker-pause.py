@@ -46,16 +46,24 @@ def perform(action, witness, root, command, environment=None, journal=None):
         assert len(states) == 1
         return states[0]
 
+    def create_ticket(ticket):
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, 'w', encoding='utf-8') as handle: handle.write(json.dumps(ticket) + '\n')
+
     if action == 'resume' and not path.exists():
-        return {'completed': True, 'executed': False, 'noPauseWitness': True, 'restored': False}
+        # Revoke this invocation before a delayed child can acquire its pause witness.
+        journal['stage'] = 'witness-close'
+        create_ticket({'schemaVersion': 1, 'root': str(root.resolve()), 'runId': env['GITHUB_RUN_ID'],
+                       'runAttempt': env['GITHUB_RUN_ATTEMPT'], 'identity': None, 'pauseAttempted': False, 'resumed': True})
+        return {'completed': True, 'executed': True, 'noPauseWitness': True, 'restored': False,
+                'witnessClosed': True, 'containerMutationPerformed': False}
     if action == 'pause':
         assert not path.exists()
         state = inspect(); identity = owned(state, root)
         assert state['State'].get('Paused') is False and state['State'].get('Health', {}).get('Status') == 'healthy'
         ticket = {'schemaVersion': 1, 'root': str(root.resolve()), 'runId': env['GITHUB_RUN_ID'],
                   'runAttempt': env['GITHUB_RUN_ATTEMPT'], 'identity': identity, 'pauseAttempted': True, 'resumed': False}
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(descriptor, 'w', encoding='utf-8') as handle: handle.write(json.dumps(ticket) + '\n')
+        create_ticket(ticket)
         journal.update(mutationMayHaveStarted=True, stage='pause-command')
         command(['docker', 'pause', identity['Id']])
         state = inspect(); assert owned(state, root) == identity and state['State'].get('Paused') is True
@@ -65,7 +73,11 @@ def perform(action, witness, root, command, environment=None, journal=None):
     assert set(ticket) == {'schemaVersion', 'root', 'runId', 'runAttempt', 'identity', 'pauseAttempted', 'resumed'}
     assert ticket['schemaVersion'] == 1 and ticket['root'] == str(root.resolve())
     assert ticket['runId'] == env['GITHUB_RUN_ID'] and ticket['runAttempt'] == env['GITHUB_RUN_ATTEMPT']
-    assert ticket['pauseAttempted'] is True and type(ticket['resumed']) is bool
+    assert type(ticket['pauseAttempted']) is bool and type(ticket['resumed']) is bool
+    if ticket['pauseAttempted'] is False:
+        assert ticket['resumed'] is True and ticket['identity'] is None
+        return {'completed': True, 'executed': False, 'noPauseWitness': True, 'restored': False,
+                'witnessClosed': True, 'containerMutationPerformed': False}
     state = inspect(); assert owned(state, root) == ticket['identity']
     if ticket['resumed'] is True:
         # A completed witness may verify cleanup, never release a later pause.

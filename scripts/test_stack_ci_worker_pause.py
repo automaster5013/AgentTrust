@@ -94,7 +94,18 @@ class WorkerPauseTest(unittest.TestCase):
 
     def test_missing_witness_cleanup_has_no_docker_operation(self):
         fixture = self.fixture(); result = self.invoke(fixture, 'resume')
-        self.assertTrue(result['noPauseWitness']); self.assertFalse(result['executed']); self.assertEqual(fixture[4], [])
+        self.assertTrue(result['noPauseWitness']); self.assertTrue(result['executed'])
+        self.assertTrue(result['witnessClosed']); self.assertFalse(result['containerMutationPerformed'])
+        raw = fixture[1].read_bytes(); repeated = self.invoke(fixture, 'resume')
+        self.assertFalse(repeated['executed']); self.assertTrue(repeated['witnessClosed'])
+        self.assertEqual(fixture[1].read_bytes(), raw); self.assertEqual(fixture[4], [])
+
+    def test_cleanup_without_pause_revokes_late_pause_for_the_same_invocation(self):
+        fixture = self.fixture(); result = self.invoke(fixture, 'resume')
+        self.assertTrue(result['noPauseWitness']); fixture[4].clear()
+        with self.assertRaises(AssertionError): self.invoke(fixture, 'pause')
+        self.assertEqual(fixture[4], [])
+        self.assertFalse(fixture[3]['State']['Paused'])
 
     def test_existing_witness_is_not_overwritten_for_second_pause(self):
         fixture = self.fixture(); self.invoke(fixture, 'pause'); raw = fixture[1].read_bytes(); fixture[4].clear()
