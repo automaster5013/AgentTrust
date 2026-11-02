@@ -51,7 +51,7 @@ class StackClient:
    target=urllib.parse.urlsplit(form.action);assert target.scheme=='http' and target.netloc=='127.0.0.1:4322' and target.path.startswith('/realms/agenttrust/login-actions/')
    body=urllib.parse.urlencode({**form.fields,'username':name,'password':u['password'],'credentialId':''}).encode()
    self.report['loginPhase']='identity-submit-callback'
-   with self.opener.open(urllib.request.Request(form.action,data=body,headers={'Content-Type':'application/x-www-form-urlencoded','Origin':'http://127.0.0.1:4322'}),timeout=15) as response:assert response.url=='http://127.0.0.1:4320/'
+   with self.opener.open(urllib.request.Request(form.action,data=body,headers={'Content-Type':'application/x-www-form-urlencoded','Origin':'http://127.0.0.1:4322'}),timeout=15) as response:assert response.url=='http://127.0.0.1:4320/workspace'
    self.report['oidcAuthorizationCodePkceVerified']=True
   else:
    assert self.provider=='local-demo';self.csrf();self.request('login','POST',urllib.parse.urlencode({'username':name,'password':u['password']}))
