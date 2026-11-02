@@ -1,13 +1,14 @@
 import {test,expect,type Page} from '@playwright/test';
+import {openWorkspace} from './console-entry';
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 const users=JSON.parse(readFileSync(resolve(process.cwd(),'../../.local/stack/demo-credentials.json'),'utf-8')) as {username:string;password:string}[];
 async function login(page:Page,username:string){
  await page.route('**/*',route=>{const r=route.request(),u=new URL(r.url());if(!['http://127.0.0.1:4320','http://127.0.0.1:4322'].includes(u.origin))return route.abort();if(u.origin==='http://127.0.0.1:4320'&&u.pathname.startsWith('/backend/')&&r.method()!=='GET'&&!['/backend/login','/backend/logout'].includes(u.pathname))return route.abort();return route.continue()});
- await page.goto('/');const response=await page.request.get('/backend/auth-info');expect(response.status()).toBe(200);const info=await response.json(),user=users.find(x=>x.username===username)!;
+ const {entry}=await openWorkspace(page);const response=await page.request.get('/backend/auth-info');expect(response.status()).toBe(200);const info=await response.json(),user=users.find(x=>x.username===username)!;
  if(info.identityProvider==='keycloak'){
   await page.getByRole('button',{name:'Keycloak으로 로그인',exact:true}).click();await expect(page.locator('#username')).toBeVisible();
-  await page.evaluate(u=>{document.querySelector<HTMLInputElement>('#username')!.value=u.username;document.querySelector<HTMLInputElement>('#password')!.value=u.password;document.querySelector<HTMLFormElement>('#kc-form-login')!.requestSubmit(document.querySelector<HTMLButtonElement>('#kc-login')!)},user);await page.waitForURL('http://127.0.0.1:4320/');
+  await page.evaluate(u=>{document.querySelector<HTMLInputElement>('#username')!.value=u.username;document.querySelector<HTMLInputElement>('#password')!.value=u.password;document.querySelector<HTMLFormElement>('#kc-form-login')!.requestSubmit(document.querySelector<HTMLButtonElement>('#kc-login')!)},user);await page.waitForURL('http://127.0.0.1:4320'+entry.authenticatedPath);
  }else{await page.evaluate(u=>{const input=document.querySelector<HTMLInputElement>('input[name="username"]')!;input.value=u.username;document.querySelector<HTMLInputElement>('input[name="password"]')!.value=u.password;input.form!.requestSubmit()},user)}
  await expect(page.getByRole('button',{name:'로그아웃',exact:true})).toBeVisible();
 }

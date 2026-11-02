@@ -10,7 +10,7 @@ def verified(value,user,filters,token=None):
  assert result.returncode==0 and json.loads(result.stdout)['verified']
  return json.loads(result.stdout)['searchable']
 try:
- before=fingerprint();assert len(before)==18
+ before=fingerprint();assert len(before)==21 and {'stack_project_settings','stack_access_keys','stack_access_key_revocations'}<=before.keys()
  credentials=json.loads((ROOT/'.local/stack/demo-credentials.json').read_text(encoding='utf-8'))
  viewer=StackClient('http://127.0.0.1:4320',credentials,report,clients);user=viewer.login('demo-viewer')
  first=viewer.request('audit-search/all/all');assert len(first['entries'])==25 and first['nextCursor'];eligible=verified(first,user,{'action':None,'resourceId':None})
@@ -29,8 +29,8 @@ try:
  admin=StackClient('http://127.0.0.1:4320',credentials,report,clients);admin_user=admin.login('demo-admin');verified(admin.request('audit-search/'+action+'/'+resource),admin_user,filters)
  foreign=StackClient('http://127.0.0.1:4320',credentials,report,clients);foreign_user=foreign.login('other-admin');foreign_page=foreign.request('audit-search/all/'+resource);verified(foreign_page,foreign_user,{'action':None,'resourceId':resource});assert not foreign_page['entries'];foreign.request('audit-search/all/all/'+token,expected=400)
  report['checks'].append('administrator can read; foreign tenant sees no matching resource and cannot reuse the viewer cursor')
- assert fingerprint()==before;report.update(completed=True,businessTablesUnchanged=18)
- report['checks'].append('all eighteen existing business table fingerprints remain unchanged')
+ assert fingerprint()==before;report.update(completed=True,businessTablesUnchanged=len(before))
+ report['checks'].append('all observed business tables including project settings, access keys and revocations remain unchanged')
 except Exception as error:report.update(errorType=type(error).__name__,code='AUDIT_SEARCH_SMOKE_UNVERIFIED')
 finally:
  closed=True

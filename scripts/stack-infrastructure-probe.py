@@ -27,30 +27,43 @@ def ci_isolation(original,infrastructure):
   assert workflow['concurrency']=={'group':prefix+'-${{ github.ref }}-${{ github.sha }}','cancel-in-progress':False}
   assert all(job['runs-on']=='ubuntu-latest' for job in workflow['jobs'].values())
   uploads=[step['with']['name'] for job in workflow['jobs'].values() for step in job['steps'] if str(step.get('uses','')).startswith('actions/upload-artifact@')]
-  assert uploads and all(name.endswith('-${{ github.sha }}') for name in uploads)
- jobs=original['jobs'];assert set(jobs)=={'security-source','integration','images','security-images'}
- for name,parent in [('integration','security-source'),('images','integration'),('security-images','images')]:
+  assert uploads and all(name.endswith('-${{ github.sha }}') or name == 'original-stack-dockerhub-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}' for name in uploads)
+ jobs=original['jobs'];assert set(jobs)=={'security-source','integration','console-scan-preflight','console-release','images','security-images','dockerhub'}
+ console=jobs['console-release'];assert console['needs']=='integration'
+ assert console['if']=="github.event_name == 'workflow_dispatch' && inputs.publish_console_only == true && github.repository == 'automaster5013/AgentTrust' && github.ref == 'refs/heads/codex/commercial-workspace-ux-20261026'"
+ assert console['permissions']=={'contents':'read','packages':'write','id-token':'write'}
+ preflight=jobs['console-scan-preflight'];assert preflight['needs']=='security-source' and preflight['if']==console['if'] and preflight['permissions']=={'contents':'read'}
+ assert any(step.get('run')=='python3 scripts/stack-console-release.py --preflight' for step in preflight['steps'])
+ assert not any('docker login' in step.get('run','') or 'stack-signing-setup' in step.get('run','') for step in preflight['steps'])
+ events=original.get('on',original.get(True));assert events['workflow_dispatch']['inputs']['publish_console_only']=={'description':'Publish one signed Console candidate after full integration; never deploy','required':False,'type':'boolean','default':False}
+ for name,parent in [('integration','security-source'),('images','integration'),('security-images','images'),('dockerhub','security-images')]:
   value=jobs[name]['needs'];assert set(value if isinstance(value,list) else [value])=={parent}
  for name in ['images','security-images']:assert jobs[name]['if']=="github.event_name != 'pull_request' && github.ref == 'refs/heads/main'"
+ assert jobs['dockerhub']['if']=="github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.DOCKERHUB_ENABLED == 'true'"
+ assert jobs['dockerhub']['environment']=='AgentTrust-dockerhub'
+ assert jobs['dockerhub']['permissions']=={'contents':'read','actions':'read','packages':'read'}
  lines=[line.strip() for job in jobs.values() for step in job['steps'] for line in step.get('run','').splitlines()]
  assert [line for line in lines if line.startswith('docker push ')]==['docker push "$image"']
  assert [line for line in lines if line.startswith('image=')]==['image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/agenttrust-$service:$GITHUB_SHA"']
 try:
  original=yaml.safe_load((source/'workflows/original-stack.yml').read_text(encoding='utf-8'));infrastructure=yaml.safe_load((source/'workflows/stack-infrastructure.yml').read_text(encoding='utf-8'));ci_isolation(original,infrastructure)
- for kind in ['shared-concurrency','mutable-tag','shared-artifact','cancel-other-revision']:
+ for kind in ['shared-concurrency','mutable-tag','shared-artifact','cancel-other-revision','console-automatic-publish','console-skipped-integration','console-default-publish']:
   first,second=copy.deepcopy(original),copy.deepcopy(infrastructure)
   if kind=='shared-concurrency':first['concurrency']['group']='original-stack-${{ github.ref }}'
   elif kind=='mutable-tag':
    step=next(s for s in first['jobs']['images']['steps'] if s.get('name')=='Build, publish and record immutable image references');step['run']=step['run'].replace('agenttrust-$service:$GITHUB_SHA','agenttrust-$service:main')
   elif kind=='shared-artifact':
    step=next(s for s in first['jobs']['integration']['steps'] if str(s.get('uses','')).startswith('actions/upload-artifact@'));step['with']['name']='shared-diagnostics'
-  else:second['concurrency']['cancel-in-progress']=True
+  elif kind=='cancel-other-revision':second['concurrency']['cancel-in-progress']=True
+  elif kind=='console-automatic-publish':first['jobs']['console-release']['if']="github.event_name == 'pull_request'"
+  elif kind=='console-skipped-integration':first['jobs']['console-release']['needs']='security-source'
+  else:first.get('on',first.get(True))['workflow_dispatch']['inputs']['publish_console_only']['default']=True
   refused=False
   try:ci_isolation(first,second)
   except AssertionError:refused=True
   assert refused
- report['checks'].append('parallel revision isolation binds hosted runners, SHA-only publications/artifacts and the complete security/integration DAG; four unsafe variants refused')
- report['parallelRevisionIsolationVerified']=True;report['unsafeCiVariantsRefused']=4;report['publisherChangesTriggerIsolationCheckVerified']=True
+ report['checks'].append('parallel revision isolation binds hosted runners, SHA-only publications/artifacts and the complete security/integration DAG; seven unsafe variants refused')
+ report['parallelRevisionIsolationVerified']=True;report['unsafeCiVariantsRefused']=7;report['publisherChangesTriggerIsolationCheckVerified']=True
  (output/'fixture-values.json').write_text(json.dumps(values),encoding='utf-8')
  run(['helm','lint','--strict','-f','/out/fixture-values.json','/src/charts/agenttrust-review'],'helm-lint');report['checks'].append('Helm strict lint')
  rendered=run(['helm','template','agenttrust-review','/src/charts/agenttrust-review','--namespace','agenttrust-review','--kube-version','1.34.0','-f','/out/fixture-values.json'],'helm-render');(output/'rendered.yaml').write_text(rendered,encoding='utf-8');documents=list(yaml.safe_load_all(rendered));assert all(isinstance(doc,dict) for doc in documents)

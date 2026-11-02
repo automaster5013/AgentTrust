@@ -2,6 +2,7 @@ import {test,expect,type Page} from '@playwright/test';
 import {createHash,randomUUID} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {readFileSync,readdirSync,statSync} from 'node:fs';import {resolve} from 'node:path';
+import {openWorkspace} from './console-entry';
 import {auditFilters} from '../src/lib/audit-search';
 import {uncertainCampaignWrite} from '../src/lib/campaign-write-error';
 import {uncertainEvaluationWrite} from '../src/lib/evaluation-request';
@@ -96,12 +97,101 @@ if(process.env.STACK_E2E_ADMIN_CAPTURE==='true')test('administrator actual revie
  phase('actual demo-admin pass form,1440x960 and390x960,keyboard Enter gate/review navigation and focused targets,keyboard decision-reason-save order,empty required reason blocks submission and focuses reason without writes,no horizontal overflow,read-only503 basis disables save then actual recovery,block and inconclusive have no approval form or review link and never allow release; zero business writes; masked areas not visually assessed');
 });
 
+test('workspace management saves scoped settings and issues and revokes a one-time metadata key',async({page})=>{
+ test.skip(process.env.STACK_E2E_READ_ONLY==='true','Management writes run only in disposable integration fixtures');
+ await login(page,'demo-admin');let issuedId:string|null=null;
+ try{
+  const management=page.locator('#management');await page.getByRole('navigation',{name:'워크스페이스 탐색',exact:true}).getByRole('link',{name:'프로젝트·계정 관리',exact:true}).click();
+  phase('management project read requested');const loadedProject=page.waitForResponse(r=>new URL(r.url()).pathname==='/backend/workspace/project'&&r.request().method()==='GET',{timeout:10000});await management.getByRole('button',{name:'프로젝트 설정 조회',exact:true}).click();expect((await loadedProject).status()).toBe(200);phase('management project response received');await expect(management.getByLabel('프로젝트 이름',{exact:true})).toBeVisible({timeout:5000});phase('management project form accepted');const projectName='Browser project '+randomUUID().slice(0,8);await management.getByLabel('프로젝트 이름',{exact:true}).fill(projectName);await management.getByLabel('프로젝트 설명',{exact:true}).fill('Disposable integration management check');phase('management project save requested');const savedProject=page.waitForResponse(r=>new URL(r.url()).pathname==='/backend/workspace/project'&&r.request().method()==='POST',{timeout:10000});await management.getByRole('button',{name:'프로젝트 설정 저장',exact:true}).click();expect((await savedProject).status()).toBe(200);phase('management project save response received');await expect(management.getByRole('status')).toContainText('현재 프로젝트 설정을 저장했습니다.');
+  const stored=await (await page.request.get('/backend/workspace/project')).json();expect(stored.name).toBe(projectName);expect(stored.deploymentAuthority).toBe(false);
+  phase('management project save accepted');const keyName='Browser metadata '+randomUUID().slice(0,8);await management.getByLabel('키 이름',{exact:true}).fill(keyName);await management.getByLabel('유효 기간(일)',{exact:true}).fill('1');phase('management key issue requested');const issuedKey=page.waitForResponse(r=>new URL(r.url()).pathname==='/backend/workspace/access-keys'&&r.request().method()==='POST',{timeout:10000});await management.getByRole('button',{name:'조회 전용 키 발급',exact:true}).click();expect((await issuedKey).status()).toBe(200);phase('management key issue response received');await expect(management.getByRole('status')).toContainText('조회 전용 키를 발급했습니다.');const secretField=management.getByLabel('한 번만 표시되는 접근 키',{exact:true});expect(/^at1\.[a-f0-9-]{36}\.[a-f0-9-]{36}\.[a-f0-9-]{36}\.[a-f0-9]{64}$/.test(await secretField.inputValue())).toBe(true);
+  phase('management key one-time display accepted');await management.getByRole('button',{name:'접근 키 원문 숨기기',exact:true}).click();await expect(secretField).toHaveCount(0);await management.getByRole('button',{name:'접근 키 목록 조회',exact:true}).click();const listed=await (await page.request.get('/backend/workspace/access-keys')).json();issuedId=listed.entries.find((entry:{name:string})=>entry.name===keyName).id;
+  phase('management key hidden and metadata listed');await management.getByRole('button',{name:'접근 키 '+issuedId+' 철회',exact:true}).click();await expect(management.getByRole('status')).toContainText('선택한 접근 키의 철회를 확인했습니다.');issuedId=null;phase('management key revocation accepted');
+  await management.getByRole('button',{name:'내 앱 세션 조회',exact:true}).click();await expect(management.getByText(/현재 브라우저/)).toBeVisible();await expect(management.getByText('Keycloak SSO 전체 목록은 아닙니다.',{exact:false})).toBeVisible();
+ }finally{
+  if(issuedId){const token=(await (await page.request.get('/backend/csrf')).json()).token;await page.request.post('/backend/workspace/access-keys/'+issuedId+'/revoke',{headers:{'X-CSRF-TOKEN':token,Origin:'http://127.0.0.1:4320'},data:{}})}await logout(page);
+ }
+});
+
+test('workspace management terminates another own browser app session without ending the current one',async({page,browser})=>{
+ test.skip(process.env.STACK_E2E_READ_ONLY==='true','Session termination runs only in disposable integration fixtures');
+ await login(page,'demo-admin');
+ const before=await (await page.request.get('/backend/workspace/sessions')).json();
+ const handles=new Set(before.entries.map((row:{handle:string})=>row.handle));
+ const context=await browser.newContext({baseURL:'http://127.0.0.1:4320'});
+ const second=await context.newPage();
+ try{
+  await login(second,'demo-admin');
+  const response=await page.request.get('/backend/workspace/sessions');expect(response.status()).toBe(200);
+  const snapshot=await response.json(),added=snapshot.entries.filter((row:{handle:string;current:boolean})=>!handles.has(row.handle)&&!row.current);
+  expect(added.length).toBe(1);const handle=added[0].handle;
+  const management=page.locator('#management');await page.getByRole('navigation',{name:'워크스페이스 탐색',exact:true}).getByRole('link',{name:'프로젝트·계정 관리',exact:true}).click();
+  await management.getByRole('button',{name:'내 앱 세션 조회',exact:true}).click();
+  const end=management.getByRole('button',{name:'앱 세션 '+handle+' 종료',exact:true});await expect(end).toBeVisible();await end.click();
+  await expect(management.getByRole('status')).toContainText('선택한 앱 세션을 종료했습니다.');await expect(end).toHaveCount(0);
+  expect((await second.request.get('/backend/me')).status()).toBe(401);expect((await page.request.get('/backend/me')).status()).toBe(200);
+  await expect(management.getByText(/현재 브라우저/)).toBeVisible();
+  phase('actual management UI ends only the other owned app session; current browser remains authenticated; SSO-wide revocation not claimed');
+ }finally{try{await logout(second)}finally{await context.close()}}
+});
+
+if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true')test('legacy Core return keeps unsupported management unavailable without fabricating success',async({page})=>{
+ await login(page,'demo-admin');const management=page.locator('#management');
+ await page.getByRole('navigation',{name:'워크스페이스 탐색',exact:true}).getByRole('link',{name:'프로젝트·계정 관리',exact:true}).click();
+ const project=page.waitForResponse(r=>new URL(r.url()).pathname==='/backend/workspace/project'&&r.request().method()==='GET');
+ await management.getByRole('button',{name:'프로젝트 설정 조회',exact:true}).click();const projectError=await project;expect(projectError.status()).toBe(500);
+ // The UI cancels error bodies; verify bytes through a separate scoped read.
+ const projectContract=await page.request.get('/backend/workspace/project');expect(projectContract.status()).toBe(500);expect(await projectContract.json()).toEqual({code:'REQUEST_UNAVAILABLE'});
+ await expect(management.getByRole('status')).toContainText('현재 프로젝트의 관리 정보를 확인하지 못했습니다. 다시 조회하세요.');await expect(management.getByLabel('프로젝트 이름',{exact:true})).toHaveCount(0);
+ const keys=page.waitForResponse(r=>new URL(r.url()).pathname==='/backend/workspace/access-keys'&&r.request().method()==='GET');
+ await management.getByRole('button',{name:'접근 키 목록 조회',exact:true}).click();const keysError=await keys;expect(keysError.status()).toBe(500);
+ const keysContract=await page.request.get('/backend/workspace/access-keys');expect(keysContract.status()).toBe(500);expect(await keysContract.json()).toEqual({code:'REQUEST_UNAVAILABLE'});
+ await expect(management.getByRole('status')).toContainText('현재 프로젝트의 관리 정보를 확인하지 못했습니다. 다시 조회하세요.');await expect(management.getByLabel('한 번만 표시되는 접근 키',{exact:true})).toHaveCount(0);
+ expect((await page.request.get('/backend/me')).status()).toBe(200);phase('pinned previous Core returns sanitized500 for missing management routes; UI remains unavailable; no settings or credentials are invented; fresh authenticated browser remains scoped');
+});
+
+test('project home keeps failed statistics unknown and binds retry counts to the displayed response',async({page})=>{
+ await login(page,'demo-viewer',async()=>{await page.route('**/backend/runs',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({code:'SYNTHETIC_UNAVAILABLE'})}))});
+ const home=page.locator('#overview');await expect(home).toContainText('평가 목록을 확인하지 못했습니다.');await expect(home.locator('dd')).toHaveText(['미확인','미확인','미확인','미확인']);
+ await page.unroute('**/backend/runs');
+ const observed:{rows:{decision:string}[]|null}={rows:null};
+ // Observe the same actual retry bytes before forwarding them unchanged. The
+ // browser may release its response body after the UI consumes it; a second GET
+ // would not prove that the displayed counts bind to this specific response.
+ await page.route('**/backend/runs',async route=>{
+  const request=route.request(),url=new URL(request.url());expect(request.method()).toBe('GET');expect(url.origin).toBe('http://127.0.0.1:4320');expect(url.pathname).toBe('/backend/runs');
+  const upstream=await route.fetch({maxRetries:0,maxRedirects:0,timeout:10000});expect(upstream.status()).toBe(200);
+  const bytes=await upstream.body();expect(bytes.byteLength).toBeLessThanOrEqual(1048576);
+  const rows=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)) as {decision:string}[];expect(Array.isArray(rows)).toBe(true);expect(rows.length).toBeLessThanOrEqual(50);expect(rows.every(row=>['pass','block','inconclusive'].includes(row.decision))).toBe(true);
+  observed.rows=rows;await route.fulfill({response:upstream});
+ });
+ try{
+  const loaded=page.waitForResponse(response=>new URL(response.url()).pathname==='/backend/runs'&&response.request().method()==='GET');
+  await page.getByRole('button',{name:'최근 평가 다시 조회',exact:true}).click();const response=await loaded;expect(response.status()).toBe(200);expect(observed.rows).not.toBeNull();const rows=observed.rows!;
+  await expect(home.locator('dd')).toHaveText([rows.length,rows.filter(r=>r.decision==='pass').length,rows.filter(r=>r.decision==='block').length,rows.filter(r=>r.decision==='inconclusive').length].map(String));await expect(home).not.toContainText('새 평가 준비');phase('displayed counts bind to the same scoped retry response forwarded without byte changes; no second GET or retry');await logout(page);
+ }finally{await page.unroute('**/backend/runs')}
+});
+
 test('workspace navigation and responsive layout keep review tasks reachable without writes',async({page})=>{
  await login(page,'demo-viewer');
  const navigation=page.getByRole('navigation',{name:'워크스페이스 탐색',exact:true});
- for(const [name,target] of [['평가 실행·조회','evaluations'],['버전·캠페인','campaigns'],['준비 상태·사용량','operations'],['이력·감사','history']]){
-  const link=navigation.getByRole('link',{name,exact:true});await expect(link).toHaveAttribute('href','#'+target);await link.click();await expect(page.locator('#'+target)).toBeVisible();
+ await expect(page.getByRole('heading',{name:'프로젝트 홈',exact:true})).toBeVisible();await expect(page.locator('#overview')).toContainText('프로젝트 전체 통계가 아닙니다.');await expect(page.locator('#overview')).not.toContainText('새 평가 준비');
+ for(const [name,target] of [['프로젝트 홈','overview'],['평가 실행·조회','evaluations'],['버전·캠페인','campaigns'],['준비 상태·사용량','operations'],['이력·감사','history'],['프로젝트·계정 관리','management'],['플랫폼 지원 범위','platform']]){
+  const link=navigation.getByRole('link',{name,exact:true});await expect(link).toHaveAttribute('href','#'+target);await link.click();await expect(page.locator('#'+target)).toBeVisible();await expect(page.locator('.workspace-top-title')).toBeInViewport({ratio:1});await expect(page.getByRole('button',{name:'로그아웃',exact:true})).toBeInViewport({ratio:1});
  }
+
+ const originalViewport=page.viewportSize()??{width:1280,height:960};
+ for(const width of [640,320]){
+  await page.setViewportSize({width,height:960});
+  const names=['프로젝트 홈','평가 실행·조회','버전·캠페인','준비 상태·사용량','이력·감사','프로젝트·계정 관리','플랫폼 지원 범위'];
+  await navigation.getByRole('link',{name:names[0],exact:true}).focus();
+  for(let index=0;index<names.length;index++){
+   const link=navigation.getByRole('link',{name:names[index],exact:true});
+   await expect(link).toBeFocused();await expect(link).toBeInViewport({ratio:1});
+   if(index<names.length-1)await link.press('Tab');
+  }
+ }
+ await page.setViewportSize(originalViewport);await page.getByRole('link',{name:'Top으로 이동 ↑',exact:true}).click();await expect(page.getByRole('heading',{name:'평가 워크스페이스',exact:true})).toBeInViewport({ratio:1});
  await page.locator('.skip-link').focus();await page.keyboard.press('Enter');await expect(page.locator('#workspace-content')).toBeFocused();
  const filters=page.getByRole('group',{name:'최근 평가 판정 필터',exact:true});
  const firstEvaluation=page.locator('.evaluation-list .runs button').first(),firstDecision=await firstEvaluation.locator('.badge').innerText();
@@ -487,10 +577,10 @@ function phase(description:string){test.info().annotations.push({type:'phase',de
 async function login(page:Page,name:string,beforeNavigation?:()=>Promise<unknown>){
  await page.route('**/*',route=>{const url=new URL(route.request().url());if(process.env.STACK_E2E_READ_ONLY==='true'&&url.origin==='http://127.0.0.1:4320'&&url.pathname.startsWith('/backend/')&&route.request().method()!=='GET'&&!['/backend/login','/backend/logout'].includes(url.pathname)){phase('read-only network guard refused unintended business mutation');return route.abort('blockedbyclient')}if(['http://127.0.0.1:4320','http://127.0.0.1:4322'].includes(url.origin))return route.continue();return route.abort()});
  if(beforeNavigation)await beforeNavigation();
- const initial=await page.goto('/');phase('workspace initial navigation HTTP '+initial!.status());const providerInfo=await page.request.get('/backend/auth-info');phase('authentication provider metadata HTTP '+providerInfo.status());expect(providerInfo.status()).toBe(200);const info=await providerInfo.json();
+ const {initial,entry}=await openWorkspace(page);phase('workspace initial navigation HTTP '+initial!.status());const providerInfo=await page.request.get('/backend/auth-info');phase('authentication provider metadata HTTP '+providerInfo.status());expect(providerInfo.status()).toBe(200);const info=await providerInfo.json();
  const user=users.find(u=>u.username===name)!;
  // Reporter never records invocation arguments, browser traces, cookies or credentials.
- if(info.identityProvider==='keycloak'){await page.getByRole('button',{name:'Keycloak으로 로그인',exact:true}).click();await expect(page.locator('#username')).toBeVisible();await page.evaluate(value=>{document.querySelector<HTMLInputElement>('#username')!.value=value.username;document.querySelector<HTMLInputElement>('#password')!.value=value.password;document.querySelector<HTMLFormElement>('#kc-form-login')!.requestSubmit(document.querySelector<HTMLButtonElement>('#kc-login')!)},{username:user.username,password:user.password});await page.waitForURL('http://127.0.0.1:4320/');phase('Keycloak authorization code login')}
+ if(info.identityProvider==='keycloak'){await page.getByRole('button',{name:'Keycloak으로 로그인',exact:true}).click();await expect(page.locator('#username')).toBeVisible();await page.evaluate(value=>{document.querySelector<HTMLInputElement>('#username')!.value=value.username;document.querySelector<HTMLInputElement>('#password')!.value=value.password;document.querySelector<HTMLFormElement>('#kc-form-login')!.requestSubmit(document.querySelector<HTMLButtonElement>('#kc-login')!)},{username:user.username,password:user.password});await page.waitForURL('http://127.0.0.1:4320'+entry.authenticatedPath);phase('Keycloak authorization code login into expected Console entry')}
  else {await expect(page.getByRole('button',{name:'로그인',exact:true})).toBeEnabled();await page.evaluate(value=>{const account=document.querySelector<HTMLInputElement>('input[name="username"]')!,password=document.querySelector<HTMLInputElement>('input[name="password"]')!;account.value=value.username;password.value=value.password;account.form!.requestSubmit()}, {username:user.username,password:user.password})}
  await expect(page.getByRole('button',{name:'로그아웃',exact:true})).toBeVisible();phase('authenticated application controls visible');await expect(page.getByText('조직 '+user.organizationId.slice(0,8),{exact:true})).toBeVisible();phase('expected workspace scope visible');
 }
@@ -887,9 +977,12 @@ if(process.env.STACK_E2E_LOCAL_MODEL==='true')test('local model provider evidenc
 test('administrator cancels a real pending evaluation and campaign through browser controls',async({page})=>{
  await login(page,'demo-admin');
  const worker='agenttrust-stack-ai-worker-1';
- const running=execFileSync('docker',['inspect',worker,'--format','{{.State.Running}}'],{encoding:'utf8',timeout:15000}).trim();expect(running).toBe('true');
+ const legacyReturn=process.env.STACK_E2E_LEGACY_CORE_RETURN==='true',witness=process.env.STACK_E2E_WORKER_PAUSE_WITNESS;let paused=false;
+ const hostedWorker=(action:'pause'|'resume')=>JSON.parse(execFileSync(process.platform==='win32'?'python':'python3',[resolve(process.cwd(),'../../scripts/stack-ci-browser-worker-pause.py'),'--execute','--action',action,'--witness',witness??''],{encoding:'utf8',timeout:75000,maxBuffer:16384}));
+ if(!legacyReturn){const running=execFileSync('docker',['inspect',worker,'--format','{{.State.Running}}'],{encoding:'utf8',timeout:15000}).trim();expect(running).toBe('true')}
  try{
-  execFileSync('docker',['stop','--time','10',worker],{timeout:25000});
+  if(legacyReturn){const frozen=hostedWorker('pause');expect(frozen.completed).toBe(true);expect(frozen.paused).toBe(true);expect(frozen.identityPreserved).toBe(true);paused=true;phase('owned hosted worker paused without replacing or restarting its process')}
+  else execFileSync('docker',['stop','--time','10',worker],{timeout:25000});
   await page.getByRole('button',{name:'평가 실행',exact:true}).click();
   await expect(page.getByLabel('평가 취소 사유',{exact:true})).toBeVisible();
   await page.getByLabel('평가 취소 사유',{exact:true}).fill('Browser synthetic cancellation');
@@ -914,7 +1007,7 @@ test('administrator cancels a real pending evaluation and campaign through brows
   const saved=await (await page.request.get('/backend/campaigns/'+campaign.id)).json();expect(saved.state).toBe('failed');expect(saved.decision).toBe('inconclusive');
   expect((await (await page.request.get('/backend/campaigns/'+campaign.id+'/gate')).json()).deploymentAllowed).toBe(false);
   phase('actual browser verifies terminal cancellation and denied release for run and campaign');
- }finally{execFileSync('docker',['start',worker],{timeout:25000});phase('dedicated worker restored');}
+ }finally{if(legacyReturn){const resumed=hostedWorker('resume');expect(resumed.completed).toBe(true);if(paused){expect(resumed.restored).toBe(true);expect(resumed.identityPreserved).toBe(true)}phase('owned hosted worker unpaused with ID image and StartedAt preserved')}else{execFileSync('docker',['start',worker],{timeout:25000});phase('dedicated worker restored')}}
 });
 
 
@@ -1160,4 +1253,63 @@ test('viewer recovers bounded archive and similarity reads after stalled respons
   await button.click();await expect(button).toBeEnabled();if(item.suffix==='evidence')await expect(page.getByText('서버와 브라우저의 바이트 해시 검증 완료',{exact:false})).toBeVisible();else await expect(page.getByText('같은 프로젝트의 규칙 특징이 비슷한 평가를 조회했습니다.',{exact:true})).toBeVisible();
  }
  phase('actual ten-second archived-byte and pgvector read deadlines release controls, refuse delayed results and recover through manual real scoped API retries; no business writes');
+});
+
+
+test('workspace history search finds older server-filtered evaluations and opens scoped evidence',async({page})=>{
+ await login(page,'demo-viewer');
+ type Observed={entries:{id:string;provider:string;scenario:string;requiresApproval:boolean;state:string;decision:string}[];nextCursor:string|null};
+ const observed:{page:Observed|null}={page:null};let corruptNext=false,holdNext=false,heldStarted=false,heldReady=false,heldCancelled=false;
+ let releaseHeld:()=>void=()=>{},finishHeld:()=>void=()=>{};
+ const heldRelease=new Promise<void>(resolve=>{releaseHeld=resolve}),heldDone=new Promise<void>(resolve=>{finishHeld=resolve});
+ const pattern='**/backend/run-history-search/**';
+ await page.route(pattern,async route=>{
+  const hold=holdNext;holdNext=false;if(hold)heldStarted=true;
+  try{
+   const upstream=await route.fetch({maxRetries:0,maxRedirects:0,timeout:10000});expect(upstream.status()).toBe(200);
+   const bytes=await upstream.body();expect(bytes.length).toBeLessThanOrEqual(1048576);
+   const frame=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)) as Observed;
+   if(hold){heldReady=true;await heldRelease}else observed.page=frame;
+   const corrupt=corruptNext;corruptNext=false;
+   await route.fulfill({response:upstream,...(corrupt?{body:JSON.stringify({...frame,organizationId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'})}:{})});
+  }catch(error){if(!(hold&&heldCancelled))throw error}finally{if(hold)finishHeld()}
+ });
+ const region=page.getByRole('region',{name:'전체 평가 이력 검색',exact:true}),rows=region.locator('[data-run-search-id]'),search=region.getByRole('button',{name:'전체 평가 이력 검색 실행',exact:true});
+ const ids=()=>rows.evaluateAll(elements=>elements.map(element=>element.getAttribute('data-run-search-id')));
+ try{
+  await search.click();await expect(rows).toHaveCount(25);const first=await ids();expect(observed.page!.entries.map(row=>row.id)).toEqual(first);
+  await region.getByRole('button',{name:'다음 전체 이력 검색 페이지',exact:true}).click();await expect(region.getByText(/전체 이력 검색 페이지 2/)).toBeVisible();
+  const older=await ids();expect(older.length).toBeGreaterThan(0);expect(older.some(id=>first.includes(id))).toBe(false);expect(older).toEqual(observed.page!.entries.map(row=>row.id));
+  await region.getByRole('button',{name:'검색 평가 근거 '+older[0]!.slice(0,8),exact:true}).click();await expect(page.locator('.evidence').getByText('실행 '+older[0],{exact:true})).toBeVisible();
+  phase('actual server search reaches older pages and opens existing scoped evidence without creating evaluations');
+  for(const [label,value] of [['시나리오','pass'],['승인 필요 설정','required'],['실행 상태','succeeded'],['판정','pass'],['공급자','synthetic']])await region.getByLabel('전체 이력 '+label,{exact:true}).selectOption(value);
+  await expect(rows).toHaveCount(0);await search.click();await expect(region.getByText(/전체 이력 검색 페이지 1/)).toBeVisible();
+  expect(await ids()).toEqual(observed.page!.entries.map(row=>row.id));expect(observed.page!.entries.length).toBeGreaterThan(0);
+  expect(observed.page!.entries.every(row=>row.scenario==='pass'&&row.requiresApproval&&row.state==='succeeded'&&row.decision==='pass'&&row.provider==='synthetic')).toBe(true);
+  phase('all five conditions match the actual server response, rather than filtering only the first 25 records');
+  corruptNext=true;await search.click();await expect(region.getByText('전체 평가 이력 검색을 확인하지 못했습니다. 현재 서버의 지원 상태나 연결을 확인하고 다시 검색해 주세요.',{exact:true})).toBeVisible();await expect(rows).toHaveCount(0);
+  phase('foreign response scope is refused without inventing empty success');
+  await region.getByRole('button',{name:'전체 이력 검색 조건 초기화',exact:true}).click();holdNext=true;await search.click();await expect.poll(()=>heldReady).toBe(true);
+  heldCancelled=true;await region.getByLabel('전체 이력 판정',{exact:true}).selectOption('block');await search.click();await expect(region.getByText(/전체 이력 검색 페이지 1/)).toBeVisible();
+  const current=await ids();expect(observed.page!.entries.every(row=>row.decision==='block')).toBe(true);releaseHeld();await heldDone;expect(await ids()).toEqual(current);await expect(region.getByLabel('전체 이력 판정',{exact:true})).toHaveValue('block');
+  phase('changed conditions abort the previous request and late bytes cannot replace the current search');
+  await page.setViewportSize({width:390,height:844});await region.scrollIntoViewIfNeeded();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+  const searchTable=region.getByRole('region',{name:'전체 평가 이력 검색 결과 표 · 좁은 화면에서 좌우로 이동',exact:true});
+  expect(await rows.evaluateAll(elements=>elements.every(row=>row.getBoundingClientRect().height<100))).toBe(true);
+  await searchTable.evaluate(element=>{element.scrollLeft=element.scrollWidth});
+  const evidenceButton=rows.first().getByRole('button');await evidenceButton.scrollIntoViewIfNeeded();await expect(evidenceButton).toBeInViewport();
+  await evidenceButton.click();await expect(page.locator('.evidence').getByText('실행 '+current[0],{exact:true})).toBeVisible();
+  await searchTable.evaluate(element=>{element.scrollLeft=0});
+  await region.screenshot({path:'test-results/workspace-history-search-mobile.png'});phase('actual authenticated mobile search controls, compact rows and reachable evidence fit the viewport');
+ }finally{releaseHeld();if(heldStarted)await heldDone;await page.unroute(pattern)}
+});
+
+if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true')test('legacy Core return keeps whole-history search unavailable without inventing empty results',async({page})=>{
+ await login(page,'demo-viewer');const region=page.getByRole('region',{name:'전체 평가 이력 검색',exact:true});
+ const response=page.waitForResponse(response=>response.request().method()==='GET'&&new URL(response.url()).pathname==='/backend/run-history-search/all/all/all/all/all'&&response.status()===500);
+ await region.getByRole('button',{name:'전체 평가 이력 검색 실행',exact:true}).click();await response;
+ await expect(region.getByText('전체 평가 이력 검색을 확인하지 못했습니다. 현재 서버의 지원 상태나 연결을 확인하고 다시 검색해 주세요.',{exact:true})).toBeVisible();
+ await expect(region.locator('[data-run-search-id]')).toHaveCount(0);await expect(region.getByText('검색 조건에 맞는 평가 이력이 없습니다.',{exact:true})).toHaveCount(0);
+ const unavailable=await page.request.get('/backend/run-history-search/all/all/all/all/all');expect(unavailable.status()).toBe(500);expect(await unavailable.json()).toEqual({code:'REQUEST_UNAVAILABLE'});
+ expect((await page.request.get('/backend/me')).status()).toBe(200);phase('pinned old Core search is explicitly unavailable; existing session remains valid');
 });

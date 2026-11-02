@@ -7,7 +7,7 @@ test('local OIDC endpoints preserve login, callback, logout and host allowlist',
   const e=oidcEndpoints();assert.equal(e.applicationOrigin,'http://127.0.0.1:4320');
   assert.ok(allowedPublicHost('127.0.0.1:4320',e));assert.ok(allowedPublicHost('localhost:4320',e));
   assert.equal(allowedPublicHost('evil.example.com',e),false);
-  assert.equal(oidcRedirect('/login/oauth2/code/keycloak','http://127.0.0.1:4320/',e),'http://127.0.0.1:4320/');
+  assert.equal(oidcRedirect('/login/oauth2/code/keycloak','http://127.0.0.1:4320/',e),'http://127.0.0.1:4320/workspace');
   assert.ok(oidcLogoutUrl(e).endsWith('http%3A%2F%2F127.0.0.1%3A4320%2F'));
 });
 test('HTTPS endpoints pin host, exact callback issuer, auth redirect and logout origin',()=>{
@@ -18,6 +18,8 @@ test('HTTPS endpoints pin host, exact callback issuer, auth redirect and logout 
   const login=e.publicIssuer+'/protocol/openid-connect/auth?state=12345678';assert.equal(oidcRedirect('/oauth2/authorization/keycloak',login,e),login);
   assert.throws(()=>oidcRedirect('/oauth2/authorization/keycloak','https://evil.example.com/realms/agenttrust/protocol/openid-connect/auth',e));
   assert.throws(()=>oidcRedirect('/login/oauth2/code/keycloak','https://console.example.com/?next=evil',e));
+  assert.equal(oidcRedirect('/login/oauth2/code/keycloak','https://console.example.com/',e),'https://console.example.com/workspace');
+  for(const destination of ['/workspace','/?next=/workspace','/#workspace','//evil.example.com'])assert.throws(()=>oidcRedirect('/login/oauth2/code/keycloak','https://console.example.com'+destination,e));
   assert.equal(oidcLogoutUrl(e),'https://identity.example.com/realms/agenttrust/protocol/openid-connect/logout?client_id=agenttrust-console&post_logout_redirect_uri=https%3A%2F%2Fconsole.example.com%2F');
 });
 test('HTTPS configuration rejects ambiguous origins before redirect processing',()=>{

@@ -1,6 +1,6 @@
 import {auditPage,type AuditPage,type AuditEntry} from './audit.ts';
 import type {Identity} from './contracts.ts';
-export const auditActions=['evaluation.queued','evaluation.completed','evaluation.cancelled','review.approved','review.rejected','version.agents.registered','version.datasets.registered','version.agents.retired','version.datasets.retired','campaign.queued','campaign.cancelled','campaign.review.approved','campaign.review.rejected','campaign.observation.signed'] as const;
+export const auditActions=['evaluation.queued','evaluation.completed','evaluation.cancelled','review.approved','review.rejected','version.agents.registered','version.datasets.registered','version.agents.retired','version.datasets.retired','campaign.queued','campaign.cancelled','campaign.review.approved','campaign.review.rejected','campaign.observation.signed','workspace.project.updated','access-key.created','access-key.revoked'] as const;
 export type AuditFilters={action:string|null;resourceId:string|null};
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 export function auditRunTarget(entry:Pick<AuditEntry,'action'|'resourceId'>):string|null{

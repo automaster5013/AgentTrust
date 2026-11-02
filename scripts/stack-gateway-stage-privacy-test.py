@@ -1,5 +1,6 @@
 """Exercise the actual Collector metric processors in an owned isolated instance."""
 import ctypes,datetime,hashlib,json,os,pathlib,re,secrets,shutil,subprocess,time,uuid
+from stack_owned_fixture import wait_for_owned_fixture_removal
 
 root=pathlib.Path(__file__).resolve().parent.parent
 folder=root/'.local'/('gateway-stage-privacy-'+uuid.uuid4().hex);folder.mkdir()
@@ -112,7 +113,7 @@ finally:
    metadata=run(['docker','inspect','--format','{{.Image}}|{{index .Config.Labels "dev.agenttrust.owner"}}|{{index .Config.Labels "dev.agenttrust.purpose"}}',name],cleanup=True)
    assert metadata==image+'|'+nonce+'|gateway-stage-privacy'
    run(['docker','stop','--time','5',name],cleanup=True)
-   remaining=run(['docker','ps','-a','-q','--filter','label=dev.agenttrust.owner='+nonce],cleanup=True);assert not remaining
+   wait_for_owned_fixture_removal(run, nonce)
   report['ownedCollectorRemoved']=True
   if 'before' in locals():
    after=bindings(cleanup=True);report['originalRuntimeBindingsUnchanged']=before==after;assert before==after

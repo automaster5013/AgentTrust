@@ -15,7 +15,7 @@ def peers():
 def replace(image):
  overlay=L/('ui-visual-overlay-'+uuid.uuid4().hex+'.json');overlay.write_text(json.dumps({'services':{'stack-console':{'image':image}}}));run(stack_compose(R)+['-f',str(overlay),'up','-d','--no-build','--no-deps','--pull','never','--force-recreate','--wait','--wait-timeout','180','stack-console'],240)
 def capture_one(label,admin=False):
- previous=set(L.glob('stack-browser-*.json'));env=dict(os.environ,STACK_E2E_VISUAL_CAPTURE='true',STACK_E2E_VISUAL_LABEL=label,STACK_E2E_READ_ONLY='true',STACK_E2E_QUOTA_GUARD='true',STACK_E2E_ADMIN_VISUAL='true' if admin else 'false')
+ previous=set(L.glob('stack-browser-*.json'));env=dict(os.environ,STACK_E2E_VISUAL_CAPTURE='true',STACK_E2E_VISUAL_LABEL=label,STACK_E2E_VISUAL_BASELINE_REVISION=BASE if label=='before' else '',STACK_E2E_READ_ONLY='true',STACK_E2E_QUOTA_GUARD='true',STACK_E2E_ADMIN_VISUAL='true' if admin else 'false')
  p=subprocess.run(['node','node_modules/@playwright/test/cli.js','test','--grep','administrator controlled visual capture uses the same actual evaluation and review basis' if admin else 'workspace controlled visual capture uses actual viewer and stable evaluation data'],cwd=R/'apps/console',env=env,capture_output=True,timeout=240);
  if p.returncode:d['failedCaptureLabel']=label;d['captureExitCode']=p.returncode;d['captureNoTestsFound']=b'No tests found' in p.stdout+p.stderr
  assert p.returncode==0

@@ -1,0 +1,74 @@
+name: Portfolio offline tools
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/portfolio-tools.yml'
+      - '.github/workflows/validate.yml'
+      - 'AGENTS.md'
+      - 'README.md'
+      - 'docs/**'
+      - 'scripts/portfolio*'
+      - 'scripts/setup-portfolio-media-tools.py'
+      - 'scripts/start-portfolio-capture.ps1'
+      - 'scripts/review-portfolio-video.ps1'
+      - 'scripts/test_portfolio*'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/portfolio-tools.yml'
+      - '.github/workflows/validate.yml'
+      - 'AGENTS.md'
+      - 'README.md'
+      - 'docs/**'
+      - 'scripts/portfolio*'
+      - 'scripts/setup-portfolio-media-tools.py'
+      - 'scripts/start-portfolio-capture.ps1'
+      - 'scripts/review-portfolio-video.ps1'
+      - 'scripts/test_portfolio*'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: portfolio-offline-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  offline:
+    name: Offline tools (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.10'
+          - os: ubuntu-latest
+            python: '3.14'
+          - os: windows-latest
+            python: '3.14'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Test offline media boundaries and document audit controls
+        run: |
+          python -m unittest discover -s scripts -p "test_portfolio_media*.py"
+          python scripts/test_portfolio_submission_audit.py
+          python scripts/portfolio-submission-audit.py
+      - name: Parse Windows PowerShell entrypoints without executing capture
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $paths = @('scripts/portfolio-frame-ocr.ps1', 'scripts/start-portfolio-capture.ps1', 'scripts/review-portfolio-video.ps1')
+          foreach ($path in $paths) {
+            $tokens = $null
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $path), [ref]$tokens, [ref]$parseErrors)
+            if ($parseErrors.Count -gt 0) { throw 'PowerShell entrypoint syntax check failed' }
+          }
+          Write-Output 'PowerShell entrypoint syntax checks passed; capture was not started.'

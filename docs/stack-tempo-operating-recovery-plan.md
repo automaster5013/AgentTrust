@@ -1,0 +1,135 @@
+# 운영 Tempo 이력 조회 복구·원상복귀 검토 계획
+
+이 문서는 **검토용이며 실행 승인이 아니다.** 현재 작업은 원본 볼륨·설정·컨테이너를 변경하지 않는다. 서비스나 Docker 재시작, 이미지 교체, 배포, 삭제·prune, LogiTrack 수정도 포함하지 않는다.
+
+## 확인된 증거와 아직 확인하지 않은 조건
+
+실제 격리 실험에서 정상 블록의 기준 조회를 확보한 뒤, 운영 원본에서 읽은 빈 블록 2개의 복사본을 추가하면 readiness는 정상이지만 기존 트레이스 조회는 404가 되고 JSON 파싱 오류가 발생했다. 복사본만 backend 밖으로 옮기고 **후보 컨테이너를 재기동한 뒤**, 트레이스 20개·스팬 133개의 리소스·스코프·스팬 해시가 기준과 모두 일치했다. 임시 컨테이너·볼륨은 정리됐고 원본 서비스의 ID·이미지·health가 유지됐다.
+
+대상 블록 2개의 파일 8개는 관측 당시 모두 0바이트였다. 이는 현재 남은 파일 상태의 증거이며, 과거 내용이 없었다거나 데이터 손실이 없었다는 증거는 아니다. 메타데이터를 추정해서 채우지 않는다. 원본 경로·파일 해시·권한·암호화 사본과 조회 기준은 비공개 `.local` 증거에 보관한다.
+
+**초기 재기동 실험만으로는 무재시작 복구와 역이동의 런타임 효과를 입증하지 못했다.** 후속 무재시작 관측은 아래에서 별도로 판정한다. 어느 격리 결과도 운영 무중단 복구 승인이나 완전한 이력 복구로 승격하지 않는다.
+
+## 적용 전 반드시 닫아야 할 조건
+
+1. 같은 격리 컨테이너의 ID·이미지·`StartedAt`을 유지하면서 정상 블록 조회 → 빈 블록 추가 후 오류 → 복사본 격리 후 정상 폴링 회복을 확인한다. 원상복귀도 컨테이너 재기동 없이 시험한다. 메모리 안전 기준을 충족하지 않으면 이 추가 실험은 시작하지 않는다.
+2. 원본에서 별도의 최신 사전 관측을 수집한다. 관측 최대 나이는 5분이며, 실제 파일 이동 직전에도 다시 확인해야 한다. 대상 두 디렉터리의 정확한 파일 집합·크기·해시·권한, 원본 볼륨 라벨, source/destination 실경로와 symlink 부재를 확인한다. 기존 격리 목적지가 있으면 덮어쓰지 않는다.
+3. AgentTrust 20개와 LogiTrack 12개의 ID·이미지·health, Tempo의 `StartedAt`, 보호 설정 해시를 고정한다. Windows 호스트 여유 2GiB 시작 / 1GiB 진행 기준과 Docker 여유 기준을 유지한다. 상태를 읽지 못하거나 기존 서비스가 불건강하면 적용하지 않는다.
+4. 암호화 증거의 외부에서 고정한 SHA-256, 인증된 복호화, 24시간 신선도, 별도 보관 키의 권한·바이트 불변성을 확인한다. 같은 물리 디스크의 개발 키·암호문은 독립 운영 백업이나 offsite 보관을 충족하지 않는다.
+5. 위 결과와 명확한 범위에 대한 별도 운영 변경 검토가 필요하다. 이 문서와 계획 생성기는 원본 쓰기 권한을 부여하지 않는다.
+
+## 검토할 순서와 중단 기준
+
+| 단계 | 검토할 동작·관측 | 중단 조건 |
+| --- | --- | --- |
+| P0 보존·고정 | 정확한 2개 블록 / 8개 파일을 암호화해 보존하고, 원본·목적지 상태와 32개 서비스 기준을 고정한다. | 한 파일이라도 비어 있지 않음, 해시/권한/파일 집합 변경, 경로 충돌, 관측 불가 |
+| P1 최소 namespace 변경 | 별도 승인 이후에만, 같은 볼륨에서 정확한 블록 디렉터리를 backend 밖의 `quarantine/` 대응 경로로 이동하는 방안을 검토한다. 와일드카드·삭제·덮어쓰기·메타데이터 재작성은 없다. 각 이동 전후 상태를 기록한다. | 첫 이동 후 두 번째 대상이 달라짐, 새 파일 출현, 목적지 존재, 서비스 기준 변화 |
+| P2 정상 폴링 관측 | 재시작·수동 flush·구성 변경 없이 자연스러운 폴링을 관측한다. 실제 적용값 확인 후 관측 시간을 결정한다. | 15분 검토 창 종료 또는 불건강/응답 불가. 타임아웃을 자동 재시작·자동 역이동으로 처리하지 않는다. |
+| P3 기능 판정 | 기준 20개 트레이스가 200을 반환하고 133개 스팬 해시가 모두 일치해야 한다. 서비스 기준과 신규 폴링 오류를 함께 확인한다. | readiness만 정상, 일부 조회만 성공, hash 불일치, metric 부재·리셋·새 오류 |
+| P4 종료·기록 | 원본 보존 위치와 변경 기록, 검증 범위와 미복구 이력을 남긴다. | 운영 적용 승인, 전체 이력·WAL·원자적 백업 또는 실제 CD 성공으로 확대 해석하지 않는다. |
+
+고정 Tempo 소스의 [기본 폴링 간격은 5분](https://raw.githubusercontent.com/grafana/tempo/77fc4563d1135d0ca2656709c7384c278a9c67b0/tempodb/config.go)이다. [Grafana 문서](https://grafana.com/docs/tempo/latest/operations/compaction/)는 정상 blocklist의 최대 지연을 두 폴링 간격으로 설명한다. **기본값은 현재 유효 설정 확인을 대체하지 않는다.** 15분은 검토용 상한이며, 실제 간격이 다르면 적용 전에 계획을 재검토한다. 두 번 이상의 새 폴링 완료를 확인하고 마지막 두 완료 사이에도 오류 증가가 없는지 본다.
+
+`tempodb_blocklist_poll_errors_total`과 `tempodb_blocklist_tenant_index_errors_total`은 누적 값이므로 기존 수치가 0이어야 한다는 조건을 쓰지 않는다. 최신 구간의 증가량과 실제 폴링 완료를 확인한다. 프로세스 재시작이나 counter 감소·부재는 성공이 아니라 판정 불가다. [공식 폴링 지표 설명](https://grafana.com/docs/tempo/latest/operations/monitor/polling/)을 따른다.
+
+## 롤백은 정상 복구와 다른 작업이다
+
+namespace 역이동은 변경 전 위치로 돌아가는 절차다. **빈 블록을 다시 backend에 넣으면 기존 404가 재발할 수 있으므로 정상 상태를 보장하는 롤백이 아니다.** 복구 성공 후 시간만 지났다는 이유로 자동 실행하지 않는다. 이미지·DB 변경이 없으므로 이 작업에 이미지 rollback이나 schema downgrade를 섞지 않는다.
+
+| 재관측한 상태 | 판단·다음 검토 |
+| --- | --- |
+| 두 원본 경로가 모두 정확한 기존 파일 집합이고 격리 경로는 없음 | 미적용 상태. 역이동하지 않는다. |
+| 한 블록만 격리됐고 다른 블록은 원래 위치 | 부분 적용. 진행을 멈추고 완료 방향 또는 역이동 방향을 별도 검토한다. |
+| 원본 경로 없음 + 격리 경로에 정확한 파일·해시·권한 존재 | 역이동 후보만 생성한다. 목적지가 여전히 없을 때에만 별도 검토할 수 있다. |
+| 원본·격리 경로가 둘 다 존재 | 충돌. 같아 보여도 삭제·병합·덮어쓰지 않는다. |
+| 둘 다 없음, symlink, 미확인 상태, 파일·해시·권한 변경 | 자동 작업 금지, 수동 조사. |
+| 서비스 health/ID/이미지/StartedAt가 달라지거나 관측 불가 | 판정 불가. namespace 이동으로 다른 장애를 덮지 않는다. |
+
+역이동 전에 격리 사본의 정확한 파일 집합과 해시를 다시 확인하고, 목적지 부재·symlink 부재를 확인한다. 변경된 경로는 건드리지 않는다. 역이동 후에는 원래 namespace 불변성과 404 재발 여부를 별도로 기록한다. 잘못된 역이동을 상쇄하려고 자동 삭제·강제 재생성·무한 재시도를 하지 않는다.
+
+## 검토 도구와 실제 CD의 경계
+
+`stack-tempo-repair-plan.py`는 고정된 증거 해시와 암호화된 실제 격리 결과를 검증해 **암호화된 비실행 검토 계획**을 만든다. `--execute` 모드는 없고 Docker workload나 원본 이동을 수행하지 않는다. 원본 경로는 공개 요약에서 제외한다. 출력은 항상 `operatingSourceWritesAllowed: false`, `automaticRollbackAllowed: false`, `automaticDeploymentAllowed: false`다. live 사전 관측과 무재시작 실험의 미완료를 명시한다.
+
+`stack_tempo_repair_policy.py`의 namespace 판정은 미적용·부분 적용·격리 완료·충돌·변조·판정 불가를 구분한다. 이는 동작을 실행하거나 허가하는 executor가 아니다. CD executor에 연결하거나 기존 full-stack/backup/승인 조건을 완화하지 않는다.
+
+실제 CD 전환에는 이 운영 조회 결함의 별도 해결 외에도 전체 관측 이력·현재 head·WAL 범위, 저장소 간 일관된 운영 백업과 키 보관, 마이그레이션 호환성·복구, 최신 CI 및 검토된 전환 범위의 증거가 필요하다. 서명된 게시 이미지, PR CI, 격리 복구, 운영 복구와 실제 배포를 각각 판정한다.
+
+## 무재시작 검증 실행 경로
+
+`stack-tempo-metadata-rehearsal.py`의 고정된 입력에 `hotPolling: true`를 지정하면 후보를 재시작하지 않고 소유한 복사본만 격리한 뒤 최대 15분간 20초 간격으로 조회한다. 기준 트레이스 전체 일치 후 정확한 파일을 역이동하고 기존 404의 재현을 관측한다. 각 구간은 후보 ID·이미지·StartedAt·RestartCount 0·OOM 부재와 기존 서비스 및 호스트 여유를 다시 검사한다. 경로 충돌·파일 변경이면 역이동하지 않는다. 이 경로는 자동 운영 복구 권한을 부여하지 않으며, 실제 폴링 간격과 두 완료 구간의 지표 검증은 별도로 남는다.
+
+## 후속 실제 무재시작 관측의 구분
+
+같은 후보에서 빈 블록 분리 후 트레이스 20개·스팬 133개가 재시작 없이 기준과 일치했다. 역이동 뒤에도 두 블록의 정확한 파일 집합·크기·해시·권한을 확인했고, 독립 관측에서는 20개·133개가 여전히 일치했으며 RestartCount는 0이었다. 이 중간 관측은 `hot-inverse-checkpoint.aesgcm`에 암호화해 보존한다. **디렉터리 원상복귀와 조회 실패 재현은 서로 다른 판정**이다. 앞선 cold-start 404를 warm 인스턴스의 확정 동작으로 가정하지 않는다. 캐시 또는 blocklist 유지가 원인인지는 별도 지표·로그 검증이 필요하다. 운영 원본을 재시작해 가설을 확인하지 않는다.
+
+이번 역이동 관측은 호스트 여유 1,016MiB가 진행 기준 1,024MiB를 밑돌아 안전 중단됐으므로 전체 실험은 미완료다. 15분 창을 완주한 성공이나 확정적인 404 비재현으로 기록하지 않는다. 임시 자산은 정리됐고 별도 사후 관측에서 원래 32개 서비스가 healthy이며 생성·기동 시각이 실험 전임을 확인했다. 원래 컨테이너 수 42개가 유지됐다. 주 실험 요약의 `operationalContainersUnchanged: false`는 최종 checkpoint의 메모리 검사 실패로 설정된 값이며, 서비스가 변경됐다는 확증이 아니다. 별도 `post-cleanup-health.json`과 두 기록을 함께 검토한다. 앱 작업 집합 반환으로 시작 기준을 확보했지만 지속적인 여유를 보장하지 못했으므로, 다음 실험은 지속적인 호스트 여유도 확보해야 한다.
+
+## 404가 warm 역이동에서 재현되지 않은 원인 분석
+
+게시 이미지의 빌드는 `services/tempo/Dockerfile`에서 Tempo 소스 `77fc4563d1135d0ca2656709c7384c278a9c67b0`을 고정한다. 해당 [poller.go의 실패 분기](https://github.com/grafana/tempo/blob/77fc4563d1135d0ca2656709c7384c278a9c67b0/tempodb/blocklist/poller.go#L200-L206)는 테넌트 폴링 오류 시 새 목록으로 덮어쓰지 않고 `previous.Metas`와 `previous.CompactedMetas`를 유지한다. 반면 [새 readerWriter의 blocklist](https://github.com/grafana/tempo/blob/77fc4563d1135d0ca2656709c7384c278a9c67b0/tempodb/tempodb.go#L208-L217)는 비어 있다. 따라서 초기 손상 블록 때문에 첫 목록 생성이 실패한 cold 상태와 정상 목록을 한 번 확보한 warm 상태가 다르다. 이 소스 경로는 실제 격리 관측(초기 404 → 무재시작 분리 후 20개·133개 일치 → 역이동 뒤에도 20개·133개 일치)을 설명한다. 다만 이전 실험은 폴링 지표를 함께 확보하지 않았으므로 해당 실행의 실패 분기 통과까지 직접 증명한 것은 아니다.
+
+후속 검증은 404만을 요구하지 않는다. 같은 후보의 ID·이미지·StartedAt와 정확한 역이동 파일을 확인한 뒤, 새 폴링 오류 카운터 증가와 전체 기준 트레이스 일치를 함께 확인하면 `retainedGoodBlocklistObserved`로 분류한다. 이것은 디스크 손상이 해결됐거나 재시작 후에도 정상이라는 증거가 아니다. `/metrics`는 고정 loopback 읽기만 허용하고 원문을 출력하지 않는다. 누락·중복·NaN·음수·counter reset은 판정 거부다. 성공한 poll 횟수가 증가하지 않아도 실패 분기의 목록 유지는 가능하므로 두 개념을 구분한다. 전체 복구의 두 성공 poll·오류 증가 0 조건은 별도로 유지한다.
+
+## 메모리 확보의 효과와 제한
+
+데스크톱 앱 작업 집합 반환은 프로세스 종료 없이 시작 여유를 제공했지만 지속성을 보장하지 못했다. 후속 점검에서 Linux 게스트의 파일 캐시가 약 3GiB인 것을 확인하고, 커널 6.18의 `memory.reclaim`에 `512M swappiness=0`을 두 번 요청했다. 한도·autostart·WSL 설정은 변경하지 않았다. [커널 문서](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files)에 따르면 reclaim 요청은 목표보다 적거나 많이 회수할 수 있다. 게스트 내부 캐시 감소가 Windows의 지속 여유 증가를 보장하지 않으며, 실제 호스트 시계열을 기준으로 새 격리 작업 시작 여부를 판단한다. 캐시 회수의 반복 자동화나 운영 cgroup 한도 축소는 추가하지 않는다. `.wslconfig` 변경은 [WSL 재시작이 필요한 설정](https://learn.microsoft.com/en-us/windows/wsl/wsl-config)이므로 현 무중단 범위에서 적용하지 않는다.
+
+후속 실제 호스트 관측은 4분 동안 20초 간격 13회 수행했다. 여유는 1,730~2,081MiB였고 여러 번 2GiB 미만이었다. 따라서 `sustained2GiB: false`로 기록하고 새 Tempo fixture는 시작하지 않았다. 사후 원래 32개 서비스의 ID·이미지·StartedAt가 기준과 같고 모두 healthy, 컨테이너 총 42개임을 확인했다. 지표 기반 warm 역이동 경로는 전체 경로 모의 검증까지 통과했지만 추가 실제 지표 검증은 미수행이다. 이 결과를 실제 재실행 완료나 운영 CD 성공으로 간주하지 않는다.
+
+폴링 카운터는 합계뿐 아니라 개별 라벨 시리즈도 보존해 비교한다. 한 테넌트의 counter reset을 다른 테넌트의 증가가 가리는 경우도 거부한다. 시리즈 생성·소멸, 합계와 시리즈 합산의 불일치는 판정 불가다. 실제 전후 snapshot은 암호화된 비교 증거에만 포함하며 공개 요약에는 라벨 원문을 기록하지 않는다. 이 거부 조건과 실제 snapshot의 암호화 기록을 전체 warm 경로 모의 검증에 포함한다.
+
+후속 검증기는 최종 보호 서비스·설정·키 불변성 재검사와 최종 메모리 검사를 독립적으로 기록한다. 메모리 하한 위반만 발생한 경우 `operationalContainersUnchanged`를 거짓으로 바꾸지 않고 `finalCapacityCheckPassed: false`와 별도 원인을 기록하며, 전체 `completed`는 여전히 거짓이다. 반대로 서비스 ID 등이 변하면 메모리가 충분해도 불변성은 실패다. 두 경우 모두 전체 warm 경로 모의 검증에서 거부와 정리를 확인한다. 과거 실험의 원래 요약은 수정하지 않는다.
+
+Warm 목록 유지 판정의 오류 증가는 복구 대상 블록과 기준 블록의 같은 테넌트에 묶는다. 다른 테넌트의 오류 증가만으로 정상 트레이스 유지의 원인을 증명하지 않는다. 대상이 여러 테넌트이거나 해당 테넌트 counter가 없으면 판정 불가다. 집계 오류 증가와 대상 오류 증가를 구분하고, 테넌트 식별값은 암호화된 phase·비교 증거에만 기록한다. 다른 테넌트만 증가하는 전체 warm 경로가 성공으로 승격되지 않는지 모의 검증한다.
+
+새 Tempo 격리 실행의 시작에는 Windows 호스트의 4분 안정 관측을 코드에서 강제한다. 20초 간격 13회 모두 2,048MiB 이상이고 단조 시계로 최소 240초가 지나야 한다. 한 번이라도 하한 미달이거나 관측 실패·시간 부족이면 Docker 조회·소스 관측 전에 거부한다. 우회 CLI 옵션은 없다. 성공한 창의 최저 여유·샘플 수·경과 시간은 실험 요약에 보존하고, 이후 단계의 1,024MiB checkpoint와 Docker reserve 검사는 계속 독립적으로 적용한다. 다른 OS의 실행은 Windows 안정 관측 성공으로 표시하지 않는다.
+
+## Hosted 합성 증거를 CD 검토에 반영한 현재 상태
+
+`b6c2be166817a64842d692ce3c2a491693291abe`의 전체 integration run `41168885185`와 나머지 5개 PR workflow는 최종 성공했다. 동일 HEAD의 Tempo run `41168885193`도 실제 실행·독립 재계산·정리까지 성공했다. 이는 새 커밋 CI나 운영 CD의 성공을 선취하지 않는다.
+
+`scripts/stack_tempo_cd_readiness.py`는 내려받은 합성 summary/evidence를 신뢰한 해시에 고정한 뒤 전체 원문을 재계산하고, 검토 후보 Tempo digest 및 이미지 빌드 revision과 일치하는지 확인한다. caller는 GitHub artifact ZIP의 기대 digest와 소속 run/head를 먼저 확인해야 하며 입력 해시를 임의 JSON에서 복사한 것만으로 원격 출처가 인증되는 것은 아니다. 이 CLI는 Docker·네트워크·운영 파일 쓰기·execute 모드가 없다. 첨부 결과의 syntheticWarmEvidenceVerified만 true이며 운영 권한과 CD 허용은 항상 false다.
+
+### 배포 전 남은 필수 조건
+
+1. 32개 운영 서비스의 최신 ID/image/StartedAt/health 기준, 실제 Compose 3개 그룹과 runtime policy·후보 16개 이미지 digest/서명 결합을 재확인한다. Tempo 1개 서명 검증을 전체 후보 검증으로 대체하지 않는다.
+2. 운영 자료는 로컬 비공개 경계에 보존하고, 신선한 운영 복구 증거와 저장소 간 일관성·마이그레이션 호환·백업 및 전체 스택 격리 복구를 확인한다. 합성 데이터는 이 조건을 충족하지 않는다. 메모리 확보 반복 실험이나 쓰기 중단 백업을 재개하지 않는다.
+3. 복구 예정 상태의 별도 fresh reader가 실제 기준 trace 전체를 읽는지 검증한다. warm 역이동의 새 metadata 오류 +2와 정상 조회 유지는 이전 정상 blocklist의 유지이며 정상 롤백 판정이 아니다. 파일 역이동·운영 재시작을 자동 실패 처리로 사용하지 않는다.
+4. 위 증거를 배포 실행부의 최신 후보·설치 상태·승인에 묶고 별도 운영 변경 검토를 완료한 후에만 적용을 검토한다. 현재 operatingSourceWritesAllowed/operatingStopOrRestartAllowed/automaticRollbackAllowed/automaticDeploymentAllowed는 false다.
+
+실행 case가 만료된 이후 PR은 오프라인 테스트를 계속 실행하되 hosted Docker 실험과 독립 실행 결과 단계는 건너뛰며 job summary에 NOT EXECUTED를 기록한다. 이 통과 상태는 새 합성 증거가 아니며, 새 실제 실험에는 별도 명시적 실행 시간 범위가 필요하다.
+
+## 운영 기반 증거 재인증과 fresh reader 준비
+
+보존된 운영 기반 cold-control의 암호문·positive reference·오류 로그·영향 파일 manifest를 기존 보존 review의 summary hash에 묶어 다시 인증했다. 20개 트레이스·133개 스팬과 원래 키 custody 일치를 확인했다. 신규 암호화 review와 현재 32개 서비스 identity/health 기준은 비공개 `.local`에 저장한다. 새 review 생성 시각이 원본 증거의 나이를 갱신하지 않으며, 원래 증거의 24시간 검토 기한과 별도로 실제 복사/적용 전 source 파일 재확인은 5분 이내여야 한다. 이번 작업은 source 파일 재확인·새 데이터 백업·fresh reader 실행이 아니다.
+
+준비 출력의 `freshReaderPreparation`은 독립 사본과 새 프로세스 3개 역할을 명시한다: 원본 cold 대조군(이전 증거의 예상 404), 복구 예정 상태의 cold reader(200 및 기준 trace 전체 의미 일치), 역이동 cold 대조군(이전 증거의 예상 404). 현재 원본 상태가 바뀌면 기대값을 강요하지 않고 판정 불가로 중단한다. 각 사본은 복사 전후 정확한 closed-block 파일 manifest 일치를 확인하고, live WAL은 복사하지 않는다. 운영 컨테이너 재사용·운영 볼륨 read-write mount·같은 사본을 여러 reader 상태로 재활용하는 것은 허용하지 않는다.
+
+warm namespace 역이동 후 API 상태는 미정이다. 실제 합성 증거처럼 이전 정상 blocklist가 남아 200을 반환할 수 있으므로 namespace 상태만으로 404나 정상 롤백을 판정하지 않는다. 계획 출력은 이를 `expectedStatusAfterNamespaceReversal=null`과 별도 `expectedColdReaderStatusAfterNamespaceReversal=404`로 구분한다. 후보·trace·block metadata를 모두 포함하는 조회 범위를 쓰며 start/end 이상은 수정하거나 숨기지 않고 기록한다.
+
+실제 실행 전에는 원본/목적지 파일·경로·볼륨 라벨·해시·권한·32개 서비스 기준을 새로 확인하고, 로컬 격리 작업에 필요한 지속 2GiB/진행 1GiB 메모리 조건을 충족해야 한다. 이전 로컬 자원 제한은 해소된 것으로 간주하지 않으며 메모리 회수 대기/강제 정리 실험을 재개하지 않는다. 구체적인 자원 변경 없이는 준비 상태에 머문다. 운영 자료의 외부 업로드도 하지 않는다.
+
+## 알려진 영향 파일의 제한적 최신 재검사
+
+2026-10-31 15:38 KST, 암호화 검토에서 인증한 원본 영향 블록 2개/파일 8개에 대해 기존 Tempo 컨테이너의 읽기 전용 `docker cp ... -`로 두 차례 archive를 관측했다. 모두 0바이트이고 기존 해시·권한·파일 집합과 일치했다. 기존 source image, volume 라벨, 키 custody와 전후 보호 서비스 32개의 ID/image/StartedAt/health도 확인했다. 결과는 비공개 `.local`에 보존했다. 신규 컨테이너·exec·운영 쓰기는 없었다.
+
+`scripts/stack_tempo_source_recheck.py`는 고정 source 컨테이너/volume과 인증한 두 prefix만 사용하며 archive를 64KiB·5 entries로 제한한다. symlink/hardlink/extra/비어 있지 않은 파일·권한 변화·경로 탈출을 거부한다. 읽기 CLI timeout 시 생성한 copy 프로세스만 종료하며 source 서비스/엔진은 변경하지 않는다. 파일 간 원자성, 정상 closed-block 전체, 부모/목적지 경로, 운영 API 또는 fresh reader를 검증한 것은 아니다. 이 부분 재검사 또한 실행 직전 최대 5분 조건을 새로 충족해야 한다.
+
+fresh reader 시작 조건은 아직 충족되지 않았다. 이번 단일 Windows 관측은 2,024MiB로 시작 기준 2,048MiB 미만이었고 지속 여유도 증명되지 않았다. 추가 메모리 대기·회수 실험 없이 새 격리 작업을 보류했다. 다음 실제 reader 전에는 구체적인 자원 변화, 지속 메모리 기준, 최신 전체 source 파일/경로/목적지 관측과 복사 전후 일치 및 protected-service 기준을 함께 확보해야 한다. 알려진 빈 파일이 그대로라는 사실을 복구 완료나 CD 허용으로 해석하지 않는다.
+
+## 읽기 대상 identity 고정
+
+읽기 전용 source 재검사는 사전 inspect의 container ID·image·StartedAt에 고정하며 copy API도 재사용될 수 있는 이름 대신 같은 불변 ID를 지정한다. 각 복사 전후와 종료 시 identity·health·mount·Compose labels를 확인한다. 이름이 다른 컨테이너에 재할당돼도 따라가지 않는다. 파일 내용이 같아도 source identity나 health가 바뀌면 성공 영수증을 만들지 않는다. 이번 강화는 전체 경로 모의 테스트로 검증했으며 새 운영 파일 재검사나 fresh reader 실행 증거가 아니다.
+
+## review 요약의 시간 경계
+
+오프라인 review summary는 `createdAt`과 별도로 `sourceEvidenceStartedAt`, `evidenceExpiresAt`, `preflightMaxAgeSeconds`를 출력한다. 기존 증거가 23시간 전이면 새 review의 증거 기한은 1시간 뒤이며 생성 시각부터 24시간으로 연장되지 않는다. 24시간 검토 유효성과 실제 source 파일 관측의 300초 제한은 서로 다른 조건이다. 이 필드는 source 관측 수행이나 fresh reader 실행을 의미하지 않는다.
+
+## hot 역이동 영수증의 의미 구분
+
+로컬 metadata rehearsal의 hot 경로는 역이동 파일·identity가 확인돼도 `restartFreeRollbackVerified=false`와 `healthyRollbackGuaranteed=false`를 유지한다. 검증한 namespace 역이동 자체만 `restartFreeNamespaceInverseVerified=true`로 기록한다. 정상 blocklist가 남아 조회되는 경우와 404가 다시 나타난 경우 모두 건강한 롤백 성공으로 승격하지 않는다. 과거 영수증의 필드나 바이트를 고쳐 새 실제 실행 증거로 사용하지 않는다. 이 변경의 전체 경로 테스트는 모의 검증이며 운영 적용 또는 새 reader 실행이 아니다.
+
+## source 재검사 전체 관측 창
+
+읽기 전용 재검사는 첫 관측부터 마지막 identity 확인까지 전체 구간을 monotonic/UTC 두 시계로 측정한다. 300초 초과·시간 역행·두 시계의 큰 불일치는 파일 해시가 같아도 판정 불가다. `sourceObservationStartedAt`, `observedAt`, `evidenceExpiresAt`, `observationDurationSeconds`를 함께 기록하며 기한은 완료 시각이 아니라 첫 관측+300초다. 후속 검토나 서비스 health 기록은 이 원본 시간 경계를 갱신하지 않는다.

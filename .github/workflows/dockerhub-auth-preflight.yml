@@ -1,0 +1,30 @@
+name: Docker Hub authentication preflight
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/commercial-workspace-ux-20261026]
+    paths: [.github/workflows/dockerhub-auth-preflight.yml]
+permissions:
+  contents: read
+jobs:
+  authentication:
+    if: github.repository == 'automaster5013/AgentTrust' && (github.ref == 'refs/heads/codex/commercial-workspace-ux-20261026' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: AgentTrust-dockerhub
+    steps:
+      - name: Authenticate without publishing or deploying
+        env:
+          HUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          HUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
+          HUB_TOKEN: ${{ secrets.AUTOMASTER5013_AGENTTRUST }}
+        shell: bash
+        run: |
+          test "$HUB_USERNAME" = automaster5013
+          test "$HUB_NAMESPACE" = automaster5013
+          test -n "$HUB_TOKEN"
+          export DOCKER_CONFIG="$RUNNER_TEMP/dockerhub-auth-preflight"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          trap 'rm -f "$DOCKER_CONFIG/config.json"' EXIT
+          printf '%s' "$HUB_TOKEN" | docker login docker.io --username "$HUB_USERNAME" --password-stdin
+          printf 'Docker Hub authentication passed. No image pushed; no service deployed.\n' >> "$GITHUB_STEP_SUMMARY"
