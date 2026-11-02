@@ -2,7 +2,7 @@ import {test,expect,type Page} from '@playwright/test';
 import {createHash,randomUUID} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {readFileSync,readdirSync,statSync} from 'node:fs';import {resolve} from 'node:path';
-import {workspaceEntry} from '../src/lib/workspace-entry';
+import {openWorkspace} from './console-entry';
 import {auditFilters} from '../src/lib/audit-search';
 import {uncertainCampaignWrite} from '../src/lib/campaign-write-error';
 import {uncertainEvaluationWrite} from '../src/lib/evaluation-request';
@@ -577,8 +577,7 @@ function phase(description:string){test.info().annotations.push({type:'phase',de
 async function login(page:Page,name:string,beforeNavigation?:()=>Promise<unknown>){
  await page.route('**/*',route=>{const url=new URL(route.request().url());if(process.env.STACK_E2E_READ_ONLY==='true'&&url.origin==='http://127.0.0.1:4320'&&url.pathname.startsWith('/backend/')&&route.request().method()!=='GET'&&!['/backend/login','/backend/logout'].includes(url.pathname)){phase('read-only network guard refused unintended business mutation');return route.abort('blockedbyclient')}if(['http://127.0.0.1:4320','http://127.0.0.1:4322'].includes(url.origin))return route.continue();return route.abort()});
  if(beforeNavigation)await beforeNavigation();
- const entry=workspaceEntry({githubActions:process.env.GITHUB_ACTIONS,visualCapture:process.env.STACK_E2E_VISUAL_CAPTURE,visualLabel:process.env.STACK_E2E_VISUAL_LABEL,baselineRevision:process.env.STACK_E2E_VISUAL_BASELINE_REVISION});
- const initial=await page.goto('/');if(entry.showcase){await expect(page.getByRole('heading',{name:/AI의 결과를\s*신뢰의 근거로\./})).toBeVisible();await page.getByRole('link',{name:'작업공간 시작하기'}).click();await expect(page).toHaveURL('http://127.0.0.1:4320/workspace')}phase('workspace initial navigation HTTP '+initial!.status());const providerInfo=await page.request.get('/backend/auth-info');phase('authentication provider metadata HTTP '+providerInfo.status());expect(providerInfo.status()).toBe(200);const info=await providerInfo.json();
+ const {initial,entry}=await openWorkspace(page);phase('workspace initial navigation HTTP '+initial!.status());const providerInfo=await page.request.get('/backend/auth-info');phase('authentication provider metadata HTTP '+providerInfo.status());expect(providerInfo.status()).toBe(200);const info=await providerInfo.json();
  const user=users.find(u=>u.username===name)!;
  // Reporter never records invocation arguments, browser traces, cookies or credentials.
  if(info.identityProvider==='keycloak'){await page.getByRole('button',{name:'Keycloak으로 로그인',exact:true}).click();await expect(page.locator('#username')).toBeVisible();await page.evaluate(value=>{document.querySelector<HTMLInputElement>('#username')!.value=value.username;document.querySelector<HTMLInputElement>('#password')!.value=value.password;document.querySelector<HTMLFormElement>('#kc-form-login')!.requestSubmit(document.querySelector<HTMLButtonElement>('#kc-login')!)},{username:user.username,password:user.password});await page.waitForURL('http://127.0.0.1:4320'+entry.authenticatedPath);phase('Keycloak authorization code login into expected Console entry')}
