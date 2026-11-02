@@ -90,7 +90,7 @@ test('regular-to-FIFO replacement cannot hang the bounded reader after its initi
  const script=String.raw`
  const fs=require('node:fs'),fsp=require('node:fs/promises'),assert=require('node:assert/strict');
  const [path,mode,entry]=process.argv.slice(1),originalStat=fsp.lstat,originalOpen=fsp.open;
- fsp.lstat=async file=>{const stat=await originalStat(file);if(file===path){fs.unlinkSync(path);require('node:child_process').execFileSync('mkfifo',['--',path]);fs.writeSync(1,'fifo-swapped\n');}return stat;};
+ fsp.lstat=async (file,...options)=>{const stat=await originalStat(file,...options);if(file===path){fs.unlinkSync(path);require('node:child_process').execFileSync('mkfifo',['--',path]);fs.writeSync(1,'fifo-swapped\n');}return stat;};
  if(mode==='blocking-control')fsp.open=(file,flags,...rest)=>originalOpen(file,flags&~fs.constants.O_NONBLOCK,...rest);
  require('node:module').syncBuiltinESMExports();
  (async()=>{const {readBoundedLegacyLinkFile}=await import(entry);await assert.rejects(readBoundedLegacyLinkFile(path,128),/File identity changed/);fs.writeSync(1,'fifo-refused\n');})().catch(()=>{fs.writeSync(2,'race-probe-failed\n');process.exitCode=1;});
@@ -98,4 +98,20 @@ test('regular-to-FIFO replacement cannot hang the bounded reader after its initi
  function probe(mode,timeout){rmSync(path,{force:true});writeFileSync(path,'owned synthetic input');return spawnSync(process.execPath,['--input-type=commonjs','-e',script,path,mode,entry],{cwd:resolve('.'),encoding:'utf8',timeout});}
  const blocking=probe('blocking-control',5000);assert.equal(blocking.error?.code,'ETIMEDOUT');assert.match(blocking.stdout,/fifo-swapped/);
  const protectedRead=probe('protected-reader',8000);assert.equal(protectedRead.status,0,protectedRead.stderr);assert.match(protectedRead.stdout,/fifo-swapped/);assert.match(protectedRead.stdout,/fifo-refused/);
+});
+
+test('file identity comparisons retain integer precision above the Number safe range',()=>{
+ // Isolated child mocks only stat/open; no real input or operating file is changed.
+ const script=String.raw`
+ const fsp=require('node:fs/promises'),assert=require('node:assert/strict');
+ const [entry,changedField]=process.argv.slice(1),low=9007199254740992n,high=low+1n;
+ assert.equal(Number(low),Number(high));
+ let closed=0,reads=0;
+ function stat(options,opened){const value={dev:low,ino:low,size:2n};if(opened&&changedField!=='none')value[changedField]=high;return {...Object.fromEntries(Object.entries(value).map(([k,v])=>[k,options?.bigint?v:Number(v)])),isFile:()=>true,isSymbolicLink:()=>false};}
+ fsp.lstat=async(_path,options)=>stat(options,false);
+ fsp.open=async()=>({stat:async options=>stat(options,true),close:async()=>{closed++;},read:async buffer=>{reads++;if(reads===1){buffer.write('ok');return {bytesRead:2};}return {bytesRead:0};}});
+ require('node:module').syncBuiltinESMExports();
+ (async()=>{const {readBoundedLegacyLinkFile}=await import(entry);if(changedField==='none'){assert.equal((await readBoundedLegacyLinkFile('synthetic-input',2)).toString(),'ok');assert.equal(reads,2);}else{await assert.rejects(readBoundedLegacyLinkFile('synthetic-input',2),/File identity changed/);assert.equal(reads,0);}assert.equal(closed,1);})().catch(()=>{process.exitCode=1;});`;
+ const entry=new URL('../packages/stack-legacy-link/files.js',import.meta.url).href;
+ for(const field of ['dev','ino','none']){const child=spawnSync(process.execPath,['--input-type=commonjs','-e',script,entry,field],{cwd:resolve('.'),encoding:'utf8',timeout:8000});assert.equal(child.status,0,`identity case ${field}: ${child.stderr}`);}
 });
