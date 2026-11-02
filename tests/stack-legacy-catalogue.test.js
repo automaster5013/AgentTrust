@@ -8,6 +8,7 @@ import {ReceiptSigner} from '../packages/receipts/signature.js';
 import {hash} from '../packages/contracts/hash.js';
 import {legacyCatalogueFromFiles,legacyCatalogueBudget,legacyCatalogueByteLimit,legacyCatalogueTotalByteLimit} from '../packages/stack-legacy-link/catalogue.js';
 import {parseLegacyCatalogueArguments} from '../scripts/stack-legacy-catalogue.mjs';
+import {legacyCatalogueHtmlFromFiles} from '../packages/stack-legacy-link/catalogue-report.js';
 const id=n=>'abcdef00-0000-4000-8000-'+String(n).padStart(12,'0'),sha=value=>createHash('sha256').update(value).digest('hex');
 const pair=generateKeyPairSync('ed25519'),pem=pair.publicKey.export({type:'spki',format:'pem'}),signer=new ReceiptSigner(pair.privateKey.export({type:'pkcs8',format:'pem'}));
 function scratch(t){const base=resolve('.local');mkdirSync(base,{recursive:true});const directory=mkdtempSync(join(base,'stack-legacy-catalogue-unit-'));t.after(()=>{const path=realpathSync(directory),root=realpathSync(base),tail=relative(root,path);assert.ok(!isAbsolute(tail)&&!tail.startsWith('..')&&tail.startsWith('stack-legacy-catalogue-unit-'));rmSync(directory,{recursive:true,force:true});});return directory;}
@@ -25,6 +26,24 @@ function fixture(t,rows=[{}, {blocked:true}]){
 }
 const snapshot=directory=>Object.fromEntries(readdirSync(directory).map(name=>[name,sha(readFileSync(join(directory,name)))]));
 const args=options=>[options.catalogueFile,'--target-organization-id',options.expectedTarget.organizationId,'--target-project-id',options.expectedTarget.projectId,'--catalogue-sha256',options.expectedCatalogueSha256];
+
+test('offline HTML rechecks original signed files and distinguishes historical success from current authority',async t=>{
+ const f=fixture(t),before=snapshot(f.directory),html=await legacyCatalogueHtmlFromFiles(f.options);
+ assert.match(html,/과거 통과/);assert.match(html,/과거 차단/);assert.match(html,/현재 배포 권한 없음 · 자료 가져오기 없음/);assert.match(html,/본문 미검증/);assert.match(html,/검토 본문 검증 없음/);
+ assert.match(html,/Content-Security-Policy/);assert.match(html,/default-src 'none'/);assert.match(html,/tabindex="0" role="region"/);assert.match(html,/scope="col"/);
+ assert.ok(html.includes(f.options.expectedCatalogueSha256));assert.ok(html.includes(f.options.expectedTarget.projectId));
+ assert.ok(!/<(?:script|img|iframe|form)\b|\b(?:href|src)=/i.test(html));assert.ok(!html.includes('CONFIDENTIAL_')&&!html.includes(pem)&&!html.includes(f.directory));assert.deepEqual(snapshot(f.directory),before);
+});
+
+test('report CLI writes one complete HTML document or no partial result after a late failure',t=>{
+ const f=fixture(t),before=snapshot(f.directory),command=[resolve('scripts/stack-legacy-catalogue-report.mjs'),...args(f.options)];
+ const good=spawnSync(process.execPath,command,{cwd:resolve('.'),encoding:'utf8',timeout:8000});assert.equal(good.status,0,good.stderr);assert.ok(good.stdout.startsWith('<!doctype html>'));assert.ok(good.stdout.endsWith('</html>\n'));assert.equal(good.stderr,'');assert.deepEqual(snapshot(f.directory),before);
+ writeFileSync(join(f.directory,f.data.entries[1].receiptFile),'CONFIDENTIAL_REPORT_LATE_FAILURE');const bad=spawnSync(process.execPath,command,{cwd:resolve('.'),encoding:'utf8',timeout:8000});assert.equal(bad.status,2);assert.equal(bad.stdout,'');assert.ok(!bad.stderr.includes('CONFIDENTIAL_')&&!bad.stderr.includes(f.directory)&&!bad.stderr.includes(pem));
+});
+
+test('HTML reports require independent source and target pins rather than trusting a summary',async t=>{
+ const f=fixture(t);await assert.rejects(legacyCatalogueHtmlFromFiles({...f.options,expectedCatalogueSha256:'0'.repeat(64)}));await assert.rejects(legacyCatalogueHtmlFromFiles({...f.options,expectedTarget:{organizationId:id(99),projectId:id(30)}}));await assert.rejects(legacyCatalogueHtmlFromFiles({records:[],deploymentAllowed:true}));
+});
 
 test('catalogue independently binds every signed source without importing records or authority',async t=>{
  const f=fixture(t),before=snapshot(f.directory),report=await legacyCatalogueFromFiles(f.options);assert.equal(report.verifiedEntries,2);assert.deepEqual(report.records.map(x=>x.historicalDecision),['pass','block']);assert.deepEqual(report.targetCoordinates,f.options.expectedTarget);assert.deepEqual(snapshot(f.directory),before);assert.equal(report.catalogueDigestMatched,true);

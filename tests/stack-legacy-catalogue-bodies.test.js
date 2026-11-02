@@ -9,6 +9,7 @@ import {evaluate} from '../packages/evaluator/index.js';
 import {compareRuns} from '../packages/evaluator/comparison.js';
 import {ReceiptSigner} from '../packages/receipts/signature.js';
 import {legacyCatalogueFromFiles} from '../packages/stack-legacy-link/catalogue.js';
+import {legacyCatalogueHtmlFromFiles} from '../packages/stack-legacy-link/catalogue-report.js';
 const id=n=>'abcdef00-0000-4000-8000-'+String(n).padStart(12,'0'),sha=value=>createHash('sha256').update(value).digest('hex');
 const pair=generateKeyPairSync('ed25519'),pem=pair.publicKey.export({type:'spki',format:'pem'}),signer=new ReceiptSigner(pair.privateKey.export({type:'pkcs8',format:'pem'}));
 function scratch(t){const base=resolve('.local');mkdirSync(base,{recursive:true});const dir=mkdtempSync(join(base,'stack-legacy-bodies-unit-'));t.after(()=>{const actual=realpathSync(dir),root=realpathSync(base),tail=relative(root,actual);assert.ok(!isAbsolute(tail)&&!tail.startsWith('..')&&tail.startsWith('stack-legacy-bodies-unit-'));rmSync(dir,{recursive:true,force:true});});return dir;}
@@ -35,6 +36,12 @@ test('catalogue v2 verifies signed source bodies and their structure without imp
 
 test('historical blocked outcomes retain denial after paired body and comparison verification',async t=>{
  const f=fixture(t,{withBaseline:true,mode:'regression'}),record=(await legacyCatalogueFromFiles(f.options)).records[0];assert.equal(record.historicalDecision,'block');assert.equal(record.evidenceStructuresVerified,true);assert.equal(record.deploymentAllowed,false);
+});
+
+test('HTML body reports preserve verification scope without exposing reviewed source bodies',async t=>{
+ const f=fixture(t,{withBaseline:true,manualStatus:'approved'}),before=Object.fromEntries(readdirSync(f.directory).map(name=>[name,sha(readFileSync(join(f.directory,name)))])),html=await legacyCatalogueHtmlFromFiles(f.options);
+ assert.match(html,/본문·구조 검증/);assert.match(html,/참조 검토 본문 검증/);assert.match(html,/목록 v2/);assert.match(html,/과거 통과/);assert.match(html,/현재 배포 권한 없음/);assert.ok(html.includes(f.options.expectedCatalogueSha256));assert.ok(!html.includes('CONFIDENTIAL_')&&!html.includes(f.review.actorId)&&!html.includes(pem));assert.deepEqual(Object.fromEntries(readdirSync(f.directory).map(name=>[name,sha(readFileSync(join(f.directory,name)))])),before);
+ delete f.bundle.review;await assert.rejects(legacyCatalogueHtmlFromFiles(f.saveBodies()));
 });
 
 test('unsigned run annotations are ignored and never copied into the body verification result',async t=>{

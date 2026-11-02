@@ -4,6 +4,12 @@ on:
     paths:
       - 'apps/console/**'
       - 'scripts/console-ui-review.cjs'
+      - 'scripts/legacy-catalogue-html-review.mjs'
+      - 'scripts/stack-legacy-catalogue*.mjs'
+      - 'packages/stack-legacy-link/**'
+      - 'packages/receipts/**'
+      - 'packages/contracts/**'
+      - 'packages/evaluator/**'
       - '.github/workflows/console-ux-review.yml'
   workflow_dispatch:
 permissions:
@@ -36,6 +42,10 @@ jobs:
           npm --prefix apps/console test
       - name: Render actual components and review responsive layout without API or credentials
         run: node scripts/console-ui-review.cjs
+      - name: Review synthetic verified legacy catalogue HTML without API access
+        run: |
+          npm ci --cache .cache/npm --ignore-scripts
+          node scripts/legacy-catalogue-html-review.mjs
       - name: Preserve component review screens and measurements
         if: always()
         uses: actions/upload-artifact@v4
@@ -44,5 +54,7 @@ jobs:
           path: |
             .local/console-ux-review/*.png
             .local/console-ux-review/summary.json
+            .local/legacy-catalogue-html-review-*/*.png
+            .local/legacy-catalogue-html-review-*/summary.json
           if-no-files-found: error
           retention-days: 7
