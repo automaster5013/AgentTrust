@@ -33,7 +33,9 @@ else{
    await expect(page.getByRole('heading',{name:'기존 서명 기록 사전검사',exact:true})).toBeVisible();await expect(page.getByText('현재 배포 권한 없음 · 자료 가져오기 없음',{exact:true})).toBeVisible();assert.equal(await page.locator('script,iframe,object,embed,form,a,img').count(),0);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
    const region=page.getByRole('region',{name:'기존 기록 검증 표 · 좌우 이동',exact:true});await region.focus();await expect(region).toBeFocused();const overflowing=await region.evaluate(n=>n.scrollWidth>n.clientWidth);
    if(overflowing){await page.keyboard.press('ArrowRight');await expect.poll(()=>region.evaluate(n=>n.scrollLeft)).toBeGreaterThan(0);}
-   await region.evaluate(n=>n.scrollTo({left:0,behavior:'instant'}));await page.screenshot({path:join(output,'report-'+width+'.png'),fullPage:true});assert.equal(requests,0);report.checks.push({width,pageHorizontalOverflow:false,tableKeyboardReachable:true,tableKeyboardScrolled:overflowing,externalRequests:0});await page.close();
+   for(const decision of await region.locator('tbody tr td:nth-child(4)').all()){const box=await decision.boundingBox();assert.ok(box&&box.width>=80);}
+   const first=region.locator('details').first(),toggle=first.locator('summary');await toggle.focus();await expect(toggle).toBeFocused();await page.keyboard.press('Enter');await expect(first).toHaveAttribute('open','');await expect(first.getByText('원본 기록 SHA-256',{exact:true})).toBeVisible();await page.keyboard.press('Enter');await expect(first).not.toHaveAttribute('open','');
+   await region.evaluate(n=>n.scrollTo({left:0,behavior:'instant'}));await page.screenshot({path:join(output,'report-'+width+'.png'),fullPage:true});assert.equal(requests,0);report.checks.push({width,pageHorizontalOverflow:false,tableKeyboardReachable:true,tableKeyboardScrolled:overflowing,fingerprintsKeyboardToggle:true,decisionTextReadable:true,externalRequests:0});await page.close();
   }
   report.completed=true;
  }catch(error){report.errorType=error.name;process.exitCode=1;}
