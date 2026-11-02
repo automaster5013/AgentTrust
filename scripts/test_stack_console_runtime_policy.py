@@ -1,4 +1,4 @@
-import copy,sys,pathlib,unittest
+import copy,sys,pathlib,unittest,os,json,subprocess
 from stack_console_runtime_policy import apply_and_recover,NAME,runtime_policy
 class Engine:
  def __init__(self,fail=None):self.fail=fail;self.used=False;self.rows={'old':{'name':NAME,'running':True,'networks':{'net1','net2'},'owned':False,'image':'old'}};self.events=[]
@@ -61,6 +61,23 @@ class RuntimePolicyTest(unittest.TestCase):
   manifest={'image':'signed-digest','imageId':'new-image','revision':'a'*40,'scope':['stack-console'],'databaseChanged':False};return old,before,after,manifest
  def test_policy_preserves_host_ports_and_application_overrides_without_mounting_state(self):
   old,before,after,manifest=self.fixture();result=runtime_policy(old,before,after,manifest,'a'*12);self.assertEqual(result['host'],old['HostConfig']);self.assertIn('CORE_API_URL=http://stack-gateway:8080',result['config']['Env']);self.assertEqual(result['config']['Image'],'signed-digest');self.assertEqual(old['Image'],'old-image')
+ def test_plan_hash_is_identical_across_process_hash_seeds(self):
+  code="""import copy,json
+from test_stack_console_runtime_policy import RuntimePolicyTest
+from stack_console_runtime_policy import runtime_policy,digest,env_map
+old,before,after,manifest=RuntimePolicyTest().fixture()
+original=copy.deepcopy((old,before,after,manifest))
+plan=runtime_policy(old,before,after,manifest,'a'*12)
+assert (old,before,after,manifest)==original
+assert env_map(plan['config']['Env'])==env_map(old['Config']['Env'])
+print(json.dumps({'digest':digest(plan),'names':[v.split('=',1)[0] for v in plan['config']['Env']]}))
+"""
+  values=[]
+  for seed in ['1','2','3']:
+   result=subprocess.run([sys.executable,'-c',code],cwd=pathlib.Path(__file__).resolve().parent,env={**os.environ,'PYTHONHASHSEED':seed},capture_output=True,text=True,timeout=15,check=True)
+   values.append(json.loads(result.stdout))
+  self.assertEqual(len({value['digest'] for value in values}),1)
+  for value in values:self.assertEqual(value['names'],sorted(value['names']))
  def test_wrong_service_stateful_mount_or_changed_entrypoint_cannot_be_applied(self):
   for kind in ['service','mount','entrypoint','digest','profile','override','restart']:
    old,before,after,m=self.fixture()

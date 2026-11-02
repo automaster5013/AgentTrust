@@ -34,7 +34,7 @@ def runtime_policy(old,old_image,new_image,manifest,nonce):
  require(actual.get('CORE_API_URL')==next_env.get('CORE_API_URL') and actual.get('PORT')=='3000' and actual.get('HOSTNAME')=='0.0.0.0')
  labels=new_image['Config']['Labels']
  require(all(labels.get(k)==v for k,v in {'dev.agenttrust.oidc.profile':'local-review','dev.agenttrust.oidc.application-origin':'http://127.0.0.1:4320','dev.agenttrust.oidc.public-issuer':'http://127.0.0.1:4322/realms/agenttrust'}.items()))
- config=copy.deepcopy(old['Config']);config['Image']=manifest['image'];config['Env']=[k+'='+v for k,v in next_env.items()];config['Labels'].update(labels);config['Labels']['com.docker.compose.image']=new_image['Id'];config['Labels']['dev.agenttrust.console-rollout-owner']=nonce
+ config=copy.deepcopy(old['Config']);config['Image']=manifest['image'];config['Env']=[k+'='+next_env[k] for k in sorted(next_env)];config['Labels'].update(labels);config['Labels']['com.docker.compose.image']=new_image['Id'];config['Labels']['dev.agenttrust.console-rollout-owner']=nonce
  networks=old['NetworkSettings']['Networks'];require(1<=len(networks)<=4 and old['HostConfig']['NetworkMode'] in networks)
  return {'config':config,'host':copy.deepcopy(old['HostConfig']),'endpoints':{n:endpoint(x) for n,x in networks.items()}}
 def host_equal(actual,expected):
