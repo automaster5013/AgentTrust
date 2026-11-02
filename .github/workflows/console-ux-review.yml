@@ -57,4 +57,7 @@ jobs:
             .local/legacy-catalogue-html-review-*/*.png
             .local/legacy-catalogue-html-review-*/summary.json
           if-no-files-found: error
+          # Multiple output roots share .local; include only the four explicit
+          # synthetic screenshot/summary patterns above, never input files.
+          include-hidden-files: true
           retention-days: 7
