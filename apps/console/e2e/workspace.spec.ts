@@ -1315,25 +1315,33 @@ if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true')test('legacy Core return ke
 });
 
 
-test('campaign whole-history search verifies server filters pages evidence and changed scope',async({page})=>{
+test('campaign whole-history search verifies server filters and matching pages',async({page})=>{
  await login(page,'demo-viewer');const region=page.getByRole('region',{name:'전체 캠페인 이력 검색',exact:true});
  const submit=region.getByRole('button',{name:'전체 캠페인 이력 검색 실행',exact:true});
  if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true'){
   await submit.click();await expect(region.getByText('전체 캠페인 이력 검색을 확인하지 못했습니다. 현재 서버의 지원 상태나 연결을 확인한 뒤 다시 검색해 주세요.',{exact:true})).toBeVisible();
   await expect(region.locator('[data-campaign-search-id]')).toHaveCount(0);await expect(region.getByText('검색 조건에 맞는 캠페인이 없습니다.',{exact:true})).toHaveCount(0);return;
  }
- const first=await (await page.request.get('/backend/campaign-history-search/all/all/all')).json();expect(first.entries.length).toBe(25);expect(first.nextCursor).toBeTruthy();
- await submit.click();await expect(region.locator('[data-campaign-search-id]')).toHaveCount(25);
+ phase('campaign search initial API response');const first=await (await page.request.get('/backend/campaign-history-search/all/all/all')).json();expect(first.entries.length).toBe(25);expect(first.nextCursor).toBeTruthy();
+ phase('campaign search first page click');await submit.click();await expect(region.locator('[data-campaign-search-id]')).toHaveCount(25);
  const ids=await region.locator('[data-campaign-search-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-campaign-search-id')));expect(ids).toEqual(first.entries.map((row:{id:string})=>row.id));
- await region.getByRole('button',{name:'다음 전체 캠페인 검색 페이지',exact:true}).click();await expect(region.getByText('전체 캠페인 검색 페이지 2 ·',{exact:false})).toBeVisible();
+ phase('campaign search next page');await region.getByRole('button',{name:'다음 전체 캠페인 검색 페이지',exact:true}).click();await expect(region.getByText('전체 캠페인 검색 페이지 2 ·',{exact:false})).toBeVisible();
  const next=await (await page.request.get('/backend/campaign-history-search/all/all/all/'+first.nextCursor)).json();expect(await region.locator('[data-campaign-search-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-campaign-search-id')))).toEqual(next.entries.map((row:{id:string})=>row.id));
- await region.getByLabel('전체 캠페인 승인 필요 설정',{exact:true}).selectOption('required');await expect(region.locator('[data-campaign-search-id]')).toHaveCount(0);await submit.click();
+ phase('campaign search approval change');await region.getByLabel('전체 캠페인 승인 필요 설정',{exact:true}).selectOption('required');await expect(region.locator('[data-campaign-search-id]')).toHaveCount(0);await submit.click();
  const filtered=await (await page.request.get('/backend/campaign-history-search/all/required/all')).json();expect(filtered.entries.every((row:{requiresApproval:boolean})=>row.requiresApproval)).toBe(true);await expect(region.locator('[data-campaign-search-id]')).toHaveCount(filtered.entries.length);
+ phase('campaign search page and approval checks completed');
+});
+
+if(process.env.STACK_E2E_LEGACY_CORE_RETURN!=='true')test('campaign search rejects invalid and foreign frames before mobile evidence navigation',async({page})=>{
+ await login(page,'demo-viewer');const region=page.getByRole('region',{name:'전체 캠페인 이력 검색',exact:true});
+ const submit=region.getByRole('button',{name:'전체 캠페인 이력 검색 실행',exact:true});
+ const first=await (await page.request.get('/backend/campaign-history-search/all/all/all')).json();expect(first.entries.length).toBe(25);
+ phase('campaign search invalid version validation');
  await region.getByLabel('전체 캠페인 에이전트 버전 UUID',{exact:true}).fill('invalid');await submit.click();await expect(region.getByText('에이전트 버전은 전체 UUID를 소문자로 입력하거나 비워 주세요.',{exact:true})).toBeVisible();await expect(region.locator('[data-campaign-search-id]')).toHaveCount(0);
  await region.getByRole('button',{name:'전체 캠페인 검색 초기화',exact:true}).click();
- const pattern='**/backend/campaign-history-search/**';await page.route(pattern,async route=>{const response=await route.fetch({maxRetries:0,maxRedirects:0});const value=await response.json();await route.fulfill({response,json:{...value,projectId:'ffffffff-ffff-4fff-8fff-ffffffffffff'}})});
+ phase('campaign search foreign response refusal');const pattern='**/backend/campaign-history-search/**';await page.route(pattern,async route=>{const response=await route.fetch({maxRetries:0,maxRedirects:0});const value=await response.json();await route.fulfill({response,json:{...value,projectId:'ffffffff-ffff-4fff-8fff-ffffffffffff'}})});
  await submit.click();await expect(region.getByText('전체 캠페인 이력 검색을 확인하지 못했습니다. 현재 서버의 지원 상태나 연결을 확인한 뒤 다시 검색해 주세요.',{exact:true})).toBeVisible();await expect(region.locator('[data-campaign-search-id]')).toHaveCount(0);await page.unroute(pattern);
- await page.setViewportSize({width:390,height:844});await submit.click();await expect(region.locator('[data-campaign-search-id]')).toHaveCount(25);
- const id=first.entries[0].id;await region.getByRole('button',{name:'검색 캠페인 근거 '+id.slice(0,8),exact:true}).click();
+ phase('campaign search mobile matching page');await page.setViewportSize({width:390,height:844});await submit.click();await expect(region.locator('[data-campaign-search-id]')).toHaveCount(25);
+ phase('campaign search mobile evidence selection');const id=first.entries[0].id;await region.getByRole('button',{name:'검색 캠페인 근거 '+id.slice(0,8),exact:true}).click();
  await expect(page.getByText('캠페인 '+id,{exact:true})).toBeVisible();
 });
