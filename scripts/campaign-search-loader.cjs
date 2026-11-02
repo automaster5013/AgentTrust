@@ -1,0 +1,2 @@
+const swc=require(require.resolve('next/dist/build/swc',{paths:[require('node:path').resolve(__dirname,'../apps/console')]}));
+module.exports=function(source){this.callback(null,swc.transformSync(source,{filename:this.resourcePath,swcrc:false,configFile:false,jsc:{parser:{syntax:'typescript',tsx:this.resourcePath.endsWith('.tsx')},target:'es2022',transform:{react:{runtime:'automatic'}}},module:{type:'es6'}}).code)};

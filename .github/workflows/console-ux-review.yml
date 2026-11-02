@@ -41,6 +41,10 @@ jobs:
         run: |
           npm --prefix apps/console run typecheck
           npm --prefix apps/console test
+      - name: Reproduce campaign search events using synthetic responses only
+        run: |
+          node scripts/campaign-search-fixture-build.cjs
+          node scripts/campaign-search-fixture-browser.cjs
       - name: Render actual components and review responsive layout without API or credentials
         run: |
           node scripts/console-ui-review.cjs
@@ -55,6 +59,7 @@ jobs:
         with:
           name: console-ux-review-${{ github.sha }}
           path: |
+            .local/campaign-search-diagnostic/**
             .local/console-ux-review/*.png
             .local/console-ux-review/summary.json
             .local/showcase-ux-review/*.png
