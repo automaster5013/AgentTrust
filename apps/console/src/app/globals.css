@@ -244,3 +244,17 @@ footer{display:flex;justify-content:space-between;align-items:flex-start;gap:20p
 /* Seven search columns retain readable widths inside their horizontal scroller. */
 .run-history-search-results>table{min-width:1100px;table-layout:auto}
 .run-history-search-results td:last-child button{white-space:nowrap}
+
+/* Shared Top stays visible while an in-page task changes the scroll position. */
+.workspace-page{--workspace-top-height:100px;--workspace-anchor-gap:24px}
+.workspace-page>.workspace-top{position:sticky;top:0;z-index:30;background:var(--canvas);border-bottom:1px solid var(--line);min-height:100px;margin-bottom:28px;padding:16px 0;gap:20px}
+.workspace-top-heading{display:flex;flex-direction:column;gap:5px;min-width:0}
+.workspace-top-title{font-size:12px;font-weight:650;color:var(--muted);padding-left:51px}
+.workspace-top-actions{display:flex;align-items:center;gap:22px;min-width:0}
+.workspace-top-home{color:var(--accent);font-size:12px;font-weight:650;text-decoration:none;white-space:nowrap;padding:10px 4px}
+.workspace-top .account{max-width:360px}.workspace-top .account>span{overflow-wrap:anywhere}
+.workspace-page :is(#workspace-content,#overview,#evaluations,#campaigns,#operations,#history,#management,#platform,#selected-evaluation-evidence,#run-current-gate,#run-review-form){scroll-margin-top:calc(var(--workspace-top-height) + var(--workspace-anchor-gap))}
+.workspace-page .workspace-nav{top:calc(var(--workspace-top-height) + 20px);max-height:calc(100dvh - var(--workspace-top-height) - 40px)}
+.workspace-page .workspace-nav a{scroll-margin-top:calc(var(--workspace-top-height) + 12px)}
+@media(min-width:601px) and (max-width:1100px){.workspace-page{--workspace-anchor-gap:210px}.workspace-page .workspace-nav{top:var(--workspace-top-height);max-height:none}}
+@media(max-width:600px){.workspace-page>.workspace-top{min-height:98px;margin-bottom:20px;gap:12px}.workspace-page .workspace-nav{position:static;max-height:none}.workspace-top-actions{flex-direction:column;align-items:flex-end;gap:3px;max-width:52%}.workspace-top .account{max-width:100%;font-size:10px}.workspace-top-home{padding:3px;font-size:10px}.workspace-top-title{padding-left:0;font-size:11px}.workspace-top .brand{font-size:21px}.workspace-top .brand span{display:none}}

@@ -3,6 +3,7 @@ import {useEffect,useRef,useState} from 'react';
 import CampaignWorkspace from './CampaignWorkspace';
 import DecisionSummary from './DecisionSummary';
 import WorkspaceNavigation from './WorkspaceNavigation';
+import WorkspaceTop from './WorkspaceTop';
 import WorkspaceOverview,{PlatformScope} from './WorkspaceOverview';
 import WorkspaceManagement from './WorkspaceManagement';
 import {filterRecentEvaluations} from '../lib/recent-evaluation-filter';
@@ -87,7 +88,7 @@ export default function Workspace(){
  }
 
  function filterEvaluations(value:typeof decisionFilter){if(busy)return;setDecisionFilter(value);if(selected&&value!=='all'&&selected.decision!==value){selection.current.next();setSelected(null);setGate(null);setArchive(null);setSimilar(null)}}
- return <main><a className="skip-link" href="#workspace-content">본문으로 건너뛰기</a><header><a className="brand" href="/">AgentTrust<span>평가와 릴리스 검토</span></a>{user&&<div className="account"><span>{user.username} · {user.role}</span><button disabled={busy} onClick={logout}>로그아웃</button></div>}</header>
+ return <main className="workspace-page"><a className="skip-link" href="#workspace-content">본문으로 건너뛰기</a><WorkspaceTop user={user} busy={busy} onLogout={logout}/>
  <div className={user?'workspace-layout':'public-layout'}>{user&&<WorkspaceNavigation/>}<div className="workspace-main">
  <section className="intro" id="workspace-content" tabIndex={-1}><div><p className="eyebrow">EVALUATION / RELEASE REVIEW</p><h1>{user?'평가 워크스페이스':'근거를 확인하고, 릴리스를 결정하세요.'}</h1><p>{user?(user.role==='viewer'?'평가를 선택해 규칙 결과와 보관 근거를 확인하세요. 조회 권한으로 접속 중입니다.':'평가 실행부터 근거 확인, 관리자 검토까지 같은 프로젝트에서 진행하세요.'):'조직 계정으로 로그인하고 평가 근거와 릴리스 검토를 시작하세요.'}</p></div><aside className="decision-guide" aria-label="릴리스 판정 안내"><strong>평가 통과와 릴리스 허용은 다릅니다</strong><p>필수 근거와 현재 정책, 관리자 검토를 모두 확인하세요. 오류·누락·미확인은 허용되지 않습니다.</p></aside></section>
  <div role="status" aria-live="polite" className="message">{message|| (loading?'로그인 상태를 확인하고 있습니다.':'')}</div>

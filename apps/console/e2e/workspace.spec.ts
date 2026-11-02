@@ -176,7 +176,7 @@ test('workspace navigation and responsive layout keep review tasks reachable wit
  const navigation=page.getByRole('navigation',{name:'워크스페이스 탐색',exact:true});
  await expect(page.getByRole('heading',{name:'프로젝트 홈',exact:true})).toBeVisible();await expect(page.locator('#overview')).toContainText('프로젝트 전체 통계가 아닙니다.');await expect(page.locator('#overview')).not.toContainText('새 평가 준비');
  for(const [name,target] of [['프로젝트 홈','overview'],['평가 실행·조회','evaluations'],['버전·캠페인','campaigns'],['준비 상태·사용량','operations'],['이력·감사','history'],['프로젝트·계정 관리','management'],['플랫폼 지원 범위','platform']]){
-  const link=navigation.getByRole('link',{name,exact:true});await expect(link).toHaveAttribute('href','#'+target);await link.click();await expect(page.locator('#'+target)).toBeVisible();
+  const link=navigation.getByRole('link',{name,exact:true});await expect(link).toHaveAttribute('href','#'+target);await link.click();await expect(page.locator('#'+target)).toBeVisible();await expect(page.locator('.workspace-top-title')).toBeInViewport({ratio:1});await expect(page.getByRole('button',{name:'로그아웃',exact:true})).toBeInViewport({ratio:1});
  }
 
  const originalViewport=page.viewportSize()??{width:1280,height:960};
@@ -190,7 +190,7 @@ test('workspace navigation and responsive layout keep review tasks reachable wit
    if(index<names.length-1)await link.press('Tab');
   }
  }
- await page.setViewportSize(originalViewport);
+ await page.setViewportSize(originalViewport);await page.getByRole('link',{name:'Top으로 이동 ↑',exact:true}).click();await expect(page.getByRole('heading',{name:'평가 워크스페이스',exact:true})).toBeInViewport({ratio:1});
  await page.locator('.skip-link').focus();await page.keyboard.press('Enter');await expect(page.locator('#workspace-content')).toBeFocused();
  const filters=page.getByRole('group',{name:'최근 평가 판정 필터',exact:true});
  const firstEvaluation=page.locator('.evaluation-list .runs button').first(),firstDecision=await firstEvaluation.locator('.badge').innerText();
