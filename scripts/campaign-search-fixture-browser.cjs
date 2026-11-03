@@ -6,7 +6,7 @@ function token(row,approval,agent){const b=Buffer.alloc(113);b[0]=1;createHash('
 const report={completed:false,syntheticOnly:true,apiConnected:false,operatingMutations:false,phases:[],clientErrors:[]};let browser,page,corrupt=false;
 async function step(name,action){report.phases.push(name);console.log(JSON.stringify({phase:name}));await action()}
 (async()=>{browser=await chromium.launch();page=await browser.newPage({viewport:{width:1440,height:960}});page.setDefaultTimeout(5000);page.on('pageerror',error=>{report.clientErrors.push(error.message.slice(0,1000));console.error(error.message)});
- const html='<html lang="ko"><style>'+fs.readFileSync(path.join(root,'apps/console/src/app/globals.css'),'utf8')+'</style><div id="root"></div><script>'+fs.readFileSync(path.join(out,'campaign-search-fixture.js'),'utf8').replaceAll('</script','<\\/script')+'</script></html>';
+ const html='<html lang="ko"><meta charset="utf-8"><style>'+fs.readFileSync(path.join(root,'apps/console/src/app/globals.css'),'utf8')+'</style><div id="root"></div><script>'+fs.readFileSync(path.join(out,'campaign-search-fixture.js'),'utf8').replaceAll('</script','<\\/script')+'</script></html>';
  await page.route('**/*',async route=>{const url=new URL(route.request().url());if(url.origin!=='https://campaign.synthetic.invalid')return route.abort();if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:html});
   const segments=url.pathname.split('/');if(route.request().method()!=='GET'||segments[2]!=='campaign-history-search')return route.abort();
   const [,approval,agent,requested]=segments.slice(3);let matching=rows.filter(row=>(approval==='all'||row.requiresApproval===(approval==='required'))&&(agent==='all'||row.agentVersionId===agent));
