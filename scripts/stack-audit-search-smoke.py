@@ -10,7 +10,7 @@ def verified(value,user,filters,token=None):
  assert result.returncode==0 and json.loads(result.stdout)['verified']
  return json.loads(result.stdout)['searchable']
 try:
- before=fingerprint();assert len(before)==21 and {'stack_project_settings','stack_access_keys','stack_access_key_revocations'}<=before.keys()
+ before=fingerprint();anonymous=StackClient('http://127.0.0.1:4320',[],report,clients);anonymous.request('audit-actor-search/'+str(uuid.uuid4())+'/all/all',expected=401);assert len(before)==21 and {'stack_project_settings','stack_access_keys','stack_access_key_revocations'}<=before.keys()
  credentials=json.loads((ROOT/'.local/stack/demo-credentials.json').read_text(encoding='utf-8'))
  viewer=StackClient('http://127.0.0.1:4320',credentials,report,clients);user=viewer.login('demo-viewer')
  first=viewer.request('audit-search/all/all');assert len(first['entries'])==25 and first['nextCursor'];eligible=verified(first,user,{'action':None,'resourceId':None})
@@ -51,7 +51,12 @@ try:
    foreign.request(path+'/'+first_actor['nextCursor'],expected=400)
    viewer.request('audit-actor-search/'+str(uuid.uuid4())+'/all/all/'+first_actor['nextCursor'],expected=400)
    viewer.request('audit-actor-search/'+actor+'/review.approved/all/'+first_actor['nextCursor'],expected=400)
-  combined=viewer.request('audit-actor-search/'+actor+'/'+action+'/'+resource);assert all(v['actorId']==actor and v['action']==action and v['resourceId']==resource for v in combined['entries'])
+  combined_path='audit-actor-search/'+actor+'/'+action+'/'+resource
+  combined=viewer.request(combined_path);assert all(v['actorId']==actor and v['action']==action and v['resourceId']==resource for v in combined['entries'])
+  expected_combined=sql("SELECT id FROM stack_audit WHERE "+scope+" AND actor_id='"+actor+"' AND action='"+action+"' AND resource_id='"+str(uuid.UUID(resource))+"' ORDER BY created_at DESC,id DESC LIMIT 25;").splitlines();assert [v['id'] for v in combined['entries']]==expected_combined
+  admin_page=admin.request(path);assert [v['id'] for v in admin_page['entries']]==expected[:25] and admin_page['actorId']==actor
+  empty_actor=viewer.request('audit-actor-search/'+str(uuid.uuid4())+'/all/all');assert empty_actor['entries']==[] and empty_actor['nextCursor'] is None
+  viewer.request('audit-actor-search/------------------------------------/all/all',expected=400)
   viewer.request(path+'/'+token,expected=400)
  assert actor_pages>len(actors),'Hosted fixture must prove real actor pagination'
  report.update(actorSearchSqlComparedRows=actor_rows,actorSearchPages=actor_pages,actorSearchActors=len(actors))
