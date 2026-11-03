@@ -3,9 +3,9 @@ const root=path.resolve(__dirname,'..'),req=createRequire(path.join(root,'apps/c
 const org='11111111-1111-4111-8111-111111111111',project='22222222-2222-4222-8222-222222222222',dataset='33333333-3333-4333-8333-333333333333';
 const rows=Array.from({length:38},(_,i)=>({id:'ffffffff-ffff-4fff-8fff-'+(100-i).toString(16).padStart(12,'0'),agentVersionId:org,datasetVersionId:dataset,requiresApproval:i%2===0,createdAt:'2026-11-03T00:00:00.123456Z'}));
 function token(row,approval,agent){const b=Buffer.alloc(113);b[0]=1;createHash('sha256').update('campaign-search-v1;approval='+approval+';agent='+agent).digest().copy(b,1);b.write('CMP',33);Buffer.from(org.replaceAll('-',''),'hex').copy(b,36);Buffer.from(project.replaceAll('-',''),'hex').copy(b,52);b.writeBigInt64BE(1793664000n,85);b.writeInt32BE(123456000,93);Buffer.from(row.id.replaceAll('-',''),'hex').copy(b,97);return b.toString('base64url')}
-const report={completed:false,syntheticOnly:true,apiConnected:false,operatingMutations:false,phases:[]};let browser,page,corrupt=false;
+const report={completed:false,syntheticOnly:true,apiConnected:false,operatingMutations:false,phases:[],clientErrors:[]};let browser,page,corrupt=false;
 async function step(name,action){report.phases.push(name);console.log(JSON.stringify({phase:name}));await action()}
-(async()=>{browser=await chromium.launch();page=await browser.newPage({viewport:{width:1440,height:960}});page.setDefaultTimeout(5000);
+(async()=>{browser=await chromium.launch();page=await browser.newPage({viewport:{width:1440,height:960}});page.setDefaultTimeout(5000);page.on('pageerror',error=>{report.clientErrors.push(error.message.slice(0,1000));console.error(error.message)});
  const html='<html lang="ko"><style>'+fs.readFileSync(path.join(root,'apps/console/src/app/globals.css'),'utf8')+'</style><div id="root"></div><script>'+fs.readFileSync(path.join(out,'campaign-search-fixture.js'),'utf8').replaceAll('</script','<\\/script')+'</script></html>';
  await page.route('**/*',async route=>{const url=new URL(route.request().url());if(url.origin!=='https://campaign.synthetic.invalid')return route.abort();if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:html});
   const segments=url.pathname.split('/');if(route.request().method()!=='GET'||segments[2]!=='campaign-history-search')return route.abort();
