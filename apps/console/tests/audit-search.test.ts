@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {createHash} from 'node:crypto';
-import {auditFilters,auditSearchPage,auditSearchPath,auditRunTarget,filterAuditPageByActor,type AuditFilters} from '../src/lib/audit-search.ts';
+import {auditActorSearchPage,auditActorSearchPath,auditFilters,auditSearchPage,auditSearchPath,auditRunTarget,filterAuditPageByActor,type AuditFilters} from '../src/lib/audit-search.ts';
 import {proxyPath,oauthQuery} from '../src/lib/proxy-policy.ts';import type {Identity} from '../src/lib/contracts.ts';
 const org='11111111-1111-4111-8111-111111111111',project='22222222-2222-4222-8222-222222222222',actor='33333333-3333-4333-8333-333333333333';const user={organizationId:org,projectId:project,actorId:actor} as Identity;
 const filters=auditFilters('version.agents.retired',actor);
@@ -52,4 +52,15 @@ test('current-page actor filter preserves verified records and the opaque server
  assert.deepEqual(filterAuditPageByActor(verified,project),[]);
  assert.equal(JSON.stringify(verified),before);
  for(const invalid of ['not-a-uuid',actor+'?project=other','AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA'])assert.throws(()=>filterAuditPageByActor(verified,invalid));
+});
+function actorToken(entry:ReturnType<typeof row>,actorId=actor,requested=filters,organization=org){const raw=Buffer.alloc(126);raw[0]=1;createHash('sha256').update('audit-actor='+actorId).digest().copy(raw,1);Buffer.from(token(entry,requested,organization),'base64url').copy(raw,33);return raw.toString('base64url');}
+test('whole-history actor search validates matching pages and rejects cross actor filter tenant or legacy boundaries',async()=>{
+ const rows=Array.from({length:25},(_,i)=>row(30-i)),next=actorToken(rows.at(-1)!);const frame={...page(rows,next),actorId:actor};
+ assert.equal((await auditActorSearchPage(frame,user,actor,filters)).nextCursor,next);
+ assert.equal((await auditActorSearchPage({...page([row(5)]),actorId:actor},user,actor,filters,next)).entries.length,1);
+ for(const changed of [actorToken(row(6),org),actorToken(row(6),actor,auditFilters('all','all')),actorToken(row(6),actor,filters,actor),token(row(6)),next+'='])await assert.rejects(()=>auditActorSearchPage({...page([]),actorId:actor},user,actor,filters,changed));
+ for(const changed of [{...frame,actorId:org},{...frame,entries:[{...row(5),actorId:org}]},{...frame,organizationId:actor},{...frame,nextCursor:actorToken(row(5))}])await assert.rejects(()=>auditActorSearchPage(changed,user,actor,filters));
+ const path=auditActorSearchPath(actor,filters,next);assert.equal(proxyPath(path.slice(9).split('/'),'GET'),path.replace('/backend/','/api/'));
+ for(const method of ['POST','DELETE','PUT'])assert.throws(()=>proxyPath(path.slice(9).split('/'),method));
+ for(const id of ['',actor.toUpperCase(),'1-1-1-1-1',actor+'?scope=other']){if(id===actor)continue;assert.throws(()=>auditActorSearchPath(id,filters));}
 });

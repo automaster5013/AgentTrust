@@ -44,3 +44,30 @@ export function filterAuditPageByActor(page:AuditPage,actorId:string):AuditEntry
  if(actorId!==''&&!uuid.test(actorId))throw Error('INVALID_AUDIT_ACTOR_FILTER');
  return page.entries.filter(entry=>actorId===''||entry.actorId===actorId);
 }
+/** Whole stored-history actor search; independent of the current-page presentation filter. */
+export function auditActor(value:string):string{
+ if(!uuid.test(value))throw Error('INVALID_AUDIT_ACTOR');return value;
+}
+export function auditActorSearchPath(actor:string,filters:AuditFilters,token:string|null=null):string{
+ auditActor(actor);auditFilters(filters.action??'all',filters.resourceId??'all');
+ if(token!==null&&!/^[A-Za-z0-9_-]{168}$/.test(token))throw Error('INVALID_AUDIT_ACTOR_CURSOR');
+ return '/backend/audit-actor-search/'+actor+'/'+(filters.action??'all')+'/'+(filters.resourceId??'all')+(token?'/'+token:'');
+}
+async function actorBoundary(token:string,actor:string):Promise<string>{
+ if(!/^[A-Za-z0-9_-]{168}$/.test(token))throw Error('INVALID_AUDIT_ACTOR_CURSOR');
+ const raw=Uint8Array.from(atob(token.replaceAll('-','+').replaceAll('_','/')),character=>character.charCodeAt(0));
+ const expected=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('audit-actor='+auditActor(actor))));
+ if(raw.length!==126||raw[0]!==1||expected.some((value,index)=>value!==raw[index+1])||btoa(String.fromCharCode(...raw)).replaceAll('+','-').replaceAll('/','_')!==token)throw Error('INVALID_AUDIT_ACTOR_BINDING');
+ return btoa(String.fromCharCode(...raw.slice(33))).replaceAll('+','-').replaceAll('/','_');
+}
+export async function auditActorSearchPage(value:unknown,user:Identity,actor:string,filters:AuditFilters,requestedCursor:string|null=null):Promise<AuditPage>{
+ auditActor(actor);
+ if(!value||typeof value!=='object'||Array.isArray(value))throw Error('INVALID_AUDIT_ACTOR_SEARCH');const page=value as Record<string,unknown>;
+ if(Object.keys(page).sort().join(',')!=='actorId,deploymentAuthority,entries,filters,limit,nextCursor,ordering,organizationId,projectId'||page.actorId!==actor)throw Error('INVALID_AUDIT_ACTOR_BINDING');
+ if(page.nextCursor!==null&&typeof page.nextCursor!=='string')throw Error('INVALID_AUDIT_ACTOR_CURSOR');
+ const requested=requestedCursor===null?null:await actorBoundary(requestedCursor,actor),next=page.nextCursor===null?null:await actorBoundary(page.nextCursor as string,actor);
+ const {actorId:ignored,...legacy}=page;void ignored;
+ const parsed=await auditSearchPage({...legacy,nextCursor:next},user,filters,requested);
+ if(parsed.entries.some(entry=>entry.actorId!==actor))throw Error('INVALID_AUDIT_ACTOR_BINDING');
+ return {entries:parsed.entries,nextCursor:page.nextCursor as string|null};
+}

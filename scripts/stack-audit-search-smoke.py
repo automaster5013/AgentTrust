@@ -1,7 +1,7 @@
 """Read-only tenant/filter navigation and browser-contract checks using existing audits."""
 import json,pathlib,subprocess,uuid
 from stack_test_client import StackClient
-from stack_business_fingerprint import fingerprint
+from stack_business_fingerprint import fingerprint,sql
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 report={'completed':False,'checks':[],'businessDataWrites':False,'paidProviderCalls':False,'credentialsRecorded':False};clients=[]
 def verified(value,user,filters,token=None):
@@ -29,6 +29,33 @@ try:
  admin=StackClient('http://127.0.0.1:4320',credentials,report,clients);admin_user=admin.login('demo-admin');verified(admin.request('audit-search/'+action+'/'+resource),admin_user,filters)
  foreign=StackClient('http://127.0.0.1:4320',credentials,report,clients);foreign_user=foreign.login('other-admin');foreign_page=foreign.request('audit-search/all/'+resource);verified(foreign_page,foreign_user,{'action':None,'resourceId':resource});assert not foreign_page['entries'];foreign.request('audit-search/all/all/'+token,expected=400)
  report['checks'].append('administrator can read; foreign tenant sees no matching resource and cannot reuse the viewer cursor')
+ # Actor search uses the complete stored history, independently compared with SQL; no writes.
+ scope="organization_id='"+str(uuid.UUID(user['organizationId']))+"' AND project_id='"+str(uuid.UUID(user['projectId']))+"'"
+ actors=sql('SELECT actor_id FROM stack_audit WHERE '+scope+' GROUP BY actor_id ORDER BY count(*) DESC,actor_id LIMIT 2;').splitlines();assert actors
+ actor_pages=0;actor_rows=0
+ for actor in actors:
+  actor=str(uuid.UUID(actor));path='audit-actor-search/'+actor+'/all/all'
+  expected=sql("SELECT id FROM stack_audit WHERE "+scope+" AND actor_id='"+actor+"' ORDER BY created_at DESC,id DESC;").splitlines();seen=[];actor_token=None;first_actor=None
+  for _ in range(100):
+   value=viewer.request(path+('/'+actor_token if actor_token else ''))
+   code="import {readFileSync} from 'node:fs';import {auditActorSearchPage} from './apps/console/src/lib/audit-search.ts';const v=JSON.parse(readFileSync(0,'utf8'));await auditActorSearchPage(v.page,v.user,v.actor,{action:null,resourceId:null},v.token);console.log('verified');"
+   checked=subprocess.run(['node','--experimental-strip-types','--input-type=module','-e',code],input=json.dumps({'page':value,'user':user,'actor':actor,'token':actor_token}),cwd=ROOT,capture_output=True,text=True,encoding='utf-8',timeout=20);assert checked.returncode==0
+   assert value['actorId']==actor and all(v['actorId']==actor for v in value['entries']);seen.extend(v['id'] for v in value['entries']);actor_pages+=1
+   if first_actor is None:first_actor=value
+   actor_token=value['nextCursor']
+   if actor_token is None:break
+  else:raise AssertionError('Actor history exceeded bounded fixture pages')
+  assert seen==expected;actor_rows+=len(seen)
+  foreign_actor=foreign.request(path);assert foreign_actor['entries']==[]
+  if first_actor['nextCursor']:
+   foreign.request(path+'/'+first_actor['nextCursor'],expected=400)
+   viewer.request('audit-actor-search/'+str(uuid.uuid4())+'/all/all/'+first_actor['nextCursor'],expected=400)
+   viewer.request('audit-actor-search/'+actor+'/review.approved/all/'+first_actor['nextCursor'],expected=400)
+  combined=viewer.request('audit-actor-search/'+actor+'/'+action+'/'+resource);assert all(v['actorId']==actor and v['action']==action and v['resourceId']==resource for v in combined['entries'])
+  viewer.request(path+'/'+token,expected=400)
+ assert actor_pages>len(actors),'Hosted fixture must prove real actor pagination'
+ report.update(actorSearchSqlComparedRows=actor_rows,actorSearchPages=actor_pages,actorSearchActors=len(actors))
+ report['checks'].append('whole stored actor history equals independent scoped SQL; actual multi-page filters, legacy and changed actor/filter/tenant cursors rejected')
  assert fingerprint()==before;report.update(completed=True,businessTablesUnchanged=len(before))
  report['checks'].append('all observed business tables including project settings, access keys and revocations remain unchanged')
 except Exception as error:report.update(errorType=type(error).__name__,code='AUDIT_SEARCH_SMOKE_UNVERIFIED')
