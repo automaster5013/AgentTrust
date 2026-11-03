@@ -525,69 +525,6 @@ test('viewer searches actual scoped audit actions and resources and rejects a su
  try{await page.route(failedDetailPath,route=>route.fulfill({status:404,contentType:'application/json',body:'{}'}));await region.locator('[data-audit-search-id="'+runEntry.id+'"]').getByRole('button',{name:'평가 근거 '+runEntry.resourceId.slice(0,8),exact:true}).click();await expect(page.getByText('평가 근거를 확인하지 못했습니다. 다시 선택해 주세요.',{exact:true})).toBeVisible();await expect(page.locator('.evidence')).toHaveCount(0)}finally{await page.unroute(failedDetailPath)}
  await region.locator('[data-audit-search-id="'+runEntry.id+'"]').getByRole('button',{name:'평가 근거 '+runEntry.resourceId.slice(0,8),exact:true}).click();await expect(page.locator('.evidence').getByText('실행 '+runEntry.resourceId,{exact:true})).toBeVisible();
  phase('unavailable audit target leaves no previous evaluation detail or authority; selecting the same verified row again recovers through the real scoped API');
- const actorPath='/backend/audit-actor-search/'+entry.actorId+'/all/all',actorResponse=await page.request.get(actorPath);
- if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true'){
-  expect(actorResponse.status()).toBe(500);
-  await region.getByLabel('감사 작업 종류',{exact:true}).selectOption('all');await region.getByLabel('감사 대상 ID',{exact:true}).fill('');await region.getByLabel('전체 이력 작업자 ID',{exact:true}).fill(entry.actorId);
-  const unsupported=page.waitForResponse(response=>new URL(response.url()).pathname===actorPath);await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();expect((await unsupported).status()).toBe(500);await expect(region.getByRole('status')).toContainText('감사 검색을 확인하지 못했습니다.');await expect(rows).toHaveCount(0);
-  await region.getByLabel('전체 이력 작업자 ID',{exact:true}).fill('');await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);
-  phase('actual previous Core refuses unsupported actor route and legacy audit search recovers without fabricated rows');
- }else{
- expect(actorResponse.status()).toBe(200);const actorReference=await actorResponse.json();expect(actorReference.actorId).toBe(entry.actorId);expect(actorReference.entries.length).toBeGreaterThan(0);
- await region.getByLabel('감사 작업 종류',{exact:true}).selectOption('all');await region.getByLabel('감사 대상 ID',{exact:true}).fill('');await region.getByLabel('전체 이력 작업자 ID',{exact:true}).fill(entry.actorId);await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(actorReference.entries.length);expect(await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')))).toEqual(actorReference.entries.map((value:{id:string})=>value.id));
- if(actorReference.nextCursor){await region.getByRole('button',{name:'다음 검색 페이지',exact:true}).click();await expect(region.getByText(/검색 페이지 2/)).toBeVisible();for(let index=0;index<await rows.count();index++)await expect(rows.nth(index)).toContainText(entry.actorId);}
- await page.route('**'+actorPath,route=>route.fulfill({status:404,contentType:'application/json',body:'{}'}));
- try{await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('현재 Core는 전체 이력 작업자 검색을 지원하지 않습니다.');await expect(rows).toHaveCount(0);}finally{await page.unroute('**'+actorPath)}
- await region.getByLabel('전체 이력 작업자 ID',{exact:true}).fill('');await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);
- await region.getByLabel('전체 이력 작업자 ID',{exact:true}).fill(entry.actorId);
- const actorRoute='**'+actorPath;
- await page.route(actorRoute,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...actorReference,actorId:entry.actorId==='11111111-1111-4111-8111-111111111111'?'22222222-2222-4222-8222-222222222222':'11111111-1111-4111-8111-111111111111'})}));
- try{await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('감사 검색을 확인하지 못했습니다.');await expect(rows).toHaveCount(0);}finally{await page.unroute(actorRoute)}
- let releaseActor!:()=>void,startActor!:()=>void;const heldActor=new Promise<void>(resolve=>{releaseActor=resolve}),actorStarted=new Promise<void>(resolve=>{startActor=resolve});
- await page.route(actorRoute,async route=>{const response=await route.fetch();startActor();await heldActor;await route.fulfill({response})});
- try{
-  await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await actorStarted;
-  await region.getByRole('button',{name:'감사 검색 취소',exact:true}).click();await expect(rows).toHaveCount(0);await expect(region.getByRole('button',{name:'감사 기록 검색 실행',exact:true})).toBeEnabled();
-  await region.getByLabel('전체 이력 작업자 ID',{exact:true}).fill('');await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);const afterCancel=await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')));
-  releaseActor();await page.waitForTimeout(100);expect(await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')))).toEqual(afterCancel);
- }finally{releaseActor();await page.unroute(actorRoute)}
- phase('substituted actor frame refused; cancelled held actual actor response cannot overwrite newer legacy search; no business writes');
- phase('actual whole-history actor query uses scoped Java rows and retains original search after unsupported actor endpoint; no business writes');
- }
- const utcDay=reference.entries[0].createdAt.slice(0,10),periodPath='/backend/audit-period-search/'+utcDay+'/'+utcDay+'/all/all/all';
- await region.getByLabel('전체 이력 작업자 ID',{exact:true}).fill('');await region.getByLabel('감사 작업 종류',{exact:true}).selectOption('all');await region.getByLabel('감사 대상 ID',{exact:true}).fill('');
- await region.getByLabel('감사 UTC 시작일',{exact:true}).fill(utcDay);await region.getByLabel('감사 UTC 종료일',{exact:true}).fill(utcDay);
- const periodResponse=await page.request.get(periodPath);
- if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true'){
-  expect(periodResponse.status()).toBe(500);await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('이전 Core는 기간 검색을 지원하지 않을 수 있습니다.');await expect(rows).toHaveCount(0);
-  await region.getByRole('button',{name:'기간 JSON 첫 구간 다운로드',exact:true}).click();await expect(region.getByLabel('기간 JSON 내보내기 상태')).toContainText('기간 JSON 내보내기를 확인하지 못했습니다.');await expect(region.getByRole('button',{name:'기간 JSON 다음 구간 다운로드',exact:true})).toBeDisabled();
-  phase('actual previous Core period search/export stays unavailable with zero fabricated rows/files');
- }else{
-  expect(periodResponse.status()).toBe(200);const periodReference=await periodResponse.json();expect(periodReference.startDay).toBe(utcDay);expect(periodReference.endDay).toBe(utcDay);expect(periodReference.entries).toHaveLength(25);expect(periodReference.nextCursor).toBeTruthy();
-  await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);const firstPeriod=await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')));expect(firstPeriod).toEqual(periodReference.entries.map((value:{id:string})=>value.id));
-  await region.getByRole('button',{name:'다음 검색 페이지',exact:true}).click();await expect(region.getByText(/검색 페이지 2/)).toBeVisible();expect((await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')))).some(id=>firstPeriod.includes(id))).toBe(false);
-  await region.getByLabel('감사 UTC 종료일',{exact:true}).fill('');let invalidPeriodRequests=0;const countPeriodRequest=(request:import('@playwright/test').Request)=>{if(new URL(request.url()).pathname.startsWith('/backend/audit-period-search/'))invalidPeriodRequests++};page.on('request',countPeriodRequest);
-  try{await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('UTC 시작·종료일은 모두 입력');await expect(rows).toHaveCount(0);expect(invalidPeriodRequests).toBe(0);}finally{page.off('request',countPeriodRequest)}
-  await region.getByLabel('감사 UTC 종료일',{exact:true}).fill(utcDay);const periodRoute='**'+periodPath;
-  await page.route(periodRoute,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...periodReference,startDay:'1970-01-01'})}));
-  try{await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('감사 검색을 확인하지 못했습니다.');await expect(rows).toHaveCount(0);}finally{await page.unroute(periodRoute)}
-  await page.route(periodRoute,route=>route.fulfill({status:503,contentType:'application/json',body:'{}'}));
-  try{await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('감사 검색을 확인하지 못했습니다.');await expect(rows).toHaveCount(0);}finally{await page.unroute(periodRoute)}
-  await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);
-  const exportPath=periodPath.replace('/audit-period-search/','/audit-period-export/'),exportRoute='**'+exportPath;
-  const firstDownload=page.waitForEvent('download');await region.getByRole('button',{name:'기간 JSON 첫 구간 다운로드',exact:true}).click();const firstFile=await firstDownload,firstFilePath=await firstFile.path();expect(firstFilePath).toBeTruthy();const firstChunk=JSON.parse(readFileSync(firstFilePath!,'utf8'));expect(firstChunk.recordCount).toBe(250);expect(firstChunk.nextCursor).toBeTruthy();expect(firstChunk.entireProjectHistory).toBe(false);expect(firstChunk.signed).toBe(false);
-  const nextDownload=page.waitForEvent('download');await region.getByRole('button',{name:'기간 JSON 다음 구간 다운로드',exact:true}).click();const nextFilePath=await (await nextDownload).path();const nextChunk=JSON.parse(readFileSync(nextFilePath!,'utf8'));expect(nextChunk.requestedCursor).toBe(firstChunk.nextCursor);expect(nextChunk.recordCount).toBe(250);expect(nextChunk.entries.some((row:{id:string})=>firstChunk.entries.some((previous:{id:string})=>previous.id===row.id))).toBe(false);
-  const actualExport=await (await page.request.get(exportPath)).json();let refusedDownloads=0;const countDownload=()=>refusedDownloads++;page.on('download',countDownload);
-  await page.route(exportRoute,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...actualExport,contentSha256:'0'.repeat(64)})}));
-  try{await region.getByRole('button',{name:'기간 JSON 첫 구간 다운로드',exact:true}).click();await expect(region.getByLabel('기간 JSON 내보내기 상태')).toContainText('기간 JSON 내보내기를 확인하지 못했습니다.');expect(refusedDownloads).toBe(0);await expect(region.getByRole('button',{name:'기간 JSON 다음 구간 다운로드',exact:true})).toBeDisabled();}finally{await page.unroute(exportRoute)}
-  let releaseExport!:()=>void,markExport!:()=>void;const heldExport=new Promise<void>(resolve=>releaseExport=resolve),exportEntered=new Promise<void>(resolve=>markExport=resolve);
-  await page.route(exportRoute,async route=>{const response=await route.fetch();markExport();await heldExport;await route.fulfill({response})});
-  try{await region.getByRole('button',{name:'기간 JSON 첫 구간 다운로드',exact:true}).click();await exportEntered;await region.getByRole('button',{name:'감사 검색 취소',exact:true}).click();await region.getByLabel('감사 UTC 종료일',{exact:true}).fill('');releaseExport();await page.waitForTimeout(150);expect(refusedDownloads).toBe(0);await expect(region.getByRole('button',{name:'기간 JSON 다음 구간 다운로드',exact:true})).toBeDisabled();await region.getByLabel('감사 UTC 종료일',{exact:true}).fill(utcDay);}finally{releaseExport();await page.unroute(exportRoute);page.off('download',countDownload)}
-  phase('actual period JSON downloads traverse250record chunks without overlap; corrupt hash and cancelled delayed response create no download; each file is a separate query without whole-project/signature claims');
-  phase('actual inclusive UTC audit period pagination; invalid partial day sends no request; substituted date and503 clear rows before manual recovery');
- }
- await region.getByLabel('감사 UTC 시작일',{exact:true}).fill('');await region.getByLabel('감사 UTC 종료일',{exact:true}).fill('');await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);
- phase('clearing both UTC dates restores existing scoped audit search without writes');
  phase('actual viewer audit search verifies distinct pages, rejects substituted frames and ignores a delayed cancelled response after a new condition finishes; mobile viewport has no document overflow; invalid UUID sends no request and an HTTP 503 clears results before a successful manual retry; no business writes');
 });
 
@@ -1378,30 +1315,4 @@ if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true')test('legacy Core return ke
  await expect(region.locator('[data-run-search-id]')).toHaveCount(0);await expect(region.getByText('검색 조건에 맞는 평가 이력이 없습니다.',{exact:true})).toHaveCount(0);
  const unavailable=await page.request.get('/backend/run-history-search/all/all/all/all/all');expect(unavailable.status()).toBe(500);expect(await unavailable.json()).toEqual({code:'REQUEST_UNAVAILABLE'});
  expect((await page.request.get('/backend/me')).status()).toBe(200);phase('pinned old Core search is explicitly unavailable; existing session remains valid');
-});
-
-
-test('version name search reads complete scoped history and keeps unsupported Core unavailable',async({page})=>{
- await login(page,'demo-viewer');
- const fixture=JSON.parse(readFileSync(resolve(process.cwd(),'../../.local/stack-version-history-search-fixture.json'),'utf8'));expect(fixture.completed).toBe(true);expect(fixture.versionsPerName).toBe(27);
- for(const [kind,label,selectLabel] of [['agents','에이전트','캠페인 에이전트 버전'],['datasets','데이터셋','캠페인 데이터셋 버전']] as const){
-  const parent=page.getByRole('region',{name:'프로젝트 '+label+' 버전 이력',exact:true}),region=page.getByRole('region',{name:label+' 전체 버전 검색',exact:true}),key=fixture.keys[kind],path='/backend/version-history-search/'+kind+'/'+key;
-  await region.getByLabel(label+' 전체 검색 이름',{exact:true}).fill(key);const search=region.getByRole('button',{name:label+' 전체 버전 검색',exact:true});const response=page.waitForResponse(r=>new URL(r.url()).pathname===path);await search.click();
-  if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true'){
-   expect((await response).status()).toBe(500);await expect(region.getByRole('status')).toContainText('기존 Core가 이 기능을 지원하지 않을 수 있습니다.');await expect(region.locator('[data-version-search-id]')).toHaveCount(0);phase(kind+' actual previous Core unsupported search remains unavailable');continue;
-  }
-  expect((await response).status()).toBe(200);await expect(region.locator('[data-version-search-id]')).toHaveCount(25);const first=await region.locator('[data-version-search-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-search-id')));
-  const actual=await (await page.request.get(path)).json();expect(first).toEqual(actual.entries.map((row:{id:string})=>row.id));expect(actual.nextCursor).toBeTruthy();
-  await region.getByRole('button',{name:'다음 '+label+' 검색 페이지',exact:true}).click();await expect(region.locator('[data-version-search-id]')).toHaveCount(2);const older=await region.locator('[data-version-search-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-search-id')));expect(older.some(id=>first.includes(id))).toBe(false);await expect(region.getByRole('button',{name:'다음 '+label+' 검색 페이지',exact:true})).toBeDisabled();
-  const selected=older.at(-1)!;await region.locator('[data-version-search-id="'+selected+'"]').getByRole('button').click();await expect(parent.getByText(/내용·해시·활성 상태 확인 후 선택:/)).toBeVisible();await expect(page.getByLabel(selectLabel,{exact:true})).toHaveValue(selected);
-  await region.getByRole('button',{name:'이전 '+label+' 검색 페이지',exact:true}).click();await expect(region.locator('[data-version-search-id]')).toHaveCount(25);expect(await region.locator('[data-version-search-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-search-id')))).toEqual(first);
-  await page.route('**'+path,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...actual,resourceKey:'substituted-name'})}));try{await search.click();await expect(region.getByRole('status')).toContainText('전체 버전 검색을 확인하지 못했습니다.');await expect(region.locator('[data-version-search-id]')).toHaveCount(0);await expect(page.getByLabel(selectLabel,{exact:true})).toHaveValue(selected)}finally{await page.unroute('**'+path)}
-  await search.click();await expect(region.locator('[data-version-search-id]')).toHaveCount(25);
-  await page.route('**'+path,route=>route.fulfill({status:503,contentType:'application/json',body:'{"code":"UNAVAILABLE"}'}));try{await search.click();await expect(region.getByRole('status')).toContainText('전체 버전 검색을 확인하지 못했습니다.');await expect(region.locator('[data-version-search-id]')).toHaveCount(0)}finally{await page.unroute('**'+path)}
-  let release!:()=>void,arrived!:()=>void,finished!:()=>void;const held=new Promise<void>(resolve=>{release=resolve}),intercepted=new Promise<void>(resolve=>{arrived=resolve}),settled=new Promise<void>(resolve=>{finished=resolve});
-  await page.route('**'+path,async route=>{arrived();await held;try{await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(actual)})}catch{/* Editing aborts only this owned request. */}finally{finished()}});
-  try{await search.click();await intercepted;await region.getByLabel(label+' 전체 검색 이름',{exact:true}).fill('different-name');release();await settled;await expect(region.locator('[data-version-search-id]')).toHaveCount(0);await expect(page.getByLabel(selectLabel,{exact:true})).toHaveValue(selected)}finally{release();await page.unroute('**'+path)}
-  await region.getByLabel(label+' 전체 검색 이름',{exact:true}).fill('missing-'+randomUUID().replaceAll('-','').slice(0,12));await search.click();await expect(region.getByText('이 이름으로 저장된 버전이 없습니다.',{exact:true})).toBeVisible();await expect(page.getByLabel(selectLabel,{exact:true})).toHaveValue(selected);
-  phase(kind+' actual27 versions traverse25+2 in scoped order; older immutable content/hash/active status verified before selection; substituted name and HTTP503 clear rows; exact missing name stays empty without changing selection');
- }
 });
