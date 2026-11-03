@@ -1,7 +1,7 @@
 name: Console UX review
 on:
   push:
-    branches: [codex/audit-actor-search-20261103, codex/audit-period-search-20261104]
+    branches: [codex/audit-actor-search-20261103, codex/audit-period-search-20261104, codex/audit-period-export-20261104]
   pull_request:
     paths:
       - 'apps/console/**'

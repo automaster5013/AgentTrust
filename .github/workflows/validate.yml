@@ -1,7 +1,7 @@
 name: Validate and deliver
 on:
   push:
-    branches: [main, codex/audit-actor-search-20261103, codex/audit-period-search-20261104]
+    branches: [main, codex/audit-actor-search-20261103, codex/audit-period-search-20261104, codex/audit-period-export-20261104]
   pull_request:
   workflow_dispatch:
 concurrency:

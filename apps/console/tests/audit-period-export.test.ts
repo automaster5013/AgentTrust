@@ -1,0 +1,27 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {createHash} from 'node:crypto';
+import {auditPeriod} from '../src/lib/audit-period-search.ts';import {auditFilters} from '../src/lib/audit-search.ts';import {auditPeriodExportChunk,auditPeriodExportPath} from '../src/lib/audit-period-export.ts';import {proxyPath} from '../src/lib/proxy-policy.ts';import type {Identity} from '../src/lib/contracts.ts';
+const org='11111111-1111-4111-8111-111111111111',project='22222222-2222-4222-8222-222222222222',actor='33333333-3333-4333-8333-333333333333',user={organizationId:org,projectId:project,actorId:actor} as Identity;
+const period=auditPeriod('2026-11-03','2026-11-03',actor,auditFilters('review.approved','all'));
+const row=(n:number)=>({id:'ffffffff-ffff-4fff-8fff-'+n.toString(16).padStart(12,'0'),actorId:actor,resourceId:actor,action:'review.approved',createdAt:'2026-11-03T09:00:00.123456Z'});
+function token(entry:ReturnType<typeof row>){const raw=Buffer.alloc(93);raw[0]=2;createHash('sha256').update('audit-period-start='+period.startDay+';end='+period.endDay+';actor='+actor+';action=review.approved;resource=all').digest().copy(raw,1);Buffer.from(org.replaceAll('-',''),'hex').copy(raw,33);Buffer.from(project.replaceAll('-',''),'hex').copy(raw,49);raw.writeBigInt64BE(BigInt(Date.parse(entry.createdAt.slice(0,19)+'Z')/1000),65);raw.writeInt32BE(Number(entry.createdAt.slice(20,26))*1000,73);Buffer.from(entry.id.replaceAll('-',''),'hex').copy(raw,77);return raw.toString('base64url');}
+function document(entries:ReturnType<typeof row>[],requestedCursor:string|null=null,more=false){const newest=entries.length?token(entries[0]):null,oldest=entries.length?token(entries.at(-1)!):null;return {schemaVersion:1,kind:'audit-period-export-chunk',organizationId:org,projectId:project,startDay:period.startDay,endDay:period.endDay,actorId:actor,filters:period.filters,ordering:'created-at-id-desc',limit:250,entries,recordCount:entries.length,requestedCursor,isFirstChunk:requestedCursor===null,hasOlderRecords:more,rangeExhausted:!more,entirePeriodHistory:requestedCursor===null&&!more,entireProjectHistory:false,singleStatementSnapshot:true,currentDeploymentAuthority:false,signed:false,newestCursor:newest,oldestCursor:oldest,nextCursor:more?oldest:null};}
+function frame(value:unknown){const contentJson=JSON.stringify(value),bytes=Buffer.from(contentJson);return {contentJson,contentSha256:createHash('sha256').update(bytes).digest('hex'),contentBytes:bytes.length,organizationId:org,projectId:project,signed:false,currentDeploymentAuthority:false};}
+test('bounded chunk verifies all250 rows and continues with an exact period-bound cursor',async()=>{
+ const entries=Array.from({length:250},(_,i)=>row(500-i));const first=document(entries,null,true);const checked=await auditPeriodExportChunk(frame(first),user,period);assert.equal(checked.recordCount,250);assert.equal(checked.nextCursor,first.oldestCursor);assert.equal(checked.entirePeriodHistory,false);
+ const requested=checked.nextCursor!;const second=document([row(250),row(249)],requested);assert.equal((await auditPeriodExportChunk(frame(second),user,period,requested)).rangeExhausted,true);assert.equal(second.entirePeriodHistory,false);
+ assert.equal((await auditPeriodExportChunk(frame(document([])),user,period)).recordCount,0);
+});
+test('recomputed unsigned hash cannot hide scope date actor permissions boundary or cross-block ordering substitution',async()=>{
+ const entries=Array.from({length:250},(_,i)=>row(500-i)),base=document(entries,null,true);
+ for(const value of [{...base,entireProjectHistory:true},{...base,signed:true},{...base,currentDeploymentAuthority:true},{...base,singleStatementSnapshot:false},{...base,actorId:org},{...base,startDay:'2026-11-02'},{...base,nextCursor:token(row(2))},{...base,newestCursor:token(row(499))},{...base,requestedCursor:token(row(501))},{...base,entries:entries.map((x,i)=>i===25?row(501):x)}])await assert.rejects(()=>auditPeriodExportChunk(frame(value),user,period));
+ const micro=structuredClone(base);micro.entries[25].createdAt='2026-11-03T09:00:00.123457Z';await assert.rejects(()=>auditPeriodExportChunk(frame(micro),user,period));
+ const foreign=structuredClone(base);foreign.entries[25].actorId=org;await assert.rejects(()=>auditPeriodExportChunk(frame(foreign),user,period));
+});
+test('byte corruption false completeness and repeated cursor row are rejected before download',async()=>{
+ const good=frame(document([row(5)]));await assert.rejects(()=>auditPeriodExportChunk({...good,contentSha256:'0'.repeat(64)},user,period));await assert.rejects(()=>auditPeriodExportChunk({...good,contentBytes:good.contentBytes+1},user,period));
+ const cursor=token(row(5));await assert.rejects(()=>auditPeriodExportChunk(frame(document([row(5)],cursor)),user,period,cursor));
+ await assert.rejects(()=>auditPeriodExportChunk(frame({...document([row(5)]),hasOlderRecords:true,rangeExhausted:false,entirePeriodHistory:false,nextCursor:cursor}),user,period));
+});
+test('export allows fixed authenticated GET routes without larger bodies queries or writes',()=>{
+ const path=auditPeriodExportPath(period,token(row(6)));assert.equal(proxyPath(path.slice(9).split('/'),'GET'),path.replace('/backend/','/api/'));for(const method of ['POST','PUT','DELETE'])assert.throws(()=>proxyPath(path.slice(9).split('/'),method));assert.throws(()=>auditPeriodExportPath(period,'A'.repeat(168)));
+});

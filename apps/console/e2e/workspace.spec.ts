@@ -560,7 +560,8 @@ test('viewer searches actual scoped audit actions and resources and rejects a su
  const periodResponse=await page.request.get(periodPath);
  if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true'){
   expect(periodResponse.status()).toBe(500);await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('이전 Core는 기간 검색을 지원하지 않을 수 있습니다.');await expect(rows).toHaveCount(0);
-  phase('actual previous Core period route stays unavailable with zero fabricated rows');
+  await region.getByRole('button',{name:'기간 JSON 첫 구간 다운로드',exact:true}).click();await expect(region.getByLabel('기간 JSON 내보내기 상태')).toContainText('기간 JSON 내보내기를 확인하지 못했습니다.');await expect(region.getByRole('button',{name:'기간 JSON 다음 구간 다운로드',exact:true})).toBeDisabled();
+  phase('actual previous Core period search/export stays unavailable with zero fabricated rows/files');
  }else{
   expect(periodResponse.status()).toBe(200);const periodReference=await periodResponse.json();expect(periodReference.startDay).toBe(utcDay);expect(periodReference.endDay).toBe(utcDay);expect(periodReference.entries).toHaveLength(25);expect(periodReference.nextCursor).toBeTruthy();
   await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);const firstPeriod=await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')));expect(firstPeriod).toEqual(periodReference.entries.map((value:{id:string})=>value.id));
@@ -573,6 +574,16 @@ test('viewer searches actual scoped audit actions and resources and rejects a su
   await page.route(periodRoute,route=>route.fulfill({status:503,contentType:'application/json',body:'{}'}));
   try{await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('감사 검색을 확인하지 못했습니다.');await expect(rows).toHaveCount(0);}finally{await page.unroute(periodRoute)}
   await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);
+  const exportPath=periodPath.replace('/audit-period-search/','/audit-period-export/'),exportRoute='**'+exportPath;
+  const firstDownload=page.waitForEvent('download');await region.getByRole('button',{name:'기간 JSON 첫 구간 다운로드',exact:true}).click();const firstFile=await firstDownload,firstFilePath=await firstFile.path();expect(firstFilePath).toBeTruthy();const firstChunk=JSON.parse(readFileSync(firstFilePath!,'utf8'));expect(firstChunk.recordCount).toBe(250);expect(firstChunk.nextCursor).toBeTruthy();expect(firstChunk.entireProjectHistory).toBe(false);expect(firstChunk.signed).toBe(false);
+  const nextDownload=page.waitForEvent('download');await region.getByRole('button',{name:'기간 JSON 다음 구간 다운로드',exact:true}).click();const nextFilePath=await (await nextDownload).path();const nextChunk=JSON.parse(readFileSync(nextFilePath!,'utf8'));expect(nextChunk.requestedCursor).toBe(firstChunk.nextCursor);expect(nextChunk.recordCount).toBe(250);expect(nextChunk.entries.some((row:{id:string})=>firstChunk.entries.some((previous:{id:string})=>previous.id===row.id))).toBe(false);
+  const actualExport=await (await page.request.get(exportPath)).json();let refusedDownloads=0;const countDownload=()=>refusedDownloads++;page.on('download',countDownload);
+  await page.route(exportRoute,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...actualExport,contentSha256:'0'.repeat(64)})}));
+  try{await region.getByRole('button',{name:'기간 JSON 첫 구간 다운로드',exact:true}).click();await expect(region.getByLabel('기간 JSON 내보내기 상태')).toContainText('기간 JSON 내보내기를 확인하지 못했습니다.');expect(refusedDownloads).toBe(0);await expect(region.getByRole('button',{name:'기간 JSON 다음 구간 다운로드',exact:true})).toBeDisabled();}finally{await page.unroute(exportRoute)}
+  let releaseExport!:()=>void,markExport!:()=>void;const heldExport=new Promise<void>(resolve=>releaseExport=resolve),exportEntered=new Promise<void>(resolve=>markExport=resolve);
+  await page.route(exportRoute,async route=>{const response=await route.fetch();markExport();await heldExport;await route.fulfill({response})});
+  try{await region.getByRole('button',{name:'기간 JSON 첫 구간 다운로드',exact:true}).click();await exportEntered;await region.getByRole('button',{name:'감사 검색 취소',exact:true}).click();await region.getByLabel('감사 UTC 종료일',{exact:true}).fill('');releaseExport();await page.waitForTimeout(150);expect(refusedDownloads).toBe(0);await expect(region.getByRole('button',{name:'기간 JSON 다음 구간 다운로드',exact:true})).toBeDisabled();await region.getByLabel('감사 UTC 종료일',{exact:true}).fill(utcDay);}finally{releaseExport();await page.unroute(exportRoute);page.off('download',countDownload)}
+  phase('actual period JSON downloads traverse250record chunks without overlap; corrupt hash and cancelled delayed response create no download; each file is a separate query without whole-project/signature claims');
   phase('actual inclusive UTC audit period pagination; invalid partial day sends no request; substituted date and503 clear rows before manual recovery');
  }
  await region.getByLabel('감사 UTC 시작일',{exact:true}).fill('');await region.getByLabel('감사 UTC 종료일',{exact:true}).fill('');await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);

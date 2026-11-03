@@ -13,7 +13,7 @@ on:
       - 'scripts/review-portfolio-video.ps1'
       - 'scripts/test_portfolio*'
   push:
-    branches: [main, codex/audit-actor-search-20261103, codex/audit-period-search-20261104]
+    branches: [main, codex/audit-actor-search-20261103, codex/audit-period-search-20261104, codex/audit-period-export-20261104]
     paths:
       - '.github/workflows/portfolio-tools.yml'
       - '.github/workflows/validate.yml'
