@@ -6,7 +6,8 @@ import shutil
 import subprocess
 
 SDK_PATHS = ('/usr/local/lib/android', '/usr/share/dotnet', '/opt/ghc', '/usr/local/.ghcup')
-MINIMUM_FREE = 24 * 1024 ** 3
+# Reserve room for the full multi-image build while later fixtures retain23GiB.
+MINIMUM_FREE = 40 * 1024 ** 3
 
 
 def authorized_paths(env, resolve=lambda p: Path(p).resolve()):

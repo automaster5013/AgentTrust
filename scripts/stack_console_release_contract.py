@@ -2,11 +2,16 @@
 import base64,hashlib,json,re
 REPOSITORY='automaster5013/AgentTrust'
 REF='refs/heads/codex/commercial-workspace-ux-20261026'
+PRESENTATION_REF='refs/heads/codex/workspace-top-menu-20261103'
+ALLOWED_REFS=frozenset({REF,PRESENTATION_REF})
 WORKFLOW='.github/workflows/original-stack.yml'
 IDENTITY='https://github.com/'+REPOSITORY+'/'+WORKFLOW+'@'+REF
 FILES={'manifest.json','console.cdx.json','console.trivy.json','console.signature.bundle.json','console.sbom.bundle.json'}
 def require(value):
  if not value:raise ValueError('Console release contract refused')
+def identity(ref):
+ require(ref in ALLOWED_REFS);return 'https://github.com/'+REPOSITORY+'/'+WORKFLOW+'@'+ref
+
 def unique(pairs):
  value={}
  for k,v in pairs:
@@ -15,13 +20,14 @@ def unique(pairs):
 def parse(raw):return json.loads(raw.decode('utf-8'),object_pairs_hook=unique)
 def context(env,root,uid,publication=True):
  require(uid>0 and env.get('GITHUB_ACTIONS')=='true' and env.get('RUNNER_ENVIRONMENT')=='github-hosted')
- require(env.get('GITHUB_REPOSITORY')==REPOSITORY and env.get('GITHUB_REF')==REF and env.get('GITHUB_EVENT_NAME')=='workflow_dispatch')
+ require(env.get('GITHUB_REPOSITORY')==REPOSITORY and env.get('GITHUB_REF') in ALLOWED_REFS and env.get('GITHUB_EVENT_NAME')=='workflow_dispatch')
  require(type(publication) is bool and env.get('STACK_CONSOLE_RELEASE_APPROVED')=='true' and str(root)==env.get('GITHUB_WORKSPACE'))
  if publication:require(env.get('STACK_SOURCE_INTEGRATION_PASSED')=='true')
  require(re.fullmatch('[a-f0-9]{40}',env.get('GITHUB_SHA','')) is not None)
  for k in ['GITHUB_RUN_ID','GITHUB_RUN_ATTEMPT']:require(re.fullmatch('[1-9][0-9]*',env.get(k,'')) is not None)
  return env['GITHUB_SHA']
-def validate(directory,revision,checksums_hash):
+def validate(directory,revision,checksums_hash,expected_ref=REF):
+ require(expected_ref in ALLOWED_REFS)
  require(re.fullmatch('[a-f0-9]{40}',revision) is not None and re.fullmatch('[a-f0-9]{64}',checksums_hash) is not None)
  require(directory.is_dir() and not directory.is_symlink() and {p.name for p in directory.iterdir()}==FILES|{'checksums.json'})
  raw={};total=0
@@ -31,10 +37,10 @@ def validate(directory,revision,checksums_hash):
  require(hashlib.sha256(raw['checksums.json']).hexdigest()==checksums_hash)
  checks=parse(raw['checksums.json']);require(set(checks)==FILES and all(hashlib.sha256(raw[n]).hexdigest()==checks[n] for n in FILES))
  m=parse(raw['manifest.json']);require(set(m)=={'schemaVersion','kind','revision','repository','ref','workflow','runId','runAttempt','image','imageId','keylessIdentity','oidcIssuer','highCriticalFindings','runtimeHttpVerified','sourceIntegrationPassed','oidcProfile','scope','databaseChanged','actualDeploymentPerformed'})
- require(type(m['schemaVersion']) is int and m['schemaVersion']==1 and m['kind']=='single-console-delivery' and m['revision']==revision and m['repository']==REPOSITORY and m['ref']==REF and m['workflow']==WORKFLOW)
+ require(type(m['schemaVersion']) is int and m['schemaVersion']==1 and m['kind']=='single-console-delivery' and m['revision']==revision and m['repository']==REPOSITORY and m['ref']==expected_ref and m['workflow']==WORKFLOW)
  require(type(m['runId']) is int and m['runId']>0 and type(m['runAttempt']) is int and m['runAttempt']>0)
  require(re.fullmatch(r'ghcr.io/automaster5013/agenttrust-console@sha256:[a-f0-9]{64}',m['image']) is not None and re.fullmatch('sha256:[a-f0-9]{64}',m['imageId']) is not None)
- require(m['keylessIdentity']==IDENTITY and m['oidcIssuer']=='https://token.actions.githubusercontent.com')
+ require(m['keylessIdentity']==identity(expected_ref) and m['oidcIssuer']=='https://token.actions.githubusercontent.com')
  require(type(m['highCriticalFindings']) is int and m['highCriticalFindings']==0 and m['runtimeHttpVerified'] is True and m['sourceIntegrationPassed'] is True)
  require(m['oidcProfile']=={'profile':'local-review','applicationOrigin':'http://127.0.0.1:4320','publicIssuer':'http://127.0.0.1:4322/realms/agenttrust'})
  require(m['scope']==['stack-console'] and m['databaseChanged'] is False and m['actualDeploymentPerformed'] is False)

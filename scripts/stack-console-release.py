@@ -1,6 +1,6 @@
 """Manual hosted Console-only build/scan/sign; no operating PC or business data access."""
 import argparse,hashlib,json,os,pathlib,re,shutil,subprocess,sys,time,uuid
-from stack_console_release_contract import context,require,REPOSITORY,REF,WORKFLOW,IDENTITY,FILES,validate
+from stack_console_release_contract import context,require,REPOSITORY,REF,WORKFLOW,IDENTITY,FILES,validate,identity
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 PHASE="admission"
 def phase(value):
@@ -20,7 +20,7 @@ def main():
  parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--publish',action='store_true');parser.add_argument('--preflight',action='store_true');args=parser.parse_args();require(not (args.publish and args.preflight))
  if not args.publish and not args.preflight:print(json.dumps({'planOnly':True,'scope':['stack-console'],'actualDeploymentPerformed':False}));return 0
  # Guard precedes output files, credentials, Docker and registry mutations.
- sha=context(os.environ,ROOT,os.getuid() if os.name!='nt' else 0,publication=args.publish)
+ sha=context(os.environ,ROOT,os.getuid() if os.name!='nt' else 0,publication=args.publish);ref=os.environ['GITHUB_REF'];signer_identity=identity(ref)
  require(run(['git','rev-parse','HEAD']).decode().strip()==sha)
  require(shutil.disk_usage(ROOT).free>=10*1073741824)
  memory=dict(line.split(':',1) for line in pathlib.Path('/proc/meminfo').read_text().splitlines());require(int(memory['MemAvailable'].strip().split()[0])>=4*1048576)
@@ -73,16 +73,16 @@ def main():
   phase('publish-digest')
   run(['docker','push',tag]);published=json.loads(run(['docker','image','inspect',tag]))[0];require(published['Id']==image['Id'])
   refs=[r for r in published.get('RepoDigests',[]) if r.startswith('ghcr.io/automaster5013/agenttrust-console@sha256:')];require(len(refs)==1);reference=refs[0]
-  verify=['--certificate-identity',IDENTITY,'--certificate-oidc-issuer','https://token.actions.githubusercontent.com','--certificate-github-workflow-repository',REPOSITORY,'--certificate-github-workflow-ref',REF,'--certificate-github-workflow-sha',sha]
+  verify=['--certificate-identity',signer_identity,'--certificate-oidc-issuer','https://token.actions.githubusercontent.com','--certificate-github-workflow-repository',REPOSITORY,'--certificate-github-workflow-ref',ref,'--certificate-github-workflow-sha',sha]
   phase('sign-image')
   tool(['cosign','sign','--yes','--bundle','/proof/console.signature.bundle.json','--annotations','org.opencontainers.image.revision='+sha,reference],'bridge',True,True)
   signatures=json.loads(tool(['cosign','verify',*verify,reference],'bridge',True));require(signatures and any(s['critical']['image']['docker-manifest-digest']==reference.split('@')[1] and s['optional'].get('org.opencontainers.image.revision')==sha for s in signatures))
   phase('attest-sbom')
   tool(['cosign','attest','--yes','--type','cyclonedx','--predicate','/proof/console.cdx.json','--bundle','/proof/console.sbom.bundle.json',reference],'bridge',True,True)
   tool(['cosign','verify-attestation',*verify,'--type','cyclonedx',reference],'bridge',True)
-  manifest={'schemaVersion':1,'kind':'single-console-delivery','revision':sha,'repository':REPOSITORY,'ref':REF,'workflow':WORKFLOW,'runId':int(os.environ['GITHUB_RUN_ID']),'runAttempt':int(os.environ['GITHUB_RUN_ATTEMPT']),'image':reference,'imageId':image['Id'],'keylessIdentity':IDENTITY,'oidcIssuer':'https://token.actions.githubusercontent.com','highCriticalFindings':0,'runtimeHttpVerified':True,'sourceIntegrationPassed':True,'oidcProfile':{'profile':'local-review','applicationOrigin':'http://127.0.0.1:4320','publicIssuer':'http://127.0.0.1:4322/realms/agenttrust'},'scope':['stack-console'],'databaseChanged':False,'actualDeploymentPerformed':False}
+  manifest={'schemaVersion':1,'kind':'single-console-delivery','revision':sha,'repository':REPOSITORY,'ref':ref,'workflow':WORKFLOW,'runId':int(os.environ['GITHUB_RUN_ID']),'runAttempt':int(os.environ['GITHUB_RUN_ATTEMPT']),'image':reference,'imageId':image['Id'],'keylessIdentity':signer_identity,'oidcIssuer':'https://token.actions.githubusercontent.com','highCriticalFindings':0,'runtimeHttpVerified':True,'sourceIntegrationPassed':True,'oidcProfile':{'profile':'local-review','applicationOrigin':'http://127.0.0.1:4320','publicIssuer':'http://127.0.0.1:4322/realms/agenttrust'},'scope':['stack-console'],'databaseChanged':False,'actualDeploymentPerformed':False}
   (bundle/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')
-  checks={n:hashlib.sha256((bundle/n).read_bytes()).hexdigest() for n in FILES};raw=(json.dumps(checks,indent=2)+'\n').encode();(bundle/'checksums.json').write_bytes(raw);pin=hashlib.sha256(raw).hexdigest();validate(bundle,sha,pin)
+  checks={n:hashlib.sha256((bundle/n).read_bytes()).hexdigest() for n in FILES};raw=(json.dumps(checks,indent=2)+'\n').encode();(bundle/'checksums.json').write_bytes(raw);pin=hashlib.sha256(raw).hexdigest();validate(bundle,sha,pin,expected_ref=ref)
   print(json.dumps({'completed':True,'revision':sha,'image':reference,'checksumsSha256':pin,'scope':['stack-console'],'actualDeploymentPerformed':False}));return 0
  finally:
   if fixture:

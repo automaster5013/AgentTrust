@@ -387,6 +387,7 @@ jobs:
             .local/stack-oidc-endpoint-proxy-*/summary.json
             .local/stack-https-identity-*/summary.json
             .local/stack-oidc-image-config-*.json
+            .local/stack-oidc-contract-*/summary.json
             .local/stack-browser-*.json
             .local/stack-core-return-*/summary.json
             apps/console/test-results/**/workspace-*.png
@@ -401,7 +402,7 @@ jobs:
         run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml -f compose.stack.providers.yaml down
   console-scan-preflight:
     needs: security-source
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_console_only == true && github.repository == 'automaster5013/AgentTrust' && github.ref == 'refs/heads/codex/commercial-workspace-ux-20261026'
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_console_only == true && github.repository == 'automaster5013/AgentTrust' && (github.ref == 'refs/heads/codex/commercial-workspace-ux-20261026' || github.ref == 'refs/heads/codex/workspace-top-menu-20261103')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -430,7 +431,7 @@ jobs:
           retention-days: 7
   console-release:
     needs: integration
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_console_only == true && github.repository == 'automaster5013/AgentTrust' && github.ref == 'refs/heads/codex/commercial-workspace-ux-20261026'
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_console_only == true && github.repository == 'automaster5013/AgentTrust' && (github.ref == 'refs/heads/codex/commercial-workspace-ux-20261026' || github.ref == 'refs/heads/codex/workspace-top-menu-20261103')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -465,7 +466,7 @@ jobs:
           BUNDLE=$(find .local -maxdepth 3 -type f -path '.local/console-release-*/bundle/checksums.json')
           test "$(printf '%s\n' "$BUNDLE" | wc -l)" -eq 1
           PIN=$(sha256sum "$BUNDLE" | cut -d ' ' -f 1)
-          python3 scripts/stack-console-release-verify.py --bundle "$(dirname "$BUNDLE")" --expected-revision "$GITHUB_SHA" --expected-checksums-sha256 "$PIN" --docker-tools
+          python3 scripts/stack-console-release-verify.py --bundle "$(dirname "$BUNDLE")" --expected-revision "$GITHUB_SHA" --expected-checksums-sha256 "$PIN" --expected-ref "$GITHUB_REF" --docker-tools
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: console-only-signed-delivery-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
