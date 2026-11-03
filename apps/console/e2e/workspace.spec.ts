@@ -525,7 +525,15 @@ test('viewer searches actual scoped audit actions and resources and rejects a su
  try{await page.route(failedDetailPath,route=>route.fulfill({status:404,contentType:'application/json',body:'{}'}));await region.locator('[data-audit-search-id="'+runEntry.id+'"]').getByRole('button',{name:'평가 근거 '+runEntry.resourceId.slice(0,8),exact:true}).click();await expect(page.getByText('평가 근거를 확인하지 못했습니다. 다시 선택해 주세요.',{exact:true})).toBeVisible();await expect(page.locator('.evidence')).toHaveCount(0)}finally{await page.unroute(failedDetailPath)}
  await region.locator('[data-audit-search-id="'+runEntry.id+'"]').getByRole('button',{name:'평가 근거 '+runEntry.resourceId.slice(0,8),exact:true}).click();await expect(page.locator('.evidence').getByText('실행 '+runEntry.resourceId,{exact:true})).toBeVisible();
  phase('unavailable audit target leaves no previous evaluation detail or authority; selecting the same verified row again recovers through the real scoped API');
- const actorPath='/backend/audit-actor-search/'+entry.actorId+'/all/all';const actorReference=await (await page.request.get(actorPath)).json();expect(actorReference.actorId).toBe(entry.actorId);expect(actorReference.entries.length).toBeGreaterThan(0);
+ const actorPath='/backend/audit-actor-search/'+entry.actorId+'/all/all',actorResponse=await page.request.get(actorPath);
+ if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true'){
+  expect(actorResponse.status()).toBe(500);
+  await region.getByLabel('감사 작업 종류',{exact:true}).selectOption('all');await region.getByLabel('감사 대상 ID',{exact:true}).fill('');await region.getByLabel('전체 이력 작업자 ID',{exact:true}).fill(entry.actorId);
+  const unsupported=page.waitForResponse(response=>new URL(response.url()).pathname===actorPath);await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();expect((await unsupported).status()).toBe(500);await expect(region.getByRole('status')).toContainText('감사 검색을 확인하지 못했습니다.');await expect(rows).toHaveCount(0);
+  await region.getByLabel('전체 이력 작업자 ID',{exact:true}).fill('');await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);
+  phase('actual previous Core refuses unsupported actor route and legacy audit search recovers without fabricated rows');
+ }else{
+ expect(actorResponse.status()).toBe(200);const actorReference=await actorResponse.json();expect(actorReference.actorId).toBe(entry.actorId);expect(actorReference.entries.length).toBeGreaterThan(0);
  await region.getByLabel('감사 작업 종류',{exact:true}).selectOption('all');await region.getByLabel('감사 대상 ID',{exact:true}).fill('');await region.getByLabel('전체 이력 작업자 ID',{exact:true}).fill(entry.actorId);await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(actorReference.entries.length);expect(await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')))).toEqual(actorReference.entries.map((value:{id:string})=>value.id));
  if(actorReference.nextCursor){await region.getByRole('button',{name:'다음 검색 페이지',exact:true}).click();await expect(region.getByText(/검색 페이지 2/)).toBeVisible();for(let index=0;index<await rows.count();index++)await expect(rows.nth(index)).toContainText(entry.actorId);}
  await page.route('**'+actorPath,route=>route.fulfill({status:404,contentType:'application/json',body:'{}'}));
@@ -545,6 +553,7 @@ test('viewer searches actual scoped audit actions and resources and rejects a su
  }finally{releaseActor();await page.unroute(actorRoute)}
  phase('substituted actor frame refused; cancelled held actual actor response cannot overwrite newer legacy search; no business writes');
  phase('actual whole-history actor query uses scoped Java rows and retains original search after unsupported actor endpoint; no business writes');
+ }
  phase('actual viewer audit search verifies distinct pages, rejects substituted frames and ignores a delayed cancelled response after a new condition finishes; mobile viewport has no document overflow; invalid UUID sends no request and an HTTP 503 clears results before a successful manual retry; no business writes');
 });
 
