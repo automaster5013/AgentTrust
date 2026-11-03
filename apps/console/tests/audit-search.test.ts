@@ -64,3 +64,9 @@ test('whole-history actor search validates matching pages and rejects cross acto
  for(const method of ['POST','DELETE','PUT'])assert.throws(()=>proxyPath(path.slice(9).split('/'),method));
  for(const id of ['',actor.toUpperCase(),'1-1-1-1-1',actor+'?scope=other']){if(id===actor)continue;assert.throws(()=>auditActorSearchPath(id,filters));}
 });
+
+test('legacy 124-character cursor is rejected by actor BFF route before forwarding',()=>{
+ const legacy=token(row(6));assert.equal(legacy.length,124);
+ assert.throws(()=>proxyPath(['audit-actor-search',actor,'all','all',legacy],'GET'),/INVALID_ROUTE/);
+ assert.throws(()=>auditActorSearchPath(actor,auditFilters('all','all'),legacy),/INVALID_AUDIT_ACTOR_CURSOR/);
+});

@@ -57,8 +57,11 @@ try:
   admin_page=admin.request(path);assert [v['id'] for v in admin_page['entries']]==expected[:25] and admin_page['actorId']==actor
   empty_actor=viewer.request('audit-actor-search/'+str(uuid.uuid4())+'/all/all');assert empty_actor['entries']==[] and empty_actor['nextCursor'] is None
   viewer.request('audit-actor-search/------------------------------------/all/all',expected=400)
-  viewer.request(path+'/'+token,expected=400)
+  report['phase']='reject-legacy-cursor-at-bff'
+  refused=viewer.request(path+'/'+token,expected=502);assert refused=={'code':'REQUEST_UNAVAILABLE'}
+  report['phase']='actor-search-comparison'
  assert actor_pages>len(actors),'Hosted fixture must prove real actor pagination'
+ report['phase']='actor-search-compared'
  report.update(actorSearchSqlComparedRows=actor_rows,actorSearchPages=actor_pages,actorSearchActors=len(actors))
  report['checks'].append('whole stored actor history equals independent scoped SQL; actual multi-page filters, legacy and changed actor/filter/tenant cursors rejected')
  assert fingerprint()==before;report.update(completed=True,businessTablesUnchanged=len(before))
