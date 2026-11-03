@@ -387,6 +387,7 @@ jobs:
             .local/stack-oidc-endpoint-proxy-*/summary.json
             .local/stack-https-identity-*/summary.json
             .local/stack-oidc-image-config-*.json
+            .local/stack-oidc-contract-*/summary.json
             .local/stack-browser-*.json
             .local/stack-core-return-*/summary.json
             apps/console/test-results/**/workspace-*.png
