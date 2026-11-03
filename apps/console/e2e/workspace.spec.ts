@@ -180,6 +180,9 @@ test('workspace navigation and responsive layout keep review tasks reachable wit
   const link=navigation.getByRole('link',{name,exact:true});await expect(link).toHaveAttribute('href','#'+target);await link.click();await expect(page.locator('#'+target)).toBeVisible();await expect(page.locator('.workspace-top-title')).toBeInViewport({ratio:1});await expect(page.getByRole('button',{name:'로그아웃',exact:true})).toBeInViewport({ratio:1});
  }
 
+
+ const topMenu=page.getByRole('navigation',{name:'상단 주요 메뉴',exact:true});
+ for(const width of [1440,390]){await page.setViewportSize({width,height:960});await expect(topMenu.getByRole('link')).toHaveCount(7);const link=topMenu.getByRole('link',{name:'이력·감사로 이동',exact:true});await link.focus();await expect(link).toBeFocused();await link.press('Enter');await expect(page.locator('.workspace-top-title')).toBeInViewport({ratio:1});await expect(topMenu).toBeInViewport({ratio:1});await expect(page).toHaveURL(/#history$/)}
  const originalViewport=page.viewportSize()??{width:1280,height:960};
  for(const width of [640,320]){
   await page.setViewportSize({width,height:960});
