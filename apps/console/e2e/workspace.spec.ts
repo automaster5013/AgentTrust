@@ -531,6 +531,19 @@ test('viewer searches actual scoped audit actions and resources and rejects a su
  await page.route('**'+actorPath,route=>route.fulfill({status:404,contentType:'application/json',body:'{}'}));
  try{await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('현재 Core는 전체 이력 작업자 검색을 지원하지 않습니다.');await expect(rows).toHaveCount(0);}finally{await page.unroute('**'+actorPath)}
  await region.getByLabel('전체 이력 작업자 ID',{exact:true}).fill('');await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);
+ await region.getByLabel('전체 이력 작업자 ID',{exact:true}).fill(entry.actorId);
+ const actorRoute='**'+actorPath;
+ await page.route(actorRoute,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...actorReference,actorId:'11111111-1111-4111-8111-111111111111'})}));
+ try{await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('감사 검색을 확인하지 못했습니다.');await expect(rows).toHaveCount(0);}finally{await page.unroute(actorRoute)}
+ let releaseActor!:()=>void,startActor!:()=>void;const heldActor=new Promise<void>(resolve=>{releaseActor=resolve}),actorStarted=new Promise<void>(resolve=>{startActor=resolve});
+ await page.route(actorRoute,async route=>{const response=await route.fetch();startActor();await heldActor;await route.fulfill({response})});
+ try{
+  await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await actorStarted;
+  await region.getByRole('button',{name:'감사 검색 취소',exact:true}).click();await expect(rows).toHaveCount(0);await expect(region.getByRole('button',{name:'감사 기록 검색 실행',exact:true})).toBeEnabled();
+  await region.getByLabel('전체 이력 작업자 ID',{exact:true}).fill('');await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);const afterCancel=await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')));
+  releaseActor();await page.waitForTimeout(100);expect(await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')))).toEqual(afterCancel);
+ }finally{releaseActor();await page.unroute(actorRoute)}
+ phase('substituted actor frame refused; cancelled held actual actor response cannot overwrite newer legacy search; no business writes');
  phase('actual whole-history actor query uses scoped Java rows and retains original search after unsupported actor endpoint; no business writes');
  phase('actual viewer audit search verifies distinct pages, rejects substituted frames and ignores a delayed cancelled response after a new condition finishes; mobile viewport has no document overflow; invalid UUID sends no request and an HTTP 503 clears results before a successful manual retry; no business writes');
 });
