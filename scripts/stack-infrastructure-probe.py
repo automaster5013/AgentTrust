@@ -30,7 +30,7 @@ def ci_isolation(original,infrastructure):
   assert uploads and all(name.endswith('-${{ github.sha }}') or name == 'original-stack-dockerhub-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}' for name in uploads)
  jobs=original['jobs'];assert set(jobs)=={'security-source','integration','console-scan-preflight','console-release','images','security-images','dockerhub'}
  console=jobs['console-release'];assert console['needs']=='integration'
- assert console['if']=="github.event_name == 'workflow_dispatch' && inputs.publish_console_only == true && github.repository == 'automaster5013/AgentTrust' && github.ref == 'refs/heads/codex/commercial-workspace-ux-20261026'"
+ assert console['if']=="github.event_name == 'workflow_dispatch' && inputs.publish_console_only == true && github.repository == 'automaster5013/AgentTrust' && (github.ref == 'refs/heads/codex/commercial-workspace-ux-20261026' || github.ref == 'refs/heads/codex/workspace-top-menu-20261103')"
  assert console['permissions']=={'contents':'read','packages':'write','id-token':'write'}
  preflight=jobs['console-scan-preflight'];assert preflight['needs']=='security-source' and preflight['if']==console['if'] and preflight['permissions']=={'contents':'read'}
  assert any(step.get('run')=='python3 scripts/stack-console-release.py --preflight' for step in preflight['steps'])
@@ -47,7 +47,7 @@ def ci_isolation(original,infrastructure):
  assert [line for line in lines if line.startswith('image=')]==['image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/agenttrust-$service:$GITHUB_SHA"']
 try:
  original=yaml.safe_load((source/'workflows/original-stack.yml').read_text(encoding='utf-8'));infrastructure=yaml.safe_load((source/'workflows/stack-infrastructure.yml').read_text(encoding='utf-8'));ci_isolation(original,infrastructure)
- for kind in ['shared-concurrency','mutable-tag','shared-artifact','cancel-other-revision','console-automatic-publish','console-skipped-integration','console-default-publish']:
+ for kind in ['shared-concurrency','mutable-tag','shared-artifact','cancel-other-revision','console-automatic-publish','console-skipped-integration','console-default-publish','console-unapproved-branch','console-wildcard-branch']:
   first,second=copy.deepcopy(original),copy.deepcopy(infrastructure)
   if kind=='shared-concurrency':first['concurrency']['group']='original-stack-${{ github.ref }}'
   elif kind=='mutable-tag':
@@ -57,13 +57,15 @@ try:
   elif kind=='cancel-other-revision':second['concurrency']['cancel-in-progress']=True
   elif kind=='console-automatic-publish':first['jobs']['console-release']['if']="github.event_name == 'pull_request'"
   elif kind=='console-skipped-integration':first['jobs']['console-release']['needs']='security-source'
-  else:first.get('on',first.get(True))['workflow_dispatch']['inputs']['publish_console_only']['default']=True
+  elif kind=='console-default-publish':first.get('on',first.get(True))['workflow_dispatch']['inputs']['publish_console_only']['default']=True
+  elif kind=='console-unapproved-branch':first['jobs']['console-release']['if']=first['jobs']['console-release']['if'].replace('codex/workspace-top-menu-20261103','codex/unapproved')
+  else:first['jobs']['console-release']['if']=first['jobs']['console-release']['if'].replace("github.ref == 'refs/heads/codex/workspace-top-menu-20261103'","startsWith(github.ref, 'refs/heads/codex/')")
   refused=False
   try:ci_isolation(first,second)
   except AssertionError:refused=True
   assert refused
- report['checks'].append('parallel revision isolation binds hosted runners, SHA-only publications/artifacts and the complete security/integration DAG; seven unsafe variants refused')
- report['parallelRevisionIsolationVerified']=True;report['unsafeCiVariantsRefused']=7;report['publisherChangesTriggerIsolationCheckVerified']=True
+ report['checks'].append('parallel revision isolation binds hosted runners, SHA-only publications/artifacts and the complete security/integration DAG; nine unsafe variants refused')
+ report['parallelRevisionIsolationVerified']=True;report['unsafeCiVariantsRefused']=9;report['publisherChangesTriggerIsolationCheckVerified']=True
  (output/'fixture-values.json').write_text(json.dumps(values),encoding='utf-8')
  run(['helm','lint','--strict','-f','/out/fixture-values.json','/src/charts/agenttrust-review'],'helm-lint');report['checks'].append('Helm strict lint')
  rendered=run(['helm','template','agenttrust-review','/src/charts/agenttrust-review','--namespace','agenttrust-review','--kube-version','1.34.0','-f','/out/fixture-values.json'],'helm-render');(output/'rendered.yaml').write_text(rendered,encoding='utf-8');documents=list(yaml.safe_load_all(rendered));assert all(isinstance(doc,dict) for doc in documents)
