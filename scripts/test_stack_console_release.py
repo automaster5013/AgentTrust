@@ -1,5 +1,5 @@
 import base64,copy,hashlib,json,pathlib,tempfile,unittest
-from stack_console_release_contract import context,validate,require,REPOSITORY,REF,WORKFLOW,IDENTITY
+from stack_console_release_contract import context,validate,require,REPOSITORY,REF,WORKFLOW,IDENTITY,PRESENTATION_REF,identity,ALLOWED_REFS
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 SHA='a'*40
 class ConsoleReleaseTest(unittest.TestCase):
@@ -64,5 +64,23 @@ class ConsoleReleaseTest(unittest.TestCase):
    for results in [[],[{'Vulnerabilities':[{'Severity':'HIGH'}]}],None]:
     files=self.files();files['console.trivy.json']['Results']=results;pin=self.write(d,files)
     with self.assertRaises(ValueError):validate(d,SHA,pin)
+  self.with_bundle(check)
+ def test_presentation_publication_keeps_exact_manual_hosted_repository_and_source_guards(self):
+  env=self.env();env['GITHUB_REF']=PRESENTATION_REF;self.assertEqual(context(env,ROOT,1001),SHA)
+  for key,value in [('GITHUB_REF',PRESENTATION_REF+'-other'),('GITHUB_REF','refs/heads/main'),('GITHUB_REPOSITORY','fork/AgentTrust'),('GITHUB_EVENT_NAME','pull_request'),('STACK_SOURCE_INTEGRATION_PASSED','false')]:
+   bad=copy.deepcopy(env);bad[key]=value
+   with self.subTest(key=key,value=value),self.assertRaises(ValueError):context(bad,ROOT,1001)
+  self.assertEqual(ALLOWED_REFS,frozenset({REF,PRESENTATION_REF}))
+ def test_new_branch_bundle_requires_explicit_independent_ref_pin_and_matching_identity(self):
+  def check(d):
+   files=self.files();files['manifest.json'].update(ref=PRESENTATION_REF,keylessIdentity=identity(PRESENTATION_REF));pin=self.write(d,files)
+   with self.assertRaises(ValueError):validate(d,SHA,pin)
+   self.assertEqual(validate(d,SHA,pin,expected_ref=PRESENTATION_REF)['ref'],PRESENTATION_REF)
+   for expected in ['refs/heads/main',PRESENTATION_REF+'-other']:
+    with self.assertRaises(ValueError):validate(d,SHA,pin,expected_ref=expected)
+   files['manifest.json']['keylessIdentity']=IDENTITY;pin=self.write(d,files)
+   with self.assertRaises(ValueError):validate(d,SHA,pin,expected_ref=PRESENTATION_REF)
+   files=self.files();pin=self.write(d,files)
+   with self.assertRaises(ValueError):validate(d,SHA,pin,expected_ref=PRESENTATION_REF)
   self.with_bundle(check)
 if __name__=='__main__':unittest.main()
