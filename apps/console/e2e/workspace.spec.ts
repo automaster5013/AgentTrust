@@ -1316,3 +1316,29 @@ if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true')test('legacy Core return ke
  const unavailable=await page.request.get('/backend/run-history-search/all/all/all/all/all');expect(unavailable.status()).toBe(500);expect(await unavailable.json()).toEqual({code:'REQUEST_UNAVAILABLE'});
  expect((await page.request.get('/backend/me')).status()).toBe(200);phase('pinned old Core search is explicitly unavailable; existing session remains valid');
 });
+
+
+test('version name search reads complete scoped history and keeps unsupported Core unavailable',async({page})=>{
+ await login(page,'demo-viewer');
+ const fixture=JSON.parse(readFileSync(resolve(process.cwd(),'../../.local/stack-version-history-search-fixture.json'),'utf8'));expect(fixture.completed).toBe(true);expect(fixture.versionsPerName).toBe(27);
+ for(const [kind,label,selectLabel] of [['agents','에이전트','캠페인 에이전트 버전'],['datasets','데이터셋','캠페인 데이터셋 버전']] as const){
+  const parent=page.getByRole('region',{name:'프로젝트 '+label+' 버전 이력',exact:true}),region=page.getByRole('region',{name:label+' 전체 버전 검색',exact:true}),key=fixture.keys[kind],path='/backend/version-history-search/'+kind+'/'+key;
+  await region.getByLabel(label+' 전체 검색 이름',{exact:true}).fill(key);const search=region.getByRole('button',{name:label+' 전체 버전 검색',exact:true});const response=page.waitForResponse(r=>new URL(r.url()).pathname===path);await search.click();
+  if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true'){
+   expect((await response).status()).toBe(500);await expect(region.getByRole('status')).toContainText('기존 Core가 이 기능을 지원하지 않을 수 있습니다.');await expect(region.locator('[data-version-search-id]')).toHaveCount(0);phase(kind+' actual previous Core unsupported search remains unavailable');continue;
+  }
+  expect((await response).status()).toBe(200);await expect(region.locator('[data-version-search-id]')).toHaveCount(25);const first=await region.locator('[data-version-search-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-search-id')));
+  const actual=await (await page.request.get(path)).json();expect(first).toEqual(actual.entries.map((row:{id:string})=>row.id));expect(actual.nextCursor).toBeTruthy();
+  await region.getByRole('button',{name:'다음 '+label+' 검색 페이지',exact:true}).click();await expect(region.locator('[data-version-search-id]')).toHaveCount(2);const older=await region.locator('[data-version-search-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-search-id')));expect(older.some(id=>first.includes(id))).toBe(false);await expect(region.getByRole('button',{name:'다음 '+label+' 검색 페이지',exact:true})).toBeDisabled();
+  const selected=older.at(-1)!;await region.locator('[data-version-search-id="'+selected+'"]').getByRole('button').click();await expect(parent.getByText(/내용·해시·활성 상태 확인 후 선택:/)).toBeVisible();await expect(page.getByLabel(selectLabel,{exact:true})).toHaveValue(selected);
+  await region.getByRole('button',{name:'이전 '+label+' 검색 페이지',exact:true}).click();await expect(region.locator('[data-version-search-id]')).toHaveCount(25);expect(await region.locator('[data-version-search-id]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-version-search-id')))).toEqual(first);
+  await page.route('**'+path,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...actual,resourceKey:'substituted-name'})}));try{await search.click();await expect(region.getByRole('status')).toContainText('전체 버전 검색을 확인하지 못했습니다.');await expect(region.locator('[data-version-search-id]')).toHaveCount(0);await expect(page.getByLabel(selectLabel,{exact:true})).toHaveValue(selected)}finally{await page.unroute('**'+path)}
+  await search.click();await expect(region.locator('[data-version-search-id]')).toHaveCount(25);
+  await page.route('**'+path,route=>route.fulfill({status:503,contentType:'application/json',body:'{"code":"UNAVAILABLE"}'}));try{await search.click();await expect(region.getByRole('status')).toContainText('전체 버전 검색을 확인하지 못했습니다.');await expect(region.locator('[data-version-search-id]')).toHaveCount(0)}finally{await page.unroute('**'+path)}
+  let release!:()=>void,arrived!:()=>void,finished!:()=>void;const held=new Promise<void>(resolve=>{release=resolve}),intercepted=new Promise<void>(resolve=>{arrived=resolve}),settled=new Promise<void>(resolve=>{finished=resolve});
+  await page.route('**'+path,async route=>{arrived();await held;try{await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(actual)})}catch{/* Editing aborts only this owned request. */}finally{finished()}});
+  try{await search.click();await intercepted;await region.getByLabel(label+' 전체 검색 이름',{exact:true}).fill('different-name');release();await settled;await expect(region.locator('[data-version-search-id]')).toHaveCount(0);await expect(page.getByLabel(selectLabel,{exact:true})).toHaveValue(selected)}finally{release();await page.unroute('**'+path)}
+  await region.getByLabel(label+' 전체 검색 이름',{exact:true}).fill('missing-'+randomUUID().replaceAll('-','').slice(0,12));await search.click();await expect(region.getByText('이 이름으로 저장된 버전이 없습니다.',{exact:true})).toBeVisible();await expect(page.getByLabel(selectLabel,{exact:true})).toHaveValue(selected);
+  phase(kind+' actual27 versions traverse25+2 in scoped order; older immutable content/hash/active status verified before selection; substituted name and HTTP503 clear rows; exact missing name stays empty without changing selection');
+ }
+});

@@ -205,6 +205,9 @@ jobs:
         run: |
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-smoke.py
+          python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-version-history-search-fixture.py --execute
+          python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-review-history-smoke.py
           python3 scripts/stack-run-review-history-smoke.py
           python3 scripts/stack-evaluation-request-resolution-smoke.py
@@ -300,6 +303,8 @@ jobs:
           python3 scripts/stack-run-history-search-smoke.py --execute
           python3 scripts/stack-campaign-history-smoke.py
           python3 scripts/stack-version-history-smoke.py
+          python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-version-history-search-smoke.py --execute
           python3 scripts/stack-provider-usage-query-test.py
           python3 scripts/stack-provider-usage-smoke.py
           python3 scripts/stack-evaluation-readiness-smoke.py
@@ -336,6 +341,7 @@ jobs:
             .local/stack-promptfoo-smoke-*.json
             .local/stack-http-smoke-*.json
             .local/stack-campaign-smoke-*.json
+            .local/stack-version-history-search-*.json
             .local/stack-campaign-review-history-*.json
             .local/stack-run-review-history-*.json
             .local/stack-evaluation-request-resolution-*.json
@@ -584,6 +590,9 @@ jobs:
           python3 scripts/stack-https-identity-smoke.py --execute --with-browser --with-enterprise-pilot
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-smoke.py
+          python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-version-history-search-fixture.py --execute
+          python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-review-history-smoke.py
           python3 scripts/stack-run-review-history-smoke.py
           python3 scripts/stack-evaluation-request-resolution-smoke.py
@@ -642,6 +651,8 @@ jobs:
           python3 scripts/stack-run-history-search-smoke.py --execute
           python3 scripts/stack-campaign-history-smoke.py
           python3 scripts/stack-version-history-smoke.py
+          python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-version-history-search-smoke.py --execute
           python3 scripts/stack-provider-usage-query-test.py
           python3 scripts/stack-provider-usage-smoke.py
           python3 scripts/stack-evaluation-readiness-smoke.py
@@ -678,6 +689,7 @@ jobs:
             .local/stack-gateway-smoke-*.json
             .local/stack-http-smoke-*.json
             .local/stack-campaign-smoke-*.json
+            .local/stack-version-history-search-*.json
             .local/stack-campaign-review-history-*.json
             .local/stack-run-review-history-*.json
             .local/stack-evaluation-request-resolution-*.json
