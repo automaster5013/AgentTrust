@@ -554,6 +554,29 @@ test('viewer searches actual scoped audit actions and resources and rejects a su
  phase('substituted actor frame refused; cancelled held actual actor response cannot overwrite newer legacy search; no business writes');
  phase('actual whole-history actor query uses scoped Java rows and retains original search after unsupported actor endpoint; no business writes');
  }
+ const utcDay=reference.entries[0].createdAt.slice(0,10),periodPath='/backend/audit-period-search/'+utcDay+'/'+utcDay+'/all/all/all';
+ await region.getByLabel('전체 이력 작업자 ID',{exact:true}).fill('');await region.getByLabel('감사 작업 종류',{exact:true}).selectOption('all');await region.getByLabel('감사 대상 ID',{exact:true}).fill('');
+ await region.getByLabel('감사 UTC 시작일',{exact:true}).fill(utcDay);await region.getByLabel('감사 UTC 종료일',{exact:true}).fill(utcDay);
+ const periodResponse=await page.request.get(periodPath);
+ if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true'){
+  expect(periodResponse.status()).toBe(500);await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('이전 Core는 기간 검색을 지원하지 않을 수 있습니다.');await expect(rows).toHaveCount(0);
+  phase('actual previous Core period route stays unavailable with zero fabricated rows');
+ }else{
+  expect(periodResponse.status()).toBe(200);const periodReference=await periodResponse.json();expect(periodReference.startDay).toBe(utcDay);expect(periodReference.endDay).toBe(utcDay);expect(periodReference.entries).toHaveLength(25);expect(periodReference.nextCursor).toBeTruthy();
+  await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);const firstPeriod=await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')));expect(firstPeriod).toEqual(periodReference.entries.map((value:{id:string})=>value.id));
+  await region.getByRole('button',{name:'다음 검색 페이지',exact:true}).click();await expect(region.getByText(/검색 페이지 2/)).toBeVisible();expect((await rows.evaluateAll(values=>values.map(row=>row.getAttribute('data-audit-search-id')))).some(id=>firstPeriod.includes(id))).toBe(false);
+  await region.getByLabel('감사 UTC 종료일',{exact:true}).fill('');let invalidPeriodRequests=0;const countPeriodRequest=(request:import('@playwright/test').Request)=>{if(new URL(request.url()).pathname.startsWith('/backend/audit-period-search/'))invalidPeriodRequests++};page.on('request',countPeriodRequest);
+  try{await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('UTC 시작·종료일은 모두 입력');await expect(rows).toHaveCount(0);expect(invalidPeriodRequests).toBe(0);}finally{page.off('request',countPeriodRequest)}
+  await region.getByLabel('감사 UTC 종료일',{exact:true}).fill(utcDay);const periodRoute='**'+periodPath;
+  await page.route(periodRoute,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...periodReference,startDay:'1970-01-01'})}));
+  try{await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('감사 검색을 확인하지 못했습니다.');await expect(rows).toHaveCount(0);}finally{await page.unroute(periodRoute)}
+  await page.route(periodRoute,route=>route.fulfill({status:503,contentType:'application/json',body:'{}'}));
+  try{await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('감사 검색을 확인하지 못했습니다.');await expect(rows).toHaveCount(0);}finally{await page.unroute(periodRoute)}
+  await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);
+  phase('actual inclusive UTC audit period pagination; invalid partial day sends no request; substituted date and503 clear rows before manual recovery');
+ }
+ await region.getByLabel('감사 UTC 시작일',{exact:true}).fill('');await region.getByLabel('감사 UTC 종료일',{exact:true}).fill('');await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);
+ phase('clearing both UTC dates restores existing scoped audit search without writes');
  phase('actual viewer audit search verifies distinct pages, rejects substituted frames and ignores a delayed cancelled response after a new condition finishes; mobile viewport has no document overflow; invalid UUID sends no request and an HTTP 503 clears results before a successful manual retry; no business writes');
 });
 
