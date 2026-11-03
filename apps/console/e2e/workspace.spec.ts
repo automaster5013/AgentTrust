@@ -533,7 +533,7 @@ test('viewer searches actual scoped audit actions and resources and rejects a su
  await region.getByLabel('전체 이력 작업자 ID',{exact:true}).fill('');await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(rows).toHaveCount(25);
  await region.getByLabel('전체 이력 작업자 ID',{exact:true}).fill(entry.actorId);
  const actorRoute='**'+actorPath;
- await page.route(actorRoute,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...actorReference,actorId:'11111111-1111-4111-8111-111111111111'})}));
+ await page.route(actorRoute,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...actorReference,actorId:entry.actorId==='11111111-1111-4111-8111-111111111111'?'22222222-2222-4222-8222-222222222222':'11111111-1111-4111-8111-111111111111'})}));
  try{await region.getByRole('button',{name:'감사 기록 검색 실행',exact:true}).click();await expect(region.getByRole('status')).toContainText('감사 검색을 확인하지 못했습니다.');await expect(rows).toHaveCount(0);}finally{await page.unroute(actorRoute)}
  let releaseActor!:()=>void,startActor!:()=>void;const heldActor=new Promise<void>(resolve=>{releaseActor=resolve}),actorStarted=new Promise<void>(resolve=>{startActor=resolve});
  await page.route(actorRoute,async route=>{const response=await route.fetch();startActor();await heldActor;await route.fulfill({response})});
