@@ -4,6 +4,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish_console_only:
+        description: 'Publish one signed Console candidate after full integration; never deploy'
+        required: false
+        type: boolean
+        default: false
 concurrency:
   # Hosted runners and SHA-scoped image/artifact names isolate independent revisions.
   group: original-stack-${{ github.ref }}-${{ github.sha }}
@@ -21,8 +27,33 @@ jobs:
           fetch-depth: 0
       - name: Build pinned source security tools
         run: |
+          python3 -m unittest discover -s scripts -p test_stack_owned_fixture.py
           python3 scripts/stack-execution-profiles.py --check
           python3 scripts/stack-quality-profiles.py --check
+          python3 scripts/stack-observability-orchestration-test.py
+          python3 scripts/stack-tempo-metadata-test.py
+          python3 scripts/stack-host-capacity-test.py
+          python3 -m unittest discover -s scripts -p test_stack_console_release.py
+          python3 -m unittest discover -s scripts -p test_stack_console_runtime_policy.py
+          python3 scripts/stack-tempo-repair-plan-test.py
+          python3 scripts/stack-tempo-source-recheck-test.py
+          python3 scripts/stack-local-cd-executor-test.py
+          python3 scripts/stack-store-queue-probe-test.py
+          python3 scripts/stack-recovery-evidence-join-test.py
+          python3 scripts/stack-isolated-database-rehearsal-test.py
+          python3 scripts/stack-isolated-worker-rehearsal-test.py
+          python3 scripts/stack-local-cd-reconcile-test.py
+          python3 scripts/stack-local-cd-orchestration-test.py
+          python3 scripts/stack-release-online-test.py
+          python3 scripts/stack-local-cd-evidence-test.py
+          python3 scripts/stack-local-cd-plan-test.py
+          python3 -m unittest discover -s scripts -p test_stack_v18_transition_probe.py
+          python3 -m unittest discover -s scripts -p test_stack_core_return_flow.py
+          python3 -m unittest discover -s scripts -p test_stack_ci_worker_pause.py
+          python3 -m unittest discover -s scripts -p test_stack_ci_artifacts.py
+          python3 -m unittest discover -s scripts -p test_stack_hosted_disk.py
+          python3 scripts/stack-dockerhub-main-mirror-test.py
+          python3 scripts/stack-dockerhub-test.py
           python3 scripts/stack-delivery-verifier-test.py
           python3 scripts/stack-https-release-profile-test.py
           python3 scripts/stack-delivery-offline-test.py
@@ -45,6 +76,13 @@ jobs:
           python3 scripts/stack-recovery-load-contract-test.py
           python3 scripts/stack-coherent-orchestration-test.py
           docker build -t agenttrust-security:local tools/security
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --tmpfs /.local:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-online-recovery-test.py
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --tmpfs /.local:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-live-state-test.py
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --tmpfs /.local:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-session-recovery-test.py
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --tmpfs /.local:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-grafana-history-test.py
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --tmpfs /.local:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-consistency-window-test.py
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --tmpfs /.local:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-extra-history-test.py
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --tmpfs /.local:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-chunked-cache-test.py
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-backup-crypt-test.py
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=32m,mode=1777 --memory 256m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-https-fixture-certificates-test.py
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=16m,mode=1777 --memory 128m --pids-limit 32 --mount "type=bind,source=$PWD/scripts,target=/scripts,readonly" agenttrust-security:local python /scripts/stack-backup-tar-test.py
@@ -56,7 +94,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: original-stack-source-security-${{ github.sha }}
+          name: original-stack-source-security-attempt-${{ github.run_attempt }}-${{ github.sha }}
           include-hidden-files: true
           path: |
             .local/stack-security-source-*/summary.json
@@ -76,6 +114,8 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Admit disposable hosted disk before integration builds
+        run: python3 scripts/stack_hosted_disk.py
       - name: Prepare separate PostgreSQL and synthetic identities
         run: |
           python3 scripts/stack-policy-metadata.py --check
@@ -96,7 +136,7 @@ jobs:
           python3 scripts/stack-workspace-onboarding-smoke.py --allow-owned-evaluations
           python3 scripts/stack-workspace-dispatch-load.py --allow-owned-evaluations
           python3 scripts/stack-database-process-smoke.py
-          python3 scripts/stack-database-process-adversarial.py
+          python3 scripts/stack-database-process-adversarial.py --v17-transition
           python3 scripts/stack-http-smoke.py
           python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
           python3 scripts/stack-database-smoke.py
@@ -130,7 +170,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: console-visual-before-after-${{ github.sha }}
+          name: console-visual-before-after-attempt-${{ github.run_attempt }}-${{ github.sha }}
           retention-days: 7
           path: |
             .local/ui-visual/*.png
@@ -142,10 +182,13 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: console-admin-review-${{ github.sha }}
+          name: console-admin-review-attempt-${{ github.run_attempt }}-${{ github.sha }}
           path: apps/console/test-results/**/workspace-admin-*.png
           if-no-files-found: error
           retention-days: 7
+      - name: Verify actual project key and own-session management in browsers
+        working-directory: apps/console
+        run: STACK_E2E_QUOTA_GUARD=true npx playwright test --grep 'workspace management'
       - name: Verify actual TLS OIDC login in a fresh portless fixture
         run: |
           docker build -t agenttrust-security:local tools/security
@@ -162,6 +205,9 @@ jobs:
         run: |
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-smoke.py
+          python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-version-history-search-fixture.py --execute
+          python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-review-history-smoke.py
           python3 scripts/stack-run-review-history-smoke.py
           python3 scripts/stack-evaluation-request-resolution-smoke.py
@@ -218,10 +264,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: console-workspace-browser-${{ github.sha }}
+          name: console-workspace-browser-attempt-${{ github.run_attempt }}-${{ github.sha }}
           path: apps/console/test-results/**/workspace-*.png
           if-no-files-found: warn
           retention-days: 7
+      - name: Verify previous Core HTTP and browser return on synthetic V18
+        run: python3 scripts/stack-core-return-smoke.py --execute
       - name: Verify persisted results after service restart
         run: |
           docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml restart stack-core-api stack-ai-worker stack-console
@@ -251,8 +299,12 @@ jobs:
           python3 scripts/stack-cancellation-smoke.py
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-run-history-smoke.py
+          python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-run-history-search-smoke.py --execute
           python3 scripts/stack-campaign-history-smoke.py
           python3 scripts/stack-version-history-smoke.py
+          python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-version-history-search-smoke.py --execute
           python3 scripts/stack-provider-usage-query-test.py
           python3 scripts/stack-provider-usage-smoke.py
           python3 scripts/stack-evaluation-readiness-smoke.py
@@ -279,7 +331,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: original-stack-diagnostics-${{ github.sha }}
+          name: original-stack-diagnostics-attempt-${{ github.run_attempt }}-${{ github.sha }}
           include-hidden-files: true
           path: |
             .local/stack-gateway-smoke-*.json
@@ -289,6 +341,7 @@ jobs:
             .local/stack-promptfoo-smoke-*.json
             .local/stack-http-smoke-*.json
             .local/stack-campaign-smoke-*.json
+            .local/stack-version-history-search-*.json
             .local/stack-campaign-review-history-*.json
             .local/stack-run-review-history-*.json
             .local/stack-evaluation-request-resolution-*.json
@@ -341,6 +394,7 @@ jobs:
             .local/stack-https-identity-*/summary.json
             .local/stack-oidc-image-config-*.json
             .local/stack-browser-*.json
+            .local/stack-core-return-*/summary.json
             apps/console/test-results/**/workspace-*.png
             .local/ui-visual/*.png
             .local/ui-visual/comparison.json
@@ -351,6 +405,96 @@ jobs:
       - name: Stop isolated runner services
         if: always()
         run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml -f compose.stack.providers.yaml down
+  console-scan-preflight:
+    needs: security-source
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_console_only == true && github.repository == 'automaster5013/AgentTrust' && github.ref == 'refs/heads/codex/commercial-workspace-ux-20261026'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build pinned scanner tools without registry or signing credentials
+        run: docker build -t agenttrust-security:local tools/security
+      - name: Diagnose the exact Console image before the longer integration completes
+        env:
+          STACK_CONSOLE_RELEASE_APPROVED: 'true'
+          STACK_SOURCE_INTEGRATION_PASSED: 'false'
+        run: python3 scripts/stack-console-release.py --preflight
+      - name: Retain public preflight reports without treating them as a signed delivery
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: console-only-preflight-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          include-hidden-files: true
+          path: |
+            .local/console-release-*/bundle/console.cdx.json
+            .local/console-release-*/bundle/console.trivy.json
+          if-no-files-found: ignore
+          retention-days: 7
+  console-release:
+    needs: integration
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_console_only == true && github.repository == 'automaster5013/AgentTrust' && github.ref == 'refs/heads/codex/commercial-workspace-ux-20261026'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build pinned security tools for the separate Console-only delivery
+        run: docker build -t agenttrust-security:local tools/security
+      - name: Prepare ephemeral registry credentials
+        env:
+          STACK_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/stack-signing-setup.py
+      - name: Authenticate the temporary build client
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          export DOCKER_CONFIG="$RUNNER_TEMP/console-release-login"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG" >> "$GITHUB_ENV"
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Build execute scan publish and keyless-sign only the Console
+        env:
+          STACK_CONSOLE_RELEASE_APPROVED: 'true'
+          STACK_SOURCE_INTEGRATION_PASSED: ${{ needs.integration.result == 'success' && 'true' || 'false' }}
+        run: python3 scripts/stack-console-release.py --publish
+      - name: Independently verify the Console delivery bundle
+        run: |
+          BUNDLE=$(find .local -maxdepth 3 -type f -path '.local/console-release-*/bundle/checksums.json')
+          test "$(printf '%s\n' "$BUNDLE" | wc -l)" -eq 1
+          PIN=$(sha256sum "$BUNDLE" | cut -d ' ' -f 1)
+          python3 scripts/stack-console-release-verify.py --bundle "$(dirname "$BUNDLE")" --expected-revision "$GITHUB_SHA" --expected-checksums-sha256 "$PIN" --docker-tools
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: console-only-signed-delivery-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          include-hidden-files: true
+          path: .local/console-release-*/bundle/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Retain bounded public package scan diagnostics even on release failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: console-only-scan-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          include-hidden-files: true
+          path: |
+            .local/console-release-*/bundle/console.cdx.json
+            .local/console-release-*/bundle/console.trivy.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Remove only this job's temporary credentials
+        if: always()
+        run: |
+          python3 -c "from pathlib import Path; Path('.local/stack-signing-credentials/config.json').unlink(missing_ok=True)"
+          rm -f "$RUNNER_TEMP/console-release-login/config.json"
   images:
     needs: integration
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -446,6 +590,9 @@ jobs:
           python3 scripts/stack-https-identity-smoke.py --execute --with-browser --with-enterprise-pilot
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-smoke.py
+          python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-version-history-search-fixture.py --execute
+          python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-campaign-review-history-smoke.py
           python3 scripts/stack-run-review-history-smoke.py
           python3 scripts/stack-evaluation-request-resolution-smoke.py
@@ -500,8 +647,12 @@ jobs:
           python3 scripts/stack-cancellation-smoke.py
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-run-history-smoke.py
+          python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-run-history-search-smoke.py --execute
           python3 scripts/stack-campaign-history-smoke.py
           python3 scripts/stack-version-history-smoke.py
+          python3 scripts/stack-test-quota-window.py
+          python3 scripts/stack-version-history-search-smoke.py --execute
           python3 scripts/stack-provider-usage-query-test.py
           python3 scripts/stack-provider-usage-smoke.py
           python3 scripts/stack-evaluation-readiness-smoke.py
@@ -538,6 +689,7 @@ jobs:
             .local/stack-gateway-smoke-*.json
             .local/stack-http-smoke-*.json
             .local/stack-campaign-smoke-*.json
+            .local/stack-version-history-search-*.json
             .local/stack-campaign-review-history-*.json
             .local/stack-run-review-history-*.json
             .local/stack-evaluation-request-resolution-*.json
@@ -684,3 +836,56 @@ jobs:
       - name: Remove only ephemeral signer credential
         if: always()
         run: python3 -c "from pathlib import Path; p=Path('.local/stack-signing-credentials/config.json'); p.unlink(missing_ok=True)"
+  dockerhub:
+    name: Publish verified stack to Docker Hub
+    needs: security-images
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.DOCKERHUB_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: AgentTrust-dockerhub
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: original-stack-security-delivery-${{ github.sha }}
+          path: stack-security-delivery
+      - name: Build existing pinned verification tools
+        run: docker build -t agenttrust-security:local tools/security
+      - name: Authenticate ephemeral registry clients
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          HUB_TOKEN: ${{ secrets.AUTOMASTER5013_AGENTTRUST }}
+          HUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
+        shell: bash
+        run: |
+          test -n "$HUB_USERNAME" && test -n "$HUB_TOKEN" && test -n "$HUB_NAMESPACE"
+          export DOCKER_CONFIG="$RUNNER_TEMP/dockerhub-config"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG" >> "$GITHUB_ENV"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          printf '%s' "$HUB_TOKEN" | docker login docker.io --username "$HUB_USERNAME" --password-stdin
+      - name: Verify source signatures and mirror all sixteen exact images
+        env:
+          HUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
+        shell: bash
+        run: |
+          CHECKSUMS_SHA256=$(sha256sum stack-security-delivery/checksums.json | cut -d ' ' -f 1)
+          python3 scripts/stack-dockerhub.py --bundle stack-security-delivery --expected-revision "$GITHUB_SHA" --expected-checksums-sha256 "$CHECKSUMS_SHA256" --repository "$GITHUB_REPOSITORY" --namespace "$HUB_NAMESPACE" --publish --output stack-security-delivery/dockerhub-receipt.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: original-stack-dockerhub-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: stack-security-delivery/dockerhub-receipt.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove ephemeral registry login files
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/dockerhub-config/config.json"

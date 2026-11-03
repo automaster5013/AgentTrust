@@ -70,7 +70,7 @@ class BrokerIdentityClient(HttpsIdentityClient):
                 '/realms/agenttrust/login-actions/first-broker-login'))
             self.api('me', expected=401)
             return {'unlinkedBrokerAuthenticationRefused': True, 'protectedIdentityUnavailable': True}
-        require(final == CONSOLE + '/')
+        require(final == CONSOLE + '/workspace')
         cookies = [c for c in self.jar if c.name == 'AGENTTRUST_STACK_SESSION']
         require(len(cookies) == 1 and cookies[0].secure
             and cookies[0].path == '/' and not cookies[0].domain_specified

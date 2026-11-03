@@ -7,7 +7,8 @@ import argparse,datetime,json,os,pathlib,re,secrets,subprocess,time,uuid
 from stack_pending_workspace_probe import verify as verify_pending_scopes
 from stack_database_role_probe import verify as verify_role_drift
 from stack_backup_custody import windows_owner_only
-parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--candidate-image');args=parser.parse_args()
+from stack_v18_transition_probe import verify as verify_v18_transition, BASELINE_REFERENCE, BASELINE_REVISION
+parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--candidate-image');parser.add_argument('--v17-transition',action='store_true');args=parser.parse_args()
 root=pathlib.Path(__file__).resolve().parent.parent;identifier=str(uuid.uuid4());prefix='agenttrust-stack-migration-fixture-'+identifier;directory=root/'.local'/('stack-database-process-fixture-'+identifier);directory.mkdir();report_path=directory/'summary.json';assert not report_path.exists()
 containers=[];network=False;files=[];report={'completed':False,'fixtureId':identifier,'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'sourceServicesModified':False,'originalVolumesMounted':False,'hostPortsPublished':False,'rawSecretsPrinted':False,'phase':'fixture-preflight','checks':[]}
 def run(args,data=None,timeout=60):return subprocess.run(args,cwd=root,input=data,capture_output=True,timeout=timeout)
@@ -24,6 +25,13 @@ def own(name):
  value=json.loads(ok(['docker','inspect',name]))[0];assert value['Config']['Labels'].get('agenttrust.fixture')==identifier;return value
 def sql(text):return ok(['docker','exec','-i',prefix+'-db','psql','-U','agenttrust_stack','-d','agenttrust_stack','-At','-v','ON_ERROR_STOP=1'],text.encode())
 try:
+ if args.v17_transition:
+  assert os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted' and os.environ.get('GITHUB_REPOSITORY')=='automaster5013/AgentTrust'
+  ok(['docker','pull',BASELINE_REFERENCE],timeout=300)
+  baseline=json.loads(ok(['docker','image','inspect',BASELINE_REFERENCE]))[0]
+  assert BASELINE_REFERENCE in baseline.get('RepoDigests',[]) and baseline['Config'].get('Labels',{}).get('org.opencontainers.image.revision')==BASELINE_REVISION
+  baseline_image=baseline['Id'];assert re.fullmatch('sha256:[a-f0-9]{64}',baseline_image)
+  report.update(baselinePinnedReference=BASELINE_REFERENCE,baselineSourceRevision=BASELINE_REVISION,baselineSignatureVerified=False)
  if os.name=='nt':
   owner=ok(['whoami']).decode().strip();ok(['icacls',str(directory),'/reset']);ok(['icacls',str(directory),'/inheritance:r','/grant:r',owner+':(OI)(CI)F','SYSTEM:(OI)(CI)F']);windows_owner_only((directory,))
  else:directory.chmod(0o700)
@@ -46,18 +54,26 @@ try:
   assert time.monotonic()<until;time.sleep(1)
  report['databaseReadinessTransport']='tcp-loopback';report['phase']='create-restricted-role'
  sql("CREATE ROLE agenttrust_stack_api LOGIN PASSWORD '"+api_password+"'; GRANT CONNECT ON DATABASE agenttrust_stack TO agenttrust_stack_api;")
- def process(kind,environment,args,expected):
+ args_namespace_transition=args.v17_transition
+ def process(kind,environment,args,expected,selected_image=None):
+  selected_image=selected_image or image
+  assert selected_image==image or args_namespace_transition and selected_image==baseline_image
   report['phase']=kind
   name=prefix+'-'+kind;containers.append(name)
-  result=run(['docker','run','--name',name,'--label','agenttrust.fixture='+identifier,'--network',prefix,'--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--memory','512m','--cpus','1','--pids-limit','64','--tmpfs','/tmp:size=64m,mode=1777','--env-file',str(environment),image,*args],timeout=180)
+  result=run(['docker','run','--name',name,'--label','agenttrust.fixture='+identifier,'--network',prefix,'--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--memory','512m','--cpus','1','--pids-limit','64','--tmpfs','/tmp:size=64m,mode=1777','--env-file',str(environment),selected_image,*args],timeout=180)
   report['lastProcessExitCode']=result.returncode
   assert result.returncode==expected and owner_password.encode() not in result.stdout+result.stderr and api_password.encode() not in result.stdout+result.stderr
-  state=own(name);assert state['State']['Status']=='exited' and not state['State']['OOMKilled'] and not state['HostConfig']['PortBindings']
+  state=own(name);assert state['Image']==selected_image and state['State']['Status']=='exited' and not state['State']['OOMKilled'] and not state['HostConfig']['PortBindings']
   if expected==0:
    frame=json.loads(result.stdout);assert frame['completed'] and frame['apiServerStarted'] is False;return frame
   assert b'DATABASE_PROCESS_BOUNDARY_REFUSED' in result.stderr
   return {'rejected':True,'apiRolePolicyRefused':b'DATABASE_PROCESS_BOUNDARY_REFUSED:API_ROLE_POLICY' in result.stderr}
- first=process('initial-migrate',migration,['--migrate-only'],0);expected=len(list((root/'services/core-api/src/main/resources/db/migration').glob('V*.sql')));assert first['migrationsExecuted']==expected
+ expected=len(list((root/'services/core-api/src/main/resources/db/migration').glob('V*.sql')))
+ if args.v17_transition:
+  assert expected==18
+  report['v17ToV18Transition']=verify_v18_transition(sql,process,migration,api,baseline_image)
+ else:
+  first=process('initial-migrate',migration,['--migrate-only'],0);assert first['migrationsExecuted']==expected
  assert sql('SELECT count(*) FROM flyway_schema_history WHERE success;').decode().strip()==str(expected)
  report['checks'].append('fresh isolated database migrates all '+str(expected)+' unchanged migration resources using separate owner process; no API server starts')
  assert process('repeat-migrate',migration,['--migrate-only'],0)['migrationsExecuted']==0

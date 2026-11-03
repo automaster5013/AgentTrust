@@ -13,6 +13,27 @@ import {decryptBackup} from '../packages/backup/cipher.js';
 import {readTrustedReceiptKey} from './trusted-receipt-key.mjs';
 
 const root=resolve(fileURLToPath(new URL('..',import.meta.url)));
+export function verifyApplicationIsolation(service){
+  // Overrides must not reintroduce host privileges alongside cap_drop/read_only.
+  // This check is shared with rollback preflight and never changes the config.
+  for(const flag of ['privileged','use_api_socket'])assert.ok(service[flag]===undefined||service[flag]===false);
+  for(const field of ['cap_add','devices','device_cgroup_rules','volumes_from']){
+    assert.ok(service[field]===undefined||(Array.isArray(service[field])&&service[field].length===0));
+  }
+  assert.ok(service.network_mode===undefined);
+  for(const field of ['pid','ipc','uts','userns_mode','cgroup']){
+    assert.ok(service[field]===undefined||service[field]==='private');
+  }
+  assert.ok(Array.isArray(service.security_opt));
+  for(const option of service.security_opt){
+    assert.equal(typeof option,'string');
+    assert.ok(!/^(?:seccomp|apparmor)[:=]unconfined$/i.test(option));
+  }
+  assert.equal(service.read_only,true);assert.ok(service.cap_drop.includes('ALL'));
+  assert.ok(service.security_opt.includes('no-new-privileges:true')||service.security_opt.includes('no-new-privileges'));
+  if(service.user!==undefined)assert.match(service.user,/^(node|[1-9][0-9]*(?::[1-9][0-9]*)?)$/);
+  return true;
+}
 export function verifyDeploymentConfig(config,image,expectedImage,revision){
   assert.match(expectedImage||'',/^ghcr\.io\/[a-z0-9_.-]+\/[a-z0-9_.-]+@sha256:[a-f0-9]{64}$/);
   assert.match(revision||'',/^[a-f0-9]{40}$/);
@@ -22,10 +43,8 @@ export function verifyDeploymentConfig(config,image,expectedImage,revision){
   assert.match(image.Config.User,/^(node|[1-9][0-9]*(?::[1-9][0-9]*)?)$/);
   for(const name of ['api','worker']){
     const service=config.services[name];
+    verifyApplicationIsolation(service);
     assert.equal(service.image,expectedImage);assert.ok(!service.build);
-    assert.equal(service.read_only,true);assert.ok(service.cap_drop.includes('ALL'));
-    assert.ok(service.security_opt.includes('no-new-privileges:true')||service.security_opt.includes('no-new-privileges'));
-    if(service.user!==undefined)assert.match(service.user,/^(node|[1-9][0-9]*(?::[1-9][0-9]*)?)$/);
   }
   const {api,worker,db}=config.services;
   assert.equal(worker.environment.AGENTTRUST_HTTPS_TARGETS,'{}');

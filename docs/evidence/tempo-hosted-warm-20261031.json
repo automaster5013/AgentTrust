@@ -1,0 +1,41 @@
+{
+  "kind": "public-synthetic-tempo-proof-summary",
+  "runId": 41167578818,
+  "runAttempt": 1,
+  "headRevision": "52e1e85f32cc6db8888ff3a6ce9eea9a1dc6bf8b",
+  "harnessMergeRevision": "0625766a940ebce606b6b2bfcc8258daa6c17253",
+  "artifactId": 13029972905,
+  "artifactZipSha256": "1e13090db497aec4531ae3b4bfaf0e39fa8a666fcaa7327f2681351000441dc9",
+  "syntheticEvidenceSha256": "fe4db31bd3965a1a67411e5393d1c827df09314871f0d6c9233e577227eb9fc1",
+  "imageReference": "docker.io/automaster5013/agenttrust-tempo@sha256:9a3da9953ef6376a6589a325ead853d3f170f08e8e1862e45a6171a71d7c14ee",
+  "sourceRevision": "d40cdd063f7f711fdd513d231ec2da2473796619",
+  "syntheticWarmMetricProofVerified": true,
+  "matchingTraces": 20,
+  "matchingSpans": 133,
+  "newTenantMetadataErrors": 2,
+  "inversePollCycles": 1,
+  "candidateNeverRestarted": true,
+  "ownedFixtureCleaned": true,
+  "inverseFilesPreserved": true,
+  "inverseKnown404Reproduced": false,
+  "healthyRollbackGuaranteed": false,
+  "operatingTempoRecoveryVerified": false,
+  "actualCDPerformed": false,
+  "automaticDeploymentAllowed": false,
+  "operatingDataUploaded": false,
+  "goldenBlockMetadata": {
+    "blocks": [
+      {
+        "blockID": "dc26f225-e28a-41b9-8317-1d29b8fce70f",
+        "startTime": "2026-10-31T04:10:35Z",
+        "endTime": "2026-10-31T04:09:34Z",
+        "totalObjects": 20
+      }
+    ]
+  },
+  "syntheticBoundsStart": 1793419774,
+  "oldQueryEnd": 1793419779,
+  "signatureVerificationScope": [
+    "tempo"
+  ]
+}

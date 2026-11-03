@@ -185,7 +185,7 @@ class HttpsIdentityClient:
                     and json.loads(raw).get('code') == 'OIDC_AUTHENTICATION_FAILED')
             self.api('me', expected=401)
             return {'authenticationRefused': True, 'protectedIdentityUnavailable': True}
-        require(final == CONSOLE + '/')
+        require(final == CONSOLE + '/workspace')
         # The callback's Set-Cookie can precede the final home response; the
         # standard cookie jar independently retains Secure/HttpOnly attributes.
         cookies = [c for c in self.jar if c.name == 'AGENTTRUST_STACK_SESSION']

@@ -84,14 +84,14 @@ async function main(){
    const page=await context.newPage();
    const api=async path=>page.evaluate(async path=>{const response=await fetch('/backend/'+path,{redirect:'error'});return {status:response.status,body:await response.json()}},path);
    try{
-    await page.goto(CONSOLE,{waitUntil:'domcontentloaded'});
+    await page.goto(CONSOLE,{waitUntil:'domcontentloaded'});await expect(page.getByRole('heading',{level:1})).toBeVisible();await page.getByRole('link',{name:'작업공간 시작하기'}).click();
     await page.getByRole('button',{name:'Keycloak으로 로그인',exact:true}).click();
     await expect(page.locator('#username')).toBeVisible();
     requireCondition(new URL(page.url()).origin===IDENTITY);
     if(broker){await page.locator('#social-enterprise').click();await page.waitForURL(url=>url.origin===ENTERPRISE);await expect(page.locator('#username')).toBeVisible()}
     requireCondition(new URL(page.url()).origin===(broker?ENTERPRISE:IDENTITY));
     await page.locator('#username').fill(credentials.username);await page.locator('#password').fill(credentials.password);
-    providerOwned=true;await page.locator('#kc-login').click();await page.waitForURL(CONSOLE+'/');
+    providerOwned=true;await page.locator('#kc-login').click();await page.waitForURL(CONSOLE+'/workspace');
     await expect(page.getByRole('button',{name:'로그아웃',exact:true})).toBeVisible();logged=true;
     const me=await api('me');requireCondition(me.status===200&&['actorId','organizationId','projectId','role'].every(k=>me.body[k]===account[k]));
     const cookies=(await context.cookies(CONSOLE)).filter(c=>c.name==='AGENTTRUST_STACK_SESSION');
@@ -111,7 +111,7 @@ async function main(){
     await page.waitForURL(url=>url.origin===IDENTITY);
     requireCondition(new URL(page.url()).pathname==='/realms/agenttrust/protocol/openid-connect/logout');
     await page.locator('#kc-logout').click();await page.waitForURL(CONSOLE+'/');
-    await expect(page.getByRole('button',{name:'Keycloak으로 로그인',exact:true})).toBeVisible();
+    await expect(page.getByRole('link',{name:'작업공간 시작하기'})).toBeVisible();
     requireCondition((await api('me')).status===401);logged=false;providerOwned=false;
     requireCondition(outside===0);
    }finally{
@@ -129,12 +129,12 @@ async function main(){
   context.on('response',response=>{const u=new URL(response.url());if(response.request().isNavigationRequest()&&u.origin===IDENTITY&&['/realms/agenttrust/broker/enterprise/endpoint','/realms/agenttrust/login-actions/first-broker-login'].includes(u.pathname)&&response.status()===401)refused=true});
   const page=await context.newPage(),unknown=config.enterpriseManifest.unlinkedAccount;
   try{
-   await page.goto(CONSOLE,{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'Keycloak으로 로그인',exact:true}).click();
+   await page.goto(CONSOLE,{waitUntil:'domcontentloaded'});await expect(page.getByRole('heading',{level:1})).toBeVisible();await page.getByRole('link',{name:'작업공간 시작하기'}).click();await page.getByRole('button',{name:'Keycloak으로 로그인',exact:true}).click();
    await page.locator('#social-enterprise').click();await page.waitForURL(url=>url.origin===ENTERPRISE);
    await page.locator('#username').fill(unknown.username);await page.locator('#password').fill(unknown.password);
    externalOwned=true;await page.locator('#kc-login').click();await page.waitForURL(url=>url.origin===IDENTITY);
    requireCondition(refused);
-   await page.goto(CONSOLE,{waitUntil:'domcontentloaded'});
+   await page.goto(CONSOLE,{waitUntil:'domcontentloaded'});await expect(page.getByRole('heading',{level:1})).toBeVisible();await page.getByRole('link',{name:'작업공간 시작하기'}).click();
    await expect(page.getByRole('button',{name:'Keycloak으로 로그인',exact:true})).toBeVisible();
    requireCondition(await page.evaluate(async()=>(await fetch('/backend/me',{redirect:'error'})).status)===401);
    requireCondition(outside===0);

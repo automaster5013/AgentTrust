@@ -1,5 +1,6 @@
 """Classify one authenticated failed Main HTTPS fixture artifact without private values."""
 import hashlib,io,json,os,pathlib,re,shutil,urllib.error,urllib.parse,urllib.request,zipfile
+from stack_ci_artifacts import select_diagnostic_artifact
 from stack_https_fixture_diagnostics import public_probe_failure, public_oidc_failure_category
 
 
@@ -55,8 +56,8 @@ def main():
     assert any(s['name'] == 'Verify actual TLS OIDC login in a fresh portless fixture'
                and s['conclusion'] == 'failure' for s in integration['steps'])
     artifacts = get('actions/runs/' + run_id + '/artifacts?per_page=100')['artifacts']
-    selected = [a for a in artifacts if a['name'] == 'original-stack-diagnostics-' + revision and not a['expired']]
-    assert len(selected) == 1; artifact = selected[0]; assert artifact['size_in_bytes'] <= 4194304
+    artifact = select_diagnostic_artifact(artifacts, revision, run['run_attempt'])
+    assert artifact['size_in_bytes'] <= 4194304
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *args): return None
     opener = urllib.request.build_opener(NoRedirect())

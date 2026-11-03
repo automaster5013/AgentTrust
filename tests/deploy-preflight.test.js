@@ -45,3 +45,30 @@ test('read-only preflight authenticates backup and rejects stale, unbound and ta
     await assert.rejects(verifyRecoveryEvidence({directory,report,now}));
   }finally{await rm(directory,{recursive:true,force:true});}
 });
+
+
+test('deployment and rollback configuration reject privilege and host isolation escapes',()=>{
+  const escapes=[
+    ['privileged',true],['cap_add',['SYS_ADMIN']],['devices',['/dev/kvm:/dev/kvm']],
+    ['device_cgroup_rules',['a *:* rwm']],['volumes_from',['foreign-service']],
+    ['network_mode','host'],['pid','host'],['ipc','host'],['uts','host'],
+    ['userns_mode','host'],['cgroup','host'],['use_api_socket',true],
+    ['security_opt',['no-new-privileges:true','seccomp:unconfined']],
+    ['security_opt',['no-new-privileges:true','apparmor=unconfined']]
+  ];
+  for(const name of ['api','worker'])for(const [key,value] of escapes){
+    const f=fixture();f.config.services[name][key]=value;
+    assert.throws(()=>verifyDeploymentConfig(f.config,f.image,expectedImage,revision),`${name} ${key} must block preflight`);
+  }
+});
+
+test('explicitly disabled privileges and private namespaces preserve a valid configuration',()=>{
+  const f=fixture();
+  for(const name of ['api','worker'])Object.assign(f.config.services[name],{
+    privileged:false,cap_add:[],devices:[],device_cgroup_rules:[],volumes_from:[],
+    pid:'private',ipc:'private',uts:'private',userns_mode:'private',cgroup:'private',use_api_socket:false
+  });
+  const before=JSON.stringify(f);
+  assert.equal(verifyDeploymentConfig(f.config,f.image,expectedImage,revision).configurationVerified,true);
+  assert.equal(JSON.stringify(f),before);
+});
