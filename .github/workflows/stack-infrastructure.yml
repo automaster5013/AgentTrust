@@ -1,7 +1,7 @@
 name: Original stack infrastructure validation
 on:
   push:
-    branches: [main]
+    branches: [main, codex/audit-actor-search-20261103]
     paths: ['charts/**', 'infra/terraform/**', 'tools/infrastructure/**', 'scripts/stack-infrastructure-*.py', '.github/workflows/stack-infrastructure.yml', '.github/workflows/original-stack.yml']
   pull_request:
     paths: ['charts/**', 'infra/terraform/**', 'tools/infrastructure/**', 'scripts/stack-infrastructure-*.py', '.github/workflows/stack-infrastructure.yml', '.github/workflows/original-stack.yml']
