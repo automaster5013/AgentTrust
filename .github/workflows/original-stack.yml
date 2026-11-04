@@ -242,6 +242,67 @@ jobs:
       - name: Verify signed digests and the CycloneDX predicates without registry write credentials
         run: python3 scripts/stack-audit-candidate-delivery.py verify
 
+  audit-candidate-recovery:
+    needs: audit-candidate-verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      COMPOSE_PARALLEL_LIMIT: '2'
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: audit-delivery-${{ github.sha }}-${{ github.run_attempt }}
+          path: audit-delivery
+      - name: Admit disposable hosted disk before integration builds
+        run: python3 scripts/stack_hosted_disk.py
+      - name: Prepare separate PostgreSQL and synthetic identities
+        run: |
+          python3 scripts/stack-policy-metadata.py --check
+          python3 scripts/stack-setup.py
+          python3 scripts/stack-identity-setup.py
+          python3 scripts/stack-gateway-setup.py
+          python3 scripts/stack-object-setup.py
+          python3 scripts/stack-observability-setup.py
+          docker build --target gate-keys -t agenttrust-gate-key-tool:local services/core-api
+          python3 scripts/stack-gate-signing-setup.py
+      - name: Build only disposable support images
+        run: |
+          cat > .local/audit-synthetic.yaml <<'YAML'
+          services:
+            stack-ai-worker:
+              depends_on: !override
+                stack-nats:
+                  condition: service_healthy
+          YAML
+          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml -f .local/audit-synthetic.yaml build stack-ai-worker stack-opa stack-identity stack-object-store stack-db stack-nats
+      - name: Authenticate the read-only pull client and rehearse rollback
+        env:
+          STACK_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          export DOCKER_CONFIG="$RUNNER_TEMP/audit-recovery-registry"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          printf '%s' "$STACK_REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          python3 scripts/stack-audit-candidate-recovery.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: audit-recovery-${{ github.sha }}-${{ github.run_attempt }}
+          path: .local/audit-recovery-result.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Clean up the owned fixture and pull credentials
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/audit-recovery-registry/config.json"
+          if [ -f .local/audit-synthetic.yaml ]; then docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml -f .local/audit-synthetic.yaml down; fi
+
   console-scan-preflight:
     needs: security-source
     if: github.event_name == 'workflow_dispatch' && inputs.publish_console_only == true && github.repository == 'automaster5013/AgentTrust' && github.ref == 'refs/heads/codex/commercial-workspace-ux-20261026'
