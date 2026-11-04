@@ -261,6 +261,8 @@ jobs:
           path: audit-delivery
       - name: Admit disposable hosted disk before integration builds
         run: python3 scripts/stack_hosted_disk.py
+      - name: Require a clean fixture before setup
+        run: test -z "$(docker ps -aq --filter label=com.docker.compose.project=agenttrust)"
       - name: Prepare separate PostgreSQL and synthetic identities
         run: |
           python3 scripts/stack-policy-metadata.py --check

@@ -61,7 +61,9 @@ def probe(supported):
 def main():
     assert os.getenv('GITHUB_ACTIONS') == 'true' and os.getenv('GITHUB_REPOSITORY') == 'automaster5013/AgentTrust'
     assert os.getenv('GITHUB_REF') == REF and os.getenv('GITHUB_EVENT_NAME') == 'workflow_dispatch'
-    assert not run('docker','ps','-aq','--filter','label=com.docker.compose.project=agenttrust')
+    services = run('docker', 'ps', '-a', '--filter', 'label=com.docker.compose.project=agenttrust',
+                   '--format', '{{.Label "com.docker.compose.service"}}').splitlines()
+    assert services == ['stack-db'], 'Expected only the PostgreSQL fixture created during setup'
     manifest = json.loads((ROOT/'audit-delivery/manifest.json').read_bytes())
     assert manifest['revision'] == os.environ['GITHUB_SHA'] and manifest['ref'] == REF
     images = manifest['images']
