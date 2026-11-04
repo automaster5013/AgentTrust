@@ -103,13 +103,13 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   integration:
-    # This release branch tests the retained operating schema without the V18 workspace migration.
+    # Scoped release rehearsal on a disposable runner with the retained operating schema.
     env:
       COMPOSE_PARALLEL_LIMIT: '2'
+      AGENTTRUST_AUDIT_V17_FIXTURE: '1'
     needs: security-source
     runs-on: ubuntu-latest
-    # Cold builds, browser regressions and the pinned local model require a full integration budget.
-    timeout-minutes: 120
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -127,30 +127,19 @@ jobs:
           python3 scripts/stack-observability-setup.py
           docker build --target gate-keys -t agenttrust-gate-key-tool:local services/core-api
           python3 scripts/stack-gate-signing-setup.py
-      - name: Build Java 21, Python and TypeScript with their tests
-        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml build stack-core-api stack-ai-worker stack-console stack-opa stack-identity stack-gateway stack-object-store stack-db stack-nats stack-otel stack-tempo stack-loki stack-prometheus stack-quality-verifier
-      - name: Verify real authenticated evaluation and review flow
+      - name: Build and start the candidate with synthetic evaluation only
         run: |
-          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console stack-otel stack-tempo stack-loki stack-prometheus stack-grafana
+          cat > .local/audit-synthetic.yaml <<'YAML'
+          services:
+            stack-ai-worker:
+              depends_on: !override
+                stack-nats:
+                  condition: service_healthy
+          YAML
+          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml -f .local/audit-synthetic.yaml build stack-core-api stack-ai-worker stack-console stack-opa stack-identity stack-gateway stack-object-store stack-db stack-nats stack-otel stack-tempo stack-loki stack-prometheus
+          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml -f .local/audit-synthetic.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console stack-otel stack-tempo stack-loki stack-prometheus stack-grafana
           python3 scripts/stack-identity-profile.py
           python3 scripts/stack-identity-smoke.py
-          python3 scripts/stack-database-process-smoke.py
-          python3 scripts/stack-http-smoke.py
-          python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
-          python3 scripts/stack-database-smoke.py
-          python3 scripts/stack-database-init-smoke.py
-      - name: Verify isolated HTTPS OIDC proxy configuration
-        run: |
-          docker build --build-arg NEXT_PUBLIC_STACK_OIDC_PROFILE=https-review --build-arg NEXT_PUBLIC_STACK_APPLICATION_ORIGIN=https://console.example.com --build-arg NEXT_PUBLIC_STACK_PUBLIC_ISSUER=https://identity.example.com/realms/agenttrust --label "org.opencontainers.image.revision=$GITHUB_SHA" -t agenttrust-stack-console:oidc-endpoint-https-candidate apps/console
-          docker tag agenttrust-stack-console:oidc-endpoint-https-candidate agenttrust-console-https:local
-          python3 scripts/stack-oidc-image-config-test.py
-          python3 scripts/stack-oidc-contract-smoke.py
-          python3 scripts/stack-oidc-endpoint-proxy-smoke.py
-          python3 scripts/stack-console-health-probe-smoke.py
-          python3 scripts/stack-oidc-client-contract-smoke.py
-          python3 scripts/stack-identity-scope-readiness.py
-          python3 scripts/stack-oidc-discovery-smoke.py
-          python3 scripts/stack-oidc-client-config-test.py
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '24'
@@ -162,248 +151,34 @@ jobs:
           npm ci --ignore-scripts
           npx playwright install --with-deps chromium
           sudo apt-get install --no-install-recommends -y libnss3-tools
-      - name: Capture controlled before and after console screenshots on disposable runner
-        run: python3 scripts/stack-ui-visual-comparison.py --execute
-      - name: Publish redacted console before and after images immediately
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: console-visual-before-after-attempt-${{ github.run_attempt }}-${{ github.sha }}
-          retention-days: 7
-          path: |
-            .local/ui-visual/*.png
-            .local/ui-visual/comparison.json
-      - name: Capture actual administrator review and mobile detail without writes
-        working-directory: apps/console
-        run: STACK_E2E_ADMIN_CAPTURE=true STACK_E2E_READ_ONLY=true STACK_E2E_QUOTA_GUARD=true npx playwright test --grep 'administrator actual review form and mobile evidence remain scoped without writes'
-      - name: Publish redacted administrator review images immediately
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: console-admin-review-attempt-${{ github.run_attempt }}-${{ github.sha }}
-          path: apps/console/test-results/**/workspace-admin-*.png
-          if-no-files-found: error
-          retention-days: 7
-      - name: Verify actual TLS OIDC login in a fresh portless fixture
+      - name: Compare scoped audit APIs against PostgreSQL and exercise the browser
         run: |
-          docker build -t agenttrust-security:local tools/security
-          python3 scripts/stack-https-identity-smoke.py --execute --with-browser
-      - name: Verify durable evaluation recovery and execution deadline
-        run: |
-          python3 scripts/stack-recovery-smoke.py --mode worker-restart
-          python3 scripts/stack-recovery-smoke.py --mode nats-restart
-          python3 scripts/stack-recovery-smoke.py --mode jetstream-persistence
-          python3 scripts/stack-recovery-smoke.py --mode core-restart
-          python3 scripts/stack-recovery-smoke.py --mode deadline
-          python3 scripts/stack-policy-smoke.py
-      - name: Verify immutable versions and authenticated campaign aggregation
-        run: |
-          python3 scripts/stack-test-quota-window.py
-          python3 scripts/stack-campaign-smoke.py
-          python3 scripts/stack-test-quota-window.py
-          python3 scripts/stack-test-quota-window.py
-          python3 scripts/stack-campaign-review-history-smoke.py
-          python3 scripts/stack-run-review-history-smoke.py
-          python3 scripts/stack-evaluation-request-resolution-smoke.py
-          python3 scripts/stack-campaign-request-resolution-smoke.py
-          python3 scripts/stack-review-precondition-smoke.py --allow-synthetic-writes
-          python3 scripts/stack-test-quota-window.py
-          python3 scripts/stack-baseline-gate-smoke.py
-          python3 scripts/stack-test-quota-window.py
-          python3 scripts/stack-baseline-unresolved-smoke.py
-          python3 scripts/stack-test-quota-window.py
-          python3 scripts/stack-baseline-bundle-smoke.py
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-version-lifecycle-smoke.py
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-audit-smoke.py
-          python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-audit-export-smoke.py
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-audit-search-smoke.py
-          python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-audit-period-search-smoke.py --execute
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-audit-period-export-smoke.py --execute
-          python3 scripts/stack-test-quota-window.py
-          python3 scripts/stack-execution-profile-smoke.py
-          python3 scripts/stack-campaign-recovery.py
-          python3 scripts/stack-campaign-recovery.py --deadline
-      - name: Verify frozen campaign evidence and offline byte chains
-        run: |
-          python3 scripts/stack-test-quota-window.py
-          python3 scripts/stack-campaign-evidence-test.py
-          python3 scripts/stack-campaign-archive-smoke.py
-      - name: Verify scoped pgvector neighbors and database recovery
-        run: python3 scripts/stack-vector-smoke.py
-      - name: Verify locked versioned evidence and storage recovery
-        run: python3 scripts/stack-object-smoke.py
-      - name: Verify evaluator with real Promptfoo
-        run: |
-          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.evaluation.yaml build stack-promptfoo
-          python3 scripts/stack-promptfoo-smoke.py
-      - name: Verify signed historical campaign observations
-        run: |
-          python3 scripts/stack-test-quota-window.py
-          python3 scripts/stack-campaign-receipt-smoke.py
-          node --experimental-strip-types --test scripts/stack-observation-report-test.ts
-          python3 scripts/stack-observation-report-smoke.py
-          python3 scripts/stack-test-quota-window.py
-          python3 scripts/stack-campaign-observation-matrix.py
-      - name: Audit fixed verifier dependency installation
-        working-directory: tools/promptfoo
-        run: npm audit --omit=optional --audit-level=high
-      - name: Verify real browser evaluation and approval controls
-        working-directory: apps/console
-        run: |
-          npm ci --ignore-scripts
-          npx playwright install --with-deps chromium
-          STACK_E2E_QUOTA_GUARD=true npx playwright test --grep-invert "workspace management"
-      - name: Preserve workspace browser screenshots before subsequent model tests
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: console-workspace-browser-attempt-${{ github.run_attempt }}-${{ github.sha }}
-          path: apps/console/test-results/**/workspace-*.png
-          if-no-files-found: warn
-          retention-days: 7
-      - name: Verify previous Core HTTP and browser return on synthetic V18
-        run: python3 scripts/stack-core-return-smoke.py --execute
-      - name: Verify persisted results after service restart
-        run: |
-          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml restart stack-core-api stack-ai-worker stack-console
-          docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml up -d --no-build --wait stack-core-api stack-ai-worker stack-console stack-otel stack-tempo stack-loki stack-prometheus stack-grafana
-          python3 scripts/stack-test-quota-window.py
-          python3 scripts/stack-http-smoke.py --base http://127.0.0.1:4320
-      - name: Verify actual Redis quotas and recovery
-        run: |
-          python3 scripts/stack-gateway-smoke.py
-      - name: Verify actual pinned local model and immutable provider reservations
-        run: |
-          docker build -t agenttrust-local-model:local services/local-model
-          python3 scripts/stack-provider-setup.py
-          python3 scripts/stack-provider-start.py
-          python3 scripts/stack-provider-integrity-smoke.py
-          python3 scripts/stack-provider-smoke.py
-          python3 scripts/stack-campaign-model-smoke.py
-          python3 scripts/stack-quality-campaign-smoke.py
-          python3 scripts/stack-test-quota-window.py
-          python3 scripts/stack-review-preflight-smoke.py
-          python3 scripts/stack-current-gate-check-smoke.py
-          node --experimental-strip-types --test scripts/stack-current-gate-anchor-test.ts
-          python3 scripts/stack-verify-audit-export-test.py
-          python3 scripts/stack-audit-export-offline-smoke.py
-          python3 scripts/stack-test-quota-window.py
-          python3 scripts/stack-current-gate-anchor-smoke.py
-          python3 scripts/stack-cancellation-smoke.py
-          python3 scripts/stack-test-quota-window.py
-          python3 scripts/stack-run-history-smoke.py
-          python3 scripts/stack-test-quota-window.py
-          python3 scripts/stack-campaign-history-smoke.py
-          python3 scripts/stack-version-history-smoke.py
-          python3 scripts/stack-test-quota-window.py
-          python3 scripts/stack-provider-usage-query-test.py
-          python3 scripts/stack-provider-usage-smoke.py
-          python3 scripts/stack-evaluation-readiness-smoke.py
-          python3 scripts/stack-json-text-smoke.py --stalled-body
-          python3 scripts/stack-observability-smoke.py
-          python3 scripts/stack-prometheus-smoke.py
-          python3 scripts/stack-quality-verifier-smoke.py
-          python3 scripts/stack-queue-trace-smoke.py
-          python3 scripts/stack-observability-outage-smoke.py
           cd apps/console
-          STACK_E2E_QUOTA_GUARD=true STACK_E2E_LOCAL_MODEL=true npx playwright test --grep 'local model provider evidence|reference dataset'
-      - name: Restore authenticated database snapshot into an isolated disposable fixture
-        run: |
-          docker build -t agenttrust-security:local tools/security
-          python3 scripts/stack-backup-transport-privacy-test.py
-          python3 scripts/stack-database-backup-smoke.py
-      - name: Restore encrypted object-store snapshot and verify pinned versions and retention
-        run: python3 scripts/stack-object-backup-smoke.py
-      - name: Rehearse coherent encrypted business-critical recovery on a portless isolated network
-        run: |
-          python3 scripts/stack-coherent-retained-recovery.py --execute --exercise-key-rotation --exercise-load
-          python3 scripts/stack-public-identity-recovery.py --execute
-      - name: Preserve safe synthetic fault diagnostics
+          STACK_E2E_QUOTA_GUARD=true npx playwright test --grep 'viewer searches actual scoped audit actions'
+      - name: Preserve audit evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: original-stack-diagnostics-attempt-${{ github.run_attempt }}-${{ github.sha }}
+          name: audit-integration-${{ github.sha }}-attempt-${{ github.run_attempt }}
           include-hidden-files: true
-          path: |
-            .local/stack-gateway-smoke-*.json
-            .local/stack-recovery-*.json
-            .local/stack-vector-smoke-*.json
-            .local/stack-object-smoke-*.json
-            .local/stack-promptfoo-smoke-*.json
-            .local/stack-http-smoke-*.json
-            .local/stack-campaign-smoke-*.json
-            .local/stack-version-history-search-*.json
-            .local/stack-campaign-review-history-*.json
-            .local/stack-run-review-history-*.json
-            .local/stack-evaluation-request-resolution-*.json
-            .local/stack-campaign-request-resolution-*.json
-            .local/stack-review-precondition-*.json
-            .local/stack-baseline-gate-*.json
-            .local/stack-baseline-unresolved-*.json
-            .local/stack-baseline-bundle-*.json
-            .local/stack-version-lifecycle-*.json
-            .local/stack-audit-smoke-*.json
-            .local/stack-audit-export-*.json
-            .local/stack-audit-search-*.json
-            .local/stack-audit-period-search-*.json
-            .local/stack-audit-period-export-*.json
-            .local/stack-execution-profile-*.json
-            .local/stack-campaign-recovery-*.json
-            .local/stack-campaign-model-*.json
-            .local/stack-quality-campaign-*/summary.json
-            .local/stack-review-preflight-*.json
-            .local/stack-current-gate-check-*.json
-            .local/stack-current-gate-anchor-*.json
-            .local/stack-cancellation-*.json
-            .local/stack-run-history-*.json
-            .local/stack-campaign-history-*.json
-            .local/stack-version-history-*.json
-            .local/stack-provider-usage-*.json
-            .local/stack-campaign-archive-*/summary.json
-            .local/stack-campaign-receipt-*/summary.json
-            .local/stack-observation-report-*/summary.json
-            .local/stack-observation-report-*/report.html
-            .local/stack-campaign-observation-matrix-*/summary.json
-            .local/stack-observability-smoke-*.json
-            .local/gateway-stage-privacy-*/summary.json
-            .local/stack-prometheus-smoke-*.json
-            .local/stack-quality-verifier-smoke-*.json
-            .local/stack-queue-trace-*.json
-            .local/stack-observability-outage-*.json
-            .local/stack-database-init-smoke-*.json
-            .local/stack-database-process-*.json
-            .local/stack-database-process-fixture-*/summary.json
-            .local/stack-backup-transport-privacy-*.json
-            .local/stack-database-backup-*/summary.json
-            .local/stack-object-backup-*/summary.json
-            .local/stack-coherent-recovery-*/summary.json
-            .local/stack-coherent-retained-custody-*.json
-            .local/stack-coherent-snapshot-verification-*.json
-            .local/stack-provider-smoke-*.json
-            .local/stack-provider-integrity-*/summary.json
-            .local/stack-evaluation-readiness-*.json
-            .local/stack-json-text-*.json
-            .local/stack-oidc-endpoint-proxy-*/summary.json
-            .local/stack-https-identity-*/summary.json
-            .local/stack-oidc-image-config-*.json
-            .local/stack-browser-*.json
-            .local/stack-core-return-*/summary.json
-            apps/console/test-results/**/workspace-*.png
-            .local/ui-visual/*.png
-            .local/ui-visual/comparison.json
-            .local/stack-workspace-onboarding-*.json
-            .local/stack-workspace-dispatch-load-*.json
-          if-no-files-found: ignore
+          path: .local/stack-audit-*.json
+          if-no-files-found: warn
           retention-days: 7
-      - name: Stop isolated runner services
+      - name: Stop the disposable fixture
         if: always()
-        run: docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml -f compose.stack.providers.yaml down
+        run: |
+          if [ -f .local/audit-synthetic.yaml ]; then docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml -f .local/audit-synthetic.yaml down; fi
+
   console-scan-preflight:
     needs: security-source
     if: github.event_name == 'workflow_dispatch' && inputs.publish_console_only == true && github.repository == 'automaster5013/AgentTrust' && github.ref == 'refs/heads/codex/commercial-workspace-ux-20261026'

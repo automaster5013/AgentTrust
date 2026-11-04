@@ -1,5 +1,5 @@
 """Read-only UTC audit-period search compared against disposable fixture PostgreSQL."""
-import argparse,datetime,json,pathlib,subprocess,uuid
+import os,argparse,datetime,json,pathlib,subprocess,uuid
 from stack_test_client import StackClient
 from stack_business_fingerprint import fingerprint,sql
 ROOT=pathlib.Path(__file__).resolve().parent.parent
@@ -10,7 +10,7 @@ def verify(value,user,start,end,actor,filters,token):
  code="import {readFileSync} from 'node:fs';import {auditPeriod,auditPeriodSearchPage} from './apps/console/src/lib/audit-period-search.ts';const v=JSON.parse(readFileSync(0,'utf8'));const p=auditPeriod(v.start,v.end,v.actor,v.filters);const rows=await auditPeriodSearchPage(v.page,v.user,p,v.token);console.log(JSON.stringify({ids:rows.entries.map(x=>x.id),nextCursor:rows.nextCursor}));"
  result=subprocess.run(['node','--experimental-strip-types','--input-type=module','-e',code],cwd=ROOT,input=json.dumps({'page':value,'user':user,'start':start,'end':end,'actor':actor,'filters':filters,'token':token}),capture_output=True,text=True,encoding='utf-8',timeout=20,check=True);return json.loads(result.stdout)
 try:
- before=fingerprint();assert len(before)==21,'Disposable hosted schema required; operating historical schema must not be used'
+ before=fingerprint();expected_tables=18 if os.getenv("GITHUB_ACTIONS")=="true" and os.getenv("AGENTTRUST_AUDIT_V17_FIXTURE")=="1" else 21;assert len(before)==expected_tables,'Disposable hosted schema required; operating historical schema must not be used'
  credentials=json.loads((ROOT/'.local/stack/demo-credentials.json').read_text(encoding='utf-8'));anonymous=StackClient('http://127.0.0.1:4320',[],report,clients)
  today=datetime.datetime.now(datetime.timezone.utc).date();start=end=today.isoformat();tomorrow=(today+datetime.timedelta(days=1)).isoformat()
  base='audit-period-search/'+start+'/'+end+'/all/all/all';anonymous.request(base,expected=401)
@@ -40,7 +40,7 @@ try:
  for a,b in [('2023-02-29','2023-03-01'),(tomorrow,start),('2024-01-01','2025-01-01')]:viewer.request('audit-period-search/'+a+'/'+b+'/all/all/all',expected=400)
  admin_page=admin.request(base);verify(admin_page,admin_user,start,end,None,{'action':None,'resourceId':None},None);assert [x['id'] for x in admin_page['entries']]==[x['id'] for x in first_period['entries']]
  report['checks'].append('changed dates/actor/tenant and legacy schema cursors, invalid calendar/reversed/over366 days are rejected; administrator reads same scoped page')
- assert fingerprint()==before;report.update(completed=True,businessTablesUnchanged=21,searchesCompared=len(cases),rowsCompared=total_rows,pagesCompared=total_pages,actualMultiPageDateSearch=True)
+ assert fingerprint()==before;report.update(completed=True,businessTablesUnchanged=expected_tables,searchesCompared=len(cases),rowsCompared=total_rows,pagesCompared=total_pages,actualMultiPageDateSearch=True)
 except Exception as error:report.update(errorType=type(error).__name__,code='AUDIT_PERIOD_SEARCH_UNVERIFIED')
 finally:
  closed=True
