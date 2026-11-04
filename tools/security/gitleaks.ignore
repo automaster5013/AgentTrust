@@ -9,3 +9,5 @@ a63f934b4a0a790fedfdae413dc121173b060032:apps/web/app.js:generic-api-key:634
 # Exact negative-test form: JWT header alg=none, payload sid=fake, invalid signature a.
 # This intentionally unauthenticatable public logout input is not a credential.
 524623860b4a30cf4d04229b7dd70265c2b3ac8f:scripts/stack-public-identity-probe.py:generic-api-key:52
+# Immutable OCI digest for the retained Core recovery image.
+89b5b1e4ee3416927db4c135fea1ac14ff2b5882:scripts/stack-audit-candidate-recovery.py:generic-api-key:15
