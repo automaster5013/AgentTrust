@@ -179,6 +179,69 @@ jobs:
         run: |
           if [ -f .local/audit-synthetic.yaml ]; then docker compose --env-file .local/stack/stack.env --env-file .local/stack/identity.env -f compose.stack.yaml -f compose.stack.identity.yaml -f compose.stack.gateway.yaml -f compose.stack.object.yaml -f compose.stack.observability.yaml -f compose.stack.signing.yaml -f .local/audit-synthetic.yaml down; fi
 
+  audit-candidate-delivery:
+    needs: integration
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'automaster5013/AgentTrust' && github.ref == 'refs/heads/codex/audit-release-integration-20261104'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: docker build -t agenttrust-security:local tools/security
+      - name: Prepare temporary registry credentials
+        env:
+          STACK_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/stack-signing-setup.py
+          export DOCKER_CONFIG="$RUNNER_TEMP/audit-registry"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG" >> "$GITHUB_ENV"
+          printf '%s' "$STACK_REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Scan and sign the three audit candidate images
+        run: python3 scripts/stack-audit-candidate-delivery.py publish
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: audit-delivery-${{ github.sha }}-${{ github.run_attempt }}
+          path: audit-delivery/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve image scan diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: audit-image-scans-${{ github.sha }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          path: |
+            .local/stack-security-images-*/summary.json
+            .local/stack-security-images-*/reports/*.trivy.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Clear temporary registry credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/audit-registry/config.json" .local/stack-signing-credentials/config.json
+  audit-candidate-verification:
+    needs: audit-candidate-delivery
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: audit-delivery-${{ github.sha }}-${{ github.run_attempt }}
+          path: audit-delivery
+      - run: docker build -t agenttrust-security:local tools/security
+      - name: Verify signed digests and the CycloneDX predicates without registry write credentials
+        run: python3 scripts/stack-audit-candidate-delivery.py verify
+
   console-scan-preflight:
     needs: security-source
     if: github.event_name == 'workflow_dispatch' && inputs.publish_console_only == true && github.repository == 'automaster5013/AgentTrust' && github.ref == 'refs/heads/codex/commercial-workspace-ux-20261026'
