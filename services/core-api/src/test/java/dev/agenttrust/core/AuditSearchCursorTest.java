@@ -20,6 +20,13 @@ class AuditSearchCursorTest {
   for(String malformed:new String[]{boundary.encode(),token+"=",token.substring(1),"!"+token.substring(1)})assertThrows(IllegalArgumentException.class,()->AuditSearchCursor.decode(malformed,user,filters));
   for(int offset:new int[]{0,1,32}){byte[] raw=Base64.getUrlDecoder().decode(token);raw[offset]^=1;String changed=Base64.getUrlEncoder().withoutPadding().encodeToString(raw);assertThrows(IllegalArgumentException.class,()->AuditSearchCursor.decode(changed,user,filters));}
  }
+ @Test void workspaceAuditActionsOfferedByConsoleRetainExactCursorBinding(){
+  for(String action:new String[]{"workspace.project.updated","access-key.created","access-key.revoked"}){
+   var filters=AuditFilters.parse(action,"all");assertEquals(action,filters.action());
+   String token=AuditSearchCursor.encode(boundary,filters);assertEquals(boundary,AuditSearchCursor.decode(token,user,filters));
+   assertThrows(IllegalArgumentException.class,()->AuditSearchCursor.decode(token,user,AuditFilters.parse("all","all")));
+  }
+ }
  @Test void filtersRejectUnknownActionsAndNoncanonicalResourceCoordinates(){
   assertNull(AuditFilters.parse("all","all").action());assertNull(AuditFilters.parse("all","all").resourceId());
   for(String action:new String[]{"","ALL","review.deleted","version.agents.retired/../all","review.approved' OR 1=1"})assertThrows(IllegalArgumentException.class,()->AuditFilters.parse(action,"all"));
