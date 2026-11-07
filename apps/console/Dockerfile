@@ -15,7 +15,7 @@ ARG NEXT_PUBLIC_STACK_OIDC_PROFILE=local-review
 ARG NEXT_PUBLIC_STACK_APPLICATION_ORIGIN=http://127.0.0.1:4320
 ARG NEXT_PUBLIC_STACK_PUBLIC_ISSUER=http://127.0.0.1:4322/realms/agenttrust
 LABEL dev.agenttrust.oidc.profile=$NEXT_PUBLIC_STACK_OIDC_PROFILE dev.agenttrust.oidc.application-origin=$NEXT_PUBLIC_STACK_APPLICATION_ORIGIN dev.agenttrust.oidc.public-issuer=$NEXT_PUBLIC_STACK_PUBLIC_ISSUER
-RUN apk add --upgrade --no-cache musl=1.2.6-r3 musl-utils=1.2.6-r3 zlib=1.3.2-r1
+RUN apk add --upgrade --no-cache musl=1.2.6-r3 musl-utils=1.2.6-r3 zlib=1.4-r0
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
