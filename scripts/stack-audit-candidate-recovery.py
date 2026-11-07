@@ -16,6 +16,28 @@ PRIOR = {
     'gateway': '2e9110fa78e8a1a3b33e748e03b5cfbeb41c1564d31e7dc66bb7995acfd7c726',
     'console': 'b659d5c5af0c3b23298df3af39f3a8393f01561febab08f47e99c0484cfc8e5a',
 }
+CURRENT = {
+    'core-api': '0be294ddbe084504339c1270509226fe6947ebf9bd3a7dd9630e33c0e2bb750a',
+    'gateway': '11fc20a1660a57882aaf8aa8825a93158d1ab6f11ad2152271c72962d004b3fa',
+    'console': '1e0adff87d002087be7e74b68f1fa757b5d46c3e026285809770b7ccf4886ece',
+}
+FILTER_ACTIONS = ('workspace.project.updated', 'access-key.created', 'access-key.revoked')
+
+
+def references(digests):
+    return {name: f'ghcr.io/automaster5013/agenttrust-{name}@sha256:{digest}' for name, digest in digests.items()}
+
+
+def recovery_phases(images):
+    return (
+        ('candidate', images, True, True),
+        ('current-b2c17be-rollback', references(CURRENT), True, False),
+        ('candidate-return', images, True, True),
+        ('historical-rollback', references(PRIOR), False, False),
+        ('candidate-return-from-historical', images, True, True),
+    )
+
+
 COMPOSE = ['docker', 'compose', '--env-file', '.local/stack/stack.env', '--env-file', '.local/stack/identity.env']
 for suffix in ('', '.identity', '.gateway', '.object', '.observability', '.signing'):
     COMPOSE += ['-f', f'compose.stack{suffix}.yaml']
@@ -41,7 +63,7 @@ def set_images(images, initial=False):
         assert result == ref+' healthy'
 
 
-def probe(supported):
+def probe(supported, filters_supported):
     credentials = json.loads((ROOT/'.local/stack/demo-credentials.json').read_bytes())
     client = StackClient('http://127.0.0.1:4320',credentials)
     try:
@@ -58,6 +80,12 @@ def probe(supported):
                 assert client.request(route)['organizationId'] == user['organizationId']
             else:
                 assert client.request(route, expected=502)['code'] == 'REQUEST_UNAVAILABLE'
+        for action in FILTER_ACTIONS:
+            route = 'audit-search/'+action+'/all'
+            if filters_supported:
+                assert client.request(route)['organizationId'] == user['organizationId']
+            else:
+                client.request(route, expected=400)
     finally:
         client.logout()
 
@@ -71,9 +99,8 @@ def main():
     manifest = json.loads((ROOT/'audit-delivery/manifest.json').read_bytes())
     assert manifest['revision'] == os.environ['GITHUB_SHA'] and manifest['ref'] == REF
     images = manifest['images']
-    assert images.keys() == PRIOR.keys()
-    prior = {name:f'ghcr.io/automaster5013/agenttrust-{name}@sha256:{digest}' for name,digest in PRIOR.items()}
-    for refs in (images,prior):
+    assert images.keys() == PRIOR.keys() == CURRENT.keys()
+    for refs in (images, references(CURRENT), references(PRIOR)):
         for name,ref in refs.items():
             assert re.fullmatch(fr'ghcr\.io/automaster5013/agenttrust-{name}@sha256:[a-f0-9]{{64}}',ref)
             run('docker','pull',ref)
@@ -82,12 +109,12 @@ def main():
         set_images(images, initial=True)
         before = fingerprint()
         assert len(before) == 18
-        for phase,cohort,supported in (('candidate',images,True),('rollback',prior,False),('candidate-return',images,True)):
+        for phase,cohort,supported,filters_supported in recovery_phases(images):
             if phase != 'candidate':
                 set_images(cohort)
-            probe(supported)
+            probe(supported, filters_supported)
             assert fingerprint() == before
-            report['phases'].append({'phase':phase,'images':cohort,'businessDataUnchanged':True,'auditRoutesSupported':supported})
+            report['phases'].append({'phase':phase,'images':cohort,'businessDataUnchanged':True,'auditRoutesSupported':supported,'workspaceAuditFiltersSupported':filters_supported})
         report['completed'] = True
     finally:
         (ROOT/'.local/audit-recovery-result.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
