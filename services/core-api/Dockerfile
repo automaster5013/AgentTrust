@@ -13,7 +13,7 @@ RUN --mount=type=cache,id=agenttrust-core-maven,target=/root/.m2,sharing=locked 
 RUN javac -d /probe HealthProbe.java
 FROM eclipse-temurin:21-jre@sha256:cff19e6215689161eb6162c11b86b0c60ddf802164f2eaf48d570f8fb79a36c5
 RUN apt-get update \
- && apt-get install --yes --no-install-recommends --only-upgrade curl=8.18.0-1ubuntu2.8 libcurl4t64=8.18.0-1ubuntu2.8 libbrotli1=1.2.0-3ubuntu0.1 \
+ && apt-get install --yes --no-install-recommends --only-upgrade curl=8.18.0-1ubuntu2.8 libcurl4t64=8.18.0-1ubuntu2.8 libbrotli1=1.2.0-3ubuntu0.1 apt=3.2.1ubuntu0.1 libapt-pkg7.0=3.2.1ubuntu0.1 \
  && rm -rf /var/lib/apt/lists/*
 RUN rm -f /usr/bin/pebble
 WORKDIR /app
