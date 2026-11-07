@@ -47,13 +47,17 @@ def probe(supported):
     try:
         user = client.login('demo-viewer')
         assert client.request('audit-search/all/all')['organizationId'] == user['organizationId']
-        if supported:
-            today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
-            for route in ('audit-period-search','audit-period-export'):
-                assert client.request(f'{route}/{today}/{today}/all/all/all')['organizationId'] == user['organizationId']
-            assert client.request('audit-actor-search/'+user['actorId']+'/all/all')['organizationId'] == user['organizationId']
-        else:
-            assert client.request('audit-actor-search/'+user['actorId']+'/all/all',expected=502)['code'] == 'REQUEST_UNAVAILABLE'
+        today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+        routes = [
+            f'audit-period-search/{today}/{today}/all/all/all',
+            f'audit-period-export/{today}/{today}/all/all/all',
+            'audit-actor-search/'+user['actorId']+'/all/all',
+        ]
+        for route in routes:
+            if supported:
+                assert client.request(route)['organizationId'] == user['organizationId']
+            else:
+                assert client.request(route, expected=502)['code'] == 'REQUEST_UNAVAILABLE'
     finally:
         client.logout()
 
