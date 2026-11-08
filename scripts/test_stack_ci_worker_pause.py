@@ -71,7 +71,7 @@ class WorkerPauseTest(unittest.TestCase):
 
     def test_foreign_owned_container_is_not_paused(self):
         fixture = self.fixture(); fixture[3]['Config']['Labels']['com.docker.compose.project'] = 'other'
-        with self.assertRaises(AssertionError): self.invoke(fixture, 'pause')
+        with self.assertRaises(ValueError): self.invoke(fixture, 'pause')
         self.assertFalse(fixture[1].exists()); self.assertFalse(any(c[1] == 'pause' for c in fixture[4]))
 
     def test_partial_pause_is_resumed_from_witness(self):
@@ -83,19 +83,19 @@ class WorkerPauseTest(unittest.TestCase):
     def test_changed_process_identity_refuses_unpause(self):
         fixture = self.fixture(); self.invoke(fixture, 'pause'); fixture[4].clear()
         fixture[3]['State']['StartedAt'] = 'changed-start'
-        with self.assertRaises(AssertionError): self.invoke(fixture, 'resume')
+        with self.assertRaises(ValueError): self.invoke(fixture, 'resume')
         self.assertFalse(any(c[1] == 'unpause' for c in fixture[4]))
 
     def test_cross_run_witness_is_not_reused(self):
         fixture = self.fixture(); self.invoke(fixture, 'pause'); fixture[4].clear()
         fixture[2]['GITHUB_RUN_ID'] = '999999'
-        with self.assertRaises(AssertionError): self.invoke(fixture, 'resume')
+        with self.assertRaises(ValueError): self.invoke(fixture, 'resume')
         self.assertEqual(fixture[4], [])
 
     def test_completed_witness_cannot_unpause_a_later_unowned_pause(self):
         fixture = self.fixture(); self.invoke(fixture, 'pause'); self.invoke(fixture, 'resume')
         fixture[3]['State']['Paused'] = True; fixture[4].clear()
-        with self.assertRaises(AssertionError): self.invoke(fixture, 'resume')
+        with self.assertRaises(ValueError): self.invoke(fixture, 'resume')
         self.assertFalse(any(c[1] == 'unpause' for c in fixture[4]))
 
     def test_missing_witness_cleanup_has_no_docker_operation(self):
@@ -109,7 +109,7 @@ class WorkerPauseTest(unittest.TestCase):
     def test_cleanup_without_pause_revokes_late_pause_for_the_same_invocation(self):
         fixture = self.fixture(); result = self.invoke(fixture, 'resume')
         self.assertTrue(result['noPauseWitness']); fixture[4].clear()
-        with self.assertRaises(AssertionError): self.invoke(fixture, 'pause')
+        with self.assertRaises(ValueError): self.invoke(fixture, 'pause')
         self.assertEqual(fixture[4], [])
         self.assertFalse(fixture[3]['State']['Paused'])
 
@@ -157,7 +157,7 @@ with module.witness_lock(pathlib.Path(sys.argv[2])):
 
     def test_existing_witness_is_not_overwritten_for_second_pause(self):
         fixture = self.fixture(); self.invoke(fixture, 'pause'); raw = fixture[1].read_bytes(); fixture[4].clear()
-        with self.assertRaises(AssertionError): self.invoke(fixture, 'pause')
+        with self.assertRaises(ValueError): self.invoke(fixture, 'pause')
         self.assertEqual(fixture[1].read_bytes(), raw); self.assertEqual(fixture[4], [])
 
 

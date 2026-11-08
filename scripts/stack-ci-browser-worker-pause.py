@@ -14,15 +14,20 @@ FILES = ('compose.stack.yaml', 'compose.stack.identity.yaml', 'compose.stack.gat
          'compose.stack.object.yaml', 'compose.stack.observability.yaml', 'compose.stack.signing.yaml')
 
 
+def require(condition):
+    if not condition:
+        raise ValueError('CI_WORKER_OWNERSHIP_UNVERIFIED')
+
+
 def owned(state, root):
     labels = state['Config']['Labels']
-    assert labels['com.docker.compose.project'] == 'agenttrust'
-    assert labels['com.docker.compose.service'] == 'stack-ai-worker'
-    assert pathlib.Path(labels['com.docker.compose.project.working_dir']).resolve() == root.resolve()
-    assert [pathlib.Path(p).resolve() for p in labels['com.docker.compose.project.config_files'].split(',')] == [root.resolve() / p for p in FILES]
-    assert re.fullmatch('[a-f0-9]{64}', state['Id'])
-    assert re.fullmatch('sha256:[a-f0-9]{64}', state['Image'])
-    assert state['State']['Running'] is True
+    require(labels['com.docker.compose.project'] == 'agenttrust')
+    require(labels['com.docker.compose.service'] == 'stack-ai-worker')
+    require(pathlib.Path(labels['com.docker.compose.project.working_dir']).resolve() == root.resolve())
+    require([pathlib.Path(p).resolve() for p in labels['com.docker.compose.project.config_files'].split(',')] == [root.resolve() / p for p in FILES])
+    require(re.fullmatch('[a-f0-9]{64}', state['Id']))
+    require(re.fullmatch('sha256:[a-f0-9]{64}', state['Image']))
+    require(state['State']['Running'] is True)
     return {key: state[key] for key in ('Id', 'Image')} | {'StartedAt': state['State']['StartedAt']}
 
 
@@ -31,7 +36,7 @@ def witness_lock(path):
     # OS-owned advisory locks release if a helper exits or is killed. A stale
     # lock file is harmless; deleting/replacing it could split the lock domain.
     lock_path = path.with_name(path.name + '.lock')
-    assert not lock_path.is_symlink()
+    require(not lock_path.is_symlink())
     descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0)
                          | getattr(os, 'O_BINARY', 0), 0o600)
     with os.fdopen(descriptor, 'r+b', buffering=0) as handle:
@@ -58,20 +63,20 @@ def perform(action, witness, root, command, environment=None, journal=None):
     journal['stage'] = 'hosted-guard'
     require_hosted(root, env)
     journal['stage'] = 'witness-validation'
-    assert action in ('pause', 'resume') and witness
-    assert re.fullmatch('[0-9]{1,20}', env.get('GITHUB_RUN_ID', ''))
-    assert re.fullmatch('[1-9][0-9]{0,3}', env.get('GITHUB_RUN_ATTEMPT', ''))
+    require(action in ('pause', 'resume') and witness)
+    require(re.fullmatch('[0-9]{1,20}', env.get('GITHUB_RUN_ID', '')))
+    require(re.fullmatch('[1-9][0-9]{0,3}', env.get('GITHUB_RUN_ATTEMPT', '')))
     local = root / '.local'; path = pathlib.Path(witness)
-    assert path.is_absolute() and path.parent.resolve() == local.resolve()
-    assert local.is_dir() and not local.is_symlink() and not path.is_symlink()
-    assert re.fullmatch(r'ci-worker-pause-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.json', path.name)
+    require(path.is_absolute() and path.parent.resolve() == local.resolve())
+    require(local.is_dir() and not local.is_symlink() and not path.is_symlink())
+    require(re.fullmatch(r'ci-worker-pause-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.json', path.name))
 
     journal['stage'] = 'witness-lock'
     with witness_lock(path):
         def inspect():
             journal['stage'] = 'owned-worker-inspection'
             states = json.loads(command(['docker', 'inspect', WORKER]))
-            assert len(states) == 1
+            require(len(states) == 1)
             return states[0]
 
         def create_ticket(ticket):
@@ -86,36 +91,36 @@ def perform(action, witness, root, command, environment=None, journal=None):
             return {'completed': True, 'executed': True, 'noPauseWitness': True, 'restored': False,
                     'witnessClosed': True, 'containerMutationPerformed': False}
         if action == 'pause':
-            assert not path.exists()
+            require(not path.exists())
             state = inspect(); identity = owned(state, root)
-            assert state['State'].get('Paused') is False and state['State'].get('Health', {}).get('Status') == 'healthy'
+            require(state['State'].get('Paused') is False and state['State'].get('Health', {}).get('Status') == 'healthy')
             ticket = {'schemaVersion': 1, 'root': str(root.resolve()), 'runId': env['GITHUB_RUN_ID'],
                       'runAttempt': env['GITHUB_RUN_ATTEMPT'], 'identity': identity, 'pauseAttempted': True, 'resumed': False}
             create_ticket(ticket)
             journal.update(mutationMayHaveStarted=True, stage='pause-command')
             command(['docker', 'pause', identity['Id']])
-            state = inspect(); assert owned(state, root) == identity and state['State'].get('Paused') is True
+            state = inspect(); require(owned(state, root) == identity and state['State'].get('Paused') is True)
             return {'completed': True, 'executed': True, 'paused': True, 'identityPreserved': True, 'restored': False}
-        assert path.is_file() and 0 < path.stat().st_size <= 8192
+        require(path.is_file() and 0 < path.stat().st_size <= 8192)
         ticket = json.loads(path.read_text(encoding='utf-8'))
-        assert set(ticket) == {'schemaVersion', 'root', 'runId', 'runAttempt', 'identity', 'pauseAttempted', 'resumed'}
-        assert ticket['schemaVersion'] == 1 and ticket['root'] == str(root.resolve())
-        assert ticket['runId'] == env['GITHUB_RUN_ID'] and ticket['runAttempt'] == env['GITHUB_RUN_ATTEMPT']
-        assert type(ticket['pauseAttempted']) is bool and type(ticket['resumed']) is bool
+        require(set(ticket) == {'schemaVersion', 'root', 'runId', 'runAttempt', 'identity', 'pauseAttempted', 'resumed'})
+        require(ticket['schemaVersion'] == 1 and ticket['root'] == str(root.resolve()))
+        require(ticket['runId'] == env['GITHUB_RUN_ID'] and ticket['runAttempt'] == env['GITHUB_RUN_ATTEMPT'])
+        require(type(ticket['pauseAttempted']) is bool and type(ticket['resumed']) is bool)
         if ticket['pauseAttempted'] is False:
-            assert ticket['resumed'] is True and ticket['identity'] is None
+            require(ticket['resumed'] is True and ticket['identity'] is None)
             return {'completed': True, 'executed': False, 'noPauseWitness': True, 'restored': False,
                     'witnessClosed': True, 'containerMutationPerformed': False}
-        state = inspect(); assert owned(state, root) == ticket['identity']
+        state = inspect(); require(owned(state, root) == ticket['identity'])
         if ticket['resumed'] is True:
             # A completed witness may verify cleanup, never release a later pause.
-            assert state['State'].get('Paused') is False
+            require(state['State'].get('Paused') is False)
             return {'completed': True, 'executed': False, 'noPauseWitness': False,
                     'restored': True, 'identityPreserved': True, 'alreadyRestored': True}
         if state['State'].get('Paused') is True:
             journal.update(mutationMayHaveStarted=True, stage='resume-command')
             command(['docker', 'unpause', state['Id']])
-        state = inspect(); assert owned(state, root) == ticket['identity'] and state['State'].get('Paused') is False
+        state = inspect(); require(owned(state, root) == ticket['identity'] and state['State'].get('Paused') is False)
         ticket['resumed'] = True; path.write_text(json.dumps(ticket) + '\n', encoding='utf-8')
         return {'completed': True, 'executed': True, 'noPauseWitness': False, 'restored': True, 'identityPreserved': True}
 
