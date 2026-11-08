@@ -43,6 +43,40 @@ class HttpsIdentityBoundaryTest(unittest.TestCase):
         jar.add_cookie_header(secure)
         self.assertEqual(secure.get_header('Cookie'), 'AGENTTRUST_STACK_SESSION=PUBLIC-CANARY')
 
+    def test_cross_origin_post_redirect_discards_console_security_headers(self):
+        headers = {'X-CSRF-TOKEN': 'PUBLIC-CANARY', 'Idempotency-Key': 'synthetic-request-key',
+                   'Origin': 'https://console.example.com', 'Authorization': 'synthetic',
+                   'Cookie': 'synthetic=PUBLIC-CANARY', 'Proxy-Authorization': 'synthetic'}
+        for origin in ('https://identity.example.com', 'https://enterprise.example.net'):
+            for code in (302, 303):
+                with self.subTest(origin=origin, code=code):
+                    request = urllib.request.Request('https://console.example.com/backend/logout',
+                        data=b'{}', headers=headers, method='POST')
+                    redirected = FixedHttpsRedirects().redirect_request(request, None, code, '', {}, origin + '/')
+                    self.assertEqual(redirected.get_method(), 'GET')
+                    self.assertIsNone(redirected.data)
+                    for name in headers:
+                        self.assertFalse(redirected.has_header(name.capitalize()), name)
+                    self.assertTrue(request.has_header('X-csrf-token'))
+
+    def test_cross_origin_get_redirect_discards_security_headers_for_all_redirect_codes(self):
+        for code in (301, 302, 303, 307, 308):
+            with self.subTest(code=code):
+                request = urllib.request.Request('https://console.example.com/backend/me',
+                    headers={'X-CSRF-TOKEN': 'PUBLIC-CANARY', 'Authorization': 'synthetic'})
+                redirected = FixedHttpsRedirects().redirect_request(request, None, code, '', {},
+                    'https://identity.example.com/')
+                self.assertFalse(redirected.has_header('X-csrf-token'))
+                self.assertFalse(redirected.has_header('Authorization'))
+
+    def test_same_origin_redirect_preserves_scoped_headers(self):
+        request = urllib.request.Request('https://console.example.com/backend/me',
+            headers={'X-CSRF-TOKEN': 'PUBLIC-CANARY', 'Idempotency-Key': 'synthetic-request-key'})
+        redirected = FixedHttpsRedirects().redirect_request(request, None, 302, '', {},
+            'https://console.example.com/workspace')
+        self.assertEqual(redirected.get_header('X-csrf-token'), 'PUBLIC-CANARY')
+        self.assertEqual(redirected.get_header('Idempotency-key'), 'synthetic-request-key')
+
     def test_cookie_scope_and_logout_expiry(self):
         base = 'AGENTTRUST_STACK_SESSION=PUBLIC-CANARY; Path=/; Secure; HttpOnly; SameSite=Lax'
         def frame(value):

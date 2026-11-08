@@ -42,11 +42,16 @@ class FixedHttpsRedirects(urllib.request.HTTPRedirectHandler):
     max_repeats = 2
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        endpoint(req.full_url)
-        endpoint(newurl)
+        source = endpoint(req.full_url)
+        target = endpoint(newurl)
         # A redirect can never forward a credential-bearing POST body.
         require(req.get_method() == 'GET' or code in (302, 303))
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is not None and source.netloc != target.netloc:
+            for name in ('Authorization', 'Proxy-authorization', 'Cookie',
+                         'X-csrf-token', 'Idempotency-key', 'Origin'):
+                redirected.remove_header(name)
+        return redirected
 
 
 class IdentityForm(html.parser.HTMLParser):
