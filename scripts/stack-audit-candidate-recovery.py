@@ -63,12 +63,25 @@ def set_images(images, initial=False):
         assert result == ref+' healthy'
 
 
+def verify_read_authority(value, user, export=False):
+    assert value['organizationId'] == user['organizationId']
+    assert value['projectId'] == user['projectId']
+    if export:
+        assert value['signed'] is False and value['currentDeploymentAuthority'] is False
+        document = json.loads(value['contentJson'])
+        assert document['organizationId'] == user['organizationId']
+        assert document['projectId'] == user['projectId']
+        assert document['signed'] is False and document['currentDeploymentAuthority'] is False
+    else:
+        assert value['deploymentAuthority'] is False
+
+
 def probe(supported, filters_supported):
     credentials = json.loads((ROOT/'.local/stack/demo-credentials.json').read_bytes())
     client = StackClient('http://127.0.0.1:4320',credentials)
     try:
         user = client.login('demo-viewer')
-        assert client.request('audit-search/all/all')['organizationId'] == user['organizationId']
+        verify_read_authority(client.request('audit-search/all/all'), user)
         today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
         routes = [
             f'audit-period-search/{today}/{today}/all/all/all',
@@ -77,13 +90,13 @@ def probe(supported, filters_supported):
         ]
         for route in routes:
             if supported:
-                assert client.request(route)['organizationId'] == user['organizationId']
+                verify_read_authority(client.request(route), user, export=route.startswith('audit-period-export/'))
             else:
                 assert client.request(route, expected=502)['code'] == 'REQUEST_UNAVAILABLE'
         for action in FILTER_ACTIONS:
             route = 'audit-search/'+action+'/all'
             if filters_supported:
-                assert client.request(route)['organizationId'] == user['organizationId']
+                verify_read_authority(client.request(route), user)
             else:
                 client.request(route, expected=400)
     finally:
