@@ -1,4 +1,6 @@
-import importlib.util,json,pathlib,unittest
+import importlib.util,io,json,os,pathlib,unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('https_failure_diagnostic', pathlib.Path(__file__).with_name('stack-https-failure-diagnostic.py'))
 diagnostic = importlib.util.module_from_spec(spec); spec.loader.exec_module(diagnostic)
@@ -42,6 +44,42 @@ class DiagnosticPrivacyTest(unittest.TestCase):
         for private in ['PRIVATE-CANARY', 'NONCE PRIVATE-CANARY', 'NONCE\n', '']:
             value['callbackFailureCategory'] = private
             with self.assertRaises((ValueError, AssertionError)): diagnostic.sanitize_summary(value, SHA)
+
+    def test_untrusted_error_text_never_enters_public_result(self):
+        for error in ('PUBLIC-CANARY PRIVATE-TEXT', '../PUBLIC-CANARY', 'Error\nPUBLIC-CANARY', ''):
+            value = self.fixture(); value['errorType'] = error
+            with self.subTest(kind='unsafe-error'), self.assertRaises(ValueError):
+                diagnostic.sanitize_summary(value, SHA)
+
+    def test_optional_public_flags_and_exit_codes_have_exact_types(self):
+        for changes in ({'sourceRuntimeUnchanged': 1}, {'sourceBusinessTablesUnchanged': 'PUBLIC-CANARY'},
+                        {'ownedContainersNetworkAndPrivateFilesRemoved': []},
+                        {'failedProcessExitCode': True}, {'failedProcessExitCode': 256}):
+            value = self.fixture(); value.update(changes)
+            with self.subTest(fields=list(changes)), self.assertRaises(ValueError):
+                diagnostic.sanitize_summary(value, SHA)
+
+    def test_invalid_run_anchor_is_refused_before_any_api_request(self):
+        env = {'DIAGNOSTIC_REVISION': SHA, 'DIAGNOSTIC_RUN_ID': '../foreign', 'GH_TOKEN': 'PUBLIC-CANARY'}
+        with patch.dict(os.environ, env), patch.object(pathlib.Path, 'read_text', return_value='MemAvailable: 67108864 kB'), \
+                patch.object(diagnostic.shutil, 'disk_usage', return_value=SimpleNamespace(free=100 * 1024 ** 3)), \
+                patch.object(diagnostic.urllib.request, 'urlopen') as request:
+            with self.assertRaises(ValueError):
+                diagnostic.main()
+            request.assert_not_called()
+
+    def test_foreign_run_is_refused_before_jobs_artifacts_or_redirect(self):
+        env = {'DIAGNOSTIC_REVISION': SHA, 'DIAGNOSTIC_RUN_ID': '123', 'GH_TOKEN': 'PUBLIC-CANARY'}
+        run = {'head_sha': SHA, 'head_branch': 'foreign', 'event': 'push',
+               'path': '.github/workflows/original-stack.yml', 'status': 'completed', 'conclusion': 'failure'}
+        with patch.dict(os.environ, env), patch.object(pathlib.Path, 'read_text', return_value='MemAvailable: 67108864 kB'), \
+                patch.object(diagnostic.shutil, 'disk_usage', return_value=SimpleNamespace(free=100 * 1024 ** 3)), \
+                patch.object(diagnostic.urllib.request, 'urlopen', return_value=io.BytesIO(json.dumps(run).encode())) as request, \
+                patch.object(diagnostic.urllib.request, 'build_opener') as opener:
+            with self.assertRaises(ValueError):
+                diagnostic.main()
+            self.assertEqual(request.call_count, 1)
+            opener.assert_not_called()
 
 
 if __name__ == '__main__': unittest.main()
