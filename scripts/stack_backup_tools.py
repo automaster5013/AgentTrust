@@ -1,5 +1,6 @@
 """Private-byte helpers for bounded development restore drills."""
 import hashlib,io,json,os,pathlib,subprocess,tarfile
+from stack_coherent_archive import validate_archive_hierarchy
 
 ALPINE='alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6'
 TAR_LIMIT=32*1024*1024
@@ -63,5 +64,6 @@ def minio_tar_fingerprints(raw):
                 value=stream.read(entry.size+1)
                 if len(value)!=entry.size:raise ValueError('Truncated restore member')
                 result[str(path)]={'bytes':entry.size,'sha256':hashlib.sha256(value).hexdigest()}
+    validate_archive_hierarchy(result, seen)
     if not result:raise ValueError('Empty object-store snapshot')
     return result

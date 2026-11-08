@@ -19,6 +19,18 @@ SERVICES = ('stack-db', 'stack-identity', 'stack-nats', 'stack-redis',
 STATEFUL = ('stack-db', 'stack-identity', 'stack-nats', 'stack-redis', 'stack-object-store')
 
 
+def validate_archive_hierarchy(files, paths):
+    # A trailing slash groups a path with all its descendants, including when
+    # similarly prefixed siblings contain punctuation. Avoid storing every
+    # implicit ancestor, which would multiply memory for deeply nested names.
+    previous_file = None
+    for name in sorted(paths, key=lambda name: name + '/'):
+        if previous_file is not None and name.startswith(previous_file + '/'):
+            raise ValueError('Cold archive file/directory hierarchy conflict')
+        if name in files:
+            previous_file = name
+
+
 def archive_fingerprints(raw):
     if not isinstance(raw, bytes) or not 0 < len(raw) <= COMPRESSED_LIMIT:
         raise ValueError('Cold archive size refused')
@@ -55,15 +67,7 @@ def archive_fingerprints(raw):
             if count != member.size:
                 raise ValueError('Cold archive member truncated')
             files[canonical] = {'bytes': count, 'sha256': digest.hexdigest(), 'mode': member.mode & 0o7777}
-    # A trailing slash groups a path with all its descendants, including when
-    # similarly prefixed siblings contain punctuation. Avoid storing every
-    # implicit ancestor, which would multiply memory for deeply nested names.
-    previous_file = None
-    for name in sorted(seen, key=lambda name: name + '/'):
-        if previous_file is not None and name.startswith(previous_file + '/'):
-            raise ValueError('Cold archive file/directory hierarchy conflict')
-        if name in files:
-            previous_file = name
+    validate_archive_hierarchy(files, seen)
     if not seen:
         raise ValueError('Empty cold archive refused')
     return files
