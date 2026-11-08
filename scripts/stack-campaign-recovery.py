@@ -16,9 +16,15 @@ def failure_diagnostics():
   except Exception as error:result['services'][name]={'unverified':type(error).__name__}
  return result
 
+class CallbackRedirects(urllib.request.HTTPRedirectHandler):
+ def redirect_request(self,request,response,code,message,headers,newurl):
+  response.close()
+  raise urllib.error.URLError('Worker callback redirect refused')
+
 def callback(path,body,expected,token):
  request=urllib.request.Request('http://127.0.0.1:4321/internal/'+path,data=json.dumps(body).encode(),headers={'Content-Type':'application/json','X-AgentTrust-Worker-Token':token},method='POST')
- try:response=urllib.request.urlopen(request,timeout=10)
+ opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),CallbackRedirects())
+ try:response=opener.open(request,timeout=10)
  except urllib.error.HTTPError as error:response=error
  status=response.status;response.read(16385);response.close();assert status==expected
 def restored_worker():

@@ -88,6 +88,7 @@ jobs:
           node --test scripts/stack-https-fixture-edge-policy-test.mjs
           python3 scripts/stack-coherent-archive-test.py
           python3 scripts/stack-recovery-transport-test.py
+          python3 scripts/stack-campaign-callback-test.py
           python3 scripts/stack-observation-policy-test.py
           python3 scripts/stack-recovery-load-contract-test.py
           python3 scripts/stack-coherent-orchestration-test.py
