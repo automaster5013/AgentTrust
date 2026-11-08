@@ -55,6 +55,15 @@ def archive_fingerprints(raw):
             if count != member.size:
                 raise ValueError('Cold archive member truncated')
             files[canonical] = {'bytes': count, 'sha256': digest.hexdigest(), 'mode': member.mode & 0o7777}
+    # A trailing slash groups a path with all its descendants, including when
+    # similarly prefixed siblings contain punctuation. Avoid storing every
+    # implicit ancestor, which would multiply memory for deeply nested names.
+    previous_file = None
+    for name in sorted(seen, key=lambda name: name + '/'):
+        if previous_file is not None and name.startswith(previous_file + '/'):
+            raise ValueError('Cold archive file/directory hierarchy conflict')
+        if name in files:
+            previous_file = name
     if not seen:
         raise ValueError('Empty cold archive refused')
     return files

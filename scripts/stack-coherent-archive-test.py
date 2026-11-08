@@ -40,6 +40,26 @@ class ColdArchiveTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             archive_fingerprints(tar([('base/file', tarfile.REGTYPE, b'a', 0o600), ('./base/file', tarfile.REGTYPE, b'b', 0o600)]))
 
+    def test_file_cannot_also_be_an_ancestor_directory_in_either_member_order(self):
+        parent = ('base', tarfile.REGTYPE, b'parent-file', 0o600)
+        for descendant in (('base/child', tarfile.REGTYPE, b'child', 0o600), ('base/child', tarfile.DIRTYPE, b'', 0o700)):
+            for entries in ([parent, descendant], [descendant, parent]):
+                with self.subTest(descendant=descendant[1], parent_first=entries[0] == parent):
+                    with self.assertRaises(ValueError):
+                        archive_fingerprints(tar(entries))
+
+    def test_similarly_prefixed_sibling_cannot_hide_a_file_ancestor(self):
+        entries = [('base', tarfile.REGTYPE, b'x', 0o600), ('base-', tarfile.REGTYPE, b'x', 0o600), ('base/child', tarfile.REGTYPE, b'x', 0o600)]
+        with self.assertRaises(ValueError):
+            archive_fingerprints(tar(entries))
+
+    def test_explicit_parent_directory_may_precede_or_follow_its_child(self):
+        parent = ('base', tarfile.DIRTYPE, b'', 0o700)
+        child = ('base/child', tarfile.REGTYPE, b'evidence', 0o600)
+        for entries in ([parent, child], [child, parent]):
+            with self.subTest(parent_first=entries[0] == parent):
+                self.assertEqual(set(archive_fingerprints(tar(entries))), {'base/child'})
+
     def test_privileged_and_file_sticky_permissions_refused(self):
         for mode in (0o4600, 0o2600, 0o1600):
             with self.subTest(mode=mode), self.assertRaises(ValueError):

@@ -130,6 +130,22 @@ class SnapshotCustodyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.verify()
 
+    def test_authenticated_archive_with_impossible_file_hierarchy_is_refused(self):
+        for parent_first in (True, False):
+            archive = io.BytesIO()
+            with tarfile.open(fileobj=archive, mode='w:gz') as stream:
+                names = ['base', 'base/child'] if parent_first else ['base/child', 'base']
+                for name in names:
+                    entry = tarfile.TarInfo(name)
+                    entry.size, entry.mode = 1, 0o600
+                    stream.addfile(entry, io.BytesIO(b'x'))
+            self.plaintext['stack-db'] = archive.getvalue()
+            self.write_snapshot()
+            # Isolate archive acceptance from platform-specific DACL preconditions.
+            with self.subTest(parent_first=parent_first), patch.object(verifier, 'retained_key', return_value=(self.key, hashlib.sha256(self.secret).digest())):
+                with self.assertRaisesRegex(ValueError, 'hierarchy conflict'):
+                    self.verify()
+
     def test_duplicate_or_nonfinite_manifest_json_is_refused(self):
         for raw in (b'{"schema":1,"schema":1}', b'{"schema":NaN}'):
             with self.subTest(raw=raw), self.assertRaises(ValueError):
