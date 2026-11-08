@@ -5,10 +5,13 @@ from stack_v18_transition_probe import MANAGEMENT
 
 
 
+def require(value, code='CORE_RETURN_EVIDENCE_UNVERIFIED'):
+    if not value:raise ValueError(code)
+
 def pinned_legacy_management_unavailable(status, body):
     """Exact missing-route behavior of the pinned baseline, never API support."""
-    assert type(status) is int and status == 500, 'LEGACY_MISSING_ROUTE_STATUS_CHANGED'
-    assert body == {'code': 'REQUEST_UNAVAILABLE'}, 'LEGACY_MISSING_ROUTE_BODY_CHANGED'
+    require(type(status) is int and status == 500, 'LEGACY_MISSING_ROUTE_STATUS_CHANGED')
+    require(body == {'code': 'REQUEST_UNAVAILABLE'}, 'LEGACY_MISSING_ROUTE_BODY_CHANGED')
 
 
 
@@ -66,14 +69,14 @@ def capture_non_core(command, core_id):
     # Include stopped containers and completed one-shot initializers. Full IDs
     # bind the listed set to inspect output; repeat enumeration after restoration.
     identifiers = command(['docker', 'ps', '-aq', '--no-trunc', '--filter', 'label=com.docker.compose.project=agenttrust']).decode().split()
-    assert identifiers and len(identifiers) == len(set(identifiers))
+    require(identifiers and len(identifiers) == len(set(identifiers)))
     states = json.loads(command(['docker', 'inspect', *identifiers]))
-    assert len(states) == len(identifiers) and {state['Id'] for state in states} == set(identifiers)
-    assert sum(state['Id'] == core_id for state in states) == 1
+    require(len(states) == len(identifiers) and {state['Id'] for state in states} == set(identifiers))
+    require(sum(state['Id'] == core_id for state in states) == 1)
     others = [state for state in states if state['Id'] != core_id]
     initializers = [state for state in others if state.get('Config', {}).get('Labels', {}).get('com.docker.compose.service') in INITIALIZERS]
     runtime = [state for state in others if state not in initializers]
-    assert len(runtime) >= 10
+    require(len(runtime) >= 10)
     expected = {state['Id']: (state['Image'], state['State']['StartedAt']) for state in runtime}
     completed = {state['Id']: initializer_identity(state) for state in initializers}
     return expected, completed, runtime, initializers
@@ -81,17 +84,17 @@ def capture_non_core(command, core_id):
 
 
 def preserved(before, after, *, unchanged_management=False):
-    assert before['ledger'] == after['ledger'], 'SCHEMA_LEDGER_CHANGED'
-    assert set(before['tables']) == set(after['tables']), 'TABLE_SET_CHANGED'
+    require(before['ledger'] == after['ledger'], 'SCHEMA_LEDGER_CHANGED')
+    require(set(before['tables']) == set(after['tables']), 'TABLE_SET_CHANGED')
     for table, rows in before['tables'].items():
-        assert not (Counter(rows) - Counter(after['tables'][table])), 'EXISTING_ROWS_CHANGED'
+        require(not (Counter(rows) - Counter(after['tables'][table])), 'EXISTING_ROWS_CHANGED')
         if unchanged_management and table in MANAGEMENT:
-            assert Counter(rows) == Counter(after['tables'][table]), 'MANAGEMENT_ROWS_CHANGED'
+            require(Counter(rows) == Counter(after['tables'][table]), 'MANAGEMENT_ROWS_CHANGED')
 
 
 def verify(switch, api, browser, capture, *, recovery=None):
     before = capture()
-    assert MANAGEMENT <= before['tables'].keys()
+    require(MANAGEMENT <= before['tables'].keys())
     attempted = False
     try:
         attempted = True

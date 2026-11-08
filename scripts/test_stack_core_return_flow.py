@@ -47,7 +47,7 @@ class FlowTest(unittest.TestCase):
     def test_schema_or_revocation_loss_is_not_healthy_return(self):
         for fault in ('ledger-drift', 'revocation-loss'):
             events, run = self.fixture(fault)
-            with self.subTest(fault=fault), self.assertRaises(AssertionError): run()
+            with self.subTest(fault=fault), self.assertRaises(ValueError): run()
             self.assertEqual(events[-2:], ['switch-candidate', 'api-candidate'])
 
     def test_candidate_restore_failure_never_reports_success(self):
@@ -63,7 +63,7 @@ class FlowTest(unittest.TestCase):
     def test_fingerprints_allow_new_business_rows_but_not_replaced_or_deleted_rows(self):
         before = {'ledger': 'same', 'tables': {'stack_runs': ['a', 'a']}}
         preserved(before, {'ledger': 'same', 'tables': {'stack_runs': ['a', 'a', 'b']}})
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             preserved(before, {'ledger': 'same', 'tables': {'stack_runs': ['a', 'b']}})
 
     def test_previous_failure_stays_failed_after_verified_candidate_recovery(self):
@@ -81,7 +81,7 @@ class FlowTest(unittest.TestCase):
         for fault in ('api-candidate', 'revocation-loss', 'ledger-drift'):
             report = {}
             _, run = self.fixture(fault, recovery=report)
-            with self.subTest(fault=fault), self.assertRaises((RuntimeError, AssertionError)): run()
+            with self.subTest(fault=fault), self.assertRaises((RuntimeError, ValueError)): run()
             self.assertNotIn('candidateRowsPreserved', report)
             if fault == 'api-candidate': self.assertNotIn('candidateHttpVerified', report)
 
@@ -92,7 +92,7 @@ class FlowTest(unittest.TestCase):
                              (503, {'code': 'STORAGE_UNAVAILABLE'}),
                              (500, {'code': 'OTHER_FAILURE'}),
                              (500, {'code': 'REQUEST_UNAVAILABLE', 'deploymentAuthority': True})]:
-            with self.subTest(status=status, body=body), self.assertRaises(AssertionError):
+            with self.subTest(status=status, body=body), self.assertRaises(ValueError):
                 pinned_legacy_management_unavailable(status, body)
 
     def capture_fixture(self, stopped=False, initializers=False, extra=False):
