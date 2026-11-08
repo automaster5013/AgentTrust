@@ -102,6 +102,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_ci_artifacts.py -v > artifact-normal.log 2>&1
       - name: Verify optimized artifact selection rejects ambiguity
         run: python -O -m unittest discover -s scripts -p test_stack_ci_artifacts.py -v > artifact-optimized.log 2>&1
+      - name: Verify browser diagnostic privacy with synthetic frames
+        run: python scripts/stack-infrastructure-browser-diagnostic-test.py -v > browser-normal.log 2>&1
+      - name: Verify optimized browser diagnostic privacy
+        run: python -O scripts/stack-infrastructure-browser-diagnostic-test.py -v > browser-optimized.log 2>&1
       - name: Verify source security on the disposable Linux runner
         if: runner.os == 'Linux'
         run: |
@@ -118,6 +122,8 @@ jobs:
             diagnostic-optimized.log
             artifact-normal.log
             artifact-optimized.log
+            browser-normal.log
+            browser-optimized.log
             .local/stack-security-source-*/summary.json
             .local/stack-security-source-*/reports/semgrep.json
             .local/stack-security-source-*/reports/gitleaks.json
