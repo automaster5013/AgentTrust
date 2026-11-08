@@ -30,6 +30,18 @@ class LiveState(unittest.TestCase):
    with self.assertRaises(ValueError):live.verify_redis(drill,metadata)
   with patch.object(live.time,'time',return_value=105),patch.object(live,'redis_values',return_value=[['stack:quota:fixture','3',55]]):
    self.assertEqual(live.verify_redis(drill,metadata)['stillLiveQuotaValuesVerified'],1)
+ def test_quota_verification_refuses_missing_or_extra_captured_rows(self):
+  keys=['stack:quota:first','stack:quota:second'];rows=[[keys[0],'3',60],[keys[1],None,-2]];drill=types.SimpleNamespace(prefix='fixture')
+  for captured in ([],rows[:1],rows+[['stack:quota:extra','7',60]]):
+   metadata={'capturedAtEpoch':100,'redisKeys':keys,'redisValues':captured}
+   with self.subTest(captured_count=len(captured)),patch.object(live.time,'time',return_value=105),patch.object(live,'redis_values',return_value=[[keys[0],'3',55],[keys[1],None,-2]]) as read:
+    with self.assertRaises(ValueError):live.verify_redis(drill,metadata)
+    read.assert_not_called()
+ def test_complete_quota_rows_verify_every_active_and_expired_key(self):
+  keys=['stack:quota:first','stack:quota:second'];metadata={'capturedAtEpoch':100,'redisKeys':keys,'redisValues':[[keys[0],'3',60],[keys[1],'7',2]]};drill=types.SimpleNamespace(prefix='fixture')
+  with patch.object(live.time,'time',return_value=105),patch.object(live,'redis_values',return_value=[[keys[0],'3',55],[keys[1],None,-2]]):
+   proof=live.verify_redis(drill,metadata);self.assertEqual(proof['capturedQuotaKeys'],2);self.assertEqual(proof['stillLiveQuotaValuesVerified'],1)
+
  def test_aof_only_extracts_bounded_quota_keys(self):
   key=b'stack:quota:fixture';raw=archive(resp(b'MULTI')+resp(b'INCR',key)+resp(b'PEXPIREAT',key,b'9999')+resp(b'EXEC'))
   self.assertEqual(live.aof_keys(raw),[key.decode()])

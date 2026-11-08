@@ -99,6 +99,8 @@ def prepare_volumes(drill,payload):
  return volumes
 
 def verify_redis(drill,metadata):
+ # zip would otherwise silently skip missing source rows or ignore extras.
+ require(isinstance(metadata['redisValues'],list) and len(metadata['redisValues'])==len(metadata['redisKeys']))
  values=redis_values(drill.prefix+'-stack-redis',metadata['redisKeys']);elapsed=time.time()-metadata['capturedAtEpoch'];active=0
  for source,target in zip(metadata['redisValues'],values):
   require(source[0]==target[0]);ttl=source[2]
