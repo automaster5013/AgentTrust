@@ -72,11 +72,11 @@ class TransitionTest(unittest.TestCase):
 
     def test_wrong_baseline_or_non_single_upgrade_refused(self):
         for fault in ('wrong-baseline', 'not-one-migration'):
-            with self.subTest(fault=fault), self.assertRaises(AssertionError):
+            with self.subTest(fault=fault), self.assertRaises(ValueError):
                 Fixture(fault).verify()
 
     def test_existing_business_row_drift_refused(self):
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             Fixture('legacy-drift').verify()
 
     def test_old_role_rejection_is_not_rollback_success(self):
@@ -85,7 +85,7 @@ class TransitionTest(unittest.TestCase):
 
     def test_revocation_loss_or_migration_reapply_refused(self):
         for fault in ('revocation-loss', 'reapplied'):
-            with self.subTest(fault=fault), self.assertRaises(AssertionError):
+            with self.subTest(fault=fault), self.assertRaises(ValueError):
                 Fixture(fault).verify()
 
     def test_snapshot_reads_bounded_exact_fingerprints_without_row_export(self):
@@ -98,7 +98,7 @@ class TransitionTest(unittest.TestCase):
         self.assertIn("statement_timeout='2s'", calls[-1])
 
     def test_snapshot_refuses_substituted_relation_name(self):
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             snapshot(lambda query: b'["stack_audit;DROP TABLE stack_runs"]')
 
 
