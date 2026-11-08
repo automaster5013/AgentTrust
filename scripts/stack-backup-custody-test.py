@@ -47,9 +47,7 @@ class SnapshotCustodyTests(unittest.TestCase):
         self.secret = bytes(range(32))
         self.key.write_bytes(self.secret)
         if os.name == 'nt':
-            owner = subprocess.check_output(['whoami'], text=True).strip()
-            for item in (self.key_directory, self.key):
-                subprocess.run(['icacls', str(item), '/inheritance:r', '/grant:r', owner + ':F', 'SYSTEM:F'], capture_output=True, check=True)
+            self.prepare_windows_fixture_acl()
         else:
             self.key.chmod(0o600)
         archive = io.BytesIO()
@@ -60,6 +58,41 @@ class SnapshotCustodyTests(unittest.TestCase):
         self.plaintext = {s: archive.getvalue() for s in STATEFUL}
         self.configuration = {s: {'imageId': 'sha256:' + 'b' * 64} for s in SERVICES}
         self.write_snapshot()
+
+    def prepare_windows_fixture_acl(self):
+        """Replace DACLs only on the two newly created, synthetic fixture objects."""
+        expected = self.root / '.local' / 'separate-keys'
+        if (not self.root.name.startswith('backup-custody-contract-')
+                or self.key_directory != expected or self.key != expected / 'contract-only.bin'
+                or any(p.is_symlink() or not p.resolve().is_relative_to(self.root.resolve())
+                       for p in (self.key_directory, self.key))):
+            raise ValueError('Refused non-fixture ACL target')
+        code = r"""
+$ErrorActionPreference='Stop'
+$user=[Security.Principal.WindowsIdentity]::GetCurrent().User
+$system=[Security.Principal.SecurityIdentifier]::new('S-1-5-18')
+# Protect the child first: replacing its parent's inherited grants first can remove child access.
+foreach($path in @($env:AGENTTRUST_TEST_KEY_FILE,$env:AGENTTRUST_TEST_KEY_DIRECTORY)) {
+ if([IO.Directory]::Exists($path)) {$acl=[Security.AccessControl.DirectorySecurity]::new()}
+ else {$acl=[Security.AccessControl.FileSecurity]::new()}
+ $acl.SetOwner($user)
+ $acl.SetAccessRuleProtection($true,$false)
+ foreach($sid in @($user,$system)) {
+  $rule=[Security.AccessControl.FileSystemAccessRule]::new($sid,'FullControl','Allow')
+  $acl.AddAccessRule($rule)
+ }
+ if([IO.Directory]::Exists($path)) {[IO.Directory]::SetAccessControl($path,$acl)}
+ else {[IO.File]::SetAccessControl($path,$acl)}
+}
+"""
+        environment = dict(os.environ, AGENTTRUST_TEST_KEY_DIRECTORY=str(self.key_directory),
+                           AGENTTRUST_TEST_KEY_FILE=str(self.key))
+        result = subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', code],
+                                env=environment, capture_output=True)
+        if result.returncode:
+            raise RuntimeError('Synthetic fixture ACL setup failed: ' + result.stderr.decode(errors='replace'))
+        # Fail during setup rather than letting unrelated negative tests pass on a bad fixture.
+        retained_key(self.root, self.key)
 
     def write_snapshot(self):
         self.plaintext['configuration'] = json.dumps(self.configuration).encode()
@@ -175,11 +208,18 @@ class SnapshotCustodyTests(unittest.TestCase):
 
     def test_broad_key_access_is_refused(self):
         if os.name == 'nt':
-            subprocess.run(['icacls', str(self.key), '/grant', '*S-1-1-0:R'], capture_output=True, check=True)
+            for target in (self.key, self.key_directory):
+                self.prepare_windows_fixture_acl()
+                subprocess.run(['icacls', str(target), '/grant', '*S-1-1-0:R'], capture_output=True, check=True)
+                decrypt = Mock()
+                with self.subTest(target=target.name), self.assertRaisesRegex(ValueError, 'Backup key broad access refused'):
+                    self.verify(decrypt=decrypt)
+                decrypt.assert_not_called()
+                self.assertEqual(self.key.read_bytes(), self.secret)
         else:
             self.key.chmod(0o644)
-        with self.assertRaises(ValueError):
-            retained_key(self.root, self.key)
+            with self.assertRaisesRegex(ValueError, 'Backup key custody permissions refused'):
+                retained_key(self.root, self.key)
 
     def test_only_specific_invalid_tag_is_a_crypto_authentication_rejection(self):
         inspection = types.SimpleNamespace(stdout=json.dumps([{'Id': 'sha256:' + 'd' * 64}]).encode())
