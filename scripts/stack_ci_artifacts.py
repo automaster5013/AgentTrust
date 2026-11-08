@@ -2,8 +2,13 @@
 import re
 
 
+def require(condition):
+    if not condition:
+        raise ValueError('DIAGNOSTIC_ATTEMPT_ARTIFACT_UNVERIFIED')
+
+
 def diagnostic_artifact_revision(name, attempt):
-    assert type(attempt) is int and 1 <= attempt <= 9999
+    require(type(attempt) is int and 1 <= attempt <= 9999)
     if not isinstance(name, str): return None
     match = re.fullmatch(r'original-stack-diagnostics-attempt-([1-9][0-9]{0,3})-([a-f0-9]{40})', name)
     if match: return match[2] if int(match[1]) == attempt else None
@@ -15,8 +20,8 @@ def diagnostic_artifact_revision(name, attempt):
 
 
 def select_diagnostic_artifact(artifacts, revision, attempt):
-    assert re.fullmatch('[a-f0-9]{40}', revision)
+    require(isinstance(revision, str) and re.fullmatch('[a-f0-9]{40}', revision))
     selected = [item for item in artifacts if item.get('expired') is False
                 and diagnostic_artifact_revision(item.get('name'), attempt) == revision]
-    assert len(selected) == 1, 'DIAGNOSTIC_ATTEMPT_ARTIFACT_UNVERIFIED'
+    require(len(selected) == 1)
     return selected[0]
