@@ -10,9 +10,15 @@ from stack_campaign_callback import callback
 
 
 class CallbackTests(unittest.TestCase):
-    def exercise(self, status=200, expected=200, location=None, proxy=False):
+    def exercise(self, status=200, expected=200, location=None, proxy=False, read_error=False):
         calls = []
         responses = []
+
+        class FixtureBody(io.BytesIO):
+            def read(self, *args):
+                if read_error:
+                    raise OSError('Synthetic read failure')
+                return super().read(*args)
 
         class FixtureHTTP(urllib.request.HTTPHandler):
             def http_open(self, request):
@@ -22,7 +28,7 @@ class CallbackTests(unittest.TestCase):
                     headers['Location'] = location
                 response = urllib.error.HTTPError(request.full_url,
                     status if len(calls) == 1 or not location else 200,
-                    'Fixture', headers, io.BytesIO(b'{}'))
+                    'Fixture', headers, FixtureBody(b'{}'))
                 responses.append(response)
                 return response
 
@@ -56,8 +62,12 @@ class CallbackTests(unittest.TestCase):
                 self.assertEqual(len(self.exercise(status=status, expected=status)), 1)
 
     def test_unexpected_error_status_fails(self):
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             self.exercise(status=500)
+
+    def test_read_failure_still_closes_response(self):
+        with self.assertRaises(OSError):
+            self.exercise(read_error=True)
 
     def test_redirects_never_send_a_second_authenticated_request(self):
         for status in (301, 302, 303, 307, 308):

@@ -20,7 +20,10 @@ def callback(path, body, expected, token):
         response = opener.open(request, timeout=10)
     except urllib.error.HTTPError as error:
         response = error
-    status = response.status
-    response.read(16385)
-    response.close()
-    assert status == expected
+    try:
+        status = response.status
+        response.read(16385)
+    finally:
+        response.close()
+    if status != expected:
+        raise ValueError('Worker callback status refused')
