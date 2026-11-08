@@ -1,24 +1,12 @@
-"""Exercise the actual callback without executing the worker-interruption script."""
-import ast
+"""Exercise the imported callback without executing the worker-interruption script."""
 import io
 import json
 from email.message import Message
-from pathlib import Path
 import unittest
 from unittest.mock import patch
 import urllib.error
 import urllib.request
-
-
-SOURCE = Path(__file__).with_name('stack-campaign-recovery.py')
-# This legacy executable performs its drill at module scope. Compile only its
-# callback definitions so a test can never log in, write data or stop a worker.
-definitions = [node for node in ast.parse(SOURCE.read_text()).body
-               if isinstance(node, (ast.ClassDef, ast.FunctionDef))
-               and node.name in ('CallbackRedirects', 'callback')]
-namespace = {'json': json, 'urllib': urllib}
-exec(compile(ast.Module(body=definitions, type_ignores=[]), str(SOURCE), 'exec'), namespace)
-callback = namespace['callback']
+from stack_campaign_callback import callback
 
 
 class CallbackTests(unittest.TestCase):

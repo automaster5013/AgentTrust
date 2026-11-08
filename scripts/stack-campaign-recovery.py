@@ -1,6 +1,7 @@
 """Bound campaign callbacks and durable recovery; only stack worker is interrupted."""
-import argparse,datetime,json,pathlib,subprocess,time,shutil,traceback,urllib.error,urllib.request,uuid
+import argparse,datetime,json,pathlib,subprocess,time,shutil,traceback,uuid
 from stack_test_client import StackClient
+from stack_campaign_callback import callback
 root=pathlib.Path(__file__).resolve().parent.parent;parser=argparse.ArgumentParser();parser.add_argument('--deadline',action='store_true');args=parser.parse_args()
 report={'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'completed':False,'checks':[],'credentialsRecorded':False,'legacyServicesChanged':False,'deadlineTest':args.deadline};client=None;stopped=False
 def command(arguments,**kwargs):return subprocess.run(arguments,cwd=root,capture_output=True,text=True,check=True,timeout=30,**kwargs).stdout
@@ -16,17 +17,6 @@ def failure_diagnostics():
   except Exception as error:result['services'][name]={'unverified':type(error).__name__}
  return result
 
-class CallbackRedirects(urllib.request.HTTPRedirectHandler):
- def redirect_request(self,request,response,code,message,headers,newurl):
-  response.close()
-  raise urllib.error.URLError('Worker callback redirect refused')
-
-def callback(path,body,expected,token):
- request=urllib.request.Request('http://127.0.0.1:4321/internal/'+path,data=json.dumps(body).encode(),headers={'Content-Type':'application/json','X-AgentTrust-Worker-Token':token},method='POST')
- opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),CallbackRedirects())
- try:response=opener.open(request,timeout=10)
- except urllib.error.HTTPError as error:response=error
- status=response.status;response.read(16385);response.close();assert status==expected
 def restored_worker():
  command(['docker','start','agenttrust-stack-ai-worker-1']);until=time.monotonic()+25
  while time.monotonic()<until:
