@@ -16,6 +16,12 @@ ROOT = Path(__file__).resolve().parent.parent
 BUNDLE = ROOT / 'audit-delivery'
 
 
+def require(condition):
+    # Trust and execution boundaries must remain active with Python optimization.
+    if not condition:
+        raise ValueError('Audit candidate verification refused')
+
+
 def run(*args, **kwargs):
     return subprocess.check_output(args, cwd=ROOT, timeout=1800, **kwargs).decode().strip()
 
@@ -39,10 +45,10 @@ def cosign(args, signer=False):
 def verify(revision):
     checksums = json.loads((BUNDLE/'checksums.json').read_bytes())
     manifest = json.loads((BUNDLE/'manifest.json').read_bytes())
-    assert manifest['revision'] == revision and manifest['ref'] == REF and set(manifest['images']) == set(CONTEXTS)
+    require(manifest['revision'] == revision and manifest['ref'] == REF and set(manifest['images']) == set(CONTEXTS))
     expected = {'manifest.json'}
     for name, reference in manifest['images'].items():
-        assert re.fullmatch(fr'ghcr\.io/automaster5013/agenttrust-{name}@sha256:[a-f0-9]{{64}}', reference)
+        require(re.fullmatch(fr'ghcr\.io/automaster5013/agenttrust-{name}@sha256:[a-f0-9]{{64}}', reference))
         digest = reference.split('@sha256:')[1]
         for suffix, kind in [('signature', 'https://sigstore.dev/cosign/sign/v1'), ('sbom', 'cyclonedx')]:
             filename = f'{name}.{suffix}.bundle.json'
@@ -53,14 +59,14 @@ def verify(revision):
                     '--certificate-github-workflow-repository', REPOSITORY,
                     '--certificate-github-workflow-ref', REF, '--certificate-github-workflow-sha', revision])
             statement = json.loads(base64.b64decode(json.loads((BUNDLE/filename).read_bytes())['dsseEnvelope']['payload'], validate=True))
-            assert any(row['digest'].get('sha256') == digest for row in statement['subject'])
+            require(any(row['digest'].get('sha256') == digest for row in statement['subject']))
             if suffix == 'sbom':
-                assert statement['predicate'] == json.loads((BUNDLE/f'{name}.cdx.json').read_bytes())
+                require(statement['predicate'] == json.loads((BUNDLE/f'{name}.cdx.json').read_bytes()))
         expected.update({f'{name}.cdx.json', f'{name}.trivy.json'})
         scan = json.loads((BUNDLE/f'{name}.trivy.json').read_bytes())
-        assert scan['SchemaVersion'] == 2 and all(not row.get('Vulnerabilities') for row in scan['Results'])
-    assert set(checksums) == expected and {p.name for p in BUNDLE.iterdir()} == expected | {'checksums.json'}
-    assert all(sha(BUNDLE/name) == digest for name, digest in checksums.items())
+        require(scan['SchemaVersion'] == 2 and all(not row.get('Vulnerabilities') for row in scan['Results']))
+    require(set(checksums) == expected and {p.name for p in BUNDLE.iterdir()} == expected | {'checksums.json'})
+    require(all(sha(BUNDLE/name) == digest for name, digest in checksums.items()))
     print(json.dumps({'revision': revision, 'verifiedImages': manifest['images'],
                       'checksumsSha256': sha(BUNDLE/'checksums.json'), 'deployed': False}))
 
@@ -75,16 +81,16 @@ def publish(revision):
         run('docker', 'push', tag)
         refs = json.loads(run('docker', 'inspect', '--format', '{{json .RepoDigests}}', tag))
         matches = [ref for ref in refs if ref.startswith(tag.rsplit(':', 1)[0]+'@sha256:')]
-        assert len(matches) == 1
+        require(len(matches) == 1)
         images[name] = matches[0]
         env['STACK_'+name.upper().replace('-', '_').replace('CORE_API','CORE')+'_IMAGE'] = matches[0]
     subprocess.run([sys.executable, 'scripts/stack-security-images.py'], cwd=ROOT, env=env, check=True, timeout=1800)
     reports = list((ROOT/'.local').glob('stack-security-images-*/summary.json'))
-    assert len(reports) == 1
+    require(len(reports) == 1)
     scan = json.loads(reports[0].read_bytes())
-    assert scan['completed'] and scan['revision'] == revision and set(scan['images']) == set(CONTEXTS)
+    require(scan['completed'] and scan['revision'] == revision and set(scan['images']) == set(CONTEXTS))
     for name, reference in images.items():
-        assert scan['images'][name]['reference'] == reference
+        require(scan['images'][name]['reference'] == reference)
         for suffix in ('cdx.json','trivy.json'):
             filename = f'{name}.{suffix}'
             (BUNDLE/filename).write_bytes((reports[0].parent/'reports'/filename).read_bytes())
@@ -96,9 +102,9 @@ def publish(revision):
 
 
 if __name__ == '__main__':
-    assert os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('GITHUB_REPOSITORY') == REPOSITORY
-    assert os.environ.get('GITHUB_REF') == REF and os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch'
+    require(os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('GITHUB_REPOSITORY') == REPOSITORY)
+    require(os.environ.get('GITHUB_REF') == REF and os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch')
     revision = os.environ['GITHUB_SHA']
-    assert re.fullmatch('[a-f0-9]{40}',revision) and run('git','rev-parse','HEAD') == revision
-    assert len(sys.argv) == 2 and sys.argv[1] in ('publish','verify')
+    require(re.fullmatch('[a-f0-9]{40}',revision) and run('git','rev-parse','HEAD') == revision)
+    require(len(sys.argv) == 2 and sys.argv[1] in ('publish','verify'))
     (publish if sys.argv[1]=='publish' else verify)(revision)
