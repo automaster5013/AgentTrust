@@ -1,12 +1,17 @@
 """Loopback-only synthetic test client; each instance owns and closes its session."""
 import http.cookiejar,json,urllib.request,urllib.error,urllib.parse,html.parser
+def require(condition, message='Stack test client contract refused'):
+    if not condition:
+        raise AssertionError(message)
+
+
 class LoopbackCookiePolicy(http.cookiejar.DefaultCookiePolicy):
  def return_ok_secure(self,cookie,request):
   # Browsers treat loopback as trustworthy; never extend this exception to any remote host.
   parsed=urllib.parse.urlsplit(request.full_url);return parsed.scheme=='http' and parsed.netloc=='127.0.0.1:4322' or super().return_ok_secure(cookie,request)
 class FixedRedirects(urllib.request.HTTPRedirectHandler):
  def redirect_request(self,req,fp,code,msg,headers,newurl):
-  parsed=urllib.parse.urlsplit(newurl);assert parsed.scheme=='http' and parsed.netloc in ['127.0.0.1:4320','127.0.0.1:4321','127.0.0.1:4322','127.0.0.1:4323'] and not parsed.username and not parsed.password and len(newurl)<8192
+  parsed=urllib.parse.urlsplit(newurl);require(parsed.scheme=='http' and parsed.netloc in ['127.0.0.1:4320','127.0.0.1:4321','127.0.0.1:4322','127.0.0.1:4323'] and not parsed.username and not parsed.password and len(newurl)<8192)
   return super().redirect_request(req,fp,code,msg,headers,newurl)
 class IdentityForm(html.parser.HTMLParser):
  def __init__(self):super().__init__();self.action=None;self.fields={};self.active=False
@@ -18,7 +23,7 @@ class IdentityForm(html.parser.HTMLParser):
   if tag=='form':self.active=False
 class StackClient:
  def __init__(self,base,credentials,report=None,clients=None):
-  assert base in ['http://127.0.0.1:4321','http://127.0.0.1:4320','http://127.0.0.1:4323'];self.base=base;self.prefix='/backend/' if base.endswith('4320') else '/api/';self.credentials=credentials;self.report={} if report is None else report;self.jar=http.cookiejar.CookieJar(policy=LoopbackCookiePolicy());self.opener=urllib.request.build_opener(FixedRedirects(),urllib.request.HTTPCookieProcessor(self.jar));self.token=None;self.logged=False;self.provider=None
+  require(base in ['http://127.0.0.1:4321','http://127.0.0.1:4320','http://127.0.0.1:4323']);self.base=base;self.prefix='/backend/' if base.endswith('4320') else '/api/';self.credentials=credentials;self.report={} if report is None else report;self.jar=http.cookiejar.CookieJar(policy=LoopbackCookiePolicy());self.opener=urllib.request.build_opener(FixedRedirects(),urllib.request.HTTPCookieProcessor(self.jar));self.token=None;self.logged=False;self.provider=None
   if clients is not None:clients.append(self)
  def request(self,path,method='GET',data=None,headers=None,expected=200):
   hs={'Accept':'application/json',**(headers or {})};body=None
@@ -36,35 +41,35 @@ class StackClient:
    try:
     code=json.loads(raw).get('code');self.report['responseCode']=code if isinstance(code,str) and code.isascii() and code.replace('_','').isalpha() else None
    except Exception:pass
-  assert status==expected,f'Unexpected HTTP status at {path}: {status}';assert len(raw)<=1048576
+  require(status==expected, f'Unexpected HTTP status at {path}: {status}');require(len(raw)<=1048576)
   return json.loads(raw) if raw else None
- def csrf(self):self.token=self.request('csrf')['token'];assert len(self.token)<=2048
+ def csrf(self):self.token=self.request('csrf')['token'];require(len(self.token)<=2048)
  def login(self,name):
   self.report['loginPhase']='provider-information'
   self.provider=self.request('auth-info')['identityProvider'];u=next(x for x in self.credentials if x['username']==name)
   if self.provider=='keycloak':
    self.report['loginPhase']='authorization-redirect'
    with self.opener.open('http://127.0.0.1:4320/backend/oauth2/authorization/keycloak',timeout=15) as response:
-    url=urllib.parse.urlsplit(response.url);query=urllib.parse.parse_qs(url.query);raw=response.read(1048577);assert len(raw)<=1048576
-   assert url.netloc=='127.0.0.1:4322' and url.path=='/realms/agenttrust/protocol/openid-connect/auth';assert query['client_id']==['agenttrust-console'] and query['redirect_uri']==['http://127.0.0.1:4320/backend/login/oauth2/code/keycloak'] and query['code_challenge_method']==['S256'] and len(query['state'][0])>=16 and len(query['nonce'][0])>=16
-   self.report['loginPhase']='identity-form';form=IdentityForm();form.feed(raw.decode('utf-8'));assert form.action
-   target=urllib.parse.urlsplit(form.action);assert target.scheme=='http' and target.netloc=='127.0.0.1:4322' and target.path.startswith('/realms/agenttrust/login-actions/')
+    url=urllib.parse.urlsplit(response.url);query=urllib.parse.parse_qs(url.query);raw=response.read(1048577);require(len(raw)<=1048576)
+   require(url.netloc=='127.0.0.1:4322' and url.path=='/realms/agenttrust/protocol/openid-connect/auth');require(query['client_id']==['agenttrust-console'] and query['redirect_uri']==['http://127.0.0.1:4320/backend/login/oauth2/code/keycloak'] and query['code_challenge_method']==['S256'] and len(query['state'][0])>=16 and len(query['nonce'][0])>=16)
+   self.report['loginPhase']='identity-form';form=IdentityForm();form.feed(raw.decode('utf-8'));require(form.action)
+   target=urllib.parse.urlsplit(form.action);require(target.scheme=='http' and target.netloc=='127.0.0.1:4322' and target.path.startswith('/realms/agenttrust/login-actions/'))
    body=urllib.parse.urlencode({**form.fields,'username':name,'password':u['password'],'credentialId':''}).encode()
    self.report['loginPhase']='identity-submit-callback'
-   with self.opener.open(urllib.request.Request(form.action,data=body,headers={'Content-Type':'application/x-www-form-urlencoded','Origin':'http://127.0.0.1:4322'}),timeout=15) as response:assert response.url=='http://127.0.0.1:4320/workspace'
+   with self.opener.open(urllib.request.Request(form.action,data=body,headers={'Content-Type':'application/x-www-form-urlencoded','Origin':'http://127.0.0.1:4322'}),timeout=15) as response:require(response.url=='http://127.0.0.1:4320/workspace')
    self.report['oidcAuthorizationCodePkceVerified']=True
   else:
-   assert self.provider=='local-demo';self.csrf();self.request('login','POST',urllib.parse.urlencode({'username':name,'password':u['password']}))
-  self.logged=True;self.report['loginPhase']='session-verification';self.csrf();me=self.request('me');assert me['organizationId']==u['organizationId'] and me['projectId']==u['projectId'] and me['actorId']==u['actorId'] and me['role']==u['role'] and me['identityProvider']==self.provider;self.report['loginPhase']='completed';return me
+   require(self.provider=='local-demo');self.csrf();self.request('login','POST',urllib.parse.urlencode({'username':name,'password':u['password']}))
+  self.logged=True;self.report['loginPhase']='session-verification';self.csrf();me=self.request('me');require(me['organizationId']==u['organizationId'] and me['projectId']==u['projectId'] and me['actorId']==u['actorId'] and me['role']==u['role'] and me['identityProvider']==self.provider);self.report['loginPhase']='completed';return me
  def logout(self):
   if self.logged:
    self.csrf();value=self.request('logout','POST',{});self.request('me',expected=401)
    if self.provider=='keycloak':
-    url='http://127.0.0.1:4322/realms/agenttrust/protocol/openid-connect/logout?client_id=agenttrust-console&post_logout_redirect_uri=http%3A%2F%2F127.0.0.1%3A4320%2F';assert value['logoutUrl']==url
-    with self.opener.open(url,timeout=15) as response:raw=response.read(1048577);assert len(raw)<=1048576;at=response.url
+    url='http://127.0.0.1:4322/realms/agenttrust/protocol/openid-connect/logout?client_id=agenttrust-console&post_logout_redirect_uri=http%3A%2F%2F127.0.0.1%3A4320%2F';require(value['logoutUrl']==url)
+    with self.opener.open(url,timeout=15) as response:raw=response.read(1048577);require(len(raw)<=1048576);at=response.url
     if at!='http://127.0.0.1:4320/':
-     form=IdentityForm();form.feed(raw.decode('utf-8'));assert form.action;form.action=urllib.parse.urljoin(url,form.action)
-     target=urllib.parse.urlsplit(form.action);assert target.scheme=='http' and target.netloc=='127.0.0.1:4322' and target.path=='/realms/agenttrust/protocol/openid-connect/logout/logout-confirm'
-     with self.opener.open(urllib.request.Request(form.action,data=urllib.parse.urlencode(form.fields).encode(),headers={'Content-Type':'application/x-www-form-urlencoded','Origin':'http://127.0.0.1:4322'}),timeout=15) as response:assert response.url=='http://127.0.0.1:4320/'
+     form=IdentityForm();form.feed(raw.decode('utf-8'));require(form.action);form.action=urllib.parse.urljoin(url,form.action)
+     target=urllib.parse.urlsplit(form.action);require(target.scheme=='http' and target.netloc=='127.0.0.1:4322' and target.path=='/realms/agenttrust/protocol/openid-connect/logout/logout-confirm')
+     with self.opener.open(urllib.request.Request(form.action,data=urllib.parse.urlencode(form.fields).encode(),headers={'Content-Type':'application/x-www-form-urlencoded','Origin':'http://127.0.0.1:4322'}),timeout=15) as response:require(response.url=='http://127.0.0.1:4320/')
     self.report['ownIdentityProviderSessionClosed']=True
    self.logged=False
