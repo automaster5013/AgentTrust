@@ -19,7 +19,7 @@ worker = importlib.util.module_from_spec(spec); spec.loader.exec_module(worker)
 class WorkerPauseTest(unittest.TestCase):
     def fixture(self):
         # Local test scratch stays inside the explicitly resolved AgentTrust workspace.
-        base = pathlib.Path('C:/AgentTrust/.local') if os.name == 'nt' else ROOT / '.local'
+        base = ROOT / '.local'
         base.mkdir(exist_ok=True)
         directory = tempfile.TemporaryDirectory(prefix='worker-pause-unit-', dir=base)
         root = pathlib.Path(directory.name)
