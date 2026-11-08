@@ -122,6 +122,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_database_role_probe.py -v > database-normal.log 2>&1
       - name: Verify optimized mocked database role observations
         run: python -O -m unittest discover -s scripts -p test_stack_database_role_probe.py -v > database-optimized.log 2>&1
+      - name: Verify mocked pending workspace capability
+        run: python -m unittest discover -s scripts -p test_stack_pending_workspace_probe.py -v > pending-normal.log 2>&1
+      - name: Verify optimized mocked pending workspace capability
+        run: python -O -m unittest discover -s scripts -p test_stack_pending_workspace_probe.py -v > pending-optimized.log 2>&1
       - name: Verify source security on the disposable Linux runner
         if: runner.os == 'Linux'
         run: |
@@ -148,6 +152,8 @@ jobs:
             callback-optimized.log
             database-normal.log
             database-optimized.log
+            pending-normal.log
+            pending-optimized.log
             .local/stack-security-source-*/summary.json
             .local/stack-security-source-*/reports/semgrep.json
             .local/stack-security-source-*/reports/gitleaks.json
