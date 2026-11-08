@@ -138,6 +138,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_compose_guards.py -v > compose-normal.log 2>&1
       - name: Verify optimized mocked Compose configuration guards
         run: python -O -m unittest discover -s scripts -p test_stack_compose_guards.py -v > compose-optimized.log 2>&1
+      - name: Verify mocked identity administration guards
+        run: python -m unittest discover -s scripts -p test_stack_identity_admin.py -v > identity-admin-normal.log 2>&1
+      - name: Verify optimized mocked identity administration guards
+        run: python -O -m unittest discover -s scripts -p test_stack_identity_admin.py -v > identity-admin-optimized.log 2>&1
       - name: Verify source security on the disposable Linux runner
         if: runner.os == 'Linux'
         run: |
@@ -172,6 +176,8 @@ jobs:
             return-optimized.log
             compose-normal.log
             compose-optimized.log
+            identity-admin-normal.log
+            identity-admin-optimized.log
             .local/stack-security-source-*/summary.json
             .local/stack-security-source-*/reports/semgrep.json
             .local/stack-security-source-*/reports/gitleaks.json
