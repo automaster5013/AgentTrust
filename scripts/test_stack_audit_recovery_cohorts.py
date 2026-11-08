@@ -86,6 +86,31 @@ class RecoveryCohortsTest(unittest.TestCase):
                 with self.assertRaises((AssertionError, KeyError)):
                     self.probe_contract(True, True, mutate)
 
+    def check_image_identity(self, mismatched=False):
+        root = Path(__file__).resolve().parent.parent / '.local'
+        root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as directory:
+            images = {'core-api': 'synthetic-ref'}
+            expected_id = 'sha256:' + 'a' * 64
+            actual_id = 'sha256:' + ('b' if mismatched else 'a') * 64
+            def run(*args):
+                if args[:3] == ('docker', 'image', 'inspect'):
+                    return expected_id
+                if args[:2] == ('docker', 'inspect'):
+                    if '{{.Image}}' in args[3]:
+                        return 'synthetic-ref ' + actual_id + ' healthy'
+                    return 'synthetic-ref healthy'
+                return ''
+            with patch.object(recovery, 'OVERLAY', Path(directory)/'images.json'), patch.object(recovery, 'run', side_effect=run):
+                recovery.set_images(images)
+
+    def test_running_container_must_match_resolved_image_id(self):
+        with self.assertRaises(AssertionError):
+            self.check_image_identity(mismatched=True)
+
+    def test_matching_running_image_id_is_accepted(self):
+        self.check_image_identity()
+
     def test_candidate_accepts_fixed_filters_and_new_routes(self):
         self.probe_contract(True, True)
 

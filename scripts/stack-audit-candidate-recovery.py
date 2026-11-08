@@ -59,8 +59,10 @@ def set_images(images, initial=False):
         for name in ('core-api','gateway','console'):
             run(*COMPOSE,'-f',str(OVERLAY),'up','-d','--no-build','--no-deps','--wait','stack-'+name)
     for name,ref in images.items():
-        result = run('docker','inspect','--format','{{.Config.Image}} {{.State.Health.Status}}','agenttrust-stack-'+name+'-1')
-        assert result == ref+' healthy'
+        expected_id = run('docker', 'image', 'inspect', '--format', '{{.Id}}', ref)
+        assert re.fullmatch(r'sha256:[a-f0-9]{64}', expected_id), 'Expected exact local image ID'
+        result = run('docker','inspect','--format','{{.Config.Image}} {{.Image}} {{.State.Health.Status}}','agenttrust-stack-'+name+'-1')
+        assert result == ref+' '+expected_id+' healthy', 'Running image identity or health mismatch'
 
 
 def verify_read_authority(value, user, export=False):
