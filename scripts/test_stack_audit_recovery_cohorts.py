@@ -1,6 +1,7 @@
 """No Docker/network calls: distinguish current rollback from historical refusal."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -12,6 +13,88 @@ spec.loader.exec_module(recovery)
 
 
 class RecoveryCohortsTest(unittest.TestCase):
+    def admission_fixture(self):
+        scratch = Path(__file__).resolve().parent.parent / '.local'
+        scratch.mkdir(exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(prefix='audit-recovery-admission-', dir=scratch)
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        (root / '.local').mkdir()
+        (root / 'audit-delivery').mkdir()
+        images = recovery.references({name: 'c' * 64 for name in recovery.CURRENT})
+        manifest = {'revision': 'a' * 40, 'ref': recovery.REF, 'images': images}
+        (root / 'audit-delivery/manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+        env = {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': 'automaster5013/AgentTrust',
+               'GITHUB_REF': recovery.REF, 'GITHUB_EVENT_NAME': 'workflow_dispatch', 'GITHUB_SHA': 'a' * 40}
+        return root, manifest, env
+
+    def test_foreign_execution_scope_refused_before_any_runtime_access(self):
+        root, _, env = self.admission_fixture()
+        for key, value in (('GITHUB_ACTIONS', 'false'), ('GITHUB_REPOSITORY', 'foreign/repository'),
+                           ('GITHUB_REF', 'refs/heads/foreign'), ('GITHUB_EVENT_NAME', 'push')):
+            with self.subTest(key=key), patch.dict(os.environ, {**env, key: value}), \
+                    patch.object(recovery, 'ROOT', root), patch.object(recovery, 'run') as command, \
+                    patch.object(recovery, 'set_images') as replace:
+                with self.assertRaises(ValueError):
+                    recovery.main()
+                command.assert_not_called()
+                replace.assert_not_called()
+
+    def test_nonexclusive_fixture_refused_before_pull_or_replacement(self):
+        root, _, env = self.admission_fixture()
+        with patch.dict(os.environ, env), patch.object(recovery, 'ROOT', root), \
+                patch.object(recovery, 'run', return_value='stack-db\nstack-core-api') as command, \
+                patch.object(recovery, 'set_images') as replace:
+            with self.assertRaises(ValueError):
+                recovery.main()
+            self.assertEqual(command.call_count, 1)
+            self.assertEqual(command.call_args.args[:3], ('docker', 'ps', '-a'))
+            replace.assert_not_called()
+
+    def test_foreign_manifest_or_mutable_image_refused_before_replacement(self):
+        root, manifest, env = self.admission_fixture()
+        mutations = [('revision', 'b' * 40), ('ref', 'refs/heads/foreign'), ('images', {}),
+                     ('images', {**manifest['images'], 'core-api': 'foreign:latest'})]
+        for field, value in mutations:
+            with self.subTest(field=field, value=value):
+                (root / 'audit-delivery/manifest.json').write_text(json.dumps({**manifest, field: value}), encoding='utf-8')
+                with patch.dict(os.environ, env), patch.object(recovery, 'ROOT', root), \
+                        patch.object(recovery, 'run', return_value='stack-db') as command, \
+                        patch.object(recovery, 'set_images') as replace:
+                    with self.assertRaises(ValueError):
+                        recovery.main()
+                    self.assertEqual(command.call_count, 1)
+                    replace.assert_not_called()
+
+    def test_valid_mocked_admission_preserves_all_five_phases_and_fingerprints(self):
+        root, manifest, env = self.admission_fixture()
+        with patch.dict(os.environ, env), patch.object(recovery, 'ROOT', root), \
+                patch.object(recovery, 'run', return_value='stack-db'), \
+                patch.object(recovery, 'set_images') as replace, patch.object(recovery, 'probe') as probe, \
+                patch.object(recovery, 'fingerprint', return_value={str(i): 'synthetic' for i in range(18)}):
+            recovery.main()
+        report = json.loads((root / '.local/audit-recovery-result.json').read_bytes())
+        self.assertTrue(report['completed'])
+        self.assertEqual(report['revision'], manifest['revision'])
+        self.assertEqual(len(report['phases']), 5)
+        self.assertEqual(replace.call_count, 5)
+        self.assertEqual(probe.call_count, 5)
+        self.assertTrue(all(phase['businessDataUnchanged'] for phase in report['phases']))
+
+    def test_changed_business_fingerprint_cannot_produce_completed_report(self):
+        root, _, env = self.admission_fixture()
+        baseline = {str(i): 'synthetic' for i in range(18)}
+        with patch.dict(os.environ, env), patch.object(recovery, 'ROOT', root), \
+                patch.object(recovery, 'run', return_value='stack-db'), \
+                patch.object(recovery, 'set_images') as replace, patch.object(recovery, 'probe'), \
+                patch.object(recovery, 'fingerprint', side_effect=[baseline, {**baseline, '0': 'changed'}]):
+            with self.assertRaises(ValueError):
+                recovery.main()
+        report = json.loads((root / '.local/audit-recovery-result.json').read_bytes())
+        self.assertFalse(report.get('completed', False))
+        self.assertEqual(report['phases'], [])
+        replace.assert_called_once()
+
     def test_current_and_historical_baselines_have_distinct_acceptance_contracts(self):
         candidate = {name: 'candidate-'+name for name in recovery.CURRENT}
         phases = recovery.recovery_phases(candidate)
@@ -69,7 +152,7 @@ class RecoveryCohortsTest(unittest.TestCase):
                         else:
                             value[field] = replacement
                 with self.subTest(target=target, field=field, replacement=replacement):
-                    with self.assertRaises((AssertionError, KeyError)):
+                    with self.assertRaises((ValueError, KeyError)):
                         self.probe_contract(True, True, mutate)
 
     def test_export_document_cannot_hide_foreign_scope_or_authority(self):
@@ -83,7 +166,7 @@ class RecoveryCohortsTest(unittest.TestCase):
                         document[field] = replacement
                     value['contentJson'] = json.dumps(document)
             with self.subTest(field=field, replacement=replacement):
-                with self.assertRaises((AssertionError, KeyError)):
+                with self.assertRaises((ValueError, KeyError)):
                     self.probe_contract(True, True, mutate)
 
     def check_image_identity(self, mismatched=False):
@@ -105,7 +188,7 @@ class RecoveryCohortsTest(unittest.TestCase):
                 recovery.set_images(images)
 
     def test_running_container_must_match_resolved_image_id(self):
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             self.check_image_identity(mismatched=True)
 
     def test_matching_running_image_id_is_accepted(self):

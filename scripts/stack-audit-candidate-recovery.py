@@ -24,6 +24,11 @@ CURRENT = {
 FILTER_ACTIONS = ('workspace.project.updated', 'access-key.created', 'access-key.revoked')
 
 
+def require(condition, message='Audit recovery verification refused'):
+    if not condition:
+        raise ValueError(message)
+
+
 def references(digests):
     return {name: f'ghcr.io/automaster5013/agenttrust-{name}@sha256:{digest}' for name, digest in digests.items()}
 
@@ -60,22 +65,22 @@ def set_images(images, initial=False):
             run(*COMPOSE,'-f',str(OVERLAY),'up','-d','--no-build','--no-deps','--wait','stack-'+name)
     for name,ref in images.items():
         expected_id = run('docker', 'image', 'inspect', '--format', '{{.Id}}', ref)
-        assert re.fullmatch(r'sha256:[a-f0-9]{64}', expected_id), 'Expected exact local image ID'
+        require(re.fullmatch(r'sha256:[a-f0-9]{64}', expected_id), 'Expected exact local image ID')
         result = run('docker','inspect','--format','{{.Config.Image}} {{.Image}} {{.State.Health.Status}}','agenttrust-stack-'+name+'-1')
-        assert result == ref+' '+expected_id+' healthy', 'Running image identity or health mismatch'
+        require(result == ref+' '+expected_id+' healthy', 'Running image identity or health mismatch')
 
 
 def verify_read_authority(value, user, export=False):
-    assert value['organizationId'] == user['organizationId']
-    assert value['projectId'] == user['projectId']
+    require(value['organizationId'] == user['organizationId'])
+    require(value['projectId'] == user['projectId'])
     if export:
-        assert value['signed'] is False and value['currentDeploymentAuthority'] is False
+        require(value['signed'] is False and value['currentDeploymentAuthority'] is False)
         document = json.loads(value['contentJson'])
-        assert document['organizationId'] == user['organizationId']
-        assert document['projectId'] == user['projectId']
-        assert document['signed'] is False and document['currentDeploymentAuthority'] is False
+        require(document['organizationId'] == user['organizationId'])
+        require(document['projectId'] == user['projectId'])
+        require(document['signed'] is False and document['currentDeploymentAuthority'] is False)
     else:
-        assert value['deploymentAuthority'] is False
+        require(value['deploymentAuthority'] is False)
 
 
 def probe(supported, filters_supported):
@@ -94,7 +99,7 @@ def probe(supported, filters_supported):
             if supported:
                 verify_read_authority(client.request(route), user, export=route.startswith('audit-period-export/'))
             else:
-                assert client.request(route, expected=502)['code'] == 'REQUEST_UNAVAILABLE'
+                require(client.request(route, expected=502)['code'] == 'REQUEST_UNAVAILABLE')
         for action in FILTER_ACTIONS:
             route = 'audit-search/'+action+'/all'
             if filters_supported:
@@ -106,29 +111,29 @@ def probe(supported, filters_supported):
 
 
 def main():
-    assert os.getenv('GITHUB_ACTIONS') == 'true' and os.getenv('GITHUB_REPOSITORY') == 'automaster5013/AgentTrust'
-    assert os.getenv('GITHUB_REF') == REF and os.getenv('GITHUB_EVENT_NAME') == 'workflow_dispatch'
+    require(os.getenv('GITHUB_ACTIONS') == 'true' and os.getenv('GITHUB_REPOSITORY') == 'automaster5013/AgentTrust')
+    require(os.getenv('GITHUB_REF') == REF and os.getenv('GITHUB_EVENT_NAME') == 'workflow_dispatch')
     services = run('docker', 'ps', '-a', '--filter', 'label=com.docker.compose.project=agenttrust',
                    '--format', '{{.Label "com.docker.compose.service"}}').splitlines()
-    assert services == ['stack-db'], 'Expected only the PostgreSQL fixture created during setup'
+    require(services == ['stack-db'], 'Expected only the PostgreSQL fixture created during setup')
     manifest = json.loads((ROOT/'audit-delivery/manifest.json').read_bytes())
-    assert manifest['revision'] == os.environ['GITHUB_SHA'] and manifest['ref'] == REF
+    require(manifest['revision'] == os.environ['GITHUB_SHA'] and manifest['ref'] == REF)
     images = manifest['images']
-    assert images.keys() == PRIOR.keys() == CURRENT.keys()
+    require(images.keys() == PRIOR.keys() == CURRENT.keys())
     for refs in (images, references(CURRENT), references(PRIOR)):
         for name,ref in refs.items():
-            assert re.fullmatch(fr'ghcr\.io/automaster5013/agenttrust-{name}@sha256:[a-f0-9]{{64}}',ref)
+            require(re.fullmatch(fr'ghcr\.io/automaster5013/agenttrust-{name}@sha256:[a-f0-9]{{64}}',ref))
             run('docker','pull',ref)
     report = {'revision': manifest['revision'],'operatingDeployment':False,'phases':[]}
     try:
         set_images(images, initial=True)
         before = fingerprint()
-        assert len(before) == 18
+        require(len(before) == 18)
         for phase,cohort,supported,filters_supported in recovery_phases(images):
             if phase != 'candidate':
                 set_images(cohort)
             probe(supported, filters_supported)
-            assert fingerprint() == before
+            require(fingerprint() == before)
             report['phases'].append({'phase':phase,'images':cohort,'businessDataUnchanged':True,'auditRoutesSupported':supported,'workspaceAuditFiltersSupported':filters_supported})
         report['completed'] = True
     finally:
