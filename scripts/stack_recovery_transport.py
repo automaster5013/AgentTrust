@@ -38,6 +38,14 @@ class RecoveryHTTPHandler(urllib.request.HTTPHandler):
         return self.do_open(RecoveryConnection, request)
 
 
+class RecoverySchemeGuard(urllib.request.BaseHandler):
+    def default_open(self, request):
+        # build_opener otherwise installs file, FTP and data handlers by default.
+        # Apply the fixture boundary again on every redirected request.
+        if request.type != 'http':
+            raise urllib.error.URLError('Recovery non-HTTP scheme refused')
+
+
 class RefuseHTTPS(urllib.request.HTTPSHandler):
     def https_open(self, request):
         raise urllib.error.URLError('Recovery external HTTPS refused')
@@ -46,4 +54,4 @@ class RefuseHTTPS(urllib.request.HTTPSHandler):
 def fixture_opener(jar, redirects):
     return urllib.request.build_opener(urllib.request.ProxyHandler({}), redirects,
                                       urllib.request.HTTPCookieProcessor(jar),
-                                      RecoveryHTTPHandler(), RefuseHTTPS())
+                                      RecoverySchemeGuard(), RecoveryHTTPHandler(), RefuseHTTPS())

@@ -1,9 +1,11 @@
 import io
+import http.cookiejar
+from email.message import Message
 import unittest
 import urllib.request
 import urllib.error
 from unittest.mock import patch
-from stack_recovery_transport import RecoveryConnection, RecoveryHTTPHandler, RefuseHTTPS
+from stack_recovery_transport import RecoveryConnection, RecoveryHTTPHandler, RefuseHTTPS, fixture_opener
 
 
 class RecoveryTransportTests(unittest.TestCase):
@@ -41,6 +43,33 @@ class RecoveryTransportTests(unittest.TestCase):
         with patch.object(handler, 'do_open') as open_request:
             handler.http_open(request)
             open_request.assert_called_once_with(RecoveryConnection, request)
+
+    def test_opener_refuses_non_http_schemes_before_default_handlers(self):
+        opener = fixture_opener(http.cookiejar.CookieJar(), urllib.request.HTTPRedirectHandler())
+        with patch.object(urllib.request.FileHandler, 'file_open') as local_file, \
+                patch.object(urllib.request.FTPHandler, 'ftp_open') as ftp, \
+                patch.object(urllib.request.DataHandler, 'data_open') as inline, \
+                patch('stack_recovery_transport.socket.create_connection') as connect:
+            for url in ('file:///contract-only', 'ftp://example.invalid/fixture',
+                        'data:text/plain,fixture'):
+                with self.subTest(scheme=url.split(':')[0]), self.assertRaises(urllib.error.URLError):
+                    opener.open(url)
+            local_file.assert_not_called()
+            ftp.assert_not_called()
+            inline.assert_not_called()
+            connect.assert_not_called()
+
+    def test_opener_refuses_ftp_redirect_before_external_handler(self):
+        opener = fixture_opener(http.cookiejar.CookieJar(), urllib.request.HTTPRedirectHandler())
+        url = 'http://127.0.0.1:4322/fixture'
+        headers = Message()
+        headers['Location'] = 'ftp://example.invalid/fixture'
+        response = urllib.error.HTTPError(url, 302, 'Found', headers, io.BytesIO())
+        with patch.object(RecoveryHTTPHandler, 'do_open', return_value=response), \
+                patch.object(urllib.request.FTPHandler, 'ftp_open') as ftp:
+            with self.assertRaises(urllib.error.URLError):
+                opener.open(url)
+            ftp.assert_not_called()
 
     def test_https_is_refused_without_attempting_tls(self):
         with self.assertRaises(urllib.error.URLError):
