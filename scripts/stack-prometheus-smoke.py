@@ -1,4 +1,7 @@
 """Verify rebuilt Prometheus, promtool and preserved browser assets without secrets."""
+if not __debug__:
+    raise SystemExit("Prometheus smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,subprocess,uuid
 
 root=pathlib.Path(__file__).resolve().parent.parent
@@ -23,7 +26,9 @@ try:
     assert config.returncode==0
     report['checks'].append('both patched upstream binaries retain versions and promtool validates the actual config')
     stage='browser-assets'
-    code='''import html.parser,httpx,json,re,urllib.parse
+    code='''if not __debug__:
+ raise SystemExit("Prometheus browser probe requires Python assertions to be enabled")
+import html.parser,httpx,json,re,urllib.parse
 class Scripts(html.parser.HTMLParser):
  def __init__(self):super().__init__();self.paths=[]
  def handle_starttag(self,tag,attrs):

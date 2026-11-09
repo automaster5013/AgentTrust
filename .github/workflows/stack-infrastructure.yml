@@ -274,6 +274,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_queue_trace_mode.py -v > queue-trace-mode-normal.log 2>&1
       - name: Verify optimized queue trace mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_queue_trace_mode.py -v > queue-trace-mode-optimized.log 2>&1
+      - name: Verify Prometheus smoke mode refusal
+        run: python -m unittest discover -s scripts -p test_stack_prometheus_smoke_mode.py -v > prometheus-smoke-mode-normal.log 2>&1
+      - name: Verify optimized Prometheus smoke mode refusal
+        run: python -O -m unittest discover -s scripts -p test_stack_prometheus_smoke_mode.py -v > prometheus-smoke-mode-optimized.log 2>&1
       - name: Verify source security on the disposable Linux runner
         if: runner.os == 'Linux'
         run: |
@@ -376,6 +380,8 @@ jobs:
             database-init-mode-optimized.log
             queue-trace-mode-normal.log
             queue-trace-mode-optimized.log
+            prometheus-smoke-mode-normal.log
+            prometheus-smoke-mode-optimized.log
             .local/stack-security-source-*/summary.json
             .local/stack-security-source-*/reports/semgrep.json
             .local/stack-security-source-*/reports/gitleaks.json
