@@ -1,4 +1,7 @@
 """Prepare original-stack synthetic local configuration without changing legacy settings."""
+if not __debug__:
+    raise SystemExit("Stack setup requires Python assertions to be enabled")
+
 import json,os,pathlib,re,secrets,subprocess,sys,uuid
 root=pathlib.Path(__file__).resolve().parent.parent;os.chdir(root);directory=root/'.local'/'stack';directory.mkdir(parents=True,exist_ok=True)
 def protect(path):
