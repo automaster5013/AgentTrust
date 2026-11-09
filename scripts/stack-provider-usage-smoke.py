@@ -1,4 +1,7 @@
 """Read-only reservation usage through real OIDC and scoped PostgreSQL counts."""
+if not __debug__:
+    raise SystemExit("Provider usage smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,subprocess,uuid
 from stack_test_client import StackClient
 ROOT=pathlib.Path(__file__).resolve().parent.parent
