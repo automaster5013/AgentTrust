@@ -1,4 +1,7 @@
 """Check running immutable images and their actual language runtimes."""
+if not __debug__:
+    raise SystemExit("Image smoke test requires Python assertions to be enabled")
+
 import hashlib,json,os,pathlib,re,subprocess,traceback,urllib.request
 from stack_https_release_profile import from_fixture, EVIDENCE_FILE
 root=pathlib.Path(__file__).resolve().parent.parent
