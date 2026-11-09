@@ -1,4 +1,7 @@
 """Verify actual Java -> JetStream -> Python -> Java parent spans through authenticated Grafana."""
+if not __debug__:
+    raise SystemExit("Queue trace smoke test requires Python assertions to be enabled")
+
 import base64,datetime,json,pathlib,time,traceback,urllib.error,urllib.parse,urllib.request,uuid
 from stack_test_client import StackClient
 
