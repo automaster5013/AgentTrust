@@ -386,6 +386,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_vector_mode.py -v > vector-mode-normal.log 2>&1
       - name: Verify optimized vector mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_vector_mode.py -v > vector-mode-optimized.log 2>&1
+      - name: Verify promptfoo mode refusal
+        run: python -m unittest discover -s scripts -p test_stack_promptfoo_mode.py -v > promptfoo-mode-normal.log 2>&1
+      - name: Verify optimized promptfoo mode refusal
+        run: python -O -m unittest discover -s scripts -p test_stack_promptfoo_mode.py -v > promptfoo-mode-optimized.log 2>&1
       - name: Verify queue trace mode refusal
         run: python -m unittest discover -s scripts -p test_stack_queue_trace_mode.py -v > queue-trace-mode-normal.log 2>&1
       - name: Verify optimized queue trace mode refusal
@@ -552,6 +556,8 @@ jobs:
             database-mode-optimized.log
             vector-mode-normal.log
             vector-mode-optimized.log
+            promptfoo-mode-normal.log
+            promptfoo-mode-optimized.log
             queue-trace-mode-normal.log
             queue-trace-mode-optimized.log
             prometheus-smoke-mode-normal.log

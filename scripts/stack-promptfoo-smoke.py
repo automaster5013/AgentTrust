@@ -1,4 +1,7 @@
 """Run the real Promptfoo verifier on the private synthetic worker network."""
+if not __debug__:
+    raise SystemExit("Promptfoo smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,subprocess,uuid,traceback
 from stack_compose import stack_compose
 root=pathlib.Path(__file__).resolve().parent.parent
