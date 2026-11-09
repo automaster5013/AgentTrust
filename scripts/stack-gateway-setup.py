@@ -1,4 +1,7 @@
 """Private Redis ACL for the isolated reactive gateway; no old assets touched."""
+if not __debug__:
+    raise SystemExit("Gateway setup requires Python assertions to be enabled")
+
 import hashlib,json,os,pathlib,re,secrets,subprocess
 root=pathlib.Path(__file__).resolve().parent.parent;directory=root/'.local/stack'
 try:
