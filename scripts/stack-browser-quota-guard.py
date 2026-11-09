@@ -11,15 +11,22 @@ def main():
  try:
   credentials=ROOT/'.local/stack/demo-credentials.json'
   with credentials.open('rb') as stream:raw=stream.read(65537)
-  assert len(raw)<=65536;users=json.loads(raw);assert isinstance(users,list) and 1<=len(users)<=16
+  if len(raw)>65536:
+   raise AssertionError
+  users=json.loads(raw)
+  if not isinstance(users,list) or not 1<=len(users)<=16:
+   raise AssertionError
   scopes=set()
   for user in users:
-   assert all(isinstance(user[k],str) and re.fullmatch('[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}',user[k]) for k in ['organizationId','projectId'])
+   if not all(isinstance(user[k],str) and re.fullmatch('[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}',user[k]) for k in ['organizationId','projectId']):
+    raise AssertionError
    scopes.add(user['organizationId']+':'+user['projectId'])
   with (ROOT/'.local/stack/redis-token').open('rb') as stream:token=stream.read(65)
-  assert re.fullmatch(b'[a-f0-9]{64}',token)
+  if not re.fullmatch(b'[a-f0-9]{64}',token):
+   raise AssertionError
   state=subprocess.run(['docker','inspect','--format','{{index .Config.Labels "com.docker.compose.project"}} {{index .Config.Labels "com.docker.compose.service"}}','agenttrust-stack-redis-1'],cwd=ROOT,capture_output=True,text=True,encoding='utf-8',timeout=10,check=True)
-  assert state.stdout.strip()=='agenttrust stack-redis'
+  if state.stdout.strip()!='agenttrust stack-redis':
+   raise AssertionError
   # Token travels only via stdin into a container-local environment, never argv or output.
   script='IFS= read -r REDISCLI_AUTH; export REDISCLI_AUTH; redis-cli --user stack-gateway --raw EVAL "$1" 2 "$2" "$3"'
   snapshot="return {redis.call('GET',KEYS[1]) or '0',redis.call('TTL',KEYS[1]),redis.call('GET',KEYS[2]) or '0',redis.call('TTL',KEYS[2])}"
@@ -28,7 +35,11 @@ def main():
    for scope in sorted(scopes):
     keys=['stack:quota:'+scope+':'+kind for kind in ['read','write']]
     result=subprocess.run(['docker','exec','-i','agenttrust-stack-redis-1','sh','-c',script,'quota-guard',snapshot,*keys],cwd=ROOT,input=token+b'\n',capture_output=True,timeout=10,check=True)
-    assert len(result.stdout)<=1024;values=result.stdout.decode('ascii').splitlines();assert len(values)==4
+    if len(result.stdout)>1024:
+     raise AssertionError
+    values=result.stdout.decode('ascii').splitlines()
+    if len(values)!=4:
+     raise AssertionError
     for offset,limit,reserve in [(0,240,96),(2,60,16)]:wait=max(wait,wait_seconds(int(values[offset] or '0'),int(values[offset+1]),limit,reserve))
    if not wait:break
    if time.monotonic()-started+wait>70:raise ValueError('Quota budget did not recover naturally')
