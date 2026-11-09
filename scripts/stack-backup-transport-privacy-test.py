@@ -1,4 +1,7 @@
 """Actual owned Docker canaries; no original keys, database bytes or source-service interruptions."""
+if not __debug__:
+    raise SystemExit("Backup transport privacy test requires Python assertions to be enabled")
+
 import datetime,hashlib,json,os,pathlib,secrets,subprocess,uuid
 from unittest.mock import patch
 import stack_backup_tools as tools
