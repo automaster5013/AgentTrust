@@ -1,4 +1,7 @@
 """Scoped immutable audit navigation over real API, Gateway, RLS and tied timestamps."""
+if not __debug__:
+    raise SystemExit("Audit navigation smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,re,subprocess,uuid,base64,struct
 from stack_test_client import StackClient
 root=pathlib.Path(__file__).resolve().parent.parent

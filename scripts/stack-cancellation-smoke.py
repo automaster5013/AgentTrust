@@ -1,4 +1,7 @@
 """Real scoped cancellation; only bounded synthetic fixtures, worker restored in finally."""
+if not __debug__:
+    raise SystemExit("Cancellation smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,subprocess,time,urllib.request,urllib.error,uuid
 from stack_test_client import StackClient
 ROOT=pathlib.Path(__file__).resolve().parent.parent

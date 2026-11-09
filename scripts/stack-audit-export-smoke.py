@@ -1,4 +1,7 @@
 """Bounded metadata export over actual OIDC, BFF, WebFlux, Java and RLS."""
+if not __debug__:
+    raise SystemExit("Audit export smoke test requires Python assertions to be enabled")
+
 import datetime,hashlib,json,pathlib,subprocess,uuid
 from stack_test_client import StackClient
 ROOT=pathlib.Path(__file__).resolve().parent.parent

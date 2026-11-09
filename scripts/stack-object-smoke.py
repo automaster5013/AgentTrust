@@ -1,4 +1,7 @@
 """Real scoped, versioned evidence storage with byte hashes, locking and outage recovery."""
+if not __debug__:
+    raise SystemExit("Object storage smoke test requires Python assertions to be enabled")
+
 import base64,datetime,hashlib,json,pathlib,subprocess,time,uuid,traceback
 from stack_test_client import StackClient
 from stack_compose import stack_compose

@@ -1,4 +1,7 @@
 """Own Collector interruption must not manufacture permissions or prevent durable evaluation."""
+if not __debug__:
+    raise SystemExit("Observability outage smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,subprocess,sys,time,traceback,uuid
 from stack_test_client import StackClient
 

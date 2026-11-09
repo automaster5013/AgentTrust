@@ -298,6 +298,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_audit_period_mode.py -v > audit-period-mode-normal.log 2>&1
       - name: Verify optimized audit period smoke test mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_audit_period_mode.py -v > audit-period-mode-optimized.log 2>&1
+      - name: Verify ownership-sensitive smoke test mode refusal
+        run: python -m unittest discover -s scripts -p test_stack_ownership_mode.py -v > stack-ownership-mode-normal.log 2>&1
+      - name: Verify optimized ownership-sensitive smoke test mode refusal
+        run: python -O -m unittest discover -s scripts -p test_stack_ownership_mode.py -v > stack-ownership-mode-optimized.log 2>&1
       - name: Verify queue trace mode refusal
         run: python -m unittest discover -s scripts -p test_stack_queue_trace_mode.py -v > queue-trace-mode-normal.log 2>&1
       - name: Verify optimized queue trace mode refusal
@@ -420,6 +424,8 @@ jobs:
             baseline-unresolved-mode-optimized.log
             audit-period-mode-normal.log
             audit-period-mode-optimized.log
+            stack-ownership-mode-normal.log
+            stack-ownership-mode-optimized.log
             queue-trace-mode-normal.log
             queue-trace-mode-optimized.log
             prometheus-smoke-mode-normal.log

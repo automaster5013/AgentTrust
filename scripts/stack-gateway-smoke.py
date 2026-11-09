@@ -1,4 +1,7 @@
 """Real WebFlux/Redis quotas, scoped limits, AOF recovery and closed outage behavior."""
+if not __debug__:
+    raise SystemExit("Gateway smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,subprocess,time,urllib.request,urllib.error,uuid,traceback
 from stack_test_client import StackClient
 from stack_compose import stack_compose

@@ -1,4 +1,7 @@
 """Version-bound parent/child evidence, real retention and read-only offline verification."""
+if not __debug__:
+    raise SystemExit("Campaign archive smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,subprocess,sys,time,traceback,uuid
 from stack_test_client import StackClient
 from stack_compose import stack_compose
