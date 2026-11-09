@@ -1,4 +1,7 @@
 """Create bounded synthetic immutable versions on a disposable CI installation only."""
+if not __debug__:
+    raise SystemExit("Version history search fixture requires Python assertions to be enabled")
+
 import argparse,datetime,json,pathlib,uuid
 from stack_test_client import StackClient
 ROOT=pathlib.Path(__file__).resolve().parent.parent
