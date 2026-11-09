@@ -270,6 +270,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_database_init_mode.py -v > database-init-mode-normal.log 2>&1
       - name: Verify optimized database initialization mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_database_init_mode.py -v > database-init-mode-optimized.log 2>&1
+      - name: Verify database process smoke mode refusal
+        run: python -m unittest discover -s scripts -p test_stack_database_process_smoke_mode.py -v > database-process-smoke-mode-normal.log 2>&1
+      - name: Verify optimized database process smoke mode refusal
+        run: python -O -m unittest discover -s scripts -p test_stack_database_process_smoke_mode.py -v > database-process-smoke-mode-optimized.log 2>&1
       - name: Verify queue trace mode refusal
         run: python -m unittest discover -s scripts -p test_stack_queue_trace_mode.py -v > queue-trace-mode-normal.log 2>&1
       - name: Verify optimized queue trace mode refusal
@@ -378,6 +382,8 @@ jobs:
             audit-offline-mode-optimized.log
             database-init-mode-normal.log
             database-init-mode-optimized.log
+            database-process-smoke-mode-normal.log
+            database-process-smoke-mode-optimized.log
             queue-trace-mode-normal.log
             queue-trace-mode-optimized.log
             prometheus-smoke-mode-normal.log

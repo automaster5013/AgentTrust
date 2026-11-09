@@ -1,4 +1,7 @@
 """Read-only acceptance of the separate migration and restricted API processes."""
+if not __debug__:
+    raise SystemExit("Database process smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,subprocess,uuid
 
 ROOT=pathlib.Path(__file__).resolve().parent.parent
