@@ -1,4 +1,7 @@
 """Exercise actual HTTPS-profile Next BFF with isolated synthetic HTTP upstream."""
+if not __debug__:
+    raise SystemExit("OIDC endpoint proxy smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,shutil,subprocess,uuid
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 LOCAL=ROOT/'.local'
