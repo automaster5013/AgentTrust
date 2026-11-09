@@ -1,4 +1,7 @@
 """Resolve existing owned admissions without creating runs, reviews, or provider calls."""
+if not __debug__:
+    raise SystemExit("Evaluation request resolution smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,subprocess,uuid
 from stack_test_client import StackClient
 ROOT=pathlib.Path(__file__).resolve().parent.parent
