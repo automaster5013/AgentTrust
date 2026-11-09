@@ -24,19 +24,26 @@ class ExtraHistory(unittest.TestCase):
   self.assertNotEqual(tempo.trace_fingerprint(frame([first])),tempo.trace_fingerprint(frame([{**first,'name':'changed'}])))
   with self.assertRaises(ValueError):tempo.trace_fingerprint({'batches':[]})
  def test_offline_probe_checks_done_and_never_prints_response(self):
+  self.check_offline_probe(True)
+ def test_offline_probe_rejects_unfinished_response(self):
+  self.check_offline_probe(False)
+ def check_offline_probe(self,done):
+  case=self
   class Response:
    status=200
    def __enter__(self):return self
    def __exit__(self,*args):pass
-   def read(self,size):return json.dumps({'done':True,'model':'qwen3:0.6b','response':'private generated fixture','eval_count':2}).encode()
+   def read(self,size):return json.dumps({'done':done,'model':'qwen3:0.6b','response':'private generated fixture','eval_count':2}).encode()
   class Opener:
    def open(self,request,**kwargs):
-    assert request.full_url=='http://127.0.0.1:11434/api/generate'
-    assert json.loads(request.data)['options']['num_predict']==16
+    case.assertEqual(request.full_url,'http://127.0.0.1:11434/api/generate')
+    case.assertEqual(json.loads(request.data)['options']['num_predict'],16)
     return Response()
   output=io.StringIO()
   with patch.object(model.urllib.request,'build_opener',return_value=Opener()),contextlib.redirect_stdout(output):result=model.main()
-  self.assertEqual(result,0);self.assertNotIn('private generated fixture',output.getvalue());self.assertTrue(json.loads(output.getvalue())['offlineInferenceVerified'])
+  self.assertEqual(result,0 if done else 1)
+  self.assertNotIn('private generated fixture',output.getvalue())
+  self.assertIs(json.loads(output.getvalue()).get('offlineInferenceVerified',False),done)
  def test_capacity_retries_entire_transient_sample_without_ignoring_usage(self):
   result=lambda raw:SimpleNamespace(stdout=raw)
   with patch.object(tempo.m,'require_host_capacity',return_value={}),patch.object(tempo.m.c,'run',side_effect=[result(b'8589934592'),result(b'-- / --\n'),result(b'4GiB / 8GiB\n')]):

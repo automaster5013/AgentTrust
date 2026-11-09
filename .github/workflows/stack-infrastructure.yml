@@ -218,6 +218,10 @@ jobs:
         run: python scripts/stack-store-queue-probe-test.py -v > queue-recovery-probe-normal.log 2>&1
       - name: Verify optimized recovery queue guards
         run: python -O scripts/stack-store-queue-probe-test.py -v > queue-recovery-probe-optimized.log 2>&1
+      - name: Verify offline model response guards
+        run: python scripts/stack-extra-history-test.py ExtraHistory.test_offline_probe_checks_done_and_never_prints_response ExtraHistory.test_offline_probe_rejects_unfinished_response -v > offline-model-probe-normal.log 2>&1
+      - name: Verify optimized offline model response guards
+        run: python -O scripts/stack-extra-history-test.py ExtraHistory.test_offline_probe_checks_done_and_never_prints_response ExtraHistory.test_offline_probe_rejects_unfinished_response -v > offline-model-probe-optimized.log 2>&1
       - name: Verify source security on the disposable Linux runner
         if: runner.os == 'Linux'
         run: |
@@ -292,6 +296,8 @@ jobs:
             observability-setup-optimized.log
             queue-recovery-probe-normal.log
             queue-recovery-probe-optimized.log
+            offline-model-probe-normal.log
+            offline-model-probe-optimized.log
             .local/stack-security-source-*/summary.json
             .local/stack-security-source-*/reports/semgrep.json
             .local/stack-security-source-*/reports/gitleaks.json

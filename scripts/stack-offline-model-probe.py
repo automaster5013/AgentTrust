@@ -9,8 +9,15 @@ def main():
  try:
   opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),RefuseRedirect())
   request=urllib.request.Request('http://127.0.0.1:11434/api/generate',data=json.dumps(PAYLOAD).encode(),headers={'Content-Type':'application/json'})
-  with opener.open(request,timeout=120) as response:raw=response.read(131073);assert response.status==200 and len(raw)<=131072;answer=json.loads(raw)
-  assert answer['done'] is True and answer['model']==PAYLOAD['model'] and isinstance(answer['response'],str) and answer['response'].strip() and 0<answer['eval_count']<=16
+  with opener.open(request,timeout=120) as response:
+   raw=response.read(131073)
+   if response.status!=200 or len(raw)>131072:
+    raise AssertionError
+   answer=json.loads(raw)
+  if not (answer['done'] is True and answer['model']==PAYLOAD['model']
+          and isinstance(answer['response'],str) and answer['response'].strip()
+          and 0<answer['eval_count']<=16):
+   raise AssertionError
   report.update(completed=True,offlineInferenceVerified=True,outputTokens=answer['eval_count'])
  except urllib.error.HTTPError as error:
   raw=error.read(4097);message=''
