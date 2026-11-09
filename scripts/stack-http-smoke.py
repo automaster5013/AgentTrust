@@ -1,4 +1,7 @@
 """Real HTTP contract checks against isolated Spring/PostgreSQL stack. Never prints credentials."""
+if not __debug__:
+    raise SystemExit("HTTP smoke test requires Python assertions to be enabled")
+
 import argparse,concurrent.futures,http.cookiejar,json,pathlib,urllib.request,urllib.error,urllib.parse,uuid,datetime,time
 p=argparse.ArgumentParser();p.add_argument('--base',default='http://127.0.0.1:4321');p.add_argument('--credentials',default='.local/stack/demo-credentials.json');p.add_argument('--legacy-core-return',action='store_true');args=p.parse_args();assert args.base in ['http://127.0.0.1:4321','http://127.0.0.1:4320'];base=args.base;prefix='/backend/' if base.endswith('4320') else '/api/'
 if args.legacy_core_return:
