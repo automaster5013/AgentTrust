@@ -1,4 +1,7 @@
 """Database-enforced tenant and append-only boundaries; every test rolls back."""
+if not __debug__:
+    raise SystemExit("Database boundary smoke test requires Python assertions to be enabled")
+
 import json,pathlib,subprocess,uuid
 root=pathlib.Path(__file__).resolve().parent.parent
 def run(args,**kwargs):return subprocess.run(args,cwd=root,capture_output=True,text=True,check=True,**kwargs).stdout

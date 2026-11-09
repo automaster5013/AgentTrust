@@ -378,6 +378,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_oidc_client_contract_mode.py -v > oidc-client-contract-mode-normal.log 2>&1
       - name: Verify optimized oidc client contract mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_oidc_client_contract_mode.py -v > oidc-client-contract-mode-optimized.log 2>&1
+      - name: Verify database boundary mode refusal
+        run: python -m unittest discover -s scripts -p test_stack_database_mode.py -v > database-mode-normal.log 2>&1
+      - name: Verify optimized database boundary mode refusal
+        run: python -O -m unittest discover -s scripts -p test_stack_database_mode.py -v > database-mode-optimized.log 2>&1
       - name: Verify queue trace mode refusal
         run: python -m unittest discover -s scripts -p test_stack_queue_trace_mode.py -v > queue-trace-mode-normal.log 2>&1
       - name: Verify optimized queue trace mode refusal
@@ -540,6 +544,8 @@ jobs:
             observability-mode-optimized.log
             oidc-client-contract-mode-normal.log
             oidc-client-contract-mode-optimized.log
+            database-mode-normal.log
+            database-mode-optimized.log
             queue-trace-mode-normal.log
             queue-trace-mode-optimized.log
             prometheus-smoke-mode-normal.log
