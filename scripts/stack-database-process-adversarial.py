@@ -3,6 +3,10 @@
 Never restarts source services or mounts original volumes. Generated fixture
 credentials remain private and are removed only after owned resources clean up.
 """
+# The rehearsal relies on assertions for fixture ownership and cleanup.
+if not __debug__:
+    raise SystemExit('Database process rehearsal requires Python assertions to be enabled')
+
 import argparse,datetime,json,os,pathlib,re,secrets,subprocess,time,uuid
 from stack_pending_workspace_probe import verify as verify_pending_scopes
 from stack_database_role_probe import verify as verify_role_drift

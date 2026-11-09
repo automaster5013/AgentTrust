@@ -166,6 +166,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_infrastructure_probe_mode.py -v > infrastructure-mode-normal.log 2>&1
       - name: Verify optimized infrastructure probe mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_infrastructure_probe_mode.py -v > infrastructure-mode-optimized.log 2>&1
+      - name: Verify database process rehearsal mode refusal
+        run: python -m unittest discover -s scripts -p test_stack_database_process_mode.py -v > database-process-mode-normal.log 2>&1
+      - name: Verify optimized database process rehearsal mode refusal
+        run: python -O -m unittest discover -s scripts -p test_stack_database_process_mode.py -v > database-process-mode-optimized.log 2>&1
       - name: Verify source security on the disposable Linux runner
         if: runner.os == 'Linux'
         run: |
@@ -214,6 +218,8 @@ jobs:
             dependency-policy-optimized.log
             infrastructure-mode-normal.log
             infrastructure-mode-optimized.log
+            database-process-mode-normal.log
+            database-process-mode-optimized.log
             .local/stack-security-source-*/summary.json
             .local/stack-security-source-*/reports/semgrep.json
             .local/stack-security-source-*/reports/gitleaks.json
