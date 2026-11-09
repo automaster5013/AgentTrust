@@ -338,6 +338,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_run_history_mode.py -v > run-history-mode-normal.log 2>&1
       - name: Verify optimized run history mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_run_history_mode.py -v > run-history-mode-optimized.log 2>&1
+      - name: Verify run history search execution mode
+        run: python -m unittest discover -s scripts -p test_stack_run_history_search_mode.py -v > run-history-search-mode-normal.log 2>&1
+      - name: Verify optimized run history search execution mode
+        run: python -O -m unittest discover -s scripts -p test_stack_run_history_search_mode.py -v > run-history-search-mode-optimized.log 2>&1
       - name: Verify queue trace mode refusal
         run: python -m unittest discover -s scripts -p test_stack_queue_trace_mode.py -v > queue-trace-mode-normal.log 2>&1
       - name: Verify optimized queue trace mode refusal
@@ -480,6 +484,8 @@ jobs:
             request-resolution-mode-optimized.log
             run-history-mode-normal.log
             run-history-mode-optimized.log
+            run-history-search-mode-normal.log
+            run-history-search-mode-optimized.log
             queue-trace-mode-normal.log
             queue-trace-mode-optimized.log
             prometheus-smoke-mode-normal.log

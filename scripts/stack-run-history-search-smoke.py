@@ -1,13 +1,16 @@
 """Hosted-only read-only history search; compare actual API pages with scoped DB outcomes."""
 import argparse,base64,datetime,json,pathlib,struct,subprocess,uuid
-from stack_ci_return_guard import require_hosted
-from stack_test_client import StackClient
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--execute',action='store_true');args=parser.parse_args()
     if not args.execute:
         print(json.dumps({'completed':True,'executed':False,'requires':'disposable GitHub-hosted --execute','businessDataWrites':False}));return 0
+    if not __debug__:
+        raise SystemExit("Run history search smoke test requires Python assertions to be enabled")
+    from stack_ci_return_guard import require_hosted
+    from stack_test_client import StackClient
+
     try: require_hosted(ROOT)
     except ValueError:
         print(json.dumps({'completed':False,'executed':False,'code':'HOSTED_SYNTHETIC_HISTORY_SEARCH_ONLY','businessDataWrites':False}));return 1
