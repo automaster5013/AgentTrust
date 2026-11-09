@@ -1,4 +1,7 @@
 """Read only existing evaluation reviews through scoped pages; own sessions only."""
+if not __debug__:
+    raise SystemExit("Run review history smoke test requires Python assertions to be enabled")
+
 import base64,datetime,json,pathlib,struct,uuid
 from stack_test_client import StackClient
 ROOT=pathlib.Path(__file__).resolve().parent.parent

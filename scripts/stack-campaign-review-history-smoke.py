@@ -1,4 +1,7 @@
 """Read-only scoped review-history checks using existing campaigns and owned sessions."""
+if not __debug__:
+    raise SystemExit("Campaign review history smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,uuid,base64,struct
 from stack_test_client import StackClient
 ROOT=pathlib.Path(__file__).resolve().parent.parent

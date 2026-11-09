@@ -326,6 +326,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_execution_profile_mode.py -v > execution-profile-mode-normal.log 2>&1
       - name: Verify optimized execution profile mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_execution_profile_mode.py -v > execution-profile-mode-optimized.log 2>&1
+      - name: Verify review history mode refusal
+        run: python -m unittest discover -s scripts -p test_stack_review_history_mode.py -v > review-history-mode-normal.log 2>&1
+      - name: Verify optimized review history mode refusal
+        run: python -O -m unittest discover -s scripts -p test_stack_review_history_mode.py -v > review-history-mode-optimized.log 2>&1
       - name: Verify queue trace mode refusal
         run: python -m unittest discover -s scripts -p test_stack_queue_trace_mode.py -v > queue-trace-mode-normal.log 2>&1
       - name: Verify optimized queue trace mode refusal
@@ -462,6 +466,8 @@ jobs:
             provider-usage-mode-optimized.log
             execution-profile-mode-normal.log
             execution-profile-mode-optimized.log
+            review-history-mode-normal.log
+            review-history-mode-optimized.log
             queue-trace-mode-normal.log
             queue-trace-mode-optimized.log
             prometheus-smoke-mode-normal.log
