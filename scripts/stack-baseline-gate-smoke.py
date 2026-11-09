@@ -1,4 +1,7 @@
 """Own synthetic campaigns only: immutable baseline admission, actual OPA and signed expiry."""
+if not __debug__:
+    raise SystemExit("Baseline gate smoke test requires Python assertions to be enabled")
+
 import base64,datetime,hashlib,json,pathlib,secrets,subprocess,time,uuid
 from stack_test_client import StackClient
 from stack_business_fingerprint import sql
