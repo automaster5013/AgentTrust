@@ -178,6 +178,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_gate_signing_setup_mode.py -v > gate-signing-setup-mode-normal.log 2>&1
       - name: Verify optimized gate signing setup mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_gate_signing_setup_mode.py -v > gate-signing-setup-mode-optimized.log 2>&1
+      - name: Verify identity setup mode refusal
+        run: python -m unittest discover -s scripts -p test_stack_identity_setup_mode.py -v > identity-setup-mode-normal.log 2>&1
+      - name: Verify optimized identity setup mode refusal
+        run: python -O -m unittest discover -s scripts -p test_stack_identity_setup_mode.py -v > identity-setup-mode-optimized.log 2>&1
       - name: Verify source security on the disposable Linux runner
         if: runner.os == 'Linux'
         run: |
@@ -232,6 +236,8 @@ jobs:
             approval-expiry-mode-optimized.log
             gate-signing-setup-mode-normal.log
             gate-signing-setup-mode-optimized.log
+            identity-setup-mode-normal.log
+            identity-setup-mode-optimized.log
             .local/stack-security-source-*/summary.json
             .local/stack-security-source-*/reports/semgrep.json
             .local/stack-security-source-*/reports/gitleaks.json

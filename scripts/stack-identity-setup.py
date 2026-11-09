@@ -1,4 +1,7 @@
 """Prepare an isolated Keycloak database and four synthetic OIDC identities."""
+if not __debug__:
+    raise SystemExit("Identity setup requires Python assertions to be enabled")
+
 import json,os,pathlib,re,secrets,subprocess,uuid
 root=pathlib.Path(__file__).resolve().parent.parent;directory=root/'.local/stack'
 def command(args,**kwargs):return subprocess.run(args,cwd=root,capture_output=True,text=True,check=True,**kwargs).stdout
