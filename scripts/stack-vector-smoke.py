@@ -1,4 +1,7 @@
 """Real pgvector nearest-neighbor reads, immutable scoped indexing and recovery."""
+if not __debug__:
+    raise SystemExit("Vector smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,subprocess,time,uuid,traceback
 from stack_test_client import StackClient
 from stack_compose import stack_compose
