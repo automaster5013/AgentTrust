@@ -1,4 +1,7 @@
 """Actual internal Promptfoo service proof; no caller output or credentials printed."""
+if not __debug__:
+    raise SystemExit("Quality verifier smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,subprocess,uuid
 from stack_compose import stack_compose
 root=pathlib.Path(__file__).resolve().parent.parent

@@ -390,6 +390,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_promptfoo_mode.py -v > promptfoo-mode-normal.log 2>&1
       - name: Verify optimized promptfoo mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_promptfoo_mode.py -v > promptfoo-mode-optimized.log 2>&1
+      - name: Verify quality verifier mode refusal
+        run: python -m unittest discover -s scripts -p test_stack_quality_verifier_mode.py -v > quality-verifier-mode-normal.log 2>&1
+      - name: Verify optimized quality verifier mode refusal
+        run: python -O -m unittest discover -s scripts -p test_stack_quality_verifier_mode.py -v > quality-verifier-mode-optimized.log 2>&1
       - name: Verify queue trace mode refusal
         run: python -m unittest discover -s scripts -p test_stack_queue_trace_mode.py -v > queue-trace-mode-normal.log 2>&1
       - name: Verify optimized queue trace mode refusal
@@ -558,6 +562,8 @@ jobs:
             vector-mode-optimized.log
             promptfoo-mode-normal.log
             promptfoo-mode-optimized.log
+            quality-verifier-mode-normal.log
+            quality-verifier-mode-optimized.log
             queue-trace-mode-normal.log
             queue-trace-mode-optimized.log
             prometheus-smoke-mode-normal.log
