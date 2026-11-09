@@ -1,4 +1,7 @@
 """Verify fresh nonroot pgvector initialization in uniquely owned disposable fixtures."""
+if not __debug__:
+    raise SystemExit("Database initialization smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,secrets,subprocess,time,uuid,os,re
 root=pathlib.Path(__file__).resolve().parent.parent;identifier=str(uuid.uuid4());name='agenttrust-stack-db-fixture-'+identifier
 reference=os.environ.get('STACK_DATABASE_IMAGE','agenttrust-database:local');assert reference=='agenttrust-database:local' or re.fullmatch(r'ghcr\.io/[a-z0-9-]+/agenttrust-database@sha256:[a-f0-9]{64}',reference)
