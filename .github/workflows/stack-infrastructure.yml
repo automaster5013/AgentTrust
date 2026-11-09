@@ -406,6 +406,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_version_history_search_fixture_mode.py -v > version-history-search-fixture-mode-normal.log 2>&1
       - name: Verify optimized version history search fixture mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_version_history_search_fixture_mode.py -v > version-history-search-fixture-mode-optimized.log 2>&1
+      - name: Verify mocked historical log bounds
+        run: python -m unittest discover -s scripts -p test_stack_logs_read_mode.py -v > logs-read-mode-normal.log 2>&1
+      - name: Verify optimized historical log bounds
+        run: python -O -m unittest discover -s scripts -p test_stack_logs_read_mode.py -v > logs-read-mode-optimized.log 2>&1
       - name: Verify queue trace mode refusal
         run: python -m unittest discover -s scripts -p test_stack_queue_trace_mode.py -v > queue-trace-mode-normal.log 2>&1
       - name: Verify optimized queue trace mode refusal
@@ -582,6 +586,8 @@ jobs:
             campaign-observation-matrix-mode-optimized.log
             version-history-search-fixture-mode-normal.log
             version-history-search-fixture-mode-optimized.log
+            logs-read-mode-normal.log
+            logs-read-mode-optimized.log
             queue-trace-mode-normal.log
             queue-trace-mode-optimized.log
             prometheus-smoke-mode-normal.log
