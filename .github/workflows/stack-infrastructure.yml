@@ -314,6 +314,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_current_gate_anchor_mode.py -v > current-gate-anchor-mode-normal.log 2>&1
       - name: Verify optimized current gate anchor mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_current_gate_anchor_mode.py -v > current-gate-anchor-mode-optimized.log 2>&1
+      - name: Verify mocked Console health probe
+        run: python -m unittest discover -s scripts -p test_stack_console_health_probe.py -v > console-health-probe-normal.log 2>&1
+      - name: Verify optimized mocked Console health probe
+        run: python -O -m unittest discover -s scripts -p test_stack_console_health_probe.py -v > console-health-probe-optimized.log 2>&1
       - name: Verify queue trace mode refusal
         run: python -m unittest discover -s scripts -p test_stack_queue_trace_mode.py -v > queue-trace-mode-normal.log 2>&1
       - name: Verify optimized queue trace mode refusal
@@ -444,6 +448,8 @@ jobs:
             stack-admission-mode-optimized.log
             current-gate-anchor-mode-normal.log
             current-gate-anchor-mode-optimized.log
+            console-health-probe-normal.log
+            console-health-probe-optimized.log
             queue-trace-mode-normal.log
             queue-trace-mode-optimized.log
             prometheus-smoke-mode-normal.log
