@@ -278,6 +278,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_signed_soak_mode.py -v > signed-soak-mode-normal.log 2>&1
       - name: Verify optimized signed review soak mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_signed_soak_mode.py -v > signed-soak-mode-optimized.log 2>&1
+      - name: Verify campaign receipt mode refusal
+        run: python -m unittest discover -s scripts -p test_stack_campaign_receipt_mode.py -v > campaign-receipt-mode-normal.log 2>&1
+      - name: Verify optimized campaign receipt mode refusal
+        run: python -O -m unittest discover -s scripts -p test_stack_campaign_receipt_mode.py -v > campaign-receipt-mode-optimized.log 2>&1
       - name: Verify queue trace mode refusal
         run: python -m unittest discover -s scripts -p test_stack_queue_trace_mode.py -v > queue-trace-mode-normal.log 2>&1
       - name: Verify optimized queue trace mode refusal
@@ -390,6 +394,8 @@ jobs:
             database-process-smoke-mode-optimized.log
             signed-soak-mode-normal.log
             signed-soak-mode-optimized.log
+            campaign-receipt-mode-normal.log
+            campaign-receipt-mode-optimized.log
             queue-trace-mode-normal.log
             queue-trace-mode-optimized.log
             prometheus-smoke-mode-normal.log

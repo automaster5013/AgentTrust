@@ -1,4 +1,7 @@
 """Real Ed25519 observations; historical signatures never override current rejection."""
+if not __debug__:
+    raise SystemExit("Campaign receipt smoke test requires Python assertions to be enabled")
+
 import base64,datetime,json,pathlib,subprocess,sys,time,traceback,uuid
 from stack_test_client import StackClient
 from stack_campaign_evidence import verify_parent,verify_child
