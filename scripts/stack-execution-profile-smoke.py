@@ -1,4 +1,7 @@
 """Verify installed profiles, legacy replay and actual drift refusal before reserving a model."""
+if not __debug__:
+    raise SystemExit("Execution profile smoke test requires Python assertions to be enabled")
+
 import datetime,hashlib,json,pathlib,subprocess,time,traceback,uuid
 from stack_test_client import StackClient
 root=pathlib.Path(__file__).resolve().parent.parent;clients=[];stage='login';report={'completed':False,'checks':[],'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'privateConfigurationRead':False,'paidApiCalls':False,'legacyServicesChanged':False,'fixtureRowsImmutableAndRetained':True}
