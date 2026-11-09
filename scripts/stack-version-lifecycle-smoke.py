@@ -1,4 +1,7 @@
 """Synthetic scoped retirement, historical integrity and signed fail-closed integration."""
+if not __debug__:
+    raise SystemExit("Version lifecycle smoke test requires Python assertions to be enabled")
+
 import base64,datetime,json,pathlib,secrets,subprocess,time,uuid
 import concurrent.futures,threading
 from stack_test_client import StackClient
