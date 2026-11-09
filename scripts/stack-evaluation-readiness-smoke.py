@@ -1,4 +1,7 @@
 """Actual OIDC read-only dependency observation, optionally with owned worker interruption."""
+if not __debug__:
+    raise SystemExit("Evaluation readiness smoke test requires Python assertions to be enabled")
+
 import argparse,datetime,json,pathlib,subprocess,time,uuid
 from stack_test_client import StackClient
 from stack_business_fingerprint import fingerprint,sql
