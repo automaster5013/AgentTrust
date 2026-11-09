@@ -1,4 +1,7 @@
 """Real read-only current gate signatures with independently supplied public anchors."""
+if not __debug__:
+    raise SystemExit("Current gate anchor smoke test requires Python assertions to be enabled")
+
 import base64,datetime,json,pathlib,secrets,subprocess,sys,tempfile,uuid
 from stack_campaign_evidence import bounded_json,identifier
 from stack_business_fingerprint import fingerprint
