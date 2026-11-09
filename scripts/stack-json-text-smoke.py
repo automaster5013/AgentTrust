@@ -1,4 +1,7 @@
 """Reject unstoreable JSON text through actual OIDC/BFF without business writes."""
+if not __debug__:
+    raise SystemExit("JSON text smoke test requires Python assertions to be enabled")
+
 import argparse,datetime,http.client,json,pathlib,time,urllib.error,urllib.request,uuid
 from stack_test_client import StackClient
 from stack_business_fingerprint import fingerprint,sql
