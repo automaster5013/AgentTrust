@@ -1,4 +1,7 @@
 """Read-only registry pagination compared with actual scoped PostgreSQL rows."""
+if not __debug__:
+    raise SystemExit("Version history smoke test requires Python assertions to be enabled")
+
 import base64,datetime,json,pathlib,struct,subprocess,uuid
 from stack_test_client import StackClient
 from stack_business_fingerprint import fingerprint,sql
