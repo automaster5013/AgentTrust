@@ -274,6 +274,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_database_process_smoke_mode.py -v > database-process-smoke-mode-normal.log 2>&1
       - name: Verify optimized database process smoke mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_database_process_smoke_mode.py -v > database-process-smoke-mode-optimized.log 2>&1
+      - name: Verify signed review soak mode refusal
+        run: python -m unittest discover -s scripts -p test_stack_signed_soak_mode.py -v > signed-soak-mode-normal.log 2>&1
+      - name: Verify optimized signed review soak mode refusal
+        run: python -O -m unittest discover -s scripts -p test_stack_signed_soak_mode.py -v > signed-soak-mode-optimized.log 2>&1
       - name: Verify queue trace mode refusal
         run: python -m unittest discover -s scripts -p test_stack_queue_trace_mode.py -v > queue-trace-mode-normal.log 2>&1
       - name: Verify optimized queue trace mode refusal
@@ -384,6 +388,8 @@ jobs:
             database-init-mode-optimized.log
             database-process-smoke-mode-normal.log
             database-process-smoke-mode-optimized.log
+            signed-soak-mode-normal.log
+            signed-soak-mode-optimized.log
             queue-trace-mode-normal.log
             queue-trace-mode-optimized.log
             prometheus-smoke-mode-normal.log

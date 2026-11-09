@@ -1,4 +1,7 @@
 """Repeated independent signed read-only reviews; no evaluation or approval writes."""
+if not __debug__:
+    raise SystemExit("Signed review soak requires Python assertions to be enabled")
+
 import argparse,base64,datetime,hashlib,json,pathlib,shutil,subprocess,sys,time,uuid
 from stack_campaign_evidence import bounded_json,identifier
 from stack_business_fingerprint import fingerprint
