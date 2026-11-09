@@ -162,6 +162,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_dependency_policy_guards.py -v > dependency-policy-normal.log 2>&1
       - name: Verify optimized offline dependency policy guards
         run: python -O -m unittest discover -s scripts -p test_stack_dependency_policy_guards.py -v > dependency-policy-optimized.log 2>&1
+      - name: Verify offline infrastructure probe mode refusal
+        run: python -m unittest discover -s scripts -p test_stack_infrastructure_probe_mode.py -v > infrastructure-mode-normal.log 2>&1
+      - name: Verify optimized infrastructure probe mode refusal
+        run: python -O -m unittest discover -s scripts -p test_stack_infrastructure_probe_mode.py -v > infrastructure-mode-optimized.log 2>&1
       - name: Verify source security on the disposable Linux runner
         if: runner.os == 'Linux'
         run: |
@@ -208,6 +212,8 @@ jobs:
             security-images-optimized.log
             dependency-policy-normal.log
             dependency-policy-optimized.log
+            infrastructure-mode-normal.log
+            infrastructure-mode-optimized.log
             .local/stack-security-source-*/summary.json
             .local/stack-security-source-*/reports/semgrep.json
             .local/stack-security-source-*/reports/gitleaks.json

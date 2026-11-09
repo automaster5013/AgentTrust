@@ -1,4 +1,8 @@
 """Render/validate with synthetic values and mocked providers. Never reads a kubeconfig or calls a cluster."""
+# This probe relies on assertions throughout its offline verification flow.
+if not __debug__:
+    raise SystemExit('Infrastructure probe requires Python assertions to be enabled')
+
 import copy,decimal,hashlib,importlib.util,json,pathlib,re,shutil,subprocess,tempfile,yaml
 source=pathlib.Path('/src');output=pathlib.Path('/out');report={'completed':False,'checks':[],'clusterContacted':False,'resourcesApplied':False,'credentialsMounted':False}
 work=None
