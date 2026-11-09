@@ -1,4 +1,7 @@
 """Actual v3 Java observations and complete offline baseline chains; own fixtures only."""
+if not __debug__:
+    raise SystemExit("Baseline bundle smoke test requires Python assertions to be enabled")
+
 import base64,datetime,json,pathlib,subprocess,uuid
 from stack_test_client import StackClient
 ROOT=pathlib.Path(__file__).resolve().parent.parent
