@@ -1,4 +1,7 @@
 """Read existing campaign history through OIDC/BFF and compare scoped PostgreSQL order."""
+if not __debug__:
+    raise SystemExit("Campaign history smoke test requires Python assertions to be enabled")
+
 import base64,datetime,json,pathlib,struct,subprocess,uuid
 from stack_test_client import StackClient
 ROOT=pathlib.Path(__file__).resolve().parent.parent

@@ -354,6 +354,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_version_lifecycle_mode.py -v > version-lifecycle-mode-normal.log 2>&1
       - name: Verify optimized version lifecycle mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_version_lifecycle_mode.py -v > version-lifecycle-mode-optimized.log 2>&1
+      - name: Verify campaign history mode refusal
+        run: python -m unittest discover -s scripts -p test_stack_campaign_history_mode.py -v > campaign-history-mode-normal.log 2>&1
+      - name: Verify optimized campaign history mode refusal
+        run: python -O -m unittest discover -s scripts -p test_stack_campaign_history_mode.py -v > campaign-history-mode-optimized.log 2>&1
       - name: Verify queue trace mode refusal
         run: python -m unittest discover -s scripts -p test_stack_queue_trace_mode.py -v > queue-trace-mode-normal.log 2>&1
       - name: Verify optimized queue trace mode refusal
@@ -504,6 +508,8 @@ jobs:
             version-history-mode-optimized.log
             version-lifecycle-mode-normal.log
             version-lifecycle-mode-optimized.log
+            campaign-history-mode-normal.log
+            campaign-history-mode-optimized.log
             queue-trace-mode-normal.log
             queue-trace-mode-optimized.log
             prometheus-smoke-mode-normal.log
