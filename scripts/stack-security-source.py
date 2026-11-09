@@ -1,4 +1,7 @@
 """Scan committed history and tracked source only; never mount local secrets."""
+if not __debug__:
+    raise SystemExit("Source security scan requires Python assertions to be enabled")
+
 import datetime,json,os,pathlib,subprocess,tarfile,uuid,traceback
 from stack_scan_work import OwnedScanWork
 root=pathlib.Path(__file__).resolve().parent.parent
