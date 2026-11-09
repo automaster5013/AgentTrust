@@ -11,16 +11,22 @@ async def exercise(phase):
   if phase=='admit':
    stage='check-empty-restored-stream'
    existing=await stream.stream_info(name);consumer=await stream.consumer_info(name,durable)
-   assert existing.state.messages==0 and consumer.num_pending==0 and consumer.num_ack_pending==0
+   if existing.state.messages or consumer.num_pending or consumer.num_ack_pending:
+    raise AssertionError
    stage='publish-owned-pending-message'
    await stream.publish(subject,body)
-   info=await stream.consumer_info(name,durable);assert info.num_pending==1
+   info=await stream.consumer_info(name,durable)
+   if info.num_pending!=1:
+    raise AssertionError
    return {'completed':True,'pendingSyntheticMessages':1}
   stage='fetch-restored-durable-message';subscription=await stream.pull_subscribe(subject,durable=durable,stream=name)
-  messages=await subscription.fetch(batch=1,timeout=10);assert len(messages)==1 and messages[0].data==body
+  messages=await subscription.fetch(batch=1,timeout=10)
+  if len(messages)!=1 or messages[0].data!=body:
+   raise AssertionError
   await messages[0].ack_sync(timeout=5);info=await stream.consumer_info(name,durable)
   current=await stream.stream_info(name)
-  assert info.num_pending==0 and info.num_ack_pending==0 and info.ack_floor.stream_seq==current.state.last_seq
+  if info.num_pending or info.num_ack_pending or info.ack_floor.stream_seq!=current.state.last_seq:
+   raise AssertionError
   return {'completed':True,'exactPayloadAndDurableAckVerified':True}
  finally:await connection.close()
 
