@@ -1,6 +1,22 @@
 """Create Syft SBOMs and Trivy reports for exact exported image IDs, without a Docker socket."""
 import datetime,hashlib,json,os,pathlib,re,shutil,subprocess,uuid,traceback,importlib.util
 from stack_observation_policy import scanner_disk_budget
+
+
+def require(condition):
+    if not condition:
+        raise ValueError('Image scan evidence or scope refused')
+
+
+names={'core-api':'STACK_CORE_IMAGE','ai-worker':'STACK_WORKER_IMAGE','console':'STACK_CONSOLE_IMAGE','console-https':'STACK_HTTPS_CONSOLE_IMAGE','opa':'STACK_OPA_IMAGE','identity':'STACK_IDENTITY_IMAGE','gateway':'STACK_GATEWAY_IMAGE','object-store':'STACK_OBJECT_IMAGE','database':'STACK_DATABASE_IMAGE','local-model':'STACK_MODEL_IMAGE','messaging':'STACK_MESSAGING_IMAGE','telemetry':'STACK_TELEMETRY_IMAGE','tempo':'STACK_TEMPO_IMAGE','loki':'STACK_LOKI_IMAGE','prometheus':'STACK_PROMETHEUS_IMAGE', 'quality-verifier':'STACK_QUALITY_VERIFIER_IMAGE'}
+if os.getenv('AGENTTRUST_AUDIT_IMAGE_SCOPE') == '1':
+ require(os.getenv('GITHUB_ACTIONS') == 'true' and os.getenv('GITHUB_REPOSITORY') == 'automaster5013/AgentTrust')
+ require(os.getenv('GITHUB_REF') == 'refs/heads/codex/audit-release-integration-20261104' and os.getenv('GITHUB_EVENT_NAME') == 'workflow_dispatch')
+ names={name:names[name] for name in ('core-api','gateway','console')}
+ require(all(os.environ.get(env) for env in names.values()))
+registry=any(name in os.environ for name in names.values())
+if registry:require(all(re.fullmatch(r'ghcr\.io/[a-z0-9-]+/agenttrust-'+name+r'@sha256:[a-f0-9]{64}',os.environ.get(env,'')) for name,env in names.items()))
+
 _scratch_spec=importlib.util.spec_from_file_location('scan_scratch',pathlib.Path(__file__).with_name('stack-scan-scratch.py'))
 _scratch_module=importlib.util.module_from_spec(_scratch_spec);_scratch_spec.loader.exec_module(_scratch_module)
 root=pathlib.Path(__file__).resolve().parent.parent
@@ -10,19 +26,12 @@ scratch=_scratch_module.ScanScratch(inputs)
 if os.name!='nt':
  for path in [output,cache,temporary]:path.chmod(0o777)
 report={'completed':False,'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'images':{},'dockerSocketMounted':False,'rawSecretsPrinted':False,'ignoredUnfixedVulnerabilities':False,'reportsDirectory':str(output)}
-names={'core-api':'STACK_CORE_IMAGE','ai-worker':'STACK_WORKER_IMAGE','console':'STACK_CONSOLE_IMAGE','console-https':'STACK_HTTPS_CONSOLE_IMAGE','opa':'STACK_OPA_IMAGE','identity':'STACK_IDENTITY_IMAGE','gateway':'STACK_GATEWAY_IMAGE','object-store':'STACK_OBJECT_IMAGE','database':'STACK_DATABASE_IMAGE','local-model':'STACK_MODEL_IMAGE','messaging':'STACK_MESSAGING_IMAGE','telemetry':'STACK_TELEMETRY_IMAGE','tempo':'STACK_TEMPO_IMAGE','loki':'STACK_LOKI_IMAGE','prometheus':'STACK_PROMETHEUS_IMAGE', 'quality-verifier':'STACK_QUALITY_VERIFIER_IMAGE'}
-if os.getenv('AGENTTRUST_AUDIT_IMAGE_SCOPE') == '1':
- assert os.getenv('GITHUB_ACTIONS') == 'true' and os.getenv('GITHUB_REPOSITORY') == 'automaster5013/AgentTrust'
- assert os.getenv('GITHUB_REF') == 'refs/heads/codex/audit-release-integration-20261104' and os.getenv('GITHUB_EVENT_NAME') == 'workflow_dispatch'
- names={name:names[name] for name in ('core-api','gateway','console')}
- assert all(os.environ.get(env) for env in names.values())
 def run(args,**kwargs):return subprocess.run(args,cwd=root,capture_output=True,text=True,encoding='utf-8',errors='replace',check=True,**kwargs)
 def scanner(args,network):
  return subprocess.run(['docker','run','--rm','--network',network,'--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--tmpfs','/tmp:size=1g,mode=1777','--memory','4g','--cpus','2','--pids-limit','128','-e','XDG_CACHE_HOME=/tmp/cache','-e','TMPDIR=/cache/tmp','--mount','type=bind,source='+str(inputs)+',target=/in,readonly','--mount','type=bind,source='+str(output)+',target=/out','--mount','type=bind,source='+str(cache)+',target=/cache','agenttrust-security:local']+args,cwd=root,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=600)
 try:
  report['revision']=run(['git','rev-parse','HEAD']).stdout.strip()
- registry=any(name in os.environ for name in names.values());report['registryImageReferences']=registry
- if registry:assert all(re.fullmatch(r'ghcr\.io/[a-z0-9-]+/agenttrust-'+name+r'@sha256:[a-f0-9]{64}',os.environ.get(env,'')) for name,env in names.items())
+ report['registryImageReferences']=registry
  report['currentStage']='image-and-disk-preflight';identities={};archive_estimate=0
  for name,env in names.items():
   reference=os.environ[env] if registry else 'agenttrust-'+name+':local';image=json.loads(run(['docker','image','inspect',reference]).stdout)[0]
@@ -40,11 +49,11 @@ try:
   with archive.open('rb') as stream:checksum=hashlib.file_digest(stream,'sha256').hexdigest()
   if not 0<archive.stat().st_size<=estimate:raise ValueError('Image archive exceeds bounded estimate')
   report['currentImage']=name;report['currentStage']='sbom'
-  sbom=scanner(['syft','docker-archive:/in/'+name+'.tar','-o','cyclonedx-json=/out/'+name+'.cdx.json','--quiet'],'none');(output/(name+'.syft.log')).write_text(sbom.stderr,encoding='utf-8');report['currentTool']='syft';report['currentToolExitCode']=sbom.returncode;assert sbom.returncode==0
-  inventory=json.loads((output/(name+'.cdx.json')).read_text(encoding='utf-8'));assert inventory['bomFormat']=='CycloneDX' and len(inventory.get('components',[]))>0
+  sbom=scanner(['syft','docker-archive:/in/'+name+'.tar','-o','cyclonedx-json=/out/'+name+'.cdx.json','--quiet'],'none');(output/(name+'.syft.log')).write_text(sbom.stderr,encoding='utf-8');report['currentTool']='syft';report['currentToolExitCode']=sbom.returncode;require(sbom.returncode==0)
+  inventory=json.loads((output/(name+'.cdx.json')).read_text(encoding='utf-8'));require(inventory['bomFormat']=='CycloneDX' and len(inventory.get('components',[]))>0)
   report['currentStage']='vulnerabilities'
-  scan=scanner(['trivy','image','--input','/in/'+name+'.tar','--cache-dir','/cache','--scanners','vuln','--severity','HIGH,CRITICAL','--format','json','--output','/out/'+name+'.trivy.json','--exit-code','1','--timeout','8m','--no-progress','--quiet'],'bridge');(output/(name+'.trivy.log')).write_text(scan.stderr,encoding='utf-8');assert scan.returncode in [0,1] and (output/(name+'.trivy.json')).is_file()
-  value=json.loads((output/(name+'.trivy.json')).read_text(encoding='utf-8'));assert value.get('SchemaVersion')==2;findings=[v for result in value.get('Results',[]) for v in result.get('Vulnerabilities') or []];assert all(row['Severity'] in ['HIGH','CRITICAL'] for row in findings)
+  scan=scanner(['trivy','image','--input','/in/'+name+'.tar','--cache-dir','/cache','--scanners','vuln','--severity','HIGH,CRITICAL','--format','json','--output','/out/'+name+'.trivy.json','--exit-code','1','--timeout','8m','--no-progress','--quiet'],'bridge');(output/(name+'.trivy.log')).write_text(scan.stderr,encoding='utf-8');require(scan.returncode in [0,1] and (output/(name+'.trivy.json')).is_file())
+  value=json.loads((output/(name+'.trivy.json')).read_text(encoding='utf-8'));require(value.get('SchemaVersion')==2);findings=[v for result in value.get('Results',[]) for v in result.get('Vulnerabilities') or []];require(all(row['Severity'] in ['HIGH','CRITICAL'] for row in findings))
   result={'reference':reference,'imageId':image_id,'archiveSha256':checksum,'components':len(inventory['components']),'highCriticalFindings':len(findings),'scannerExitCode':scan.returncode,'sbomSha256':hashlib.sha256((output/(name+'.cdx.json')).read_bytes()).hexdigest(),'vulnerabilityReportSha256':hashlib.sha256((output/(name+'.trivy.json')).read_bytes()).hexdigest()};report['images'][name]=result;print(json.dumps({'image':name,'components':result['components'],'highCriticalFindings':len(findings),'rawSecretsPrinted':False}),flush=True)
   scratch.remove(archive)
  report['completed']=set(report['images'])==set(names) and all(v['highCriticalFindings']==0 and v['scannerExitCode']==0 for v in report['images'].values())

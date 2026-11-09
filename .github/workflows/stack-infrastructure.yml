@@ -154,6 +154,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_security_sign_scope.py -v > security-sign-normal.log 2>&1
       - name: Verify optimized foreign signing scope rejection
         run: python -O -m unittest discover -s scripts -p test_stack_security_sign_scope.py -v > security-sign-optimized.log 2>&1
+      - name: Verify image scan scope rejection
+        run: python -m unittest discover -s scripts -p test_stack_security_images_scope.py -v > security-images-normal.log 2>&1
+      - name: Verify optimized image scan scope rejection
+        run: python -O -m unittest discover -s scripts -p test_stack_security_images_scope.py -v > security-images-optimized.log 2>&1
       - name: Verify source security on the disposable Linux runner
         if: runner.os == 'Linux'
         run: |
@@ -196,6 +200,8 @@ jobs:
             recovery-entrypoint-optimized.log
             security-sign-normal.log
             security-sign-optimized.log
+            security-images-normal.log
+            security-images-optimized.log
             .local/stack-security-source-*/summary.json
             .local/stack-security-source-*/reports/semgrep.json
             .local/stack-security-source-*/reports/gitleaks.json
