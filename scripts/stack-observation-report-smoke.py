@@ -1,4 +1,7 @@
 """Read existing successful Java receipt evidence; create only a new private HTML report."""
+if not __debug__:
+    raise SystemExit("Observation report smoke test requires Python assertions to be enabled")
+
 import json
 from pathlib import Path
 import subprocess

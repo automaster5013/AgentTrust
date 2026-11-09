@@ -238,6 +238,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_worker_probe_checks.py -v > worker-probe-checks-normal.log 2>&1
       - name: Verify optimized worker probe request checks
         run: python -O -m unittest discover -s scripts -p test_stack_worker_probe_checks.py -v > worker-probe-checks-optimized.log 2>&1
+      - name: Verify observation report mode refusal
+        run: python -m unittest discover -s scripts -p test_stack_observation_report_mode.py -v > observation-report-mode-normal.log 2>&1
+      - name: Verify optimized observation report mode refusal
+        run: python -O -m unittest discover -s scripts -p test_stack_observation_report_mode.py -v > observation-report-mode-optimized.log 2>&1
       - name: Verify source security on the disposable Linux runner
         if: runner.os == 'Linux'
         run: |
@@ -322,6 +326,8 @@ jobs:
             telemetry-privacy-mode-optimized.log
             worker-probe-checks-normal.log
             worker-probe-checks-optimized.log
+            observation-report-mode-normal.log
+            observation-report-mode-optimized.log
             .local/stack-security-source-*/summary.json
             .local/stack-security-source-*/reports/semgrep.json
             .local/stack-security-source-*/reports/gitleaks.json
