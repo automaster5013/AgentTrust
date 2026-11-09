@@ -1,4 +1,7 @@
 """Actual synthetic decision/approval matrix with independently verified archived observations."""
+if not __debug__:
+    raise SystemExit("Campaign observation matrix smoke test requires Python assertions to be enabled")
+
 import base64
 import concurrent.futures
 import datetime

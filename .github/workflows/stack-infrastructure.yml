@@ -398,6 +398,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_json_text_mode.py -v > json-text-mode-normal.log 2>&1
       - name: Verify optimized json text mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_json_text_mode.py -v > json-text-mode-optimized.log 2>&1
+      - name: Verify campaign observation matrix mode refusal
+        run: python -m unittest discover -s scripts -p test_stack_campaign_observation_matrix_mode.py -v > campaign-observation-matrix-mode-normal.log 2>&1
+      - name: Verify optimized campaign observation matrix mode refusal
+        run: python -O -m unittest discover -s scripts -p test_stack_campaign_observation_matrix_mode.py -v > campaign-observation-matrix-mode-optimized.log 2>&1
       - name: Verify queue trace mode refusal
         run: python -m unittest discover -s scripts -p test_stack_queue_trace_mode.py -v > queue-trace-mode-normal.log 2>&1
       - name: Verify optimized queue trace mode refusal
@@ -570,6 +574,8 @@ jobs:
             quality-verifier-mode-optimized.log
             json-text-mode-normal.log
             json-text-mode-optimized.log
+            campaign-observation-matrix-mode-normal.log
+            campaign-observation-matrix-mode-optimized.log
             queue-trace-mode-normal.log
             queue-trace-mode-optimized.log
             prometheus-smoke-mode-normal.log
