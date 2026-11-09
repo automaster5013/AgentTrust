@@ -1,4 +1,7 @@
 """Generate isolated MinIO secrets without changing any previous configuration."""
+if not __debug__:
+    raise SystemExit("Object setup requires Python assertions to be enabled")
+
 import json,os,pathlib,secrets,subprocess,re
 root=pathlib.Path(__file__).resolve().parent.parent;directory=root/'.local/stack'
 try:
