@@ -198,6 +198,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_gateway_setup_mode.py -v > gateway-setup-mode-normal.log 2>&1
       - name: Verify optimized gateway setup mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_gateway_setup_mode.py -v > gateway-setup-mode-optimized.log 2>&1
+      - name: Verify Grafana recovery metadata validation
+        run: python scripts/stack-grafana-history-test.py GrafanaRecovery.test_restored_dashboards_and_sources_must_be_queryable GrafanaRecovery.test_changed_dashboard_metadata_refused -v > grafana-recovery-probe-normal.log 2>&1
+      - name: Verify optimized Grafana recovery metadata validation
+        run: python -O scripts/stack-grafana-history-test.py GrafanaRecovery.test_restored_dashboards_and_sources_must_be_queryable GrafanaRecovery.test_changed_dashboard_metadata_refused -v > grafana-recovery-probe-optimized.log 2>&1
       - name: Verify source security on the disposable Linux runner
         if: runner.os == 'Linux'
         run: |
@@ -262,6 +266,8 @@ jobs:
             signing-credentials-scope-optimized.log
             gateway-setup-mode-normal.log
             gateway-setup-mode-optimized.log
+            grafana-recovery-probe-normal.log
+            grafana-recovery-probe-optimized.log
             .local/stack-security-source-*/summary.json
             .local/stack-security-source-*/reports/semgrep.json
             .local/stack-security-source-*/reports/gitleaks.json
