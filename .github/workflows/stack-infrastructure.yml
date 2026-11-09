@@ -306,6 +306,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_provider_identity_mode.py -v > stack-provider-identity-mode-normal.log 2>&1
       - name: Verify optimized provider and identity smoke test mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_provider_identity_mode.py -v > stack-provider-identity-mode-optimized.log 2>&1
+      - name: Verify admission-sensitive smoke test mode refusal
+        run: python -m unittest discover -s scripts -p test_stack_admission_mode.py -v > stack-admission-mode-normal.log 2>&1
+      - name: Verify optimized admission-sensitive smoke test mode refusal
+        run: python -O -m unittest discover -s scripts -p test_stack_admission_mode.py -v > stack-admission-mode-optimized.log 2>&1
       - name: Verify queue trace mode refusal
         run: python -m unittest discover -s scripts -p test_stack_queue_trace_mode.py -v > queue-trace-mode-normal.log 2>&1
       - name: Verify optimized queue trace mode refusal
@@ -432,6 +436,8 @@ jobs:
             stack-ownership-mode-optimized.log
             stack-provider-identity-mode-normal.log
             stack-provider-identity-mode-optimized.log
+            stack-admission-mode-normal.log
+            stack-admission-mode-optimized.log
             queue-trace-mode-normal.log
             queue-trace-mode-optimized.log
             prometheus-smoke-mode-normal.log

@@ -1,4 +1,7 @@
 """Conditional review race in isolated CI only; default mode never submits a review."""
+if not __debug__:
+    raise SystemExit("Review precondition smoke test requires Python assertions to be enabled")
+
 import argparse,concurrent.futures,datetime,json,pathlib,subprocess,sys,threading,time,urllib.error,urllib.request,uuid
 from stack_test_client import StackClient
 ROOT=pathlib.Path(__file__).resolve().parent.parent

@@ -1,4 +1,7 @@
 """Read-only tenant/filter navigation and browser-contract checks using existing audits."""
+if not __debug__:
+    raise SystemExit("Audit search smoke test requires Python assertions to be enabled")
+
 import os,json,pathlib,subprocess,uuid
 from stack_test_client import StackClient
 from stack_business_fingerprint import fingerprint,sql

@@ -1,4 +1,7 @@
 """Real OPA authorization and fail-closed gate checks; no token in args, logs or reports."""
+if not __debug__:
+    raise SystemExit("Policy smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,re,subprocess,time,uuid
 from stack_test_client import StackClient
 from stack_compose import stack_compose

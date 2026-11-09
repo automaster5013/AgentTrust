@@ -1,4 +1,7 @@
 """Real pinned local inference, admission binding, one-use reservation and fail-closed proof."""
+if not __debug__:
+    raise SystemExit("Provider smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,re,subprocess,time,urllib.request,urllib.error,uuid
 from stack_test_client import StackClient
 from stack_compose import stack_compose

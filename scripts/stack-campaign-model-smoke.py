@@ -1,4 +1,7 @@
 """Two-case version-bound campaigns using actual fixed local inference; no paid calls."""
+if not __debug__:
+    raise SystemExit("Campaign model smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,re,subprocess,time,uuid
 from stack_test_client import StackClient
 root=pathlib.Path(__file__).resolve().parent.parent;client=None;report={'completed':False,'checks':[],'startedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'realLocalInference':True,'paidApiCalls':False,'rawGeneratedTextPrinted':False,'legacyDatabaseWrites':False};digest='sha256:7df6b6e09427a769808717c0a93cadc4ae99ed4eb8bf5ca557c90846becea435'
