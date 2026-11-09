@@ -1,4 +1,7 @@
 """A cancelled baseline cannot be approved away by a successful candidate; own fixtures only."""
+if not __debug__:
+    raise SystemExit("Unresolved baseline smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,secrets,subprocess,time,uuid
 from stack_compose import stack_compose
 from stack_business_fingerprint import sql
