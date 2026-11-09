@@ -1,4 +1,7 @@
 """Read-only paginated metadata export beyond latest500; disposable hosted fixture only."""
+if not __debug__:
+    raise SystemExit("Audit period export smoke test requires Python assertions to be enabled")
+
 import os,argparse,datetime,hashlib,json,pathlib,subprocess,uuid
 from stack_test_client import StackClient
 from stack_business_fingerprint import fingerprint,sql

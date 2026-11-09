@@ -1,4 +1,7 @@
 """Read-only UTC audit-period search compared against disposable fixture PostgreSQL."""
+if not __debug__:
+    raise SystemExit("Audit period search smoke test requires Python assertions to be enabled")
+
 import os,argparse,datetime,json,pathlib,subprocess,uuid
 from stack_test_client import StackClient
 from stack_business_fingerprint import fingerprint,sql
