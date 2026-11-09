@@ -1,4 +1,7 @@
 """Internal synthetic OTLP privacy probe. Invoked in a restricted one-shot container."""
+if not __debug__:
+    raise SystemExit("Telemetry privacy probe requires Python assertions to be enabled")
+
 import base64,json,secrets,time,urllib.request,urllib.parse,urllib.error
 sentinel='privacy-canary-'+secrets.token_hex(16)
 trace_id=secrets.token_hex(16);span_id=secrets.token_hex(8);now=time.time_ns()
