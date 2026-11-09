@@ -1,4 +1,7 @@
 """Actual console image metadata and startup mismatch controls."""
+if not __debug__:
+    raise SystemExit("OIDC image configuration test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,subprocess,sys,uuid
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 IMAGE='agenttrust-stack-console:oidc-endpoint-https-candidate'
