@@ -32,6 +32,9 @@ def main():
     if not args.execute:
         print(json.dumps({'completed': True, 'readOnlyPlan': True, 'executed': False,
                           'actualDeploymentPerformed': False, 'requires': 'disposable GitHub-hosted --execute'})); return 0
+    if not __debug__:
+        print(json.dumps({'completed': False, 'executed': False,
+                          'code': 'CORE_RETURN_ASSERTIONS_REQUIRED', 'actualDeploymentPerformed': False})); return 1
     try:
         require_hosted(ROOT)
     except ValueError:

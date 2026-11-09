@@ -3,6 +3,9 @@ import json
 import importlib.util
 import sqlite3
 import pathlib
+import os
+import subprocess
+import sys
 import types
 import unittest
 from unittest.mock import patch
@@ -206,6 +209,20 @@ class FlowTest(unittest.TestCase):
             database.execute("INSERT INTO stack_run_results VALUES('child','failed')")
             self.assertEqual(database.execute(smoke.PENDING_RUNS_SQL).fetchone()[0], 0)
             self.assertEqual(database.execute("SELECT count(*) FROM stack_runs WHERE state='queued'").fetchone()[0], 4)
+
+    def test_optimized_execution_is_refused_before_hosted_fixture_admission(self):
+        script = pathlib.Path(__file__).with_name('stack-core-return-smoke.py')
+        result = subprocess.run(
+            [sys.executable, '-E', '-O', str(script), '--execute'],
+            env={**os.environ, 'CI': 'false', 'GITHUB_ACTIONS': 'false'},
+            capture_output=True, text=True, timeout=15,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stderr, '')
+        self.assertEqual(json.loads(result.stdout), {
+            'completed': False, 'executed': False,
+            'code': 'CORE_RETURN_ASSERTIONS_REQUIRED', 'actualDeploymentPerformed': False,
+        })
 
     def test_hosted_guard_requires_exact_workspace_repository_and_nonroot_hosted_runner(self):
         root = pathlib.Path(__file__).resolve().parent.parent
