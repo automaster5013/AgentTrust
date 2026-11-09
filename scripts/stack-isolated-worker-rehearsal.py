@@ -12,14 +12,21 @@ from app import app
 async def main():
  async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://fixture') as client:
   scope={k:str(uuid.uuid4()) for k in ['runId','organizationId','projectId']}
-  assert (await client.post('/evaluate',json={**scope,'scenario':'pass'})).status_code==401
+  if (await client.post('/evaluate',json={**scope,'scenario':'pass'})).status_code!=401:
+   raise AssertionError
   results={}
   for scenario,decision in [('pass','pass'),('block','block'),('missing_evidence','inconclusive'),('error','inconclusive')]:
    response=await client.post('/evaluate',json={**scope,'scenario':scenario},headers={'X-AgentTrust-Worker-Token':token})
-   assert response.status_code==200;body=response.json();assert body['result']['decision']==decision
-   assert body['organizationId']==scope['organizationId'] and body['result']['executionEngine']=='python-synthetic'
+   if response.status_code!=200:
+    raise AssertionError
+   body=response.json()
+   if body['result']['decision']!=decision:
+    raise AssertionError
+   if body['organizationId']!=scope['organizationId'] or body['result']['executionEngine']!='python-synthetic':
+    raise AssertionError
    results[scenario]=decision
-  assert (await client.post('/evaluate',json={**scope,'scenario':'pass','providerUrl':'https://outside.invalid'},headers={'X-AgentTrust-Worker-Token':token})).status_code==422
+  if (await client.post('/evaluate',json={**scope,'scenario':'pass','providerUrl':'https://outside.invalid'},headers={'X-AgentTrust-Worker-Token':token})).status_code!=422:
+   raise AssertionError
   print(json.dumps({'completed':True,'decisions':results,'unauthenticatedBlocked':True,'callerSelectedProviderUrlRefused':True,'externalNetworkUsed':False}))
 asyncio.run(main())
 '''
