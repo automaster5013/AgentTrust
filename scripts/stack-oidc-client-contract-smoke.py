@@ -1,4 +1,7 @@
 """Read-only actual local Keycloak client inspection with adverse configuration controls."""
+if not __debug__:
+    raise SystemExit("OIDC client contract smoke test requires Python assertions to be enabled")
+
 import copy,datetime,json,pathlib,subprocess,sys,uuid
 from stack_oidc_client_contract import expected,verify
 from stack_identity_admin import IdentityAdmin
