@@ -1,5 +1,5 @@
 """Closed-block selection and semantic trace identity, no operating service calls."""
-import contextlib,datetime,importlib.util,io,json,pathlib,tempfile,unittest
+import contextlib,datetime,importlib.util,io,json,pathlib,sys,tempfile,unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 ROOT=pathlib.Path(__file__).resolve().parent.parent
@@ -44,6 +44,12 @@ class ExtraHistory(unittest.TestCase):
   self.assertEqual(result,0 if done else 1)
   self.assertNotIn('private generated fixture',output.getvalue())
   self.assertIs(json.loads(output.getvalue()).get('offlineInferenceVerified',False),done)
+ def test_tempo_read_rejects_unauthorized_route_before_network(self):
+  probe=module('tempo_read','stack-tempo-read-probe.py')
+  with patch.object(sys,'argv',['probe','/api/unapproved?start=1&end=2']),patch.object(probe.urllib.request,'build_opener') as opener:
+   with self.assertRaises(AssertionError):
+    probe.main()
+   opener.assert_not_called()
  def test_capacity_retries_entire_transient_sample_without_ignoring_usage(self):
   result=lambda raw:SimpleNamespace(stdout=raw)
   with patch.object(tempo.m,'require_host_capacity',return_value={}),patch.object(tempo.m.c,'run',side_effect=[result(b'8589934592'),result(b'-- / --\n'),result(b'4GiB / 8GiB\n')]):
