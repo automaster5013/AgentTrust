@@ -1,4 +1,7 @@
 """Prepare a new synthetic approval, then verify its natural expiry in a separate call."""
+if not __debug__:
+    raise SystemExit("Approval expiry observation requires Python assertions to be enabled")
+
 import argparse,datetime,json,pathlib,re,time,uuid
 from stack_test_client import StackClient
 

@@ -170,6 +170,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_database_process_mode.py -v > database-process-mode-normal.log 2>&1
       - name: Verify optimized database process rehearsal mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_database_process_mode.py -v > database-process-mode-optimized.log 2>&1
+      - name: Verify approval expiry rehearsal mode refusal
+        run: python -m unittest discover -s scripts -p test_stack_approval_expiry_mode.py -v > approval-expiry-mode-normal.log 2>&1
+      - name: Verify optimized approval expiry rehearsal mode refusal
+        run: python -O -m unittest discover -s scripts -p test_stack_approval_expiry_mode.py -v > approval-expiry-mode-optimized.log 2>&1
       - name: Verify source security on the disposable Linux runner
         if: runner.os == 'Linux'
         run: |
@@ -220,6 +224,8 @@ jobs:
             infrastructure-mode-optimized.log
             database-process-mode-normal.log
             database-process-mode-optimized.log
+            approval-expiry-mode-normal.log
+            approval-expiry-mode-optimized.log
             .local/stack-security-source-*/summary.json
             .local/stack-security-source-*/reports/semgrep.json
             .local/stack-security-source-*/reports/gitleaks.json
