@@ -1,3 +1,6 @@
+if not __debug__:
+    raise SystemExit("Offline audit export smoke test requires Python assertions to be enabled")
+
 import datetime,hashlib,json,pathlib,subprocess,sys,uuid
 ROOT=pathlib.Path(__file__).resolve().parent.parent;sys.path.insert(0,str(ROOT/'scripts'))
 from stack_test_client import StackClient
