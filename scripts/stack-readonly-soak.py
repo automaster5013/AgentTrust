@@ -1,4 +1,7 @@
 """Bounded real metadata load; own sessions, no evaluations, no paid inference."""
+if not __debug__:
+    raise SystemExit("Read-only soak requires Python assertions to be enabled")
+
 import argparse,concurrent.futures,datetime,hashlib,json,math,pathlib,shutil,statistics,time,uuid
 from stack_test_client import StackClient
 from stack_business_fingerprint import fingerprint
