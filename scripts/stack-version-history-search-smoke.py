@@ -1,4 +1,7 @@
 """Read-only exact-name search compared with independent scoped PostgreSQL rows."""
+if not __debug__:
+    raise SystemExit("Version history search smoke test requires Python assertions to be enabled")
+
 import argparse,base64,datetime,hashlib,json,pathlib,re,struct,subprocess,uuid
 from stack_test_client import StackClient
 from stack_business_fingerprint import fingerprint,sql
