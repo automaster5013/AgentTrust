@@ -1,4 +1,7 @@
 """Prepare one stable development Ed25519 key; never print or overwrite private bytes."""
+if not __debug__:
+    raise SystemExit("Gate signing setup requires Python assertions to be enabled")
+
 import argparse,base64,hashlib,json,os,pathlib,re,subprocess
 root=pathlib.Path(__file__).resolve().parent.parent;parser=argparse.ArgumentParser();parser.add_argument('--image',default='agenttrust-gate-key-tool:local');args=parser.parse_args()
 try:
