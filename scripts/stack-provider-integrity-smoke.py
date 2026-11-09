@@ -1,4 +1,7 @@
 """Read-only model blob verification and isolated corruption refusal; never alter prepared models."""
+if not __debug__:
+    raise SystemExit("Provider integrity smoke test requires Python assertions to be enabled")
+
 import datetime,json,os,pathlib,re,subprocess,uuid
 root=pathlib.Path(__file__).resolve().parent.parent
 directory=root/'.local'/('stack-provider-integrity-'+str(uuid.uuid4()));directory.mkdir(parents=True)

@@ -1,4 +1,7 @@
 """Actual OIDC login, refused credential grants and signed session revocation."""
+if not __debug__:
+    raise SystemExit("Identity smoke test requires Python assertions to be enabled")
+
 import datetime,json,pathlib,time,urllib.request,urllib.error,urllib.parse,uuid,traceback,re
 from stack_test_client import StackClient
 from stack_identity_admin import IdentityAdmin

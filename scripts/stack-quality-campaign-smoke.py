@@ -1,4 +1,7 @@
 """Actual scoped reference campaigns, independent graders, immutable binding and recovery."""
+if not __debug__:
+    raise SystemExit("Quality campaign smoke test requires Python assertions to be enabled")
+
 import base64,datetime,hashlib,json,pathlib,re,subprocess,time,urllib.request,urllib.error,uuid
 from stack_test_client import StackClient
 from stack_campaign_evidence import verify_parent,verify_child
