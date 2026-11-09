@@ -1,4 +1,7 @@
 """Authenticated bounded campaign integration; reports never contain credentials or model text."""
+if not __debug__:
+    raise SystemExit("Campaign smoke test requires Python assertions to be enabled")
+
 import argparse,concurrent.futures,datetime,hashlib,json,pathlib,re,subprocess,time,uuid
 from stack_test_client import StackClient
 root=pathlib.Path(__file__).resolve().parent.parent
