@@ -370,6 +370,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_http_mode.py -v > http-mode-normal.log 2>&1
       - name: Verify optimized http mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_http_mode.py -v > http-mode-optimized.log 2>&1
+      - name: Verify observability mode refusal
+        run: python -m unittest discover -s scripts -p test_stack_observability_mode.py -v > observability-mode-normal.log 2>&1
+      - name: Verify optimized observability mode refusal
+        run: python -O -m unittest discover -s scripts -p test_stack_observability_mode.py -v > observability-mode-optimized.log 2>&1
       - name: Verify queue trace mode refusal
         run: python -m unittest discover -s scripts -p test_stack_queue_trace_mode.py -v > queue-trace-mode-normal.log 2>&1
       - name: Verify optimized queue trace mode refusal
@@ -528,6 +532,8 @@ jobs:
             evaluation-readiness-mode-optimized.log
             http-mode-normal.log
             http-mode-optimized.log
+            observability-mode-normal.log
+            observability-mode-optimized.log
             queue-trace-mode-normal.log
             queue-trace-mode-optimized.log
             prometheus-smoke-mode-normal.log

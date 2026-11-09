@@ -1,4 +1,7 @@
 """Verify real application telemetry and privacy through internal services and authenticated Grafana."""
+if not __debug__:
+    raise SystemExit("Observability smoke test requires Python assertions to be enabled")
+
 import argparse,json,pathlib,subprocess,urllib.request,urllib.error,urllib.parse,base64,uuid,datetime,time
 from stack_compose import stack_compose
 root=pathlib.Path(__file__).resolve().parent.parent
