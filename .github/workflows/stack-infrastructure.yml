@@ -243,9 +243,9 @@ jobs:
       - name: Verify optimized observation report mode refusal
         run: python -O -m unittest discover -s scripts -p test_stack_observation_report_mode.py -v > observation-report-mode-optimized.log 2>&1
       - name: Verify stack setup mode refusal
-        run: python -m unittest discover -s scripts -p test_stack_stack_setup_mode.py -v > stack-setup-mode-normal.log 2>&1
+        run: python -m unittest discover -s scripts -p test_stack_setup_mode.py -v > stack-setup-mode-normal.log 2>&1
       - name: Verify optimized stack setup mode refusal
-        run: python -O -m unittest discover -s scripts -p test_stack_stack_setup_mode.py -v > stack-setup-mode-optimized.log 2>&1
+        run: python -O -m unittest discover -s scripts -p test_stack_setup_mode.py -v > stack-setup-mode-optimized.log 2>&1
       - name: Verify source security on the disposable Linux runner
         if: runner.os == 'Linux'
         run: |
