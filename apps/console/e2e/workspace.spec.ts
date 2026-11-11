@@ -1381,6 +1381,31 @@ if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true')test('legacy Core return ke
 });
 
 
+if(process.env.STACK_E2E_LEGACY_CORE_RETURN!=='true')test('editor copies an actual dataset into an edited immutable version without changing its source',async({page})=>{
+ await login(page,'demo-editor');
+ const list=await (await page.request.get('/backend/versions/datasets')).json(),source=list[0];expect(source).toBeTruthy();
+ const original=await (await page.request.get('/backend/versions/datasets/'+source.id)).json();
+ const region=page.getByRole('region',{name:'데이터셋 새 버전 초안',exact:true});await region.getByLabel('복사할 데이터셋 버전 ID',{exact:true}).fill(source.id);
+ let posts=0;page.on('request',r=>{if(new URL(r.url()).pathname==='/backend/versions/datasets'&&r.method()==='POST')posts++});
+ await region.getByRole('button',{name:'데이터셋 새 초안 불러오기',exact:true}).click();await expect(region.getByText(/새 버전 초안을 준비했습니다/)).toBeVisible();expect(posts).toBe(0);
+ const copied=JSON.parse(await region.getByLabel('복사본 사례 JSON',{exact:true}).inputValue());expect(copied).toEqual(original.definition.cases);
+ const key='browser-copy-'+randomUUID();await region.getByLabel('복사본 데이터셋 이름',{exact:true}).fill(key);copied[0].id='copied-first-case';await region.getByLabel('복사본 사례 JSON',{exact:true}).fill(JSON.stringify(copied));
+ const save=region.getByRole('button',{name:'수정한 데이터셋 새 버전 등록',exact:true});
+ const register=page.waitForResponse(r=>new URL(r.url()).pathname==='/backend/versions/datasets'&&r.request().method()==='POST');await save.click();const response=await register;expect(response.status()).toBe(200);const created=await response.json();expect(created.id).not.toBe(source.id);expect(created.resource_key).toBe(key);expect(created.definition.cases).toEqual(copied);expect(created.content_sha256).not.toBe(original.content_sha256);await expect(region.getByText(/새 데이터셋 버전 확인/)).toBeVisible();
+ const retry=page.waitForResponse(r=>new URL(r.url()).pathname==='/backend/versions/datasets'&&r.request().method()==='POST');await save.click();const duplicate=await retry;expect(duplicate.status()).toBe(200);expect((await duplicate.json()).id).toBe(created.id);await expect(region.getByText(/새 데이터셋 버전 확인/)).toBeVisible();
+ copied[0].id='conflicting-first-case';await region.getByLabel('복사본 사례 JSON',{exact:true}).fill(JSON.stringify(copied));const conflict=page.waitForResponse(r=>new URL(r.url()).pathname==='/backend/versions/datasets'&&r.request().method()==='POST');await save.click();expect((await conflict).status()).toBe(409);await expect(region.getByText(/같은 키·버전에 다른 내용/)).toBeVisible();expect(posts).toBe(3);
+ expect(await (await page.request.get('/backend/versions/datasets/'+source.id)).json()).toEqual(original);expect((await (await page.request.get('/backend/versions/datasets/'+created.id)).json()).definition.cases[0].id).toBe('copied-first-case');
+ for(const width of [1440,390]){await page.setViewportSize({width,height:960});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
+ phase('actual editor source read and verified draft, explicit edited immutable registration, same-coordinate retry returns same ID, conflicting-content409, source unchanged, no evaluation created,1440 and390 no overflow');
+});
+
+if(process.env.STACK_E2E_LEGACY_CORE_RETURN!=='true')test('viewer cannot copy dataset drafts or register copied content',async({page})=>{
+ await login(page,'demo-viewer');const region=page.getByRole('region',{name:'데이터셋 새 버전 초안',exact:true});await expect(region.getByRole('button',{name:'데이터셋 새 초안 불러오기',exact:true})).toBeDisabled();
+ await expect(region.getByRole('button',{name:'수정한 데이터셋 새 버전 등록',exact:true})).toBeDisabled();
+ const csrf=await (await page.request.get('/backend/csrf')).json();const response=await page.request.post('/backend/versions/datasets',{headers:{'X-CSRF-TOKEN':csrf.token,Origin:'http://127.0.0.1:4320'},data:{key:'viewer-copy-denied',version:1,cases:[{id:'required',scenario:'pass',required:true}]}});expect(response.status()).toBe(403);
+ phase('viewer copy controls disabled and actual dataset registration API forbidden403');
+});
+
 if(process.env.STACK_E2E_LEGACY_CORE_RETURN!=='true')test('viewer browses the actual scoped agent dataset catalog and verifies immutable details',async({page,request})=>{
  await login(page,'demo-viewer');
  expect((await request.get('/backend/catalog')).status()).toBe(401);
