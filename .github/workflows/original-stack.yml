@@ -5,6 +5,11 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      publish_audit_candidate:
+        description: 'Explicitly publish signed audit candidate images after integration; never deploy'
+        required: false
+        type: boolean
+        default: false
       publish_console_only:
         description: 'Publish one signed Console candidate after full integration; never deploy'
         required: false
@@ -183,14 +188,16 @@ jobs:
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-audit-period-export-smoke.py --execute
           cd apps/console
-          STACK_E2E_QUOTA_GUARD=true npx playwright test --grep 'viewer searches actual scoped audit actions'
+          STACK_E2E_QUOTA_GUARD=true npx playwright test --grep 'viewer searches actual scoped audit actions|viewer compares two actual completed evaluations'
       - name: Preserve audit evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: audit-integration-${{ github.sha }}-attempt-${{ github.run_attempt }}
           include-hidden-files: true
-          path: .local/stack-audit-*.json
+          path: |
+            .local/stack-audit-*.json
+            .local/stack-browser-*.json
           if-no-files-found: warn
           retention-days: 7
       - name: Stop the disposable fixture
@@ -200,7 +207,7 @@ jobs:
 
   audit-candidate-delivery:
     needs: integration
-    if: github.event_name == 'workflow_dispatch' && github.repository == 'automaster5013/AgentTrust' && github.ref == 'refs/heads/codex/audit-release-integration-20261104'
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_audit_candidate && github.repository == 'automaster5013/AgentTrust' && github.ref == 'refs/heads/codex/audit-release-integration-20261104'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
