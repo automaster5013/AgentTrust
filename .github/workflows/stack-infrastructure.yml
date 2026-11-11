@@ -410,6 +410,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_stack_logs_read_mode.py -v > logs-read-mode-normal.log 2>&1
       - name: Verify optimized historical log bounds
         run: python -O -m unittest discover -s scripts -p test_stack_logs_read_mode.py -v > logs-read-mode-optimized.log 2>&1
+      - name: Verify mocked historical metric bounds
+        run: python -m unittest discover -s scripts -p test_stack_metrics_read_mode.py -v > metrics-read-mode-normal.log 2>&1
+      - name: Verify optimized historical metric bounds
+        run: python -O -m unittest discover -s scripts -p test_stack_metrics_read_mode.py -v > metrics-read-mode-optimized.log 2>&1
       - name: Verify queue trace mode refusal
         run: python -m unittest discover -s scripts -p test_stack_queue_trace_mode.py -v > queue-trace-mode-normal.log 2>&1
       - name: Verify optimized queue trace mode refusal
@@ -588,6 +592,8 @@ jobs:
             version-history-search-fixture-mode-optimized.log
             logs-read-mode-normal.log
             logs-read-mode-optimized.log
+            metrics-read-mode-normal.log
+            metrics-read-mode-optimized.log
             queue-trace-mode-normal.log
             queue-trace-mode-optimized.log
             prometheus-smoke-mode-normal.log
