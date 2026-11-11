@@ -1381,6 +1381,27 @@ if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true')test('legacy Core return ke
 });
 
 
+if(process.env.STACK_E2E_LEGACY_CORE_RETURN!=='true')test('viewer browses the actual scoped agent dataset catalog and verifies immutable details',async({page,request})=>{
+ await login(page,'demo-viewer');
+ expect((await request.get('/backend/catalog')).status()).toBe(401);
+ const response=await page.request.get('/backend/catalog');expect(response.status()).toBe(200);const catalog=await response.json();
+ const identity=await (await page.request.get('/backend/me')).json();expect(catalog.projectId).toBe(identity.projectId);expect(catalog.organizationId).toBe(identity.organizationId);expect(catalog.deploymentAuthority).toBe(false);
+ for(const kind of ['agents','datasets']){expect(catalog[kind].kind).toBe(kind);expect(catalog[kind].limit).toBe(25);expect(catalog[kind].entries.length).toBeGreaterThan(0);expect(catalog[kind].entries.length).toBeLessThanOrEqual(25);}
+ let writes=0;page.on('request',r=>{if(new URL(r.url()).pathname.startsWith('/backend/')&&r.method()!=='GET')writes++});
+ const region=page.getByRole('region',{name:'에이전트·데이터셋 통합 카탈로그',exact:true});
+ await region.getByRole('button',{name:'통합 카탈로그 조회',exact:true}).click();await expect(region.locator('[data-catalog-version-id]')).toHaveCount(catalog.agents.entries.length+catalog.datasets.entries.length);
+ for(const kind of ['agents','datasets']){
+  const row=catalog[kind].entries[0];await region.getByLabel('카탈로그 종류',{exact:true}).selectOption(kind);await region.getByLabel('카탈로그 이름 검색',{exact:true}).fill(row.resourceKey);
+  const entry=region.locator('[data-catalog-version-id="'+row.id+'"]');await entry.getByRole('button').click();
+  const detail=region.getByRole('region',{name:'카탈로그 검증 상세',exact:true});await expect(detail).toBeVisible();await expect(detail.getByText('SHA-256 '+row.contentSha256,{exact:true})).toBeVisible();
+  for(const width of [1440,390]){await page.setViewportSize({width,height:960});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
+  await region.getByLabel('카탈로그 이름 검색',{exact:true}).fill('no-matching-fixture-version');await expect(detail).toHaveCount(0);await expect(region.locator('[data-catalog-version-id]')).toHaveCount(0);await region.getByLabel('카탈로그 이름 검색',{exact:true}).fill('');
+ }
+ await page.route('**/backend/catalog',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...catalog,datasets:{...catalog.datasets,projectId:randomUUID()}})}));
+ await region.getByRole('button',{name:'통합 카탈로그 조회',exact:true}).click();await expect(region.locator('[data-catalog-version-id]')).toHaveCount(0);await expect(region.getByText(/카탈로그를 확인하지 못했습니다/)).toBeVisible();expect(writes).toBe(0);
+ phase('actual catalog API and immutable agent dataset details, viewer and anonymous401, project scopes, bounded25 per kind, filters clear details,1440 and390 no overflow, substituted nested scope rejected, no business writes');
+});
+
 if(process.env.STACK_E2E_LEGACY_CORE_RETURN!=='true')test('viewer compares two actual completed evaluations without granting release authority',async({page,request})=>{
  await login(page,'demo-viewer');
  const response=await page.request.get('/backend/runs');expect(response.status()).toBe(200);

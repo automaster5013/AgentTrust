@@ -1,0 +1,11 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {registeredCatalog,catalogEntries} from '../src/lib/registered-catalog.ts';
+import {proxyPath} from '../src/lib/proxy-policy.ts';
+import type {Identity} from '../src/lib/contracts.ts';
+const org='11111111-1111-4111-8111-111111111111',project='22222222-2222-4222-8222-222222222222',user={organizationId:org,projectId:project} as Identity;
+const row={id:'33333333-3333-4333-8333-333333333333',resourceKey:'fixture-agent',version:1,contentSha256:'a'.repeat(64),createdAt:'2026-11-12T00:00:00.123456Z'};
+const page=(kind:string)=>({organizationId:org,projectId:project,kind,entries:[row],nextCursor:null,limit:25,ordering:'created-at-id-desc',deploymentAuthority:false});
+const fixture=()=>({organizationId:org,projectId:project,catalogKind:'registered-agent-dataset-versions-v1',agents:page('agents'),datasets:page('datasets'),deploymentAuthority:false});
+test('combined catalog preserves both immutable coordinates and limits filters to loaded entries',()=>{const value=registeredCatalog(fixture(),user);assert.equal(catalogEntries(value,'all','fixture').length,2);assert.equal(catalogEntries(value,'agents','fixture')[0].kind,'agents');assert.equal(catalogEntries(value,'datasets','missing').length,0);assert.throws(()=>catalogEntries(value,'all','x'.repeat(65)));assert.equal(value.agents.entries[0].content_sha256,row.contentSha256);});
+test('catalog rejects foreign nested scopes swapped kinds authority malformed hashes duplicate rows and partial envelopes',()=>{for(const change of [{projectId:org},{organizationId:project},{deploymentAuthority:true},{catalogKind:'all-history'},{agents:{...page('agents'),projectId:org}},{datasets:page('agents')},{agents:{...page('agents'),entries:[row,row]}},{agents:{...page('agents'),entries:[{...row,contentSha256:'bad'}]}},{datasets:null},{agents:{...page('agents'),limit:50}},{extra:'unverified'}])assert.throws(()=>registeredCatalog({...fixture(),...change},user));});
+test('BFF catalog route permits only exact reads',()=>{assert.equal(proxyPath(['catalog'],'GET'),'/api/catalog');for(const method of ['POST','PUT','DELETE'])assert.throws(()=>proxyPath(['catalog'],method));for(const segments of [['catalog','foreign'],['catalog%2f'],['catalog','..']])assert.throws(()=>proxyPath(segments,'GET'));});
