@@ -1379,3 +1379,21 @@ if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true')test('legacy Core return ke
  const unavailable=await page.request.get('/backend/run-history-search/all/all/all/all/all');expect(unavailable.status()).toBe(500);expect(await unavailable.json()).toEqual({code:'REQUEST_UNAVAILABLE'});
  expect((await page.request.get('/backend/me')).status()).toBe(200);phase('pinned old Core search is explicitly unavailable; existing session remains valid');
 });
+
+
+if(process.env.STACK_E2E_LEGACY_CORE_RETURN!=='true')test('viewer compares two actual completed evaluations without granting release authority',async({page,request})=>{
+ await login(page,'demo-viewer');
+ const response=await page.request.get('/backend/runs');expect(response.status()).toBe(200);
+ const rows=await response.json() as {id:string;state:string}[],complete=rows.filter(r=>r.state!=='queued');expect(complete.length).toBeGreaterThanOrEqual(2);
+ const candidate=complete[0],baseline=complete[1],path='/backend/runs/'+candidate.id+'/comparison/'+baseline.id;
+ expect((await request.get(path)).status()).toBe(401);
+ const comparison=await page.request.get(path);expect(comparison.status()).toBe(200);const value=await comparison.json();expect(value.deploymentAuthority).toBe(false);expect(value.regressionAuthority).toBe(false);
+ let writes=0;page.on('request',r=>{if(new URL(r.url()).pathname.startsWith('/backend/')&&r.method()!=='GET')writes++});
+ await page.locator('.runs li button').filter({hasText:candidate.id.slice(0,8)}).click();
+ const region=page.getByRole('region',{name:'두 평가 결과 비교',exact:true});await region.getByLabel('비교 기준 평가 ID',{exact:true}).fill(baseline.id);
+ await region.getByRole('button',{name:'두 평가 비교 실행',exact:true}).click();await expect(region.getByRole('table')).toBeVisible();await expect(region.getByText(/회귀 통과나 배포 허용을 뜻하지 않습니다/)).toBeVisible();
+ for(const width of [1440,390]){await page.setViewportSize({width,height:960});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
+ await page.route('**'+path,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...value,projectId:randomUUID()})}));
+ await region.getByRole('button',{name:'두 평가 비교 실행',exact:true}).click();await expect(region.getByRole('table')).toHaveCount(0);await expect(region.getByText(/비교 결과를 확인하지 못했습니다/)).toBeVisible();expect(writes).toBe(0);
+ phase('actual completed run pair, viewer scope, anonymous401, read-only comparison, 1440 and390 no overflow, substituted project rejected, no business writes');
+});
