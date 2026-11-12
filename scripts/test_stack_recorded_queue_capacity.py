@@ -17,7 +17,7 @@ def arithmetic(node):
 
 def file_reservations():
     result = []
-    for name in ['app.py', 'quality_worker.py', 'recorded_worker.py']:
+    for name in ['app.py', 'quality_worker.py', 'recorded_worker.py', 'connector_worker.py']:
         source = ast.parse((ROOT / 'services/ai-worker' / name).read_text(encoding='utf-8'))
         calls = [node for node in ast.walk(source) if isinstance(node, ast.Call)
                  and isinstance(node.func, ast.Name) and node.func.id == 'StreamConfig']
@@ -35,7 +35,7 @@ def file_reservations():
 
 
 class RecordedQueueCapacityTests(unittest.TestCase):
-    def test_server_can_admit_all_three_bounded_file_streams(self):
+    def test_server_can_admit_all_four_bounded_file_streams(self):
         for name in ['stack-setup.py', 'stack-https-identity-smoke.py']:
             with self.subTest(generator=name):
                 source = ast.parse((ROOT / 'scripts' / name).read_text(encoding='utf-8'))
@@ -45,7 +45,7 @@ class RecordedQueueCapacityTests(unittest.TestCase):
                 match = re.search(r'max_file_store:\s*(\d+)MB\b', configurations[0])
                 self.assertIsNotNone(match)
                 capacity = int(match.group(1)) * 1024 * 1024
-                self.assertLessEqual(sum(file_reservations()), capacity, 'Three stream MaxBytes reservations exceed the server file-store limit')
+                self.assertLessEqual(sum(file_reservations()), capacity, 'Four stream MaxBytes reservations exceed the server file-store limit')
                 self.assertLessEqual(capacity, 64 * 1024 * 1024, 'Candidate queue storage must remain explicitly bounded')
 
 

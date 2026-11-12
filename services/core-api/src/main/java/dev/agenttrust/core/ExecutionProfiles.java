@@ -21,6 +21,7 @@ public final class ExecutionProfiles {
   try{
    if(!ArchiveIntegrity.sha256(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)).equals(storedHash))throw new IllegalArgumentException("Version source hash differs");
    var definition=mapper.readTree(content);if(definition.path("contract").asText().equals(VersionDefinition.CONTRACT))return null;
+   if(definition.path("contract").asText().equals(ConnectorDefinition.CONTRACT)){if(definition.size()!=5||!definition.path("provider").asText().equals("synthetic"))throw new IllegalArgumentException("Connector agent differs");String hash=definition.path("executionProfileSha256").asText();ConnectorDefinition.validateProfile(mapper,definition.path("executionProfile"),hash);return hash;}
    if(definition.path("contract").asText().equals(RecordedTextDefinition.CONTRACT)){
     if(definition.size()!=5||!definition.path("provider").asText().equals("synthetic"))throw new IllegalArgumentException("Recorded agent differs");
     String hash=definition.path("executionProfileSha256").asText();RecordedTextDefinition.validateProfile(mapper,definition.path("executionProfile"),hash);return hash;

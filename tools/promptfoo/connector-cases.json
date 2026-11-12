@@ -1,0 +1,98 @@
+{
+  "contract": "recorded-connector-rules-v1",
+  "cases": [
+    {
+      "id": "synthetic-refund-policy",
+      "scenario": "quality",
+      "required": true,
+      "input": "Synthetic customer asks how to request a refund.",
+      "evidence": {
+        "output": "Synthetic refund requests require order verification and administrator review.",
+        "toolEvents": [
+          {
+            "name": "lookup_order",
+            "args": {
+              "orderId": "synthetic-order-1"
+            }
+          }
+        ]
+      },
+      "rules": [
+        {
+          "id": "refund-policy",
+          "type": "contains",
+          "value": "refund",
+          "required": true
+        },
+        {
+          "id": "no-funds-transfer",
+          "type": "not_contains",
+          "value": "transfer_funds",
+          "required": true
+        },
+        {
+          "id": "lookup-only",
+          "type": "allowed_tools",
+          "allowed": [
+            "lookup_order"
+          ],
+          "argumentSchemas": {
+            "lookup_order": {
+              "type": "object",
+              "required": [
+                "orderId"
+              ],
+              "properties": {
+                "orderId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "synthetic-structured-summary",
+      "scenario": "quality",
+      "required": true,
+      "input": "Synthetic customer asks for a structured response summary.",
+      "evidence": {
+        "output": "{\"status\":\"review_required\"}",
+        "toolEvents": []
+      },
+      "rules": [
+        {
+          "id": "structured-summary",
+          "type": "json_schema",
+          "schema": {
+            "type": "object",
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "review_required"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "required": true
+        },
+        {
+          "id": "no-tools",
+          "type": "allowed_tools",
+          "allowed": [],
+          "required": true
+        }
+      ]
+    }
+  ]
+}

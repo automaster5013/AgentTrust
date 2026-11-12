@@ -1,3 +1,4 @@
+import {verifyConnectorRules} from './connector-contracts.ts';
 import {verifyRecordedRules} from './recorded-text-contracts.ts';
 import {verifiedCampaign,type Campaign,type CaseEvidence} from './campaign-contracts.ts';
 import {detail,type Detail,type Identity} from './contracts.ts';
@@ -12,5 +13,5 @@ export async function verifiedCaseParent(value:unknown,user:Identity,record:Camp
 }
 export function verifiedCaseDetail(value:unknown,user:Identity,record:Campaign,selected:CaseEvidence):Detail{
  const expected=selectedCampaignCase(record,user,selected.caseId);if(JSON.stringify(expected)!==JSON.stringify(selected))throw Error('CHANGED_CASE_BINDING');
- const result=detail(value,user,selected.runId);if(result.provider!==selected.provider||result.scenario!==selected.scenario||result.state!==selected.state||result.decision!==selected.decision||result.requires_approval!==record.requires_approval)throw Error('CHANGED_CASE_RESULT');if(record.datasetVersion.definition.contract==='recorded-text-rules-v1')verifyRecordedRules(record.datasetVersion.definition.cases.find(c=>c.id===selected.caseId),result.result);return result;
+ const result=detail(value,user,selected.runId);if(result.provider!==selected.provider||result.scenario!==selected.scenario||result.state!==selected.state||result.decision!==selected.decision||result.requires_approval!==record.requires_approval)throw Error('CHANGED_CASE_RESULT');if(record.datasetVersion.definition.contract==='recorded-connector-rules-v1')verifyConnectorRules(record.datasetVersion.definition.cases.find(c=>c.id===selected.caseId),result.result);if(record.datasetVersion.definition.contract==='recorded-text-rules-v1')verifyRecordedRules(record.datasetVersion.definition.cases.find(c=>c.id===selected.caseId),result.result);return result;
 }
