@@ -4,6 +4,7 @@ import {execFileSync} from 'node:child_process';
 import {readFileSync,readdirSync,statSync} from 'node:fs';import {resolve} from 'node:path';
 import {openWorkspace} from './console-entry';
 import {auditFilters} from '../src/lib/audit-search';
+import {detail} from '../src/lib/contracts';
 import {uncertainCampaignWrite} from '../src/lib/campaign-write-error';
 import {uncertainEvaluationWrite} from '../src/lib/evaluation-request';
 import {diagnosticRequestKind,diagnosticFailure,sanitizedNetworkDiagnostic} from './network-diagnostics';
@@ -1404,6 +1405,18 @@ if(process.env.STACK_E2E_LEGACY_CORE_RETURN!=='true')test('viewer cannot copy da
  await expect(region.getByRole('button',{name:'수정한 데이터셋 새 버전 등록',exact:true})).toBeDisabled();
  const csrf=await (await page.request.get('/backend/csrf')).json();const response=await page.request.post('/backend/versions/datasets',{headers:{'X-CSRF-TOKEN':csrf.token,Origin:'http://127.0.0.1:4320'},data:{key:'viewer-copy-denied',version:1,cases:[{id:'required',scenario:'pass',required:true}]}});expect(response.status()).toBe(403);
  phase('viewer copy controls disabled and actual dataset registration API forbidden403');
+});
+
+if(process.env.STACK_E2E_LEGACY_CORE_RETURN!=='true')test('viewer saves only the exact selected completed evaluation observation JSON without release authority',async({page,request})=>{
+ await login(page,'demo-viewer');const {record,me}=await existingSyntheticEvaluation(page);const path='/backend/runs/'+record.id;expect((await request.get(path)).status()).toBe(401);
+ await page.locator('.runs li button').filter({hasText:record.id.slice(0,8)}).click();const region=page.getByRole('region',{name:'완료 평가 결과 JSON 저장',exact:true});await expect(region).toBeVisible();const save=region.getByRole('button',{name:'완료 평가 결과 JSON 저장',exact:true});
+ let writes=0,downloads=0;page.on('request',r=>{if(new URL(r.url()).pathname.startsWith('/backend/')&&r.method()!=='GET')writes++});page.on('download',()=>downloads++);
+ const transfer=page.waitForEvent('download');await save.click();const file=await transfer;expect(file.suggestedFilename()).toBe('agenttrust-observation-'+record.id+'.json');const saved=JSON.parse(readFileSync((await file.path())!,'utf8'));expect(saved.observation).toEqual(detail(record,me,record.id));expect(saved.deploymentAuthority).toBe(false);expect(saved.signed).toBe(false);expect(saved.currentGateIncluded).toBe(false);expect(saved.historicalEvidenceOnly).toBe(true);expect(downloads).toBe(1);
+ await page.route('**'+path,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...record,project_id:randomUUID()})}));await save.click();await expect(region.getByText(/파일을 저장하지 않았습니다/)).toBeVisible();expect(downloads).toBe(1);await page.unroute('**'+path);
+ await page.route('**'+path,route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({code:'UNAVAILABLE'})}));await save.click();await expect(region.getByText(/파일을 저장하지 않았습니다/)).toBeVisible();expect(downloads).toBe(1);await page.unroute('**'+path);
+ let release!:()=>void;const held=new Promise<void>(resolve=>release=resolve);await page.route('**'+path,async route=>{await held;await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(record)}).catch(()=>{})});try{await save.click();await region.getByRole('button',{name:'결과 JSON 저장 취소',exact:true}).click();release();await page.waitForTimeout(250);expect(downloads).toBe(1);}finally{release();await page.unroute('**'+path)}
+ for(const width of [1440,390]){await page.setViewportSize({width,height:960});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}expect(writes).toBe(0);
+ phase('actual viewer fresh scoped read downloads exact completed observation JSON only, anonymous401, no current gate or release authority, substituted scope and503 and cancelled late response create no download,1440 and390 no overflow, no business writes');
 });
 
 if(process.env.STACK_E2E_LEGACY_CORE_RETURN!=='true')test('viewer inspects complete verified agent and dataset definitions as text without writes',async({page,request})=>{
