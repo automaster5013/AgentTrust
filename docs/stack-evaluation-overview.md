@@ -11,3 +11,5 @@
 프로젝트 생성·전환·구성원, 정책 관리, 동적 공급자 설정 및 전체 4310 자료 이전은 이 범위에 포함되지 않는다.
 
 로컬 검증: Core reader 5건·controller 1건, Gateway 새 경로 1건·기존 경로 21건, Console 202건, TypeScript 및 actionlint 통과. 실제 소스 컴포넌트를 사용한 합성 브라우저 11항목·JavaScript 오류 0: 전체 70건·검증된 0건·범위/합계 치환·401/503·취소/범위 변경 후 늦은 응답·1440/390 폭을 확인했다. 실제 backend 연결은 false이며 후보 수용 전이다. Java 25의 로컬 검사는 운영 Java 21 검증을 대신하지 않는다.
+
+최종 후보 수용: SHA 9c98d8bad012be4cce8a77825151a4af95fc8cb1 / GitHub Actions 43150063234 성공. security-source·Windows·integration 통과, 모든 게시·배포 작업 skipped. 새 전체 현황 브라우저 시나리오가 실제 API/Postgres 집계·원래 run 행 지문 불변·익명 401·치환/503/취소 응답 제거·1440/390·업무 쓰기 0을 검증했다. artifact 13914463271 (7036 bytes), ZIP SHA256 12001a81d32c55a9623dd0d87d212ecd5e0c77283042454c58f1b72a26832c1b 대조. 증거 outputs/evaluation-overview-acceptance-20261112.json. 합성 후보의 수용이며 현재 복구 서비스 적용이나 전체 4310 이전 완료는 아니다. 동일 성공 SHA/run은 다시 실행하지 않는다.
