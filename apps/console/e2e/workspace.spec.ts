@@ -1406,6 +1406,23 @@ if(process.env.STACK_E2E_LEGACY_CORE_RETURN!=='true')test('viewer cannot copy da
  phase('viewer copy controls disabled and actual dataset registration API forbidden403');
 });
 
+if(process.env.STACK_E2E_LEGACY_CORE_RETURN!=='true')test('viewer inspects complete verified agent and dataset definitions as text without writes',async({page,request})=>{
+ await login(page,'demo-viewer');const catalog=await (await page.request.get('/backend/catalog')).json();let writes=0;page.on('request',r=>{if(new URL(r.url()).pathname.startsWith('/backend/')&&r.method()!=='GET')writes++});
+ const region=page.getByRole('region',{name:'에이전트·데이터셋 통합 카탈로그',exact:true});await region.getByRole('button',{name:'통합 카탈로그 조회',exact:true}).click();await expect(region.locator('[data-catalog-version-id]').first()).toBeVisible();
+ for(const kind of ['agents','datasets']){
+  const row=catalog[kind].entries[0],path='/backend/versions/'+kind+'/'+row.id;expect((await request.get(path)).status()).toBe(401);const stored=await (await page.request.get(path)).json();
+  if(kind==='agents')expect(stored.definition.executionProfile).toBeTruthy();else expect(stored.definition.cases.length).toBeGreaterThan(0);
+  await region.getByLabel('카탈로그 종류',{exact:true}).selectOption(kind);await region.locator('[data-catalog-version-id="'+row.id+'"]').getByRole('button').click();
+  const inspector=region.getByRole('region',{name:'검증된 불변 버전 정의',exact:true}),json=inspector.getByLabel('고정 버전 정의 JSON',{exact:true});await expect(inspector).toBeVisible();await expect(json).toHaveCount(0);
+  await inspector.getByRole('button',{name:'고정 정의 펼치기',exact:true}).click();await expect(json).toBeVisible();expect(JSON.parse((await json.textContent())!)).toEqual(stored.definition);
+  for(const width of [1440,390]){await page.setViewportSize({width,height:960});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
+  await inspector.getByRole('button',{name:'고정 정의 접기',exact:true}).click();await expect(json).toHaveCount(0);await inspector.getByRole('button',{name:'고정 정의 펼치기',exact:true}).click();
+  await region.getByLabel('카탈로그 이름 검색',{exact:true}).fill('no-definition-match');await expect(inspector).toHaveCount(0);await region.getByLabel('카탈로그 이름 검색',{exact:true}).fill('');
+  await page.route('**'+path,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...stored,content_sha256:'0'.repeat(64)})}));await region.locator('[data-catalog-version-id="'+row.id+'"]').getByRole('button').click();await expect(region.getByText(/버전 내용과 해시를 확인하지 못했습니다/)).toBeVisible();await expect(inspector).toHaveCount(0);await page.unroute('**'+path);
+ }
+ expect(writes).toBe(0);phase('actual viewer agent profile and dataset complete definitions match stored API content, anonymous401, explicit text expansion and collapse, filter reset, invalid hash clears definition,1440 and390 no overflow, no business writes');
+});
+
 if(process.env.STACK_E2E_LEGACY_CORE_RETURN!=='true')test('viewer browses the actual scoped agent dataset catalog and verifies immutable details',async({page,request})=>{
  await login(page,'demo-viewer');
  expect((await request.get('/backend/catalog')).status()).toBe(401);
