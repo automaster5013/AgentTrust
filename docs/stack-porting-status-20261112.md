@@ -27,11 +27,13 @@
 
 [확인한 요청 관측 JSON 저장](stack-gate-check-export.md): 소스 `bf1b812fa4fba5e75b03d3516c17e6b9aab021fa`, [수용 실행43195931274](https://github.com/automaster5013/AgentTrust/actions/runs/43195931274) 성공. 실제 서명 응답과 다운로드 바이트·Ed25519/hash, 저장 추가 요청0·만료/실패/취소 파일0을 확인했다. 파일은 개발용 과거 요청 관측이며 현재 배포 권한·운영 신뢰를 부여하지 않는다. 실제 서비스 적용은 없다.
 
+[기록된 합성 출력의 문자열 규칙 평가](stack-recorded-text-rules.md): 최종 소스 `23c810c769a59477308d3fd3df7aba39c2487bb4`, [수용 실행43212375508](https://github.com/automaster5013/AgentTrust/actions/runs/43212375508) 성공. 새 editor/viewer 두 시나리오에서 명시 등록→캠페인→전용 NATS/Python→규칙 근거 조회와 실제403을 확인했다. 첫 후보 기동 실패와 생성 큐 저장 한도 수정 이력은 기능 문서에 남겼다. 문자열 contains/not_contains만 지원하며 도구 이벤트·JSON Schema·정책 전체 이전은 미완료다. 게시·배포 작업은 모두 skipped이며 현재 서비스 적용은 없다.
+
 ## 남은 주요 범위
 
 프로젝트 생성·전환·구성원, 정책 관리, 동적 공급자 설정, 범용 데이터셋, 기존 서명 자료 전체 연결은 별도 미완료 범위다. 신뢰 멤버십·RLS·세션 결합 계약과 필요한 변경 승인이 선행돼야 하는 기능이 있다. 요청의 projectId를 인증 주체에 주입하거나 정책 조회 권한을 넓혀 우회하지 않는다.
 
-범용 데이터셋의 첫 제한 범위인 [기록된 합성 출력의 문자열 규칙 평가](stack-recorded-text-rules.md)는 소스 구현과 로컬 검사를 마치고 합성 후보 수용을 기다리고 있다. [계약 검토](stack-recorded-text-rules-design.md)에 따라 기존 `quality` 분류와 새 불변 계약으로 `contains`/`not_contains`의 등록→실행→근거 조회를 연결한다. 새 시나리오 CHECK 변경이나 기존 고정·참조 계약 재해석은 하지 않는다. 도구 이벤트·JSON Schema·정책 전체 이전과 구분한다.
+범용 데이터셋의 첫 제한 범위인 [기록된 합성 출력의 문자열 규칙 평가](stack-recorded-text-rules.md)는 합성 후보 수용을 마쳤다. [계약 검토](stack-recorded-text-rules-design.md)에 따라 기존 `quality` 분류와 새 불변 계약으로 `contains`/`not_contains`의 등록→실행→근거 조회를 연결한다. 새 시나리오 CHECK 변경이나 기존 고정·참조 계약 재해석은 하지 않는다. 도구 이벤트·JSON Schema·정책 전체 이전과 구분한다.
 
 현재 원본 보존·운영 HOLD·실제 배포 금지 상태를 유지한다. 계정·인증 설정, DB 마이그레이션, 원본 저장소 변경은 이 개발 작업의 범위가 아니다. 전체 운영 완료에는 승인된 배포·복귀 절차와 운영 안정성 수용이 추가로 필요하다.
 
