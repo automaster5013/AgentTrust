@@ -12,4 +12,6 @@ UI는 명시 조회·취소, 처음과 오류의 미확인 표시, 검증된 0, 
 
 로컬 검증: Core reader 5/controller 1, Gateway 신규 경로와 기존 RoutePolicy 검사, Console 215개, TypeScript, actionlint 통과. 실제 소스 합성 브라우저 14항목/JS 오류 0(실제 backend 연결 아님): 검증된 0/완료와 미상 분리/foreign·숫자·마이크로초 시간창·달력·401·503 거부/취소·scope·role 변경 late 제거/1440·390. 증거는 작업공간 outputs/evaluation-recent-local-browser-20261112.json.
 
-실제 후보 E2E는 기존 합성 평가만 사용한다. API 시간창을 읽기 전용 PostgreSQL 대조에 전달해 같은 경계를 비교하며 원래 run 행 지문·익명 401·모바일·치환/503/취소와 업무 쓰기 0을 확인한다. candidate-only probe는 GITHUB_ACTIONS=true와 AGENTTRUST_AUDIT_V17_FIXTURE=1에서만 동작한다. 로컬은 구문 검사만 수행했다. 실제 후보 CI 수용은 아직 대기 중이다.
+실제 후보 E2E는 기존 합성 평가만 사용한다. API 시간창을 읽기 전용 PostgreSQL 대조에 전달해 같은 경계를 비교하며 원래 run 행 지문·익명 401·모바일·치환/503/취소와 업무 쓰기 0을 확인한다. candidate-only probe는 GITHUB_ACTIONS=true와 AGENTTRUST_AUDIT_V17_FIXTURE=1에서만 동작한다. 로컬은 구문 검사만 수행했다. 최종 후보 CI 수용 결과는 아래 기록을 따른다.
+
+최종 후보 수용(2026-11-12 16:59 KST): 소스 SHA 03ce3b68ff1c3450eeb973d1671c9d198e831a83 / run 43174039195 성공. Windows·security-source·integration 통과, 모든 게시·배포 작업 skipped. 새 실제 브라우저 시나리오 passed: API와 PostgreSQL의 동일 시간창 완료/실행 오류/시각 미상 수치 대조, 익명401, scope·숫자·시간창 치환 및503 거부, 취소 late 제거,1440/390, 원래 run 행 지문 불변, 업무 쓰기0 및 자체 로그아웃. artifact 13924653341 (8046 bytes), ZIP SHA256 3289f3d98c4116300900071408dba369b55504ab06ac8cf2960f25d74dd54000 대조. 증거 outputs/evaluation-recent-acceptance-20261112.json. 실제 운영 적용은 수행하지 않았다. 성공한 동일 SHA/run은 재실행하지 않는다.

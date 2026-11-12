@@ -19,9 +19,9 @@
 | 프로젝트 서명 관측 메타데이터 탐색 | [기능 문서](stack-receipt-history.md) | [수용 실행 43161144996](https://github.com/automaster5013/AgentTrust/actions/runs/43161144996) |
 | 목록 선택 서명 관측 상세 | [기능 문서](stack-receipt-inspection.md) | [수용 실행 43166626066](https://github.com/automaster5013/AgentTrust/actions/runs/43166626066) |
 
-## 소스 구현 완료, 후보 검증 진행 중
+## 최근 추가 수용
 
-[최근 24시간 완료·실행 오류 관측](stack-evaluation-recent.md): 소스 `03ce3b68ff1c3450eeb973d1671c9d198e831a83`, [후보 실행 43174039195](https://github.com/automaster5013/AgentTrust/actions/runs/43174039195). 로컬 검사를 통과했으며 후보의 새 시나리오 수용은 아직 확인하지 않았다. 두 게시 입력은 false로 실행했다. 완료 시각 미상은 전체 보관 범위의 별도 수치이며 최근 24시간 포함 여부를 추정하지 않는다.
+[최근 24시간 완료·실행 오류 관측](stack-evaluation-recent.md): 소스 `03ce3b68ff1c3450eeb973d1671c9d198e831a83`, [수용 실행 43174039195](https://github.com/automaster5013/AgentTrust/actions/runs/43174039195) 성공. 새 실제 API·브라우저 시나리오와 동일 시간창 PostgreSQL 대조를 확인했다. 게시·배포 작업은 모두 건너뛰었다. 완료 시각 미상은 전체 보관 범위의 별도 수치이며 최근 24시간 포함 여부를 추정하지 않는다. 현재 복구 서비스 적용은 아니다.
 
 ## 남은 주요 범위
 
