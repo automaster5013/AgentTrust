@@ -1,0 +1,13 @@
+'use client';
+import {useEffect,useRef,useState} from 'react';
+import {RequestScope,type Identity} from '../lib/contracts';
+import {evaluationOverview,type EvaluationOverview} from '../lib/evaluation-overview';
+export default function EvaluationOverviewWorkspace({user,disabled}:{user:Identity;disabled:boolean}){
+ const [snapshot,setSnapshot]=useState<EvaluationOverview|null>(null),[busy,setBusy]=useState(false),[message,setMessage]=useState('');const generation=useRef(new RequestScope()),active=useRef<AbortController|null>(null);
+ function clear(){generation.current.next();active.current?.abort();setSnapshot(null);setBusy(false);setMessage('')}
+ useEffect(()=>{clear();return ()=>{generation.current.next();active.current?.abort()}},[user.actorId,user.organizationId,user.projectId,user.role,disabled]);
+ async function load(){if(disabled||busy)return;const token=generation.current.next(),controller=new AbortController();active.current?.abort();active.current=controller;setSnapshot(null);setMessage('');setBusy(true);
+  try{const response=await fetch('/backend/evaluation-overview',{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(10000)])});if(!response.ok)throw Error('UNAVAILABLE');const value=evaluationOverview(await response.json(),user);if(generation.current.current(token))setSnapshot(value)}catch{if(generation.current.current(token))setMessage('전체 평가 현황이 미확인 상태입니다. 다시 조회해 주세요.')}finally{if(generation.current.current(token))setBusy(false)}
+ }
+ return <section className="card" role="region" aria-label="프로젝트 전체 평가 현황"><h3>프로젝트 전체 평가 현황</h3><p>최근 최대 50건 목록과 별도로, 현재 프로젝트에 저장된 모든 평가를 집계합니다. 캠페인의 개별 평가도 포함합니다.</p><button type="button" disabled={disabled||busy} onClick={load}>전체 평가 현황 조회</button><button type="button" disabled={!busy} onClick={clear}>전체 평가 조회 취소</button><p role="status" aria-live="polite">{busy?'전체 평가 현황을 조회하고 있습니다.':message||(!snapshot?'전체 평가 현황이 미확인 상태입니다.':'')}</p>{snapshot&&<div data-evaluation-overview><p>관측 시각 <time dateTime={snapshot.observedAt}>{snapshot.observedAt}</time></p><p data-overview-count="retained">전체 보관 평가 {snapshot.retainedCount}건</p><ul><li data-overview-count="queued">대기 중 {snapshot.states.queued}건</li><li data-overview-count="succeeded">처리 완료 {snapshot.states.succeeded}건</li><li data-overview-count="failed">처리 실패 {snapshot.states.failed}건</li></ul><ul><li data-overview-count="pass">관측 판정 통과 {snapshot.decisions.pass}건</li><li data-overview-count="block">관측 판정 차단 {snapshot.decisions.block}건</li><li data-overview-count="inconclusive">관측 판정 불확정 {snapshot.decisions.inconclusive}건</li></ul></div>}<p>조회 시점의 저장 상태이며 대기 중인 평가는 이후 바뀔 수 있습니다. 실행 한도나 예약 가능 수를 나타내지 않습니다. 처리 완료나 과거 통과 판정은 현재 게이트·승인 또는 배포 권한을 뜻하지 않습니다.</p></section>;
+}
