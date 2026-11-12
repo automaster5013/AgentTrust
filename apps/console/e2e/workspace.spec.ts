@@ -1384,7 +1384,7 @@ if(process.env.STACK_E2E_LEGACY_CORE_RETURN==='true')test('legacy Core return ke
 if(process.env.STACK_E2E_LEGACY_CORE_RETURN!=='true')test('editor copies an actual dataset into an edited immutable version without changing its source',async({page})=>{
  await login(page,'demo-editor');
  const list=await (await page.request.get('/backend/versions/datasets')).json(),source=list[0];expect(source).toBeTruthy();
- const original=await (await page.request.get('/backend/versions/datasets/'+source.id)).json();
+ const original=await (await page.request.get('/backend/versions/datasets/'+source.id)).json();expect(source.created_at).toBe(original.created_at);phase('dataset list and detail retain exact matching microsecond coordinates');
  const region=page.getByRole('region',{name:'데이터셋 새 버전 초안',exact:true});await region.getByLabel('복사할 데이터셋 버전 ID',{exact:true}).fill(source.id);
  let posts=0;page.on('request',r=>{if(new URL(r.url()).pathname==='/backend/versions/datasets'&&r.method()==='POST')posts++});
  await region.getByRole('button',{name:'데이터셋 새 초안 불러오기',exact:true}).click();await expect(region.getByText(/새 버전 초안을 준비했습니다/)).toBeVisible();expect(posts).toBe(0);
