@@ -12,4 +12,6 @@
 
 로컬 Console222개/TypeScript/actionlint 통과. 실제 소스 합성 브라우저13항목/JS0(actual_backend_connected=false): 원래 payload·서명의 실제 Ed25519 확인/명시 저장만/추가요청0/미검증 외부 필드 제외/foreign·서명·중첩추가필드·401·503 거부·파일0/취소late/동일ID부모내용변경/role변경late/만료포커스/1440·390. 단위 검사는 v1/v2/v3 파일 payload 보존과 범위·서명·wall/monotonic 만료도 확인한다. 증거 outputs/gate-check-export-local-browser-20261112.json 및 gate-check-export-console-tests-20261112.log.
 
-후보 E2E는 기존 합성 캠페인을 사용해 실제 요청 서명과 파일을 대조하고 Node Ed25519/hash, 익명401, 저장시추가서명요청0, 변조/503/취소late/만료/모바일, 원래 campaign·receipt 이력 불변·업무쓰기0을 확인한다. 후보 수용은 대기 중이다. 원본·현재 복구 backend 접근과 실제 배포는 수행하지 않는다.
+후보 E2E는 기존 합성 캠페인을 사용해 실제 요청 서명과 파일을 대조하고 Node Ed25519/hash, 익명401, 저장시추가서명요청0, 변조/503/취소late/만료/모바일, 원래 campaign·receipt 이력 불변·업무쓰기0을 확인한다. 최종 후보 수용 결과는 아래 기록을 따른다. 원본·현재 복구 backend 접근과 실제 배포는 수행하지 않는다.
+
+최종 후보 수용(2026-11-12 19:29 KST): 정확 소스bf1b812fa4fba5e75b03d3516c17e6b9aab021fa/run43195931274 성공. Windows·security-source·integration 통과, 게시·배포 모두 skipped. 새 실제 시나리오 passed: 명시 확인한 실제 nonce 서명 응답·파일 payload/hash/Ed25519 대조, 저장 시 추가 서명 요청0, 익명401, 서명 치환·503·취소late 파일0, 만료 시 저장 제거,1440/390, 원래 캠페인·서명 기록 목록 불변·업무쓰기0·자체 로그아웃. artifact13933809860(8744bytes), ZIP SHA256e14e5fa06e8ec63405853017607781c7b562876f1eef8bae791a65278501edeb 원격 대조. outputs/gate-check-export-acceptance-20261112.json에 보존했다. 현재 복구 서비스 적용은 아니다. 같은 성공SHA/run을 재실행하지 않는다.
