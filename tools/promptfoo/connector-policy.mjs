@@ -51,11 +51,15 @@ export function definitionCase(c){
 export function validateSample(s){fields(s,['contract','case','contentSha256']);if(s.contract!==CONTRACT||s.contentSha256!==digest({contract:CONTRACT,case:definitionCase(s.case)}))throw Error('INVALID_SAMPLE');return s.case}
 
 export function connectorGrader(Ajv){
- return sample=>{const c=validateSample(sample);const ajv=new Ajv({strict:true,allErrors:false,coerceTypes:false,useDefaults:false,removeAdditional:false,ownProperties:true});
+ const ajv=new Ajv({strict:true,allErrors:false,coerceTypes:false,useDefaults:false,removeAdditional:false,ownProperties:true});
+ // Compile Ajv's meta-schema during server construction, before admitting requests.
+ const warm={type:'object',properties:{},required:[],additionalProperties:false};ajv.compile(warm);ajv.removeSchema(warm);
+ function matches(schema,value){try{return ajv.compile(schema)(value)}finally{ajv.removeSchema(schema)}}
+ return sample=>{const c=validateSample(sample);
   function status(r){const e=c.evidence;
-   if(r.type==='allowed_tools'){if(e.toolEvents===null)return 'inconclusive';for(const event of e.toolEvents){if(event.name===null||event.args===null)return 'inconclusive';if(!r.allowed.includes(event.name))return 'fail';const schema=r.argumentSchemas?.[event.name];if(schema&&!ajv.compile(schema)(event.args))return 'fail'}return 'pass'}
+   if(r.type==='allowed_tools'){if(e.toolEvents===null)return 'inconclusive';for(const event of e.toolEvents){if(event.name===null||event.args===null)return 'inconclusive';if(!r.allowed.includes(event.name))return 'fail';const schema=r.argumentSchemas?.[event.name];if(schema&&!matches(schema,event.args))return 'fail'}return 'pass'}
    if(e.output===null)return 'inconclusive';if(r.type==='contains'||r.type==='not_contains')return e.output.includes(r.value)===(r.type==='contains')?'pass':'fail';
-   try{const data=strictJson(e.output,512);obj(data);for(const value of Object.values(data))text(value,512);return ajv.compile(r.schema)(data)?'pass':'fail'}catch{return 'fail'}
+   try{const data=strictJson(e.output,512);obj(data);for(const value of Object.values(data))text(value,512);return matches(r.schema,data)?'pass':'fail'}catch{return 'fail'}
   }
   return {caseSha256:sample.contentSha256,statuses:c.rules.map(status),engine:'ajv-flat-object-v1',ajvVersion:AJV_VERSION,validatorProfileSha256:profileHash()};
  };

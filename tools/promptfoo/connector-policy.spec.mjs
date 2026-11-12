@@ -28,3 +28,11 @@ test('Unicode string length uses code points without normalizing decomposed text
 test('sample content hash binds arguments and all declarations',()=>{
  const s=sample(cases()[0]);s.case.evidence.toolEvents[0].args.orderId='changed';assert.throws(()=>validateSample(s));
 });
+
+test('Ajv initialization is outside request processing and per-observation schemas are released',()=>{
+ let instances=0,released=0;
+ class TrackedAjv extends Ajv{constructor(options){super(options);instances++}removeSchema(schema){released++;return super.removeSchema(schema)}}
+ const prepared=connectorGrader(TrackedAjv);assert.equal(instances,1);const initializedReleases=released;
+ for(const c of cases()){const result=prepared(sample(c));assert.ok(result.statuses.every(s=>s==='pass'))}
+ assert.equal(instances,1);assert.ok(released>=initializedReleases+2);
+});
