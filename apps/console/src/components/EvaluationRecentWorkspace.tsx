@@ -1,0 +1,13 @@
+'use client';
+import {useEffect,useRef,useState} from 'react';
+import {RequestScope,type Identity} from '../lib/contracts';
+import {evaluationRecent,type EvaluationRecent} from '../lib/evaluation-recent';
+export default function EvaluationRecentWorkspace({user,disabled}:{user:Identity;disabled:boolean}){
+ const [snapshot,setSnapshot]=useState<EvaluationRecent|null>(null),[busy,setBusy]=useState(false),[message,setMessage]=useState('');const generation=useRef(new RequestScope()),active=useRef<AbortController|null>(null);
+ function clear(){generation.current.next();active.current?.abort();setSnapshot(null);setBusy(false);setMessage('')}
+ useEffect(()=>{clear();return ()=>{generation.current.next();active.current?.abort()}},[user.actorId,user.organizationId,user.projectId,user.role,disabled]);
+ async function load(){if(disabled||busy)return;const token=generation.current.next(),controller=new AbortController();active.current?.abort();active.current=controller;setSnapshot(null);setMessage('');setBusy(true);
+  try{const response=await fetch('/backend/evaluation-recent',{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(10000)])});if(!response.ok)throw Error('UNAVAILABLE');const value=evaluationRecent(await response.json(),user);if(generation.current.current(token))setSnapshot(value)}catch{if(generation.current.current(token))setMessage('최근 24시간 평가 관측이 미확인 상태입니다. 다시 조회해 주세요.')}finally{if(generation.current.current(token))setBusy(false)}
+ }
+ return <section className="card" role="region" aria-label="최근 24시간 평가 관측"><h3>최근 24시간 평가 관측</h3><p>평가 결과에 보관된 완료 시각으로 최근 24시간을 집계합니다. 캠페인의 개별 평가도 포함합니다.</p><button type="button" disabled={disabled||busy} onClick={load}>최근 24시간 평가 관측 조회</button><button type="button" disabled={!busy} onClick={clear}>최근 평가 관측 취소</button><p role="status" aria-live="polite">{busy?'최근 24시간 평가 관측을 조회하고 있습니다.':message||(!snapshot?'최근 24시간 평가 관측이 미확인 상태입니다.':'')}</p>{snapshot&&<div data-evaluation-recent><p>집계 시작 <time dateTime={snapshot.windowStart}>{snapshot.windowStart}</time> · 관측 시각 <time dateTime={snapshot.observedAt}>{snapshot.observedAt}</time> (양 끝 시각 포함)</p><p data-recent-count="completed">최근 24시간 완료 {snapshot.completedCount}건</p><p data-recent-count="errors">최근 24시간 실행 오류 {snapshot.executionErrorCount}건</p><p data-recent-count="unknown">전체 보관 평가 중 완료 시각 미상 {snapshot.unknownCompletionTimeCount}건</p><p>완료 시각 미상 평가는 위 24시간에 포함되는지 알 수 없어 최근 집계에서 제외합니다. 생성 시각으로 추정하지 않습니다.</p></div>}<p>실행 오류는 처리 실패 상태입니다. 차단 판정이나 처리 완료 상태의 불확정 판정을 실행 오류로 집계하지 않습니다. 이 관측은 워커 정상 동작·실행 한도·운영 SLO·현재 게이트·승인 또는 배포 권한을 뜻하지 않습니다.</p></section>;
+}

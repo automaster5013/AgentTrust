@@ -11,3 +11,5 @@
 로컬 Console 212건·TypeScript·actionlint 통과. 실제 소스 합성 브라우저 16항목·JS 오류0에서 실제 테스트 Ed25519 서명과 부모·자식·기준 보관 바이트 검증, script 텍스트 비실행, 두 시각 구분, scope·선택 ID·키·서명·자식 바이트 치환 및 401/503 거부, 필터 제거·취소·다른 선택·scope 변경 후 늦은 응답, 1440/390을 확인했다. 실제 backend 연결은 false다.
 
 후보 E2E는 기존 합성 관측만 읽어 실제 bundle/공개 신뢰 API와 상세 표시를 대조하고 익명401·키 치환 시 신뢰 정보 추가 조회0·위조 서명 거부·필터·취소·모바일·쓰기0/다운로드0을 검증한다. 새 서명 fixture를 발급하지 않으며 원본·현재 복구 서비스에는 접속하거나 배포하지 않는다.
+
+최종 후보 수용: SHA a3f9f3cd670c4be9cd56faf5bb5e20fa2126cecd / run 43166626066 성공. security-source·Windows·integration 통과, 모든 게시·배포 작업 skipped. 새 실제 상세 시나리오 passed: 선택 receipt/campaign/key 결합, 기존 Ed25519·부모/자식 보관 바이트 검증, 사유·메모·두 시각 API 대조, 익명401, 키 치환 시 trust 조회0, 위조 서명·503·취소 late·필터 제거·1440/390·업무 쓰기0/다운로드0. artifact 13921319292 (7842 bytes), ZIP SHA256 709f4efe64502e39ddcac32588b9934c9fc3f0db05b8318015a4bf899bdf4030 대조. 증거 outputs/receipt-inspection-acceptance-20261112.json. 합성 후보 수용이며 현재 복구 서비스 적용은 아니다. 동일 성공 SHA/run은 재실행하지 않는다.
