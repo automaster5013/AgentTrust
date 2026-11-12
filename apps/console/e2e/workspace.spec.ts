@@ -1407,6 +1407,18 @@ if(process.env.STACK_E2E_LEGACY_CORE_RETURN!=='true')test('viewer cannot copy da
  phase('viewer copy controls disabled and actual dataset registration API forbidden403');
 });
 
+if(process.env.STACK_E2E_LEGACY_CORE_RETURN!=='true')test('viewer reads actual project version capacity without reserving space or changing retained versions',async({page,request})=>{
+ await login(page,'demo-viewer');expect((await request.get('/backend/version-capacity')).status()).toBe(401);const me=await (await page.request.get('/backend/me')).json();
+ const database=()=>JSON.parse(execFileSync(process.platform==='win32'?'python':'python3',[resolve(process.cwd(),'../../scripts/stack-version-capacity-db-probe.py'),me.organizationId,me.projectId],{encoding:'utf8',timeout:20000,maxBuffer:4096}));
+ const before=database(),response=await page.request.get('/backend/version-capacity');expect(response.status()).toBe(200);const value=await response.json();expect(value.organizationId).toBe(me.organizationId);expect(value.projectId).toBe(me.projectId);expect(value.scope).toBe('project');expect(value.reservationGranted).toBe(false);expect(value.deploymentAuthority).toBe(false);
+ for(const kind of ['agents','datasets']){expect(value[kind].used).toBe(before[kind].used);expect(value[kind].limit).toBe(200);expect(value[kind].remaining).toBe(Math.max(0,200-before[kind].used));}
+ let writes=0;page.on('request',r=>{if(new URL(r.url()).pathname.startsWith('/backend/')&&r.method()!=='GET')writes++});const region=page.getByRole('region',{name:'프로젝트 버전 등록 용량',exact:true}),load=region.getByRole('button',{name:'프로젝트 버전 용량 조회',exact:true});await load.click();await expect(region.locator('[data-version-capacity-kind]')).toHaveCount(2);
+ for(const kind of ['agents','datasets'])await expect(region.locator('[data-version-capacity-kind="'+kind+'"]')).toContainText('보관 '+before[kind].used+' / 200개');
+ for(const width of [1440,390]){await page.setViewportSize({width,height:960});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
+ for(const mode of ['foreign','unavailable']){await page.route('**/backend/version-capacity',route=>route.fulfill({status:mode==='unavailable'?503:200,contentType:'application/json',body:JSON.stringify(mode==='foreign'?{...value,projectId:randomUUID()}:{code:'UNAVAILABLE'})}));await load.click();await expect(region.locator('[data-version-capacity-kind]')).toHaveCount(0);await expect(region.getByText(/미확인 상태/)).toBeVisible();await page.unroute('**/backend/version-capacity');}
+ expect(writes).toBe(0);expect(database()).toEqual(before);phase('actual viewer capacity matches scoped PostgreSQL counts including retained versions, anonymous401,200 per kind, remaining arithmetic, no reservation or authority, foreign503 clear counts to unknown,1440 and390, version row fingerprints unchanged and no business writes');
+});
+
 if(process.env.STACK_E2E_LEGACY_CORE_RETURN!=='true')test('viewer saves only the exact selected completed evaluation observation JSON without release authority',async({page,request})=>{
  await login(page,'demo-viewer');const {record,me}=await existingSyntheticEvaluation(page);const path='/backend/runs/'+record.id;expect((await request.get(path)).status()).toBe(401);
  await page.locator('.runs li button').filter({hasText:record.id.slice(0,8)}).click();const region=page.getByRole('region',{name:'완료 평가 결과 JSON 저장',exact:true});await expect(region).toBeVisible();const save=region.getByRole('button',{name:'완료 평가 결과 JSON 저장',exact:true});

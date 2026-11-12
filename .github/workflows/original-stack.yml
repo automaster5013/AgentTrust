@@ -188,7 +188,7 @@ jobs:
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-audit-period-export-smoke.py --execute
           cd apps/console
-          STACK_E2E_QUOTA_GUARD=true npx playwright test --grep 'viewer searches actual scoped audit actions|viewer compares two actual completed evaluations|viewer browses the actual scoped agent dataset catalog|editor copies an actual dataset|viewer cannot copy dataset drafts|viewer inspects complete verified agent and dataset definitions|viewer saves only the exact selected completed evaluation observation JSON'
+          STACK_E2E_QUOTA_GUARD=true npx playwright test --grep 'viewer searches actual scoped audit actions|viewer compares two actual completed evaluations|viewer browses the actual scoped agent dataset catalog|editor copies an actual dataset|viewer cannot copy dataset drafts|viewer inspects complete verified agent and dataset definitions|viewer saves only the exact selected completed evaluation observation JSON|viewer reads actual project version capacity'
       - name: Preserve audit evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

@@ -11,6 +11,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class VersionRegistry {
+    static final int RETAINED_LIMIT=200;
     private final RunService runs;private final JdbcTemplate jdbc;private final ObjectMapper mapper;
     public VersionRegistry(RunService runs,JdbcTemplate jdbc,ObjectMapper mapper){this.runs=runs;this.jdbc=jdbc;this.mapper=mapper;}
     private static String table(String kind){return switch(kind){case "agents"->"stack_agent_versions";case "datasets"->"stack_dataset_versions";default->throw new IllegalArgumentException("Invalid registry kind");};}
@@ -42,7 +43,7 @@ public class VersionRegistry {
             jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"registry/"+kind+"/"+user.organizationId()+"/"+user.projectId());
             var existing=jdbc.queryForList("SELECT id,content_sha256 FROM "+table(kind)+" WHERE organization_id=? AND project_id=? AND resource_key=? AND version=?",user.organizationId(),user.projectId(),key,version);
             if(!existing.isEmpty()){if(!hash.equals(existing.getFirst().get("content_sha256")))throw new ResponseStatusException(HttpStatus.CONFLICT);return get(user,kind,(UUID)existing.getFirst().get("id"));}
-            if(jdbc.queryForObject("SELECT count(*) FROM "+table(kind)+" WHERE organization_id=? AND project_id=?",Integer.class,user.organizationId(),user.projectId())>=200)throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS);
+            if(jdbc.queryForObject("SELECT count(*) FROM "+table(kind)+" WHERE organization_id=? AND project_id=?",Integer.class,user.organizationId(),user.projectId())>=RETAINED_LIMIT)throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS);
             UUID id=UUID.randomUUID();jdbc.update("INSERT INTO "+table(kind)+" (id,organization_id,project_id,actor_id,resource_key,version,content_json,content_sha256) VALUES(?,?,?,?,?,?,?,?)",id,user.organizationId(),user.projectId(),user.actorId(),key,version,content,hash);
             runs.audit(user,"version."+kind+".registered",id);return get(user,kind,id);
         });
