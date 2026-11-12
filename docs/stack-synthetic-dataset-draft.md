@@ -11,3 +11,5 @@
 로컬 Console218개·TypeScript·actionlint 통과. 실제 소스 합성 브라우저12항목/JS0(actual_backend_connected=false): 준비 요청0/준비된 초안 덮어쓰기 차단/실제 합성hash와CSRF·좌표·편집 내용 결합/foreign·key·hash·409·503 거부와 초안 보존/scope·role변경 late/조회자 준비차단/지우기/1440·390. outputs/synthetic-draft-local-browser-20261112.json 및 synthetic-draft-console-tests-20261112.log에 보존한다.
 
 실제 후보 시나리오는 기존 초안 불변·준비POST0·명시 등록·API 저장 내용·같은ID재확인/409·기존 버전 불변·치환/503·모바일과 실제 조회자403을 검증한다. 후보 수용은 아직 대기 중이다. 원본과 현재 복구 서비스에 접속하거나 소스를 적용하지 않는다.
+
+초기 후보 62d2d61/run43182484999는 편집자 새 시나리오에서 실패했으며 수용하지 않았다. 조회자 준비 차단·실제403 시나리오는 통과했다. 실패 산출물13928263609(8475bytes) ZIP SHA256 f47647be6fa20f375e27ab24a96e456ac6647e7872ffe94313979b85e8c308ad를 보존했다. 실패 줄에는 등록 응답과 상세 전체 좌표 비교가 포함된다. 조사에서 등록 POST만 원래 JDBC Timestamp 직렬화를 사용하고 상세 GET은 exactTimestamp를 사용하는 불일치를 발견했다. 마이크로초를 가진 고정 합성 시간의 회귀 검사를 수정 전에 실패시켜 재현하고, 에이전트·데이터셋 등록 응답에도 기존 VersionResponse.exactTimestamp를 적용했다. 비교를 약화하거나 시각 필드를 제외하지 않았다. 수정 후보의 전체 시나리오 수용 전에는 이 문제를 유일한 CI 실패 원인으로 확정하지 않는다.
