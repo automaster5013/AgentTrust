@@ -53,6 +53,7 @@ jobs:
           python3 scripts/stack-execution-profiles.py --check
           python3 scripts/stack-quality-profiles.py --check
           python3 scripts/stack-recorded-text-profiles.py --check
+          python3 scripts/test_stack_recorded_queue_capacity.py
           python3 scripts/stack-observability-orchestration-test.py
           python3 scripts/stack-tempo-metadata-test.py
           python3 scripts/stack-host-capacity-test.py
@@ -711,6 +712,7 @@ jobs:
           python3 scripts/stack-execution-profiles.py --check
           python3 scripts/stack-quality-profiles.py --check
           python3 scripts/stack-recorded-text-profiles.py --check
+          python3 scripts/test_stack_recorded_queue_capacity.py
           docker build -t agenttrust-security:local tools/security
       - name: Load exact immutable runtime references
         shell: bash

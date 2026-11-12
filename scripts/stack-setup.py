@@ -38,7 +38,7 @@ try:
  if not nats_token.exists():nats_token.open('x',encoding='utf-8').write(secrets.token_hex(32))
  nats_value=nats_token.read_text(encoding='utf-8');assert re.fullmatch('[a-f0-9]{64}',nats_value);protect(nats_token)
  nats_config=directory/'nats.conf'
- configuration='port: 4222\nhttp: 8222\nmax_payload: 4096\nauthorization { token: "'+nats_value+'" }\njetstream { store_dir: "/tmp/jetstream", max_memory_store: 16MB, max_file_store: 32MB }\n'
+ configuration='port: 4222\nhttp: 8222\nmax_payload: 4096\nauthorization { token: "'+nats_value+'" }\njetstream { store_dir: "/tmp/jetstream", max_memory_store: 16MB, max_file_store: 64MB }\n'
  if not nats_config.exists():nats_config.open('x',encoding='utf-8').write(configuration)
  assert nats_config.read_text(encoding='utf-8')==configuration;protect(nats_config)
  if os.name!='nt':nats_token.chmod(0o444);nats_config.chmod(0o444)

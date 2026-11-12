@@ -382,7 +382,7 @@ def main():
             opa_value = tokens['stack-opa-token'].read_text()
             nats_config = private_file('pilot-nats.conf', 'port: 4222\nhttp: 8222\nmax_payload: 4096\n'
                 'authorization { token: "' + nats_value + '" }\n'
-                'jetstream { store_dir: "/tmp/jetstream", max_memory_store: 16MB, max_file_store: 32MB }\n', True)
+                'jetstream { store_dir: "/tmp/jetstream", max_memory_store: 16MB, max_file_store: 64MB }\n', True)
             opa_auth = private_file('pilot-opa-auth.json', json.dumps({'stack_auth': {'token': opa_value}}), True)
             start('nats', images['messaging'], ['--network-alias', 'stack-nats',
                 *bind(nats_config, '/run/secrets/stack-nats-config')], ['-c', '/run/secrets/stack-nats-config'], memory='128m')
