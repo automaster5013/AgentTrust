@@ -52,6 +52,7 @@ jobs:
           python3 -O -m unittest discover -s scripts -p test_stack_audit_recovery_cohorts.py
           python3 scripts/stack-execution-profiles.py --check
           python3 scripts/stack-quality-profiles.py --check
+          python3 scripts/stack-recorded-text-profiles.py --check
           python3 scripts/stack-observability-orchestration-test.py
           python3 scripts/stack-tempo-metadata-test.py
           python3 scripts/stack-host-capacity-test.py
@@ -188,7 +189,7 @@ jobs:
           python3 scripts/stack-test-quota-window.py
           python3 scripts/stack-audit-period-export-smoke.py --execute
           cd apps/console
-          STACK_E2E_QUOTA_GUARD=true npx playwright test --grep 'viewer searches actual scoped audit actions|viewer compares two actual completed evaluations|viewer browses the actual scoped agent dataset catalog|editor copies an actual dataset|viewer cannot copy dataset drafts|viewer inspects complete verified agent and dataset definitions|viewer saves only the exact selected completed evaluation observation JSON|viewer reads actual project version capacity|viewer reads whole project evaluation observations|viewer inspects actual campaign child rule evidence|viewer browses actual project receipt metadata|viewer opens selected actual signed observation details|viewer reads actual recent completion observations|editor prepares a synthetic dataset example|viewer cannot prepare synthetic dataset examples|viewer saves only an explicitly verified fresh signed gate observation'
+          STACK_E2E_QUOTA_GUARD=true npx playwright test --grep 'viewer searches actual scoped audit actions|viewer compares two actual completed evaluations|viewer browses the actual scoped agent dataset catalog|editor copies an actual dataset|viewer cannot copy dataset drafts|viewer inspects complete verified agent and dataset definitions|viewer saves only the exact selected completed evaluation observation JSON|viewer reads actual project version capacity|viewer reads whole project evaluation observations|viewer inspects actual campaign child rule evidence|viewer browses actual project receipt metadata|viewer opens selected actual signed observation details|viewer reads actual recent completion observations|editor prepares a synthetic dataset example|viewer cannot prepare synthetic dataset examples|viewer saves only an explicitly verified fresh signed gate observation|editor registers recorded synthetic text rules|viewer cannot register recorded output rules'
       - name: Preserve audit evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -709,6 +710,7 @@ jobs:
         run: |
           python3 scripts/stack-execution-profiles.py --check
           python3 scripts/stack-quality-profiles.py --check
+          python3 scripts/stack-recorded-text-profiles.py --check
           docker build -t agenttrust-security:local tools/security
       - name: Load exact immutable runtime references
         shell: bash

@@ -21,6 +21,10 @@ public final class ExecutionProfiles {
   try{
    if(!ArchiveIntegrity.sha256(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)).equals(storedHash))throw new IllegalArgumentException("Version source hash differs");
    var definition=mapper.readTree(content);if(definition.path("contract").asText().equals(VersionDefinition.CONTRACT))return null;
+   if(definition.path("contract").asText().equals(RecordedTextDefinition.CONTRACT)){
+    if(definition.size()!=5||!definition.path("provider").asText().equals("synthetic"))throw new IllegalArgumentException("Recorded agent differs");
+    String hash=definition.path("executionProfileSha256").asText();RecordedTextDefinition.validateProfile(mapper,definition.path("executionProfile"),hash);return hash;
+   }
    if(!List.of("fixed-scenarios-v2",QualityDefinition.CONTRACT).contains(definition.path("contract").asText()))throw new IllegalArgumentException("Unsupported agent contract");
    var profile=definition.path("executionProfile");String hash=definition.path("executionProfileSha256").asText();
    String expected=definition.path("contract").asText().equals(QualityDefinition.CONTRACT)?"reference-execution-profile-v1":"fixed-execution-profile-v1";

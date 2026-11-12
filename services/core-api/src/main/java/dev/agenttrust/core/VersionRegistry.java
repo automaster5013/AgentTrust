@@ -28,11 +28,11 @@ public class VersionRegistry {
     }
     public Map<String,Object> registerAgent(DemoUser user,String key,Integer version,String provider,String description,String mode){
         if(!List.of("admin","editor").contains(user.role()))throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-        boolean reference=VersionController.reference(mode);VersionDefinition.coordinate(key,version);String current=reference?QualityDefinition.agent(mapper,provider,description):VersionDefinition.agent(mapper,provider,description);
+        boolean recorded="recorded-text-rules".equals(mode),reference=!recorded&&VersionController.reference(mode);VersionDefinition.coordinate(key,version);String current=recorded?RecordedTextDefinition.agent(mapper,provider,description):reference?QualityDefinition.agent(mapper,provider,description):VersionDefinition.agent(mapper,provider,description);
         return runs.scoped(user,()->{
             jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0)) IS NULL",Boolean.class,"registry/agents/"+user.organizationId()+"/"+user.projectId());
             var rows=jdbc.queryForList("SELECT id FROM stack_agent_versions WHERE organization_id=? AND project_id=? AND resource_key=? AND version=?",user.organizationId(),user.projectId(),key,version);
-            if(!rows.isEmpty()){var existing=get(user,"agents",(UUID)rows.getFirst().get("id"));var definition=(com.fasterxml.jackson.databind.JsonNode)existing.get("definition");if(!definition.path("provider").asText().equals(provider)||!definition.path("description").asText().equals(description)||reference!=definition.path("contract").asText().equals(QualityDefinition.CONTRACT))throw new ResponseStatusException(HttpStatus.CONFLICT);return existing;}
+            if(!rows.isEmpty()){var existing=get(user,"agents",(UUID)rows.getFirst().get("id"));var definition=(com.fasterxml.jackson.databind.JsonNode)existing.get("definition");if(!definition.path("provider").asText().equals(provider)||!definition.path("description").asText().equals(description)||reference!=definition.path("contract").asText().equals(QualityDefinition.CONTRACT)||recorded!=definition.path("contract").asText().equals(RecordedTextDefinition.CONTRACT))throw new ResponseStatusException(HttpStatus.CONFLICT);return existing;}
             return register(user,"agents",key,version,current);
         });
     }

@@ -49,7 +49,12 @@ public class CampaignService {
             JsonNode definition=(JsonNode)agent.get("definition"),data=(JsonNode)dataset.get("definition");
             String agentContract=definition.path("contract").asText(),datasetContract=data.path("contract").asText();
             boolean reference=agentContract.equals(QualityDefinition.CONTRACT)&&datasetContract.equals(QualityDefinition.CONTRACT);
-            if(!reference&&(!List.of(VersionDefinition.CONTRACT,"fixed-scenarios-v2").contains(agentContract)||!datasetContract.equals(VersionDefinition.CONTRACT)))throw new ResponseStatusException(HttpStatus.CONFLICT);
+            boolean recorded=agentContract.equals(RecordedTextDefinition.CONTRACT)&&datasetContract.equals(RecordedTextDefinition.CONTRACT);
+            if(!recorded&&!reference&&(!List.of(VersionDefinition.CONTRACT,"fixed-scenarios-v2").contains(agentContract)||!datasetContract.equals(VersionDefinition.CONTRACT)))throw new ResponseStatusException(HttpStatus.CONFLICT);
+            if(recorded){
+                if(!definition.path("provider").asText().equals("synthetic")||data.size()!=2||!RecordedTextDefinition.dataset(mapper,data.path("cases")).equals(RecordedTextDefinition.json(mapper,mapper.convertValue(data,Object.class))))throw new ResponseStatusException(HttpStatus.CONFLICT);
+                ExecutionProfiles.binding(mapper,RecordedTextDefinition.json(mapper,mapper.convertValue(definition,Object.class)),(String)agent.get("content_sha256"));
+            }
             String provider=definition.path("provider").asText();JsonNode cases=data.path("cases");
             // Keep real-provider batches bounded under the existing per-case reservation and deadline.
             if(!provider.equals("synthetic")&&cases.size()>2)throw new ResponseStatusException(HttpStatus.BAD_REQUEST);

@@ -21,12 +21,19 @@ public class CompletionController {
         runs.validateBinding(scope,body.runId(),binding(body.campaignId(),body.caseId(),body.agentVersionId(),body.datasetVersionId(),body.executionProfileSha256(),body.qualityCase()));
         return budget.reserve(scope,body.runId(),body.scenario(),body.provider());
     }
-    public record Completion(UUID runId,UUID organizationId,UUID projectId,String scenario,Evaluation.Result result,String provider,UUID campaignId,String caseId,UUID agentVersionId,UUID datasetVersionId,String executionProfileSha256,Map<String,String> qualityCase) {}
+    public record Completion(UUID runId,UUID organizationId,UUID projectId,String scenario,Evaluation.Result result,String provider,UUID campaignId,String caseId,UUID agentVersionId,UUID datasetVersionId,String executionProfileSha256,Map<String,String> qualityCase,Map<String,Object> recordedCase) {
+        public Completion(UUID r,UUID o,UUID p,String s,Evaluation.Result result,String provider,UUID c,String i,UUID a,UUID d,String hash,Map<String,String> q){this(r,o,p,s,result,provider,c,i,a,d,hash,q,null);}
+    }
     @PostMapping("/internal/completions") Map<String,Object> complete(@RequestHeader(value="X-AgentTrust-Worker-Token",required=false) String supplied,@RequestBody Completion body) {
         if(supplied==null || supplied.length()!=64 || !MessageDigest.isEqual(token,supplied.getBytes(StandardCharsets.US_ASCII)))throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         if(body.runId()==null||body.organizationId()==null||body.projectId()==null||body.scenario()==null||body.result()==null||"python-unavailable".equals(body.result().executionEngine()))throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         var scope=new DemoUser("worker-callback","unused",body.organizationId(),body.projectId(),new UUID(0,0),"viewer");
-        return runs.complete(scope,body.runId(),body.scenario(),body.result(),binding(body.campaignId(),body.caseId(),body.agentVersionId(),body.datasetVersionId(),body.executionProfileSha256(),body.qualityCase()));
+        var base=binding(body.campaignId(),body.caseId(),body.agentVersionId(),body.datasetVersionId(),body.executionProfileSha256(),body.qualityCase());
+        if(body.recordedCase()!=null){
+            if(base==null||body.qualityCase()!=null||body.executionProfileSha256()==null||!"synthetic".equals(body.provider())||!"quality".equals(body.scenario()))throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+            base=new RunService.CampaignBinding(base.campaignId(),base.caseId(),base.agentVersionId(),base.datasetVersionId(),base.executionProfileSha256(),null,body.recordedCase());
+        }
+        return runs.complete(scope,body.runId(),body.scenario(),body.result(),base);
     }
     static RunService.CampaignBinding binding(UUID campaignId,String caseId,UUID agent,UUID dataset){return binding(campaignId,caseId,agent,dataset,null);}
     static RunService.CampaignBinding binding(UUID campaignId,String caseId,UUID agent,UUID dataset,String profile){

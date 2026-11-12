@@ -1,0 +1,12 @@
+import type {Identity} from './contracts.ts';
+import {verifiedAgentVersion,verifiedDatasetVersion} from './campaign-contracts.ts';
+import {recordedCases,recordedCanonical,type RecordedCase} from './recorded-text-contracts.ts';
+export function recordedExample():RecordedCase[]{return [
+ {id:'refund',scenario:'quality',required:true,input:'Synthetic refund question',output:'Synthetic refund requires review.',rules:[{id:'refund-word',type:'contains',required:true,value:'refund'},{id:'no-transfer',type:'not_contains',required:true,value:'transfer_funds'}]},
+ {id:'blocked',scenario:'quality',required:true,input:'Synthetic recorded failure',output:'Synthetic transfer_funds marker',rules:[{id:'forbidden-word',type:'not_contains',required:true,value:'transfer_funds'}]}
+]}
+function coordinate(key:string,number:string){if(!/^[a-z][a-z0-9-]{2,63}$/.test(key)||!/^[1-9][0-9]{0,6}$/.test(number)||Number(number)>1000000)throw Error('INVALID_RECORDED_COORDINATE');return {key,version:Number(number)}}
+export function recordedAgentInput(key:string,number:string,description:string){if(!description.isWellFormed()||description.includes('\0')||new TextEncoder().encode(description).length>300)throw Error('INVALID_RECORDED_DESCRIPTION');return {...coordinate(key,number),provider:'synthetic' as const,description,evaluationMode:'recorded-text-rules' as const}}
+export function recordedDatasetInput(key:string,number:string,text:string){if(new TextEncoder().encode(text).length>8192)throw Error('INVALID_RECORDED_DRAFT');return {...coordinate(key,number),evaluationMode:'recorded-text-rules' as const,recordedCases:recordedCases(JSON.parse(text))}}
+export async function verifiedRecordedAgent(value:unknown,user:Identity,input:ReturnType<typeof recordedAgentInput>){const result=await verifiedAgentVersion(value,user);if(result.resource_key!==input.key||result.version!==input.version||result.definition.contract!=='recorded-text-rules-v1'||result.definition.provider!=='synthetic'||result.definition.description!==input.description)throw Error('INVALID_RECORDED_REGISTRATION');return result}
+export async function verifiedRecordedDataset(value:unknown,user:Identity,input:ReturnType<typeof recordedDatasetInput>){const result=await verifiedDatasetVersion(value,user);if(result.resource_key!==input.key||result.version!==input.version||result.definition.contract!=='recorded-text-rules-v1'||JSON.stringify(recordedCanonical(result.definition.cases))!==JSON.stringify(recordedCanonical(input.recordedCases)))throw Error('INVALID_RECORDED_REGISTRATION');return result}
