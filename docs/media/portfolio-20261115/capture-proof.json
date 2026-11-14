@@ -1,0 +1,95 @@
+{
+  "sourceBase": "23c810c769a59477308d3fd3df7aba39c2487bb4",
+  "dependencyPatch": true,
+  "actualBackend": true,
+  "syntheticOnly": true,
+  "productionDeployment": false,
+  "events": [
+    {
+      "name": "01-workspace",
+      "seconds": 6.1
+    },
+    {
+      "name": "draft-prepared",
+      "seconds": 21
+    },
+    {
+      "name": "02-recorded-draft",
+      "seconds": 31.1
+    },
+    {
+      "name": "agent-registered",
+      "seconds": 49.3
+    },
+    {
+      "name": "dataset-registered",
+      "seconds": 65.4
+    },
+    {
+      "name": "03-registration",
+      "seconds": 65.9
+    },
+    {
+      "name": "04-definition",
+      "seconds": 95.2
+    },
+    {
+      "name": "campaign-created",
+      "seconds": 120.7
+    },
+    {
+      "name": "actual-python-completed",
+      "seconds": 122.2
+    },
+    {
+      "name": "05-campaign",
+      "seconds": 145.2
+    },
+    {
+      "name": "06-rule-pass",
+      "seconds": 155.4
+    },
+    {
+      "name": "07-rule-block",
+      "seconds": 174.1
+    },
+    {
+      "name": "observation-exported",
+      "seconds": 208.7
+    },
+    {
+      "name": "08-result-export",
+      "seconds": 209.5
+    },
+    {
+      "name": "09-release-boundary",
+      "seconds": 225.1
+    }
+  ],
+  "completed": true,
+  "campaignDecision": "block",
+  "caseDecisions": [
+    "pass",
+    "block"
+  ],
+  "campaignBindingSha256": "469c02b280160c856f15d82c93746cd498c5b458edeca19f016260180d2b3f37",
+  "exportValidated": true,
+  "loginRecorded": false,
+  "privacyMask": ".account > span,.scope",
+  "rawVideoSha256": "b992ff3dcb4c22ecd4eac66d7a9c7648c0af75e416f7090e0c80cff4638af6f0",
+  "downloadSha256": "a8b3c2653b8ab418949f0d8984b68c93f33a443ecd00b1dd53823a333d5434f1",
+  "downloadBytes": 1057,
+  "downloadHistoricalEvidenceOnly": true,
+  "downloadDeploymentAuthority": false,
+  "captureProcessSeconds": 244.3,
+  "rawVideoSeconds": 241.12,
+  "finalVideoSeconds": 240.0,
+  "playbackSpeed": 1,
+  "accountAndScopeMasked": true,
+  "allBusinessResponsesFromRealCandidate": true,
+  "backendDatabaseIndependentlyVerified": true,
+  "editorSessionsRemainingAfterCleanup": 0,
+  "administratorSessionClosed": true,
+  "editing": "final static tail trimmed; full viewport scaled into caption-safe frame; no outcome content replacement",
+  "dependencyPatchCommit": "a263674206204496e6702bf62b03dbc4c5f59754"
+}

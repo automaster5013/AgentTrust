@@ -1,0 +1,101 @@
+{
+  "sourceBase": "23c810c769a59477308d3fd3df7aba39c2487bb4",
+  "dependencyCommit": "a263674206204496e6702bf62b03dbc4c5f59754",
+  "files": [
+    {
+      "name": "agenttrust-demo-ko.mp4",
+      "bytes": 3990798,
+      "sha256": "231cedcf8dfe9fbd975388b5cfd96375480eae09af2e6926369194c382581c0e"
+    },
+    {
+      "name": "agenttrust-demo-ko.srt",
+      "bytes": 3823,
+      "sha256": "39e6d1cc8d13c7c56cedb67a68fd6b07e35e90948844118f33a2e1fffe972cbd"
+    },
+    {
+      "name": "agenttrust-demo-ko.ass",
+      "bytes": 4777,
+      "sha256": "31fba83f14fbacb3ce61b1babb296ff5618628b12bdaec25f25ff09652463345"
+    },
+    {
+      "name": "README.txt",
+      "bytes": 2626,
+      "sha256": "3e924a6d8a1a2cc6e7099dc87c2916f230b835ca014ae734e919ace520fbb93a"
+    },
+    {
+      "name": "capture-proof.json",
+      "bytes": 2320,
+      "sha256": "0468bf92df8e26dc04b2577d61b37c5175ed6bcc1512b923dabcca736d461d75"
+    },
+    {
+      "name": "backend-verification.json",
+      "bytes": 4619,
+      "sha256": "6c8e10496f61c070a33adae22c524ef007cfee0c6dd4d2c3c672f173af6780c6"
+    },
+    {
+      "name": "media-verification.json",
+      "bytes": 300,
+      "sha256": "b05295de7d91f28b9b9d7e1c2e122d51acea1009b85915162e73c05c7e1cb311"
+    },
+    {
+      "name": "security-verification.json",
+      "bytes": 1908,
+      "sha256": "d23c3eeb6338776853671f99a0e7d4cd309724a2f30c81c4705a0eca09548223"
+    },
+    {
+      "name": "release-review.json",
+      "bytes": 1531,
+      "sha256": "ad1a5f2b868b413531443e732218e54207c4c93bce47e7dafd082f0198b6af75"
+    },
+    {
+      "name": "cleanup-report.json",
+      "bytes": 270,
+      "sha256": "4680f1833ca37f370fbf369bc3e563a280d94408710f262c301483357b10b443"
+    },
+    {
+      "name": "01-workspace.png",
+      "bytes": 173558,
+      "sha256": "d6b38b15bc5e6c33595d4061d266c674371a2ef650d27f81e9a214160fbbda7d"
+    },
+    {
+      "name": "02-recorded-draft.png",
+      "bytes": 132341,
+      "sha256": "56d7abe31d39a3633825e3e3b7a779e4b429dfcc4588215278569d453373aa62"
+    },
+    {
+      "name": "03-registration.png",
+      "bytes": 153346,
+      "sha256": "12b0bf658d93c29be0e9fde7e5456b3ad287304e2780c7dad68526bbe020d6fb"
+    },
+    {
+      "name": "04-definition.png",
+      "bytes": 131415,
+      "sha256": "3d5a7deebcabbdd54ec2f8c52aaca7f7116cfba7aa1df125d8a98110638acaf0"
+    },
+    {
+      "name": "05-campaign.png",
+      "bytes": 155549,
+      "sha256": "ffafb5e692128049739db097de16be517cdef1404c1962a3e9ec985ebfa19d8c"
+    },
+    {
+      "name": "06-rule-pass.png",
+      "bytes": 142296,
+      "sha256": "1066a3b941df2cea1c57cae52cf3d38a7297b9a547e5c7fc1ed163ecde61b56f"
+    },
+    {
+      "name": "07-rule-block.png",
+      "bytes": 139996,
+      "sha256": "560cbf92d4ad982b3da7d00cac62bcdfe011d0dc149f7faf66795ddfe6d77fd7"
+    },
+    {
+      "name": "08-result-export.png",
+      "bytes": 153187,
+      "sha256": "ffe6091d2489af390e5d513ca8ea884b801a09276cd24409afb15dc6cc887388"
+    },
+    {
+      "name": "09-release-boundary.png",
+      "bytes": 159047,
+      "sha256": "69b00137a81595846d32e6ef31f8f3d5514435ff6a6faff612f6d5e05cc2a0ba"
+    }
+  ]
+}

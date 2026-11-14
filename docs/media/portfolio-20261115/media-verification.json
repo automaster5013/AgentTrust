@@ -1,0 +1,12 @@
+{
+  "codec": "h264",
+  "width": 1920,
+  "height": 1080,
+  "durationSeconds": 240.0,
+  "audioTracks": 0,
+  "frames": 6000,
+  "wholeVideoDecodePassed": true,
+  "captions": "burned Korean captions plus UTF-8 SRT",
+  "reviewSampleRule": "every one second plus scene changes >0.004",
+  "bytes": 3990798
+}

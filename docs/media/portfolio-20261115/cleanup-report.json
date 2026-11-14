@@ -1,0 +1,9 @@
+{
+  "captureDistroRemoved": true,
+  "captureContainersRemoved": true,
+  "captureSecretsRemovedWithDistro": true,
+  "originalRecoveryEnvironmentModified": false,
+  "finalVideoPreserved": true,
+  "interruptedSourceCopyExcludedFromDelivery": true,
+  "freeDiskGiB": 27.48
+}

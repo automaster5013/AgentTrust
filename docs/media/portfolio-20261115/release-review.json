@@ -1,0 +1,41 @@
+{
+  "completed": true,
+  "scope": "actual isolated synthetic product recording and release-file review",
+  "visualScreenshotsReviewed": 9,
+  "captionSafeLayoutVisuallyReviewed": true,
+  "captionCues": 24,
+  "maxCaptionCharactersPerSecond": 8.25,
+  "captionTimelineAlignedToCapturedEvents": true,
+  "screenshotOcr": {
+    "mode": "screenshots",
+    "framesScanned": 9,
+    "framesWithFindings": 0,
+    "language": "eng+kor",
+    "engine": "Tesseract 5.5.2",
+    "rawOcrTextRetained": false,
+    "findings": [],
+    "scope": "frame pattern scan; sampling can miss transient content"
+  },
+  "videoFrameOcr": {
+    "mode": "frames",
+    "framesScanned": 276,
+    "framesWithFindings": 0,
+    "language": "eng+kor",
+    "engine": "Tesseract 5.5.2",
+    "rawOcrTextRetained": false,
+    "findings": [],
+    "scope": "frame pattern scan; sampling can miss transient content"
+  },
+  "wholeVideoDecodePassed": true,
+  "videoDurationSeconds": 240,
+  "audioTracks": 0,
+  "loginOrPasswordEntryIncluded": false,
+  "accountScopeMasking": "CSS blur on account span and scope; other UI outcomes unchanged",
+  "sourceData": "new synthetic fixtures only; random synthetic run/campaign identifiers may be visible",
+  "rawCredentialsResponsesTracesIncluded": false,
+  "limitations": [
+    "OCR and visual sampling do not prove absence of every possible transient detail.",
+    "Historical acceptance of 14 features is separate from this representative workflow.",
+    "No operating deployment or acceptance of the fifteenth feature is claimed."
+  ]
+}

@@ -1,0 +1,115 @@
+{
+  "verified": true,
+  "networkNamespaceIsolated": true,
+  "publishedHostPorts": 0,
+  "campaignBindingSha256": "469c02b280160c856f15d82c93746cd498c5b458edeca19f016260180d2b3f37",
+  "database": {
+    "agents": 1,
+    "datasets": 1,
+    "cases": [
+      {
+        "caseId": "refund",
+        "decision": "pass",
+        "state": "succeeded",
+        "engine": "python-synthetic"
+      },
+      {
+        "caseId": "blocked",
+        "decision": "block",
+        "state": "succeeded",
+        "engine": "python-synthetic"
+      }
+    ],
+    "providerAttempts": 0,
+    "reviews": 0,
+    "receipts": 0
+  },
+  "images": [
+    {
+      "service": "console",
+      "imageId": "sha256:42f7e25a690fa5e9ac32d83cdf5e8c870b6f092ad41f03c88da9e729b2958f88",
+      "startedAt": "2026-11-14T18:11:41.121590221Z"
+    },
+    {
+      "service": "gateway",
+      "imageId": "sha256:bd597bb80897c6b5592c4e57c5f5d26b975a01a17e24607428d449d9ff3a92d4",
+      "startedAt": "2026-11-14T18:11:28.857462404Z"
+    },
+    {
+      "service": "core-api",
+      "imageId": "sha256:203d9171a963d6747abdf3fab73e1445963edcf1e65a404d67c14069eae6cc8e",
+      "startedAt": "2026-11-14T18:11:16.04542896Z"
+    },
+    {
+      "service": "db",
+      "imageId": "sha256:c98286f2b858b5106e8eb7a800ffe177e928a93502b293d0a2798c124d16267d",
+      "startedAt": "2026-11-14T18:10:41.77502596Z"
+    },
+    {
+      "service": "nats",
+      "imageId": "sha256:d6da23eb92f906ed8dd8f5873b3b2a4573994d5332170996a668eb741d3ff3a4",
+      "startedAt": "2026-11-14T18:10:42.046063227Z"
+    },
+    {
+      "service": "ai-worker",
+      "imageId": "sha256:c566af59df4c5dad8ef7d640410bcd7ac6979f8f48892bcf4ec1e38f2133a46d",
+      "startedAt": "2026-11-14T18:10:51.792476158Z"
+    },
+    {
+      "service": "quality-verifier",
+      "imageId": "sha256:12a2b504a5fac053d7f04dc3f516e5452203879a13c74916e0e426962a106a41",
+      "startedAt": "2026-11-14T18:10:41.054411499Z"
+    },
+    {
+      "service": "identity",
+      "imageId": "sha256:8a41d4f19ea044f0fe416ba07a3f4198ea8baa1bc445ee84169820c926f5e85e",
+      "startedAt": "2026-11-14T18:10:45.797498281Z"
+    },
+    {
+      "service": "opa",
+      "imageId": "sha256:3ab0683d013b345dc1b97cf5834ce670c84e87b704bdc55405d7b2041ffacecc",
+      "startedAt": "2026-11-14T18:10:42.272799075Z"
+    },
+    {
+      "service": "object-store",
+      "imageId": "sha256:f5d72003ad5bcfcc4cd7ada226c421077a8261fd9e1c39f5fc515ffec0fcdef8",
+      "startedAt": "2026-11-14T18:10:41.263052261Z"
+    },
+    {
+      "service": "redis",
+      "imageId": "sha256:b51665e66f00759be7c3152ad5ac3c66fb2f619c13ef62dea7cc1f9914524635",
+      "startedAt": "2026-11-14T18:10:41.490001778Z"
+    }
+  ],
+  "sourceBase": "23c810c769a59477308d3fd3df7aba39c2487bb4",
+  "dependencyCommit": "a263674206204496e6702bf62b03dbc4c5f59754",
+  "sourceOverlaySha256": {
+    "tools/promptfoo/package-lock.json": "1d338b4a58c94da33c730d4bb01998a2a40c1bd525271031ed97ed6a3a51dfbd",
+    "services/ai-worker/quality-validator-profile.json": "41ed63c78cc6d5efd8d739a79a9b64f98d493814aef10bafdb7732e2987f9fef",
+    "services/ai-worker/quality-execution-profiles.json": "16eb0c464429a5c17695d776d628edeb611c3d2e3dfc5c5e7a581825252694f7",
+    "services/core-api/src/main/resources/quality-execution-profiles.json": "16eb0c464429a5c17695d776d628edeb611c3d2e3dfc5c5e7a581825252694f7",
+    "apps/console/tests/fixtures/quality-execution-profiles.json": "16eb0c464429a5c17695d776d628edeb611c3d2e3dfc5c5e7a581825252694f7"
+  },
+  "operatingRecoveryServicesCheckedAgain": false,
+  "secretsIncluded": false,
+  "verifiedAtUtc": "2026-11-14T18:20:36.681617+00:00",
+  "composeFileOrder": [
+    "compose.stack.yaml",
+    "compose.stack.identity.yaml",
+    "compose.stack.gateway.yaml",
+    "compose.stack.object.yaml",
+    "compose.stack.signing.yaml",
+    ".local/capture.yaml",
+    ".local/capture-identity.yaml"
+  ],
+  "composeFileSha256": {
+    "compose.stack.yaml": "c4a1dbc16b7b6798fd51fbc476445cb305aa5162cc9ba1858091380593497413",
+    "compose.stack.identity.yaml": "53e1713d82144ffa2957f6813b6539bfae05cc4fa7f6626e8e6af5aff204b83d",
+    "compose.stack.gateway.yaml": "84da2650bed4a7f87d2bfdaf92608998a95a8a35cbc2ce282208a3e80626518b",
+    "compose.stack.object.yaml": "ed9449f6af42081202d08cc85787cd92a92276365306bc1d01b764de90eb54f8",
+    "compose.stack.signing.yaml": "4639fdb7f876ddc1bcaf95b56ed4b578afd76fe20e3d10db8db8437e47bdfc00",
+    ".local/capture.yaml": "e6642129cb8b190ceac8a64bbbca6fc11935004a251fcfdc3b915cd9a5ff5982",
+    ".local/capture-identity.yaml": "6e50bcdd2d95621f36a10ec496b52206e3c2b1306b2a4a92f4bc07e4f0306cb7"
+  },
+  "sourceOverlayMatchesDependencyCommit": true
+}
